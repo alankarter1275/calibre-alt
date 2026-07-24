@@ -1,0 +1,52 @@
+# Compile-check Kalam on every push / PR.
+# Headless: no display needed — we only cargo fmt/clippy/build.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Primary: plain Ubuntu + apt GTK4 headers (most reliable on GitHub-hosted runners).
+  build:
+    name: build (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
+            libpango1.0-dev libgdk-pixbuf-2.0-dev \
+            libgraphene-1.0-dev
+          pkg-config --modversion gtk4
+          pkg-config --modversion libadwaita-1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: build (debug)
+        run: cargo build --verbose
+
+      - name: build (release)
+        run: cargo build --release

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Kalam
+Comment=Personal ebook manager and reader
+Exec=kalam
+Icon=app.kalam.Kalam
+Terminal=false
+Type=Application
+Categories=Office;Viewer;Literature;
+Keywords=ebook;epub;reader;library;calibre;
+StartupWMClass=kalam
