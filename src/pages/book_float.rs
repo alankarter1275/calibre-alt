@@ -13,9 +13,17 @@ use std::rc::Rc;
 #[derive(Debug)]
 pub enum BookFloatOut {
     Close,
-    OpenFullPage { book_id: i64 },
-    OpenReader { book_id: i64 },
-    Deleted { book_id: i64 },
+    OpenFullPage {
+        book_id: i64,
+    },
+    OpenReader {
+        #[allow(dead_code)]
+        book_id: i64,
+    },
+    Deleted {
+        #[allow(dead_code)]
+        book_id: i64,
+    },
 }
 
 #[derive(Debug)]
@@ -46,7 +54,7 @@ impl Component for BookFloatModel {
             set_hexpand: true,
             set_vexpand: true,
 
-            // ── LEFT: full-height cover column ───────────────────
+            // ── LEFT: fixed-width cover column ───────────────────
             #[name = "cover_col"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
@@ -248,6 +256,9 @@ impl Component for BookFloatModel {
         let book = catalog.get_book(book_id).ok().flatten();
         let model = BookFloatModel { catalog, book };
         let widgets = view_output!();
+        // Pin left rail width so the cover never stretches with the window.
+        widgets.cover_col.set_size_request(228, -1);
+        widgets.cover_col.set_hexpand(false);
         fill(&widgets, model.book.as_ref());
 
         let key = gtk::EventControllerKey::new();

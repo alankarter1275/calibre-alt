@@ -402,7 +402,8 @@ impl Component for AppModel {
                     other => Route::Module(other),
                 };
                 if let Some(f) = self.floating.take() {
-                    f.window.close();
+                    f.window.set_child(None::<&gtk::Widget>);
+                    f.window.destroy();
                 }
                 self.swap_page(&widgets.content_host, route, false, &sender);
             }
@@ -440,7 +441,7 @@ impl Component for AppModel {
             AppMsg::OpenBookDialog { book_id } => {
                 if let Some(f) = self.floating.take() {
                     f.window.set_child(None::<&gtk::Widget>);
-                    f.window.close();
+                    f.window.destroy();
                 }
 
                 let ctrl = BookFloatModel::builder()
@@ -462,12 +463,17 @@ impl Component for AppModel {
                     .map(|b| b.title)
                     .unwrap_or_else(|| "Book".into());
 
-                // Bigger Suwayomi-style panel: tall cover left, details right.
+                // Card-sized start → expand to panel (morph open).
+                const OPEN_W: i32 = 900;
+                const OPEN_H: i32 = 560;
+                const CARD_W: i32 = 128;
+                const CARD_H: i32 = 236;
+
                 let window = gtk::Window::builder()
                     .title(title)
                     .transient_for(root)
-                    .default_width(900)
-                    .default_height(560)
+                    .default_width(CARD_W)
+                    .default_height(CARD_H)
                     .resizable(true)
                     .modal(false)
                     .decorated(false)
@@ -475,10 +481,7 @@ impl Component for AppModel {
                 window.add_css_class("kalam-window");
                 window.add_css_class("kalam-float-window");
                 window.set_child(Some(ctrl.widget()));
-
-                // Start slightly small + transparent, then expand (card → panel feel).
                 window.set_opacity(0.0);
-                window.set_default_size(720, 420);
 
                 let key = gtk::EventControllerKey::new();
                 let s_key = sender.clone();
@@ -492,32 +495,32 @@ impl Component for AppModel {
                 });
                 window.add_controller(key);
 
+                // Don't fire CloseBookDialog from destroy during animated close —
+                // we manage teardown ourselves.
                 let s = sender.clone();
-                window.connect_destroy(move |_| {
+                window.connect_close_request(move |_| {
                     s.input(AppMsg::CloseBookDialog);
+                    gtk::glib::Propagation::Stop
                 });
 
                 window.present();
                 ctrl.widget().grab_focus();
 
-                // Animate open: fade + grow toward target size.
+                // Morph open: card size → panel size + fade in.
                 let win_anim = window.clone();
                 let mut step = 0u32;
+                const STEPS: u32 = 14;
                 gtk::glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
                     step += 1;
-                    let t = (step as f64 / 12.0).min(1.0);
-                    // ease-out
-                    let e = 1.0 - (1.0 - t) * (1.0 - t);
+                    let t = (step as f64 / STEPS as f64).min(1.0);
+                    let e = 1.0 - (1.0 - t) * (1.0 - t); // ease-out
                     win_anim.set_opacity(e);
-                    let w = 720.0 + (900.0 - 720.0) * e;
-                    let h = 420.0 + (560.0 - 420.0) * e;
-                    win_anim.set_default_size(w as i32, h as i32);
-                    // Also resize if already mapped
-                    win_anim.set_size_request(w as i32, h as i32);
-                    if step >= 12 {
+                    let w = CARD_W as f64 + (OPEN_W - CARD_W) as f64 * e;
+                    let h = CARD_H as f64 + (OPEN_H - CARD_H) as f64 * e;
+                    win_anim.set_default_size(w.round() as i32, h.round() as i32);
+                    if step >= STEPS {
                         win_anim.set_opacity(1.0);
-                        win_anim.set_size_request(-1, -1);
-                        win_anim.set_default_size(900, 560);
+                        win_anim.set_default_size(OPEN_W, OPEN_H);
                         gtk::glib::ControlFlow::Break
                     } else {
                         gtk::glib::ControlFlow::Continue
@@ -530,9 +533,10 @@ impl Component for AppModel {
                 });
             }
             AppMsg::FloatOpenFull { book_id } => {
+                // Instant close then open full page (no reverse morph needed).
                 if let Some(f) = self.floating.take() {
                     f.window.set_child(None::<&gtk::Widget>);
-                    f.window.close();
+                    f.window.destroy();
                 }
                 self.swap_page(
                     &widgets.content_host,
@@ -542,9 +546,37 @@ impl Component for AppModel {
                 );
             }
             AppMsg::CloseBookDialog => {
-                if let Some(f) = self.floating.take() {
-                    f.window.set_child(None::<&gtk::Widget>);
-                    f.window.close();
+                // Morph close: panel → card size + fade out, then destroy.
+                if let Some(FloatingBook {
+                    _controller,
+                    window: win,
+                }) = self.floating.take()
+                {
+                    const OPEN_W: i32 = 900;
+                    const OPEN_H: i32 = 560;
+                    const CARD_W: i32 = 128;
+                    const CARD_H: i32 = 236;
+                    let mut step = 0u32;
+                    const STEPS: u32 = 12;
+                    // Hold controller until the animation finishes so widgets stay valid.
+                    let mut held = Some(_controller);
+                    gtk::glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
+                        step += 1;
+                        let t = (step as f64 / STEPS as f64).min(1.0);
+                        let e = t * t; // ease-in
+                        win.set_opacity((1.0 - e).max(0.0));
+                        let w = OPEN_W as f64 + (CARD_W - OPEN_W) as f64 * e;
+                        let h = OPEN_H as f64 + (CARD_H - OPEN_H) as f64 * e;
+                        win.set_default_size(w.round() as i32, h.round() as i32);
+                        if step >= STEPS {
+                            win.set_child(None::<&gtk::Widget>);
+                            win.destroy();
+                            held.take();
+                            gtk::glib::ControlFlow::Break
+                        } else {
+                            gtk::glib::ControlFlow::Continue
+                        }
+                    });
                 }
             }
         }

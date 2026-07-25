@@ -199,18 +199,20 @@ window.kalam-window {
     border-radius: 8px;
     border: 1px solid @kalam_border;
     background: @kalam_surface_2;
+    padding: 0;
+}
+
+.kalam-cover-frame > * {
+    border-radius: 7px;
 }
 
 .kalam-cover-placeholder {
     background: linear-gradient(145deg, #2a3148, #1a1f30);
     border-radius: 8px;
-    min-width: 0;
-    min-height: 0;
 }
 
 .kalam-cover-img {
     border-radius: 8px;
-    background: @kalam_surface_2;
 }
 
 .kalam-progress {
@@ -313,18 +315,10 @@ window.kalam-window {
     margin-top: 4px;
 }
 
-/* Prevent FlowBox from stretching the single/few children */
-flowbox.kalam-book-grid > flowboxchild {
-    padding: 0;
-    min-width: 0;
-    min-height: 0;
-}
-
 .kalam-book-card {
     padding: 4px;
     border-radius: 10px;
     background: transparent;
-    max-width: 132px;
 }
 
 .kalam-book-card:hover {
@@ -332,7 +326,6 @@ flowbox.kalam-book-grid > flowboxchild {
 }
 
 .kalam-book-card-cover {
-    border-radius: 8px;
     box-shadow: 0 4px 12px alpha(#000, 0.35);
 }
 
@@ -367,8 +360,6 @@ window.kalam-float-window {
 .kalam-float-cover-col {
     background: #0c0e14;
     border-right: 1px solid @kalam_border;
-    min-width: 228px;
-    max-width: 228px;
     padding: 16px 14px 12px 14px;
 }
 

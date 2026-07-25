@@ -1,21 +1,25 @@
 //! Cover cards for library grids (click → float, Ctrl+click → full page).
 //!
-//! Covers are fixed-size so FlowBox cannot stretch them full-width.
+//! Uses a plain Grid of fixed-size cards — FlowBox was stretching children
+//! full-width when only one/few books were present.
 
 use crate::models::Book;
 use gtk::gdk::ModifierType;
 use gtk::prelude::*;
 use std::path::Path;
 
-/// Standard library card cover size (portrait ebook).
+/// Portrait ebook cover on cards (~2:3).
 pub const CARD_COVER_W: i32 = 120;
 pub const CARD_COVER_H: i32 = 180;
-pub const CARD_WIDTH: i32 = 132;
+/// Total card width including padding (must match cover + a little margin).
+pub const CARD_WIDTH: i32 = 128;
+/// How many cards per row in library grids.
+const GRID_COLS: i32 = 6;
 
-/// Build a cover-first card.
+/// Build a cover-first card at fixed size.
 ///
-/// * plain click → `on_float` (floating panel)
-/// * Ctrl+click → `on_full` (full book page)
+/// * plain click → `on_float`
+/// * Ctrl+click → `on_full`
 pub fn build_book_card(
     book: &Book,
     on_full: impl Fn() + 'static,
@@ -27,7 +31,8 @@ pub fn build_book_card(
     card.set_vexpand(false);
     card.set_halign(gtk::Align::Start);
     card.set_valign(gtk::Align::Start);
-    card.set_size_request(CARD_WIDTH, -1);
+    // Hard clamp — parent cannot grow this widget past CARD_WIDTH.
+    card.set_size_request(CARD_WIDTH, CARD_COVER_H + 56);
 
     let cover = cover_widget(book.cover_path.as_deref(), CARD_COVER_W, CARD_COVER_H);
     cover.add_css_class("kalam-book-card-cover");
@@ -54,8 +59,8 @@ pub fn build_book_card(
     title.set_halign(gtk::Align::Center);
     title.set_justify(gtk::Justification::Center);
     title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    title.set_max_width_chars(14);
-    title.set_width_chars(14);
+    title.set_max_width_chars(13);
+    title.set_width_chars(13);
     title.set_lines(2);
     title.set_wrap(true);
     title.set_hexpand(false);
@@ -64,8 +69,8 @@ pub fn build_book_card(
     author.add_css_class("kalam-book-card-author");
     author.set_halign(gtk::Align::Center);
     author.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    author.set_max_width_chars(14);
-    author.set_width_chars(14);
+    author.set_max_width_chars(13);
+    author.set_width_chars(13);
     author.set_hexpand(false);
 
     card.append(&cover);
@@ -74,75 +79,76 @@ pub fn build_book_card(
     card
 }
 
-/// FlowBox of fixed-size cover cards (does not stretch children).
+/// Fixed-size cover grid (no FlowBox — avoids full-width stretch).
 pub fn build_book_grid(
     books: &[Book],
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
-) -> gtk::FlowBox {
-    let grid = gtk::FlowBox::new();
-    grid.set_valign(gtk::Align::Start);
+) -> gtk::Grid {
+    let grid = gtk::Grid::new();
+    grid.set_column_spacing(16);
+    grid.set_row_spacing(18);
+    grid.set_column_homogeneous(false);
+    grid.set_row_homogeneous(false);
     grid.set_halign(gtk::Align::Start);
-    grid.set_max_children_per_line(12);
-    grid.set_min_children_per_line(1);
-    grid.set_selection_mode(gtk::SelectionMode::None);
-    // Critical: homogeneous stretches a single child to full width.
-    grid.set_homogeneous(false);
-    grid.set_column_spacing(14);
-    grid.set_row_spacing(16);
-    grid.set_hexpand(true);
+    grid.set_valign(gtk::Align::Start);
+    grid.set_hexpand(false);
     grid.set_vexpand(false);
     grid.add_css_class("kalam-book-grid");
 
-    for book in books {
+    for (i, book) in books.iter().enumerate() {
         let id = book.id;
         let f1 = on_full.clone();
         let f2 = on_float.clone();
         let card = build_book_card(book, move || f1(id), move || f2(id));
-        grid.insert(&card, -1);
-        // FlowBoxChild defaults can expand a lone child across the row — pin it.
-        if let Some(child) = grid.last_child() {
-            child.set_halign(gtk::Align::Start);
-            child.set_valign(gtk::Align::Start);
-            child.set_hexpand(false);
-            child.set_vexpand(false);
-        }
+        let col = (i as i32) % GRID_COLS;
+        let row = (i as i32) / GRID_COLS;
+        grid.attach(&card, col, row, 1, 1);
     }
     grid
 }
 
-/// Fixed-size cover image (or placeholder). Never expands past `w`×`h`.
+/// Fixed-size cover (or placeholder). Allocation is hard-capped at `w`×`h`.
 pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
-    // Outer frame clamps size; Picture fills the frame without growing the layout.
-    let frame = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let frame = gtk::Frame::new(None);
+    frame.add_css_class("kalam-cover-frame");
     frame.set_size_request(w, h);
     frame.set_hexpand(false);
     frame.set_vexpand(false);
     frame.set_halign(gtk::Align::Center);
     frame.set_valign(gtk::Align::Center);
-    frame.set_overflow(gtk::Overflow::Hidden);
-    frame.add_css_class("kalam-cover-frame");
+    // Frame won't grow with parent when hexpand is false + size_request set.
 
     if let Some(path) = path {
         if path.is_file() {
+            // GdkTexture + Picture: keep paintable, clamp allocation via Frame size.
+            if let Ok(texture) = gtk::gdk::Texture::from_filename(path) {
+                let picture = gtk::Picture::for_paintable(&texture);
+                picture.set_content_fit(gtk::ContentFit::Cover);
+                picture.set_can_shrink(true);
+                picture.set_size_request(w, h);
+                picture.set_hexpand(false);
+                picture.set_vexpand(false);
+                picture.add_css_class("kalam-cover-img");
+                frame.set_child(Some(&picture));
+                return frame.upcast();
+            }
+            // Fallback if texture load fails
             let picture = gtk::Picture::for_filename(path);
-            // Contain keeps whole cover visible; Cover crops to fill the frame.
             picture.set_content_fit(gtk::ContentFit::Cover);
             picture.set_can_shrink(true);
-            picture.set_hexpand(true);
-            picture.set_vexpand(true);
-            picture.set_halign(gtk::Align::Fill);
-            picture.set_valign(gtk::Align::Fill);
+            picture.set_size_request(w, h);
+            picture.set_hexpand(false);
+            picture.set_vexpand(false);
             picture.add_css_class("kalam-cover-img");
-            frame.append(&picture);
+            frame.set_child(Some(&picture));
             return frame.upcast();
         }
     }
 
     let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
     placeholder.add_css_class("kalam-cover-placeholder");
-    placeholder.set_hexpand(true);
-    placeholder.set_vexpand(true);
-    frame.append(&placeholder);
+    placeholder.set_size_request(w, h);
+    frame.set_child(Some(&placeholder));
     frame.upcast()
 }
