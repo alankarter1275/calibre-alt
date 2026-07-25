@@ -11,6 +11,7 @@ pub enum BookPageOut {
     Back,
     OpenReader,
     Deleted {
+        #[allow(dead_code)]
         book_id: i64,
     },
 }
@@ -228,6 +229,7 @@ impl Component for BookPageModel {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fill(
     cover_host: &gtk::Box,
     tags_box: &gtk::Box,

@@ -10,9 +10,7 @@ pub enum HomeOut {
     OpenBookDialog { book_id: i64 },
 }
 
-pub struct HomePageModel {
-    catalog: Rc<Catalog>,
-}
+pub struct HomePageModel;
 
 #[relm4::component(pub)]
 impl SimpleComponent for HomePageModel {
@@ -74,9 +72,7 @@ impl SimpleComponent for HomePageModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = HomePageModel {
-            catalog: catalog.clone(),
-        };
+        let model = HomePageModel;
         let widgets = view_output!();
 
         let books = catalog.list_books(SortKey::Added, "").unwrap_or_default();

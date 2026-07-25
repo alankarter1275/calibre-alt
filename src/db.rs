@@ -14,8 +14,6 @@ pub enum DbError {
     Sqlite(#[from] rusqlite::Error),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
-    #[error("{0}")]
-    Msg(String),
 }
 
 pub type Result<T> = std::result::Result<T, DbError>;
@@ -180,6 +178,7 @@ impl Catalog {
         Ok(id)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn insert_book(
         &self,
         uuid: &str,

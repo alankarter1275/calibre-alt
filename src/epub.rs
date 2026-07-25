@@ -13,6 +13,7 @@ use zip::ZipArchive;
 
 #[derive(Debug)]
 pub struct ImportResult {
+    #[allow(dead_code)]
     pub book_id: i64,
     pub title: String,
     pub duplicate: bool,
@@ -212,15 +213,12 @@ fn parse_opf(xml: &str) -> Result<OpfMeta> {
                     .unwrap_or_default();
                 if name_attr.eq_ignore_ascii_case("cover") && meta.cover_id.is_none() {
                     meta.cover_id = Some(content);
-                } else if prop == "belongs-to-collection" && meta.series.is_none() {
-                    if !content.is_empty() {
-                        meta.series = Some(content);
-                    }
-                } else if name_attr.eq_ignore_ascii_case("calibre:series") && meta.series.is_none()
+                } else if meta.series.is_none()
+                    && !content.is_empty()
+                    && (prop == "belongs-to-collection"
+                        || name_attr.eq_ignore_ascii_case("calibre:series"))
                 {
-                    if !content.is_empty() {
-                        meta.series = Some(content);
-                    }
+                    meta.series = Some(content);
                 }
             }
             "item" => {

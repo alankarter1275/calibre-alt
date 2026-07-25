@@ -21,7 +21,6 @@ pub enum AllBooksMsg {
     SortChanged(SortKey),
     PickFiles,
     FilesChosen(Vec<PathBuf>),
-    Refresh,
     Delete { book_id: i64 },
 }
 
@@ -152,10 +151,6 @@ impl Component for AllBooksModel {
             }
             AllBooksMsg::SortChanged(sort) => {
                 self.sort = sort;
-                self.status.clear();
-                self.reload();
-            }
-            AllBooksMsg::Refresh => {
                 self.status.clear();
                 self.reload();
             }
