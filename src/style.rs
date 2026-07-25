@@ -216,6 +216,12 @@ window.kalam-window {
     border: 1px solid @kalam_border;
 }
 
+.kalam-cover-img {
+    border-radius: 6px;
+    border: 1px solid @kalam_border;
+    background: @kalam_surface_2;
+}
+
 .kalam-book-title {
     font-weight: 600;
     font-size: 0.98rem;

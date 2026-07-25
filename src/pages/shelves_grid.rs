@@ -1,14 +1,14 @@
-use crate::models::sample_shelves;
-use crate::widgets::shelf_card::build_shelf_card;
 use gtk::prelude::*;
 use relm4::prelude::*;
 
+/// P1: shelves engine is P4 — show honest empty state.
+pub struct ShelvesGridModel;
+
 #[derive(Debug)]
 pub enum ShelvesOut {
+    #[allow(dead_code)]
     OpenShelf { shelf_id: u64 },
 }
-
-pub struct ShelvesGridModel;
 
 #[relm4::component(pub)]
 impl SimpleComponent for ShelvesGridModel {
@@ -37,15 +37,13 @@ impl SimpleComponent for ShelvesGridModel {
                 set_halign: gtk::Align::Start,
             },
 
-            #[name = "grid"]
-            gtk::FlowBox {
-                set_valign: gtk::Align::Start,
-                set_max_children_per_line: 2,
-                set_min_children_per_line: 2,
-                set_selection_mode: gtk::SelectionMode::None,
-                set_column_spacing: 12,
-                set_row_spacing: 12,
-                set_homogeneous: true,
+            gtk::Label {
+                set_label: concat!(
+                    "Shelves are planned for P4, once the real library is solid.\n",
+                    "Import books under My Library → All books for now.",
+                ),
+                add_css_class: "kalam-placeholder",
+                set_wrap: true,
             },
         }
     }
@@ -53,20 +51,10 @@ impl SimpleComponent for ShelvesGridModel {
     fn init(
         _init: Self::Init,
         _root: Self::Root,
-        sender: ComponentSender<Self>,
+        _sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = ShelvesGridModel;
         let widgets = view_output!();
-
-        for shelf in sample_shelves() {
-            let id = shelf.id;
-            let s = sender.clone();
-            let card = build_shelf_card(shelf, move || {
-                s.output(ShelvesOut::OpenShelf { shelf_id: id }).ok();
-            });
-            widgets.grid.insert(&card, -1);
-        }
-
         ComponentParts { model, widgets }
     }
 }

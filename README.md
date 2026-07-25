@@ -11,21 +11,23 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **Your Arch machine** is only needed at **phase boundaries** (smoke-test + design feedback).
 - Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md)
 
-## What works in P0
+## What works now (P1)
 
-- Slim sidebar: Home, Library, Shelves, Downloads, Comics, AO3, Fanfic, Settings
-- **Home** — continue + recent (demo books)
-- **My Library** hub — tiles for All books, Reading list, History, Quotes, Words, Tags, Analytics
-- **Shelves** — 2-column grid of smart/manual shelves → shelf book list → **book page**
-- Each book: **Open** (full page in main column) or **Float** (separate window)
-- Custom dark CSS draft (replace with your design anytime)
+- Slim sidebar shell (custom dark CSS draft)
+- **SQLite catalog** at `~/.local/share/kalam/catalog.db`
+- **Import EPUB** (My Library → All books → “+ Import EPUB”)
+- Cover extraction, title/author/tags from OPF
+- Search + sort (title / author / added)
+- Book page + Float window; Remove book (DB + files)
+- Home shows real continue / recently added
+- Shelves / AO3 / comics / etc. still placeholders
 
 ## Phase overview
 
 | Phase | Feature |
 |-------|---------|
-| **P0** | Shell + nav + sample data ← current |
-| P1 | SQLite library, EPUB import, covers |
+| P0 | Shell + nav |
+| **P1** | SQLite library, EPUB import, covers ← current |
 | P2 | EPUB reader (WebKitGTK, chapter-wise scroll, fonts) |
 | P3 | Highlights, quotes, offline dictionary |
 | P4 | Home / shelves engine / lists (real data) |

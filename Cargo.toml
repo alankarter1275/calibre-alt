@@ -13,6 +13,19 @@ relm4 = { version = "0.9", features = ["libadwaita", "gnome_45"] }
 libadwaita = { version = "0.7", features = ["v1_4"] }
 gtk = { version = "0.9", package = "gtk4", features = ["v4_12"] }
 
+# Library / persistence
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+hex = "0.4"
+thiserror = "2"
+anyhow = "1"
+
+# EPUB (zip + OPF XML)
+zip = { version = "2", default-features = false, features = ["deflate"] }
+roxmltree = "0.20"
+quick-xml = "0.37"
+
 [profile.release]
 lto = true
 codegen-units = 1

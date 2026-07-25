@@ -1,41 +1,39 @@
 //! Root Relm4 application: slim sidebar + routed main content.
 
-use crate::models::{book_by_id, sample_books, LibrarySection, NavItem, Route};
+use crate::db::Catalog;
+use crate::models::{LibrarySection, NavItem, Route};
 use crate::pages::{
+    all_books::{AllBooksModel, AllBooksOut},
     book::{BookPageModel, BookPageOut},
     home::{HomeOut, HomePageModel},
     library::{LibraryOut, LibraryPageModel},
     placeholder::PlaceholderPageModel,
+    settings::SettingsPageModel,
     shelf_detail::{ShelfDetailModel, ShelfDetailOut},
     shelves_grid::{ShelvesGridModel, ShelvesOut},
 };
-use crate::widgets::book_row::build_book_row;
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub enum AppMsg {
-    /// Sidebar button clicked — replaces the stack.
     Navigate(NavItem),
-    /// Push a deeper route (shelf, book, library section…).
     Push(Route),
-    /// Pop one level of the in-module stack.
     Back,
-    /// Open book as a floating window.
-    OpenBookDialog { book_id: u64 },
-    /// Floating window closed.
+    OpenBookDialog { book_id: i64 },
     CloseBookDialog,
 }
 
-/// Active page controller kept alive while its route is shown.
 enum PageSlot {
     Home(Controller<HomePageModel>),
     Library(Controller<LibraryPageModel>),
+    AllBooks(Controller<AllBooksModel>),
     Shelves(Controller<ShelvesGridModel>),
     ShelfDetail(Controller<ShelfDetailModel>),
     Book(Controller<BookPageModel>),
+    Settings(Controller<SettingsPageModel>),
     Placeholder(Controller<PlaceholderPageModel>),
-    /// Plain GTK widget tree (library sections).
     Widget(gtk::Box),
 }
 
@@ -44,9 +42,11 @@ impl PageSlot {
         match self {
             PageSlot::Home(c) => c.widget().clone().upcast(),
             PageSlot::Library(c) => c.widget().clone().upcast(),
+            PageSlot::AllBooks(c) => c.widget().clone().upcast(),
             PageSlot::Shelves(c) => c.widget().clone().upcast(),
             PageSlot::ShelfDetail(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
+            PageSlot::Settings(c) => c.widget().clone().upcast(),
             PageSlot::Placeholder(c) => c.widget().clone().upcast(),
             PageSlot::Widget(b) => b.clone().upcast(),
         }
@@ -59,13 +59,15 @@ struct FloatingBook {
 }
 
 pub struct AppModel {
+    catalog: Rc<Catalog>,
     route: Route,
-    /// Stack of routes for Back (does not include current).
     history: Vec<Route>,
-    /// Sidebar highlight while a book page is open.
     sidebar_override: Option<NavItem>,
     page: Option<PageSlot>,
     floating: Option<FloatingBook>,
+    /// Dynamic top-bar title override (book pages).
+    title_override: Option<String>,
+    subtitle_override: Option<String>,
 }
 
 impl AppModel {
@@ -74,45 +76,61 @@ impl AppModel {
             .unwrap_or_else(|| self.route.sidebar_item())
     }
 
-    fn build_page(route: &Route, sender: &ComponentSender<Self>) -> PageSlot {
+    fn top_title(&self) -> String {
+        self.title_override
+            .clone()
+            .unwrap_or_else(|| self.route.title())
+    }
+
+    fn top_subtitle(&self) -> Option<String> {
+        self.subtitle_override
+            .clone()
+            .or_else(|| self.route.subtitle())
+    }
+
+    fn build_page(catalog: &Rc<Catalog>, route: &Route, sender: &ComponentSender<Self>) -> PageSlot {
         match route {
             Route::Module(NavItem::Home) => {
-                let ctrl =
-                    HomePageModel::builder()
-                        .launch(())
-                        .forward(sender.input_sender(), |out| match out {
-                            HomeOut::OpenBook { book_id } => {
-                                AppMsg::Push(Route::BookPage { book_id })
-                            }
-                            HomeOut::OpenBookDialog { book_id } => {
-                                AppMsg::OpenBookDialog { book_id }
-                            }
-                        });
+                let ctrl = HomePageModel::builder()
+                    .launch(catalog.clone())
+                    .forward(sender.input_sender(), |out| match out {
+                        HomeOut::OpenBook { book_id } => AppMsg::Push(Route::BookPage { book_id }),
+                        HomeOut::OpenBookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
+                    });
                 PageSlot::Home(ctrl)
             }
             Route::Module(NavItem::Library) => {
-                let ctrl =
-                    LibraryPageModel::builder()
-                        .launch(())
-                        .forward(sender.input_sender(), |out| match out {
-                            LibraryOut::OpenSection(sec) => {
-                                AppMsg::Push(Route::LibrarySection(sec))
-                            }
-                        });
+                let ctrl = LibraryPageModel::builder()
+                    .launch(catalog.clone())
+                    .forward(sender.input_sender(), |out| match out {
+                        LibraryOut::OpenSection(sec) => AppMsg::Push(Route::LibrarySection(sec)),
+                    });
                 PageSlot::Library(ctrl)
             }
+            Route::LibrarySection(LibrarySection::AllBooks) => {
+                let ctrl = AllBooksModel::builder()
+                    .launch(catalog.clone())
+                    .forward(sender.input_sender(), |out| match out {
+                        AllBooksOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                        AllBooksOut::OpenBookDialog { book_id } => {
+                            AppMsg::OpenBookDialog { book_id }
+                        }
+                    });
+                PageSlot::AllBooks(ctrl)
+            }
             Route::LibrarySection(section) => {
-                PageSlot::Widget(build_library_section_page(*section, sender.clone()))
+                PageSlot::Widget(placeholder_section(*section))
             }
             Route::Module(NavItem::Shelves) | Route::ShelvesGrid => {
-                let ctrl =
-                    ShelvesGridModel::builder()
-                        .launch(())
-                        .forward(sender.input_sender(), |out| match out {
-                            ShelvesOut::OpenShelf { shelf_id } => {
-                                AppMsg::Push(Route::ShelfDetail { shelf_id })
-                            }
-                        });
+                let ctrl = ShelvesGridModel::builder()
+                    .launch(())
+                    .forward(sender.input_sender(), |out| match out {
+                        ShelvesOut::OpenShelf { shelf_id } => {
+                            AppMsg::Push(Route::ShelfDetail { shelf_id })
+                        }
+                    });
                 PageSlot::Shelves(ctrl)
             }
             Route::ShelfDetail { shelf_id } => {
@@ -130,15 +148,19 @@ impl AppModel {
                 PageSlot::ShelfDetail(ctrl)
             }
             Route::BookPage { book_id } => {
-                let ctrl = BookPageModel::builder().launch(*book_id).forward(
-                    sender.input_sender(),
-                    |out| match out {
+                let id = *book_id;
+                let ctrl = BookPageModel::builder()
+                    .launch((catalog.clone(), id))
+                    .forward(sender.input_sender(), |out| match out {
                         BookPageOut::Back => AppMsg::Back,
-                        // Reader is P2 — keep the user on the book page.
-                        BookPageOut::OpenReader => AppMsg::CloseBookDialog,
-                    },
-                );
+                        BookPageOut::OpenReader => AppMsg::Back,
+                        BookPageOut::Deleted { .. } => AppMsg::Back,
+                    });
                 PageSlot::Book(ctrl)
+            }
+            Route::Module(NavItem::Settings) => {
+                let ctrl = SettingsPageModel::builder().launch(()).detach();
+                PageSlot::Settings(ctrl)
             }
             Route::Module(item) => {
                 let ctrl = PlaceholderPageModel::builder().launch(*item).detach();
@@ -147,7 +169,6 @@ impl AppModel {
         }
     }
 
-    /// Unparent the current page, then install `route`.
     fn swap_page(
         &mut self,
         content_host: &gtk::Box,
@@ -166,14 +187,25 @@ impl AppModel {
             _ => None,
         };
 
-        // Unparent before dropping the old controller.
+        self.title_override = None;
+        self.subtitle_override = None;
+
         while let Some(child) = content_host.first_child() {
             content_host.remove(&child);
         }
+        // Drop old controller only after unparenting — avoids
+        // gtk_widget_is_ancestor criticals on disposed widgets.
         self.page = None;
 
+        if let Route::BookPage { book_id } = &route {
+            if let Ok(Some(b)) = self.catalog.get_book(*book_id) {
+                self.title_override = Some(b.title.clone());
+                self.subtitle_override = Some(b.authors_display().to_string());
+            }
+        }
+
         self.route = route;
-        let page = Self::build_page(&self.route, sender);
+        let page = Self::build_page(&self.catalog, &self.route, sender);
         content_host.append(&page.widget());
         self.page = Some(page);
     }
@@ -263,15 +295,15 @@ impl Component for AppModel {
 
                             gtk::Label {
                                 #[watch]
-                                set_label: &model.route.title(),
+                                set_label: &model.top_title(),
                                 add_css_class: "kalam-topbar-title",
                                 set_halign: gtk::Align::Start,
                             },
                             gtk::Label {
                                 #[watch]
-                                set_label: model.route.subtitle().as_deref().unwrap_or(""),
+                                set_label: model.top_subtitle().as_deref().unwrap_or(""),
                                 #[watch]
-                                set_visible: model.route.subtitle().is_some(),
+                                set_visible: model.top_subtitle().is_some(),
                                 add_css_class: "kalam-topbar-subtitle",
                                 set_halign: gtk::Align::Start,
                             },
@@ -301,15 +333,27 @@ impl Component for AppModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        let catalog = match Catalog::open() {
+            Ok(c) => Rc::new(c),
+            Err(err) => {
+                eprintln!("kalam: failed to open catalog: {err}");
+                // Last resort: still try — panic is worse UX
+                Rc::new(Catalog::open().expect("catalog open"))
+            }
+        };
+
         let initial_route = Route::Module(NavItem::Home);
-        let page = Self::build_page(&initial_route, &sender);
+        let page = Self::build_page(&catalog, &initial_route, &sender);
 
         let model = AppModel {
+            catalog,
             route: initial_route,
             history: Vec::new(),
             sidebar_override: None,
             page: Some(page),
             floating: None,
+            title_override: None,
+            subtitle_override: None,
         };
 
         let widgets = view_output!();
@@ -358,13 +402,29 @@ impl Component for AppModel {
             }
             AppMsg::Back => {
                 if let Some(prev) = self.history.pop() {
-                    self.sidebar_override = None;
+                    // Like swap_page but keep remaining history.
+                    self.sidebar_override = match &prev {
+                        Route::BookPage { .. } => self.sidebar_override,
+                        _ => None,
+                    };
+                    self.title_override = None;
+                    self.subtitle_override = None;
+
                     while let Some(child) = widgets.content_host.first_child() {
                         widgets.content_host.remove(&child);
                     }
                     self.page = None;
+
+                    if let Route::BookPage { book_id } = &prev {
+                        if let Ok(Some(b)) = self.catalog.get_book(*book_id) {
+                            self.title_override = Some(b.title.clone());
+                            self.subtitle_override =
+                                Some(b.authors_display().to_string());
+                        }
+                    }
+
                     self.route = prev;
-                    let page = Self::build_page(&self.route, &sender);
+                    let page = Self::build_page(&self.catalog, &self.route, &sender);
                     widgets.content_host.append(&page.widget());
                     self.page = Some(page);
                 }
@@ -374,15 +434,20 @@ impl Component for AppModel {
                     f.window.close();
                 }
 
-                let ctrl = BookPageModel::builder().launch(book_id).forward(
-                    sender.input_sender(),
-                    |out| match out {
-                        BookPageOut::Back | BookPageOut::OpenReader => AppMsg::CloseBookDialog,
-                    },
-                );
+                let ctrl = BookPageModel::builder()
+                    .launch((self.catalog.clone(), book_id))
+                    .forward(sender.input_sender(), |out| match out {
+                        BookPageOut::Back | BookPageOut::OpenReader | BookPageOut::Deleted { .. } => {
+                            AppMsg::CloseBookDialog
+                        }
+                    });
 
-                let title = book_by_id(book_id)
-                    .map(|b| b.title.clone())
+                let title = self
+                    .catalog
+                    .get_book(book_id)
+                    .ok()
+                    .flatten()
+                    .map(|b| b.title)
                     .unwrap_or_else(|| "Book".into());
 
                 let window = gtk::Window::builder()
@@ -408,12 +473,13 @@ impl Component for AppModel {
             }
             AppMsg::CloseBookDialog => {
                 if let Some(f) = self.floating.take() {
+                    // Unset child before close so controllers drop cleanly.
+                    f.window.set_child(None::<&gtk::Widget>);
                     f.window.close();
                 }
             }
         }
 
-        // Sidebar active state + #[watch] fields
         let active = self.sidebar_item();
         update_nav_styles(&widgets.top_nav, active);
         update_nav_styles(&widgets.bottom_nav, active);
@@ -461,12 +527,8 @@ fn update_nav_styles(container: &gtk::Box, active: NavItem) {
     }
 }
 
-fn build_library_section_page(
-    section: LibrarySection,
-    sender: ComponentSender<AppModel>,
-) -> gtk::Box {
+fn placeholder_section(section: LibrarySection) -> gtk::Box {
     let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
-
     let title = gtk::Label::new(Some(section.label()));
     title.add_css_class("kalam-page-title");
     title.set_halign(gtk::Align::Start);
@@ -477,30 +539,12 @@ fn build_library_section_page(
     sub.set_halign(gtk::Align::Start);
     page.append(&sub);
 
-    match section {
-        LibrarySection::AllBooks | LibrarySection::ReadingList | LibrarySection::History => {
-            for book in sample_books() {
-                let id = book.id;
-                let s1 = sender.clone();
-                let s2 = sender.clone();
-                let row = build_book_row(
-                    book,
-                    move || s1.input(AppMsg::Push(Route::BookPage { book_id: id })),
-                    move || s2.input(AppMsg::OpenBookDialog { book_id: id }),
-                );
-                page.append(&row);
-            }
-        }
-        other => {
-            let ph = gtk::Label::new(Some(&format!(
-                "{} — placeholder. Real data arrives in a later phase.",
-                other.label()
-            )));
-            ph.add_css_class("kalam-placeholder");
-            ph.set_wrap(true);
-            page.append(&ph);
-        }
-    }
-
+    let ph = gtk::Label::new(Some(&format!(
+        "{} — coming in a later phase. Use All books for your catalog.",
+        section.label()
+    )));
+    ph.add_css_class("kalam-placeholder");
+    ph.set_wrap(true);
+    page.append(&ph);
     page
 }

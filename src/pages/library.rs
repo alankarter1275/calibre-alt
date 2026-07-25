@@ -1,17 +1,23 @@
+use crate::db::Catalog;
 use crate::models::LibrarySection;
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub enum LibraryOut {
     OpenSection(LibrarySection),
 }
 
-pub struct LibraryPageModel;
+pub struct LibraryPageModel {
+    #[allow(dead_code)]
+    catalog: Rc<Catalog>,
+    count: usize,
+}
 
 #[relm4::component(pub)]
 impl SimpleComponent for LibraryPageModel {
-    type Init = ();
+    type Init = Rc<Catalog>;
     type Input = ();
     type Output = LibraryOut;
 
@@ -28,7 +34,12 @@ impl SimpleComponent for LibraryPageModel {
                 set_halign: gtk::Align::Start,
             },
             gtk::Label {
-                set_label: "Catalog, lists, quotes, words, tags, and light analytics.",
+                #[watch]
+                set_label: &format!(
+                    "{} book{} · catalog, lists, quotes, words, tags, analytics.",
+                    model.count,
+                    if model.count == 1 { "" } else { "s" }
+                ),
                 add_css_class: "kalam-page-sub",
                 set_halign: gtk::Align::Start,
             },
@@ -47,18 +58,18 @@ impl SimpleComponent for LibraryPageModel {
     }
 
     fn init(
-        _init: Self::Init,
+        catalog: Self::Init,
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = LibraryPageModel;
+        let count = catalog.count_books().unwrap_or(0);
+        let model = LibraryPageModel { catalog, count };
         let widgets = view_output!();
 
         for section in LibrarySection::ALL {
             let tile = make_hub_tile(*section);
             let sec = *section;
             let s = sender.clone();
-            // FlowBox children need to be FlowBoxChild or Widget
             let btn = gtk::Button::new();
             btn.set_child(Some(&tile));
             btn.add_css_class("kalam-hub-tile");

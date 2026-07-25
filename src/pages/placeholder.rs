@@ -65,9 +65,13 @@ fn placeholder_copy(item: NavItem) -> String {
         NavItem::Fanfiction => "Other fanfiction sources, same adapter pattern as AO3.\n\n\
              Placeholder until the sources framework exists."
             .into(),
-        NavItem::Settings => "Library path, appearance, dictionary packs, keyboard shortcuts.\n\n\
-             Config will live in ~/.config/kalam/."
-            .into(),
+        NavItem::Shelves => {
+            "Shelves (smart & manual) return in P4 with real rules over your library."
+                .into()
+        }
+        NavItem::Settings => {
+            "Use the Settings page for paths. Extra options come later.".into()
+        }
         other => format!("{} — placeholder page.", other.label()),
     }
 }

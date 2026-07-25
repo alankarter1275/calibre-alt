@@ -1,19 +1,22 @@
-use crate::models::{book_by_id, sample_books};
+use crate::db::{Catalog, SortKey};
 use crate::widgets::book_row::build_book_row;
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub enum HomeOut {
-    OpenBook { book_id: u64 },
-    OpenBookDialog { book_id: u64 },
+    OpenBook { book_id: i64 },
+    OpenBookDialog { book_id: i64 },
 }
 
-pub struct HomePageModel;
+pub struct HomePageModel {
+    catalog: Rc<Catalog>,
+}
 
 #[relm4::component(pub)]
 impl SimpleComponent for HomePageModel {
-    type Init = ();
+    type Init = Rc<Catalog>;
     type Input = ();
     type Output = HomeOut;
 
@@ -30,12 +33,11 @@ impl SimpleComponent for HomePageModel {
                 set_halign: gtk::Align::Start,
             },
             gtk::Label {
-                set_label: "Continue reading, recent activity, and your queue.",
+                set_label: "Continue reading and recently added books.",
                 add_css_class: "kalam-page-sub",
                 set_halign: gtk::Align::Start,
             },
 
-            // Continue card
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 add_css_class: "kalam-home-continue",
@@ -54,7 +56,7 @@ impl SimpleComponent for HomePageModel {
             },
 
             gtk::Label {
-                set_label: "RECENT",
+                set_label: "RECENTLY ADDED",
                 add_css_class: "kalam-section-label",
                 set_halign: gtk::Align::Start,
             },
@@ -68,19 +70,25 @@ impl SimpleComponent for HomePageModel {
     }
 
     fn init(
-        _init: Self::Init,
+        catalog: Self::Init,
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = HomePageModel;
+        let model = HomePageModel {
+            catalog: catalog.clone(),
+        };
         let widgets = view_output!();
 
-        // Continue = highest in-progress sample book
-        if let Some(book) = sample_books()
+        let books = catalog
+            .list_books(SortKey::Added, "")
+            .unwrap_or_default();
+
+        let cont = books
             .iter()
-            .filter(|b| b.progress > 0 && b.progress < 100)
-            .max_by_key(|b| b.progress)
-        {
+            .find(|b| b.progress > 0 && b.progress < 100)
+            .or_else(|| books.first());
+
+        if let Some(book) = cont {
             let id = book.id;
             let s1 = sender.clone();
             let s2 = sender.clone();
@@ -94,23 +102,16 @@ impl SimpleComponent for HomePageModel {
                 },
             );
             widgets.continue_host.append(&row);
-        } else if let Some(book) = book_by_id(1) {
-            let id = book.id;
-            let s1 = sender.clone();
-            let s2 = sender.clone();
-            let row = build_book_row(
-                book,
-                move || {
-                    s1.output(HomeOut::OpenBook { book_id: id }).ok();
-                },
-                move || {
-                    s2.output(HomeOut::OpenBookDialog { book_id: id }).ok();
-                },
-            );
-            widgets.continue_host.append(&row);
+        } else {
+            let empty = gtk::Label::new(Some(
+                "Nothing to continue — import books from My Library → All books.",
+            ));
+            empty.add_css_class("kalam-placeholder");
+            empty.set_wrap(true);
+            widgets.continue_host.append(&empty);
         }
 
-        for book in sample_books().iter().take(4) {
+        for book in books.iter().take(6) {
             let id = book.id;
             let s1 = sender.clone();
             let s2 = sender.clone();
@@ -124,6 +125,12 @@ impl SimpleComponent for HomePageModel {
                 },
             );
             widgets.recent_host.append(&row);
+        }
+
+        if books.is_empty() {
+            let empty = gtk::Label::new(Some("Your library is empty."));
+            empty.add_css_class("kalam-muted");
+            widgets.recent_host.append(&empty);
         }
 
         ComponentParts { model, widgets }

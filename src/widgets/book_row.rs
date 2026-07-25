@@ -2,11 +2,9 @@
 
 use crate::models::Book;
 use gtk::prelude::*;
+use std::path::Path;
 
 /// Build a clickable book row.
-///
-/// * `on_open` — open the full book page in the main column
-/// * `on_dialog` — open the floating book window
 pub fn build_book_row(
     book: &Book,
     on_open: impl Fn() + 'static,
@@ -16,8 +14,7 @@ pub fn build_book_row(
     row.add_css_class("kalam-book-row");
     row.set_hexpand(true);
 
-    let cover = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    cover.add_css_class("kalam-cover-placeholder");
+    let cover = cover_widget(book.cover_path.as_deref(), 48, 72);
     cover.set_valign(gtk::Align::Center);
     row.append(&cover);
 
@@ -30,11 +27,15 @@ pub fn build_book_row(
     title.set_halign(gtk::Align::Start);
     title.set_ellipsize(gtk::pango::EllipsizeMode::End);
 
-    let author = gtk::Label::new(Some(&book.authors.join(", ")));
+    let author = gtk::Label::new(Some(book.authors_display()));
     author.add_css_class("kalam-book-author");
     author.set_halign(gtk::Align::Start);
 
-    let meta = gtk::Label::new(Some(&format!("{} · {}%", book.format, book.progress)));
+    let meta = gtk::Label::new(Some(&format!(
+        "{} · {}%",
+        book.format.as_str(),
+        book.progress
+    )));
     meta.add_css_class("kalam-progress");
     meta.set_halign(gtk::Align::Start);
 
@@ -59,7 +60,21 @@ pub fn build_book_row(
     actions.append(&float_btn);
     row.append(&actions);
 
-    // Whole row (except action buttons) also opens the page on click.
-    // Buttons stop propagation by being separate targets.
     row
+}
+
+pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
+    if let Some(path) = path {
+        if path.is_file() {
+            let picture = gtk::Picture::for_filename(path);
+            picture.set_content_fit(gtk::ContentFit::Cover);
+            picture.set_size_request(w, h);
+            picture.add_css_class("kalam-cover-img");
+            return picture.upcast();
+        }
+    }
+    let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    placeholder.add_css_class("kalam-cover-placeholder");
+    placeholder.set_size_request(w, h);
+    placeholder.upcast()
 }

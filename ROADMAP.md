@@ -403,11 +403,12 @@ Two jobs: gtk-rs container + plain Ubuntu apt (belt and suspenders).
 
 ## Immediate next steps
 
-1. Push branch → watch Actions  
-2. Fix CI failures until green (**P0 complete on CI**)  
-3. You run P0 on Arch once → feedback list  
-4. Apply P0 polish from your list  
-5. Start **P1** only after you say go  
+1. Finish **P1** CI green  
+2. You smoke-test import/search/delete on Arch  
+3. Design pass when you have page mockups  
+4. Start **P2** reader after P1 sign-off  
+
+
 
 ---
 
@@ -421,3 +422,4 @@ Two jobs: gtk-rs container + plain Ubuntu apt (belt and suspenders).
 | 2026-07-24 | Shelves: grid → detail → book page or float |
 | 2026-07-24 | CI for compile; Arch only at phase boundaries |
 | 2026-07-24 | This roadmap P0–P11 |
+| 2026-07-25 | P0 signed off on Arch; start P1 library core |

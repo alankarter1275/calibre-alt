@@ -1,25 +1,34 @@
-use crate::models::book_by_id;
+use crate::db::Catalog;
+use crate::models::Book;
+use crate::widgets::book_row::cover_widget;
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub enum BookPageOut {
-    /// Reserved for an in-page back control (top bar handles Back today).
     #[allow(dead_code)]
     Back,
     OpenReader,
+    Deleted { book_id: i64 },
+}
+
+#[derive(Debug)]
+pub enum BookPageMsg {
+    Delete,
 }
 
 pub struct BookPageModel {
-    #[allow(dead_code)]
-    book_id: u64,
+    catalog: Rc<Catalog>,
+    book: Option<Book>,
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for BookPageModel {
-    type Init = u64;
-    type Input = ();
+impl Component for BookPageModel {
+    type Init = (Rc<Catalog>, i64);
+    type Input = BookPageMsg;
     type Output = BookPageOut;
+    type CommandOutput = ();
 
     view! {
         #[root]
@@ -33,13 +42,11 @@ impl SimpleComponent for BookPageModel {
                 set_spacing: 24,
                 set_valign: gtk::Align::Start,
 
-                // Cover
+                #[name = "cover_host"]
                 gtk::Box {
-                    add_css_class: "kalam-detail-cover",
-                    set_valign: gtk::Align::Start,
+                    set_orientation: gtk::Orientation::Vertical,
                 },
 
-                // Metadata column
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 4,
@@ -105,6 +112,8 @@ impl SimpleComponent for BookPageModel {
                         add_css_class: "kalam-muted",
                         set_halign: gtk::Align::Start,
                         set_selectable: true,
+                        set_wrap: true,
+                        set_xalign: 0.0,
                     },
 
                     gtk::Box {
@@ -125,6 +134,11 @@ impl SimpleComponent for BookPageModel {
                             set_sensitive: false,
                             set_tooltip_text: Some("Coming in a later phase"),
                         },
+                        gtk::Button {
+                            set_label: "Remove",
+                            add_css_class: "kalam-secondary-btn",
+                            connect_clicked => BookPageMsg::Delete,
+                        },
                     },
                 },
             },
@@ -144,8 +158,8 @@ impl SimpleComponent for BookPageModel {
 
             gtk::Label {
                 set_label: concat!(
-                    "Reader, highlights, and dictionary land in P2–P3. ",
-                    "This page is the permanent home for a book's metadata and actions.",
+                    "Reader lands in P2. This page is the home for a book's ",
+                    "metadata and library actions.",
                 ),
                 add_css_class: "kalam-placeholder",
                 set_wrap: true,
@@ -155,43 +169,121 @@ impl SimpleComponent for BookPageModel {
     }
 
     fn init(
-        book_id: Self::Init,
+        (catalog, book_id): Self::Init,
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = BookPageModel { book_id };
+        let book = catalog.get_book(book_id).ok().flatten();
+        let model = BookPageModel { catalog, book };
         let widgets = view_output!();
-
-        if let Some(book) = book_by_id(book_id) {
-            widgets.title.set_label(&book.title);
-            widgets.author.set_label(&book.authors.join(", "));
-            if let Some(series) = &book.series {
-                widgets.series.set_label(series);
-                widgets.series.set_visible(true);
-            } else {
-                widgets.series.set_visible(false);
-            }
-            widgets
-                .format
-                .set_label(&format!("{} · added {}", book.format, book.added));
-            widgets
-                .progress
-                .set_label(&format!("{}% complete", book.progress));
-            widgets.path.set_label(book.path);
-            widgets.description.set_label(&book.description);
-
-            for tag in &book.tags {
-                let chip = gtk::Label::new(Some(tag));
-                chip.add_css_class("kalam-chip");
-                widgets.tags.append(&chip);
-            }
-        } else {
-            widgets.title.set_label("Unknown book");
-            widgets
-                .description
-                .set_label("This demo id is not in the sample data.");
-        }
-
+        fill(
+            &widgets.cover_host,
+            &widgets.tags,
+            &widgets.title,
+            &widgets.author,
+            &widgets.series,
+            &widgets.format,
+            &widgets.progress,
+            &widgets.path,
+            &widgets.description,
+            model.book.as_ref(),
+        );
+        let _ = sender;
         ComponentParts { model, widgets }
+    }
+
+    fn update_with_view(
+        &mut self,
+        widgets: &mut Self::Widgets,
+        msg: Self::Input,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
+        match msg {
+            BookPageMsg::Delete => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    if self.catalog.delete_book(id).is_ok() {
+                        self.book = None;
+                        sender.output(BookPageOut::Deleted { book_id: id }).ok();
+                    }
+                }
+            }
+        }
+        fill(
+            &widgets.cover_host,
+            &widgets.tags,
+            &widgets.title,
+            &widgets.author,
+            &widgets.series,
+            &widgets.format,
+            &widgets.progress,
+            &widgets.path,
+            &widgets.description,
+            self.book.as_ref(),
+        );
+        self.update_view(widgets, sender);
+    }
+}
+
+fn fill(
+    cover_host: &gtk::Box,
+    tags_box: &gtk::Box,
+    title: &gtk::Label,
+    author: &gtk::Label,
+    series: &gtk::Label,
+    format: &gtk::Label,
+    progress: &gtk::Label,
+    path: &gtk::Label,
+    description: &gtk::Label,
+    book: Option<&Book>,
+) {
+    while let Some(child) = cover_host.first_child() {
+        cover_host.remove(&child);
+    }
+    while let Some(child) = tags_box.first_child() {
+        tags_box.remove(&child);
+    }
+
+    if let Some(book) = book {
+        let cover = cover_widget(book.cover_path.as_deref(), 160, 240);
+        cover.add_css_class("kalam-detail-cover");
+        cover_host.append(&cover);
+
+        title.set_label(&book.title);
+        author.set_label(book.authors_display());
+        if let Some(s) = &book.series {
+            series.set_label(s);
+            series.set_visible(true);
+        } else {
+            series.set_visible(false);
+        }
+        format.set_label(&format!(
+            "{} · added {}",
+            book.format.as_str(),
+            book.added_at
+        ));
+        progress.set_label(&format!("{}% complete", book.progress));
+        path.set_label(&book.file_path.to_string_lossy());
+        if book.description.trim().is_empty() {
+            description.set_label("No description.");
+        } else {
+            description.set_label(&book.description);
+        }
+        for tag in &book.tags {
+            let chip = gtk::Label::new(Some(tag));
+            chip.add_css_class("kalam-chip");
+            tags_box.append(&chip);
+        }
+    } else {
+        let cover = cover_widget(None, 160, 240);
+        cover_host.append(&cover);
+        title.set_label("Book not found");
+        author.set_label("");
+        series.set_visible(false);
+        format.set_label("");
+        progress.set_label("");
+        path.set_label("");
+        description.set_label("This book was removed or does not exist.");
     }
 }
