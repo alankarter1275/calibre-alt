@@ -83,7 +83,7 @@ Phases P6–P11 may be reordered once P3 is solid; **P0→P5 stay in order**.
 - [x] Draft dark CSS (`src/style.rs`)
 - [x] CI workflow
 - [x] ROADMAP + ARCH docs
-- [ ] CI green (fix after first Actions run)
+- [x] CI green (`fmt` · `clippy` · `build` · `release`)
 - [ ] Your Arch smoke-test sign-off
 
 ### Explicitly out
