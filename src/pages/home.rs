@@ -81,8 +81,8 @@ impl SimpleComponent for HomePageModel {
         let cont: Vec<_> = books
             .iter()
             .filter(|b| b.progress > 0 && b.progress < 100)
-            .cloned()
             .take(1)
+            .cloned()
             .collect();
         let cont = if cont.is_empty() {
             books.iter().take(1).cloned().collect::<Vec<_>>()
