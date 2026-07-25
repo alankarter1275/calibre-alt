@@ -131,12 +131,12 @@ pub fn build_book_grid(
 
 /// Cover slot: always exactly `w`×`h` (portrait 1.6:1 for library cards).
 ///
-/// Images are **scaled down at load** so GTK never sees a huge natural size.
-/// Missing covers get the same empty frame — same dimensions always.
+/// Uses AspectFrame with `obey_child = false` so the child's natural image
+/// size cannot expand the layout. Missing covers use the same empty frame.
 pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
-    // AspectFrame with obey_child=false forces the geometric ratio and
-    // ignores the child's natural size (the root cause of the banner bug).
-    let ratio = w as f32 / h as f32; // width/height; for 128×204 ≈ 0.627
+    // width/height ratio for AspectFrame
+    let ratio = w as f32 / h as f32;
+    // gtk4 0.9: new(xalign, yalign, ratio, obey_child) — no label arg
     let aspect = gtk::AspectFrame::new(0.5, 0.5, ratio, false);
     aspect.set_size_request(w, h);
     aspect.set_hexpand(false);
@@ -144,14 +144,20 @@ pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
     aspect.set_halign(gtk::Align::Center);
     aspect.set_valign(gtk::Align::Center);
     aspect.add_css_class("kalam-cover-frame");
-    aspect.set_overflow(gtk::Overflow::Hidden);
 
     if let Some(path) = path {
         if path.is_file() {
-            if let Some(picture) = load_scaled_picture(path, w, h) {
-                aspect.set_child(Some(&picture));
-                return aspect.upcast();
-            }
+            let picture = gtk::Picture::for_filename(path);
+            picture.set_content_fit(gtk::ContentFit::Cover);
+            picture.set_can_shrink(true);
+            // Keep Picture from requesting huge intrinsic size in the measure phase
+            // by also clamping keep-aspect and size — AspectFrame(obey_child=false)
+            // is the real guard.
+            picture.set_hexpand(true);
+            picture.set_vexpand(true);
+            picture.add_css_class("kalam-cover-img");
+            aspect.set_child(Some(&picture));
+            return aspect.upcast();
         }
     }
 
@@ -161,31 +167,4 @@ pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
     placeholder.set_vexpand(true);
     aspect.set_child(Some(&placeholder));
     aspect.upcast()
-}
-
-/// Decode image and scale to exactly w×h so natural size cannot blow the layout.
-fn load_scaled_picture(path: &Path, w: i32, h: i32) -> Option<gtk::Picture> {
-    use gtk::gdk_pixbuf::InterpType;
-    use gtk::gdk_pixbuf::Pixbuf;
-
-    // Scale to fill the box (cover crop): load larger side then we'll clip via AspectFrame.
-    // from_file_at_scale with preserve_aspect_ratio=false stretches to exact w×h —
-    // good enough for a thumbnail and guarantees natural size = w×h.
-    let pixbuf = Pixbuf::from_file_at_scale(path, w, h, false).ok()?;
-    // Ensure exact size even if loader rounded.
-    let pixbuf = if pixbuf.width() != w || pixbuf.height() != h {
-        pixbuf.scale_simple(w, h, InterpType::Bilinear)?
-    } else {
-        pixbuf
-    };
-
-    let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
-    let picture = gtk::Picture::for_paintable(&texture);
-    picture.set_content_fit(gtk::ContentFit::Fill);
-    picture.set_can_shrink(true);
-    picture.set_size_request(w, h);
-    picture.set_hexpand(false);
-    picture.set_vexpand(false);
-    picture.add_css_class("kalam-cover-img");
-    Some(picture)
 }
