@@ -79,9 +79,7 @@ impl SimpleComponent for HomePageModel {
         };
         let widgets = view_output!();
 
-        let books = catalog
-            .list_books(SortKey::Added, "")
-            .unwrap_or_default();
+        let books = catalog.list_books(SortKey::Added, "").unwrap_or_default();
 
         let cont = books
             .iter()

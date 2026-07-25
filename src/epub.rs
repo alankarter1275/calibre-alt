@@ -213,7 +213,8 @@ fn parse_opf(xml: &str) -> Result<OpfMeta> {
                     if !content.is_empty() {
                         meta.series = Some(content);
                     }
-                } else if name_attr.eq_ignore_ascii_case("calibre:series") && meta.series.is_none() {
+                } else if name_attr.eq_ignore_ascii_case("calibre:series") && meta.series.is_none()
+                {
                     if !content.is_empty() {
                         meta.series = Some(content);
                     }
@@ -303,8 +304,7 @@ fn find_zip_index<R: Read + std::io::Seek>(
             return Ok(i);
         }
         if n.to_ascii_lowercase() == target_l
-            || n.to_ascii_lowercase().trim_start_matches("./")
-                == target_l.trim_start_matches("./")
+            || n.to_ascii_lowercase().trim_start_matches("./") == target_l.trim_start_matches("./")
         {
             return Ok(i);
         }

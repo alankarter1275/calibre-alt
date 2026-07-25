@@ -10,7 +10,9 @@ pub enum BookPageOut {
     #[allow(dead_code)]
     Back,
     OpenReader,
-    Deleted { book_id: i64 },
+    Deleted {
+        book_id: i64,
+    },
 }
 
 #[derive(Debug)]

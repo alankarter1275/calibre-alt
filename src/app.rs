@@ -88,49 +88,55 @@ impl AppModel {
             .or_else(|| self.route.subtitle())
     }
 
-    fn build_page(catalog: &Rc<Catalog>, route: &Route, sender: &ComponentSender<Self>) -> PageSlot {
+    fn build_page(
+        catalog: &Rc<Catalog>,
+        route: &Route,
+        sender: &ComponentSender<Self>,
+    ) -> PageSlot {
         match route {
             Route::Module(NavItem::Home) => {
-                let ctrl = HomePageModel::builder()
-                    .launch(catalog.clone())
-                    .forward(sender.input_sender(), |out| match out {
+                let ctrl = HomePageModel::builder().launch(catalog.clone()).forward(
+                    sender.input_sender(),
+                    |out| match out {
                         HomeOut::OpenBook { book_id } => AppMsg::Push(Route::BookPage { book_id }),
                         HomeOut::OpenBookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
-                    });
+                    },
+                );
                 PageSlot::Home(ctrl)
             }
             Route::Module(NavItem::Library) => {
-                let ctrl = LibraryPageModel::builder()
-                    .launch(catalog.clone())
-                    .forward(sender.input_sender(), |out| match out {
+                let ctrl = LibraryPageModel::builder().launch(catalog.clone()).forward(
+                    sender.input_sender(),
+                    |out| match out {
                         LibraryOut::OpenSection(sec) => AppMsg::Push(Route::LibrarySection(sec)),
-                    });
+                    },
+                );
                 PageSlot::Library(ctrl)
             }
             Route::LibrarySection(LibrarySection::AllBooks) => {
-                let ctrl = AllBooksModel::builder()
-                    .launch(catalog.clone())
-                    .forward(sender.input_sender(), |out| match out {
+                let ctrl = AllBooksModel::builder().launch(catalog.clone()).forward(
+                    sender.input_sender(),
+                    |out| match out {
                         AllBooksOut::OpenBook { book_id } => {
                             AppMsg::Push(Route::BookPage { book_id })
                         }
                         AllBooksOut::OpenBookDialog { book_id } => {
                             AppMsg::OpenBookDialog { book_id }
                         }
-                    });
+                    },
+                );
                 PageSlot::AllBooks(ctrl)
             }
-            Route::LibrarySection(section) => {
-                PageSlot::Widget(placeholder_section(*section))
-            }
+            Route::LibrarySection(section) => PageSlot::Widget(placeholder_section(*section)),
             Route::Module(NavItem::Shelves) | Route::ShelvesGrid => {
-                let ctrl = ShelvesGridModel::builder()
-                    .launch(())
-                    .forward(sender.input_sender(), |out| match out {
-                        ShelvesOut::OpenShelf { shelf_id } => {
-                            AppMsg::Push(Route::ShelfDetail { shelf_id })
-                        }
-                    });
+                let ctrl =
+                    ShelvesGridModel::builder()
+                        .launch(())
+                        .forward(sender.input_sender(), |out| match out {
+                            ShelvesOut::OpenShelf { shelf_id } => {
+                                AppMsg::Push(Route::ShelfDetail { shelf_id })
+                            }
+                        });
                 PageSlot::Shelves(ctrl)
             }
             Route::ShelfDetail { shelf_id } => {
@@ -418,8 +424,7 @@ impl Component for AppModel {
                     if let Route::BookPage { book_id } = &prev {
                         if let Ok(Some(b)) = self.catalog.get_book(*book_id) {
                             self.title_override = Some(b.title.clone());
-                            self.subtitle_override =
-                                Some(b.authors_display().to_string());
+                            self.subtitle_override = Some(b.authors_display().to_string());
                         }
                     }
 
@@ -437,9 +442,9 @@ impl Component for AppModel {
                 let ctrl = BookPageModel::builder()
                     .launch((self.catalog.clone(), book_id))
                     .forward(sender.input_sender(), |out| match out {
-                        BookPageOut::Back | BookPageOut::OpenReader | BookPageOut::Deleted { .. } => {
-                            AppMsg::CloseBookDialog
-                        }
+                        BookPageOut::Back
+                        | BookPageOut::OpenReader
+                        | BookPageOut::Deleted { .. } => AppMsg::CloseBookDialog,
                     });
 
                 let title = self

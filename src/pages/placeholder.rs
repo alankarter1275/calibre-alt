@@ -66,12 +66,9 @@ fn placeholder_copy(item: NavItem) -> String {
              Placeholder until the sources framework exists."
             .into(),
         NavItem::Shelves => {
-            "Shelves (smart & manual) return in P4 with real rules over your library."
-                .into()
+            "Shelves (smart & manual) return in P4 with real rules over your library.".into()
         }
-        NavItem::Settings => {
-            "Use the Settings page for paths. Extra options come later.".into()
-        }
+        NavItem::Settings => "Use the Settings page for paths. Extra options come later.".into(),
         other => format!("{} — placeholder page.", other.label()),
     }
 }
