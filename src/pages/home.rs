@@ -1,5 +1,5 @@
 use crate::db::{Catalog, SortKey};
-use crate::widgets::book_row::build_book_row;
+use crate::widgets::book_row::build_book_grid;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::rc::Rc;
@@ -31,26 +31,20 @@ impl SimpleComponent for HomePageModel {
                 set_halign: gtk::Align::Start,
             },
             gtk::Label {
-                set_label: "Continue reading and recently added books.",
+                set_label: "Continue reading and recently added · click cover = float · Ctrl+click = full page",
                 add_css_class: "kalam-page-sub",
                 set_halign: gtk::Align::Start,
             },
 
+            gtk::Label {
+                set_label: "CONTINUE",
+                add_css_class: "kalam-section-label",
+                set_halign: gtk::Align::Start,
+            },
+
+            #[name = "continue_host"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
-                add_css_class: "kalam-home-continue",
-                set_spacing: 10,
-
-                gtk::Label {
-                    set_label: "CONTINUE",
-                    add_css_class: "kalam-section-label",
-                    set_halign: gtk::Align::Start,
-                },
-
-                #[name = "continue_host"]
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                },
             },
 
             gtk::Label {
@@ -77,54 +71,58 @@ impl SimpleComponent for HomePageModel {
 
         let books = catalog.list_books(SortKey::Added, "").unwrap_or_default();
 
-        let cont = books
+        let cont: Vec<_> = books
             .iter()
-            .find(|b| b.progress > 0 && b.progress < 100)
-            .or_else(|| books.first());
-
-        if let Some(book) = cont {
-            let id = book.id;
-            let s1 = sender.clone();
-            let s2 = sender.clone();
-            let row = build_book_row(
-                book,
-                move || {
-                    s1.output(HomeOut::OpenBook { book_id: id }).ok();
-                },
-                move || {
-                    s2.output(HomeOut::OpenBookDialog { book_id: id }).ok();
-                },
-            );
-            widgets.continue_host.append(&row);
+            .filter(|b| b.progress > 0 && b.progress < 100)
+            .cloned()
+            .take(1)
+            .collect();
+        let cont = if cont.is_empty() {
+            books.iter().take(1).cloned().collect::<Vec<_>>()
         } else {
+            cont
+        };
+
+        if cont.is_empty() {
             let empty = gtk::Label::new(Some(
                 "Nothing to continue — import books from My Library → All books.",
             ));
             empty.add_css_class("kalam-placeholder");
             empty.set_wrap(true);
             widgets.continue_host.append(&empty);
-        }
-
-        for book in books.iter().take(6) {
-            let id = book.id;
-            let s1 = sender.clone();
+        } else {
+            let s = sender.clone();
             let s2 = sender.clone();
-            let row = build_book_row(
-                book,
-                move || {
-                    s1.output(HomeOut::OpenBook { book_id: id }).ok();
+            let grid = build_book_grid(
+                &cont,
+                move |id| {
+                    s.output(HomeOut::OpenBook { book_id: id }).ok();
                 },
-                move || {
+                move |id| {
                     s2.output(HomeOut::OpenBookDialog { book_id: id }).ok();
                 },
             );
-            widgets.recent_host.append(&row);
+            widgets.continue_host.append(&grid);
         }
 
-        if books.is_empty() {
+        let recent: Vec<_> = books.iter().take(12).cloned().collect();
+        if recent.is_empty() {
             let empty = gtk::Label::new(Some("Your library is empty."));
             empty.add_css_class("kalam-muted");
             widgets.recent_host.append(&empty);
+        } else {
+            let s = sender.clone();
+            let s2 = sender.clone();
+            let grid = build_book_grid(
+                &recent,
+                move |id| {
+                    s.output(HomeOut::OpenBook { book_id: id }).ok();
+                },
+                move |id| {
+                    s2.output(HomeOut::OpenBookDialog { book_id: id }).ok();
+                },
+            );
+            widgets.recent_host.append(&grid);
         }
 
         ComponentParts { model, widgets }

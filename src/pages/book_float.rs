@@ -1,7 +1,7 @@
-//! Compact floating book detail — Suwayomi-style panel adapted for ebooks.
+//! Floating book detail — Suwayomi-style panel adapted for ebooks.
 //!
-//! Layout: cover left · title/badges/actions/description right · ✕ close.
-//! Not a full-height tall window.
+//! Tall cover column on the left (full panel height), details on the right,
+//! Read button bottom-right. ✕ / Q / Esc to close.
 
 use crate::db::Catalog;
 use crate::models::Book;
@@ -13,15 +13,9 @@ use std::rc::Rc;
 #[derive(Debug)]
 pub enum BookFloatOut {
     Close,
-    OpenFullPage {
-        book_id: i64,
-    },
-    OpenReader {
-        book_id: i64,
-    },
-    Deleted {
-        book_id: i64,
-    },
+    OpenFullPage { book_id: i64 },
+    OpenReader { book_id: i64 },
+    Deleted { book_id: i64 },
 }
 
 #[derive(Debug)]
@@ -47,171 +41,199 @@ impl Component for BookFloatModel {
     view! {
         #[root]
         gtk::Box {
-            set_orientation: gtk::Orientation::Vertical,
+            set_orientation: gtk::Orientation::Horizontal,
             add_css_class: "kalam-float",
             set_hexpand: true,
             set_vexpand: true,
 
-            // ── Title bar: title + ✕ ──────────────────────────────
+            // ── LEFT: full-height cover column ───────────────────
+            #[name = "cover_col"]
             gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                add_css_class: "kalam-float-header",
-                set_spacing: 12,
-
-                #[name = "header_title"]
-                gtk::Label {
-                    add_css_class: "kalam-float-title",
-                    set_halign: gtk::Align::Start,
-                    set_hexpand: true,
-                    set_ellipsize: gtk::pango::EllipsizeMode::End,
-                },
-
-                gtk::Button {
-                    set_label: "✕",
-                    add_css_class: "kalam-float-close",
-                    set_tooltip_text: Some("Close (Q)"),
-                    connect_clicked => BookFloatMsg::Close,
-                },
-            },
-
-            // ── Body: cover | details ─────────────────────────────
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                add_css_class: "kalam-float-body",
-                set_spacing: 20,
-                set_hexpand: true,
+                set_orientation: gtk::Orientation::Vertical,
+                add_css_class: "kalam-float-cover-col",
                 set_vexpand: true,
+                set_hexpand: false,
+                set_valign: gtk::Align::Fill,
 
-                // Left column: cover + secondary actions
+                #[name = "cover_host"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 10,
-                    set_valign: gtk::Align::Start,
+                    add_css_class: "kalam-float-cover-host",
+                    set_vexpand: true,
+                    set_hexpand: true,
+                    set_halign: gtk::Align::Fill,
+                    set_valign: gtk::Align::Fill,
+                },
 
-                    #[name = "cover_host"]
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        add_css_class: "kalam-float-cover-host",
-                    },
+                // Side actions under cover (like Suwayomi left rail)
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    add_css_class: "kalam-float-side-actions",
+                    set_spacing: 4,
 
                     gtk::Button {
-                        set_label: "Open full page",
+                        set_label: "  Open full page",
                         add_css_class: "kalam-float-side-btn",
                         set_halign: gtk::Align::Fill,
                         connect_clicked => BookFloatMsg::OpenFull,
                     },
                     gtk::Button {
-                        set_label: "Remove",
+                        set_label: "  Remove",
                         add_css_class: "kalam-float-side-btn",
                         set_halign: gtk::Align::Fill,
                         connect_clicked => BookFloatMsg::Remove,
                     },
                 },
+            },
 
-                // Right column: badges, read, description, meta
+            // ── RIGHT: details ───────────────────────────────────
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                add_css_class: "kalam-float-right",
+                set_hexpand: true,
+                set_vexpand: true,
+                set_spacing: 0,
+
+                // Header: title + ✕
                 gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 10,
-                    set_hexpand: true,
-                    set_valign: gtk::Align::Start,
+                    set_orientation: gtk::Orientation::Horizontal,
+                    add_css_class: "kalam-float-header",
+                    set_spacing: 12,
 
-                    #[name = "badges"]
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 6,
+                    #[name = "header_title"]
+                    gtk::Label {
+                        add_css_class: "kalam-float-title",
                         set_halign: gtk::Align::Start,
+                        set_hexpand: true,
+                        set_ellipsize: gtk::pango::EllipsizeMode::End,
+                    },
+
+                    gtk::Button {
+                        set_label: "✕",
+                        add_css_class: "kalam-float-close",
+                        set_tooltip_text: Some("Close (Q)"),
+                        connect_clicked => BookFloatMsg::Close,
+                    },
+                },
+
+                gtk::ScrolledWindow {
+                    set_hexpand: true,
+                    set_vexpand: true,
+                    set_hscrollbar_policy: gtk::PolicyType::Never,
+                    set_propagate_natural_height: true,
+
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        add_css_class: "kalam-float-body",
+                        set_spacing: 12,
+                        set_hexpand: true,
+
+                        #[name = "badges"]
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 6,
+                            set_halign: gtk::Align::Start,
+                        },
+
+                        #[name = "description"]
+                        gtk::Label {
+                            add_css_class: "kalam-float-desc",
+                            set_halign: gtk::Align::Start,
+                            set_wrap: true,
+                            set_xalign: 0.0,
+                            set_max_width_chars: 56,
+                        },
+
+                        #[name = "tags"]
+                        gtk::FlowBox {
+                            set_selection_mode: gtk::SelectionMode::None,
+                            set_max_children_per_line: 8,
+                            set_min_children_per_line: 2,
+                            set_column_spacing: 6,
+                            set_row_spacing: 6,
+                            set_halign: gtk::Align::Start,
+                        },
+
+                        gtk::Grid {
+                            set_column_spacing: 28,
+                            set_row_spacing: 8,
+                            set_margin_top: 8,
+
+                            attach[0, 0, 1, 1] = &gtk::Label {
+                                set_label: "STATUS",
+                                add_css_class: "kalam-float-meta-key",
+                                set_halign: gtk::Align::Start,
+                            },
+                            #[name = "status_val"]
+                            attach[1, 0, 1, 1] = &gtk::Label {
+                                add_css_class: "kalam-float-meta-val",
+                                set_halign: gtk::Align::Start,
+                            },
+                            attach[2, 0, 1, 1] = &gtk::Label {
+                                set_label: "AUTHOR",
+                                add_css_class: "kalam-float-meta-key",
+                                set_halign: gtk::Align::Start,
+                            },
+                            #[name = "author_val"]
+                            attach[3, 0, 1, 1] = &gtk::Label {
+                                add_css_class: "kalam-float-meta-val",
+                                set_halign: gtk::Align::Start,
+                                set_ellipsize: gtk::pango::EllipsizeMode::End,
+                                set_max_width_chars: 28,
+                            },
+
+                            attach[0, 1, 1, 1] = &gtk::Label {
+                                set_label: "SERIES",
+                                add_css_class: "kalam-float-meta-key",
+                                set_halign: gtk::Align::Start,
+                            },
+                            #[name = "series_val"]
+                            attach[1, 1, 1, 1] = &gtk::Label {
+                                add_css_class: "kalam-float-meta-val",
+                                set_halign: gtk::Align::Start,
+                                set_ellipsize: gtk::pango::EllipsizeMode::End,
+                                set_max_width_chars: 28,
+                            },
+                            attach[2, 1, 1, 1] = &gtk::Label {
+                                set_label: "FORMAT",
+                                add_css_class: "kalam-float-meta-key",
+                                set_halign: gtk::Align::Start,
+                            },
+                            #[name = "format_val"]
+                            attach[3, 1, 1, 1] = &gtk::Label {
+                                add_css_class: "kalam-float-meta-val",
+                                set_halign: gtk::Align::Start,
+                            },
+
+                            attach[0, 2, 1, 1] = &gtk::Label {
+                                set_label: "ADDED",
+                                add_css_class: "kalam-float-meta-key",
+                                set_halign: gtk::Align::Start,
+                            },
+                            #[name = "added_val"]
+                            attach[1, 2, 1, 1] = &gtk::Label {
+                                add_css_class: "kalam-float-meta-val",
+                                set_halign: gtk::Align::Start,
+                            },
+                        },
+                    },
+                },
+
+                // Footer: Read bottom-right
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    add_css_class: "kalam-float-footer",
+
+                    gtk::Box {
+                        set_hexpand: true,
                     },
 
                     gtk::Button {
                         set_label: "▶  Read",
                         add_css_class: "kalam-primary-btn",
                         add_css_class: "kalam-float-read",
-                        set_halign: gtk::Align::Start,
+                        set_halign: gtk::Align::End,
                         connect_clicked => BookFloatMsg::Read,
-                    },
-
-                    #[name = "description"]
-                    gtk::Label {
-                        add_css_class: "kalam-float-desc",
-                        set_halign: gtk::Align::Start,
-                        set_wrap: true,
-                        set_xalign: 0.0,
-                        set_max_width_chars: 52,
-                        set_lines: 5,
-                        set_ellipsize: gtk::pango::EllipsizeMode::End,
-                    },
-
-                    #[name = "tags"]
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        set_spacing: 6,
-                        set_halign: gtk::Align::Start,
-                    },
-
-                    // Meta grid
-                    gtk::Grid {
-                        set_column_spacing: 16,
-                        set_row_spacing: 6,
-                        set_margin_top: 6,
-
-                        attach[0, 0, 1, 1] = &gtk::Label {
-                            set_label: "STATUS",
-                            add_css_class: "kalam-float-meta-key",
-                            set_halign: gtk::Align::Start,
-                        },
-                        #[name = "status_val"]
-                        attach[1, 0, 1, 1] = &gtk::Label {
-                            add_css_class: "kalam-float-meta-val",
-                            set_halign: gtk::Align::Start,
-                        },
-
-                        attach[0, 1, 1, 1] = &gtk::Label {
-                            set_label: "AUTHOR",
-                            add_css_class: "kalam-float-meta-key",
-                            set_halign: gtk::Align::Start,
-                        },
-                        #[name = "author_val"]
-                        attach[1, 1, 1, 1] = &gtk::Label {
-                            add_css_class: "kalam-float-meta-val",
-                            set_halign: gtk::Align::Start,
-                            set_ellipsize: gtk::pango::EllipsizeMode::End,
-                            set_max_width_chars: 36,
-                        },
-
-                        attach[0, 2, 1, 1] = &gtk::Label {
-                            set_label: "SERIES",
-                            add_css_class: "kalam-float-meta-key",
-                            set_halign: gtk::Align::Start,
-                        },
-                        #[name = "series_val"]
-                        attach[1, 2, 1, 1] = &gtk::Label {
-                            add_css_class: "kalam-float-meta-val",
-                            set_halign: gtk::Align::Start,
-                            set_ellipsize: gtk::pango::EllipsizeMode::End,
-                            set_max_width_chars: 36,
-                        },
-
-                        attach[0, 3, 1, 1] = &gtk::Label {
-                            set_label: "FORMAT",
-                            add_css_class: "kalam-float-meta-key",
-                            set_halign: gtk::Align::Start,
-                        },
-                        #[name = "format_val"]
-                        attach[1, 3, 1, 1] = &gtk::Label {
-                            add_css_class: "kalam-float-meta-val",
-                            set_halign: gtk::Align::Start,
-                        },
-
-                        attach[0, 4, 1, 1] = &gtk::Label {
-                            set_label: "ADDED",
-                            add_css_class: "kalam-float-meta-key",
-                            set_halign: gtk::Align::Start,
-                        },
-                        #[name = "added_val"]
-                        attach[1, 4, 1, 1] = &gtk::Label {
-                            add_css_class: "kalam-float-meta-val",
-                            set_halign: gtk::Align::Start,
-                        },
                     },
                 },
             },
@@ -228,7 +250,6 @@ impl Component for BookFloatModel {
         let widgets = view_output!();
         fill(&widgets, model.book.as_ref());
 
-        // q / Escape close when the panel has focus
         let key = gtk::EventControllerKey::new();
         let s = sender.clone();
         key.connect_key_pressed(move |_, keyval, _keycode, _state| {
@@ -304,17 +325,21 @@ fn fill(widgets: &BookFloatModelWidgets, book: Option<&Book>) {
     let Some(book) = book else {
         widgets.header_title.set_label("Book not found");
         widgets.description.set_label("This book was removed.");
-        widgets.cover_host.append(&cover_widget(None, 140, 210));
+        let ph = cover_widget(None, 220, 330);
+        ph.add_css_class("kalam-float-cover");
+        widgets.cover_host.append(&ph);
         return;
     };
 
     widgets.header_title.set_label(&book.title);
 
-    let cover = cover_widget(book.cover_path.as_deref(), 140, 210);
+    // Large cover filling the left column
+    let cover = cover_widget(book.cover_path.as_deref(), 220, 330);
     cover.add_css_class("kalam-float-cover");
+    cover.set_hexpand(true);
+    cover.set_vexpand(true);
     widgets.cover_host.append(&cover);
 
-    // Badges: format + progress
     let fmt = chip(book.format.as_str(), "kalam-badge-format");
     widgets.badges.append(&fmt);
 
@@ -330,15 +355,16 @@ fn fill(widgets: &BookFloatModelWidgets, book: Option<&Book>) {
     };
     widgets.badges.append(&prog);
 
-    if book.description.trim().is_empty() {
+    let desc = crate::epub::strip_html(&book.description);
+    if desc.trim().is_empty() {
         widgets.description.set_label("No description.");
     } else {
-        widgets.description.set_label(&book.description);
+        widgets.description.set_label(&desc);
     }
 
-    for tag in book.tags.iter().take(8) {
+    for tag in book.tags.iter().take(12) {
         let t = chip(tag, "kalam-chip");
-        widgets.tags.append(&t);
+        widgets.tags.insert(&t, -1);
     }
 
     let status = if book.progress >= 100 {
@@ -354,7 +380,6 @@ fn fill(widgets: &BookFloatModelWidgets, book: Option<&Book>) {
         .series_val
         .set_label(book.series.as_deref().unwrap_or("—"));
     widgets.format_val.set_label(book.format.as_str());
-    // Show date part of ISO timestamp if present
     let added = book.added_at.split('T').next().unwrap_or(&book.added_at);
     widgets.added_val.set_label(added);
 }

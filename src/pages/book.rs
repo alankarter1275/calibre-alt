@@ -269,10 +269,11 @@ fn fill(
         ));
         progress.set_label(&format!("{}% complete", book.progress));
         path.set_label(&book.file_path.to_string_lossy());
-        if book.description.trim().is_empty() {
+        let desc = crate::epub::strip_html(&book.description);
+        if desc.trim().is_empty() {
             description.set_label("No description.");
         } else {
-            description.set_label(&book.description);
+            description.set_label(&desc);
         }
         for tag in &book.tags {
             let chip = gtk::Label::new(Some(tag));

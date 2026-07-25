@@ -1,66 +1,89 @@
-//! A single book row used in shelf lists and library sections.
+//! Cover cards for library grids (click → float, Ctrl+click → full page).
 
 use crate::models::Book;
+use gtk::gdk::ModifierType;
 use gtk::prelude::*;
 use std::path::Path;
 
-/// Build a clickable book row.
-pub fn build_book_row(
+/// Build a cover-first card.
+///
+/// * plain click → `on_float` (floating panel)  
+/// * Ctrl+click → `on_full` (full book page)
+pub fn build_book_card(
     book: &Book,
-    on_open: impl Fn() + 'static,
-    on_dialog: impl Fn() + 'static,
+    on_full: impl Fn() + 'static,
+    on_float: impl Fn() + 'static,
 ) -> gtk::Box {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 14);
-    row.add_css_class("kalam-book-row");
-    row.set_hexpand(true);
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    card.add_css_class("kalam-book-card");
+    card.set_hexpand(false);
+    card.set_halign(gtk::Align::Center);
 
-    let cover = cover_widget(book.cover_path.as_deref(), 48, 72);
-    cover.set_valign(gtk::Align::Center);
-    row.append(&cover);
+    let cover = cover_widget(book.cover_path.as_deref(), 140, 210);
+    cover.add_css_class("kalam-book-card-cover");
+    cover.set_halign(gtk::Align::Center);
 
-    let text = gtk::Box::new(gtk::Orientation::Vertical, 3);
-    text.set_hexpand(true);
-    text.set_valign(gtk::Align::Center);
+    // Clickable overlay on the whole card
+    let click = gtk::GestureClick::new();
+    click.set_button(1);
+    click.connect_released(move |gesture, _n, _x, _y| {
+        let state = gesture.current_event_state();
+        if state.contains(ModifierType::CONTROL_MASK) {
+            on_full();
+        } else {
+            on_float();
+        }
+    });
+    card.add_controller(click);
+    card.set_cursor_from_name(Some("pointer"));
+    card.set_tooltip_text(Some("Click: float · Ctrl+click: full page"));
 
     let title = gtk::Label::new(Some(&book.title));
-    title.add_css_class("kalam-book-title");
-    title.set_halign(gtk::Align::Start);
+    title.add_css_class("kalam-book-card-title");
+    title.set_halign(gtk::Align::Center);
+    title.set_justify(gtk::Justification::Center);
     title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    title.set_max_width_chars(18);
+    title.set_lines(2);
+    title.set_wrap(true);
 
     let author = gtk::Label::new(Some(book.authors_display()));
-    author.add_css_class("kalam-book-author");
-    author.set_halign(gtk::Align::Start);
+    author.add_css_class("kalam-book-card-author");
+    author.set_halign(gtk::Align::Center);
+    author.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    author.set_max_width_chars(18);
 
-    let meta = gtk::Label::new(Some(&format!(
-        "{} · {}%",
-        book.format.as_str(),
-        book.progress
-    )));
-    meta.add_css_class("kalam-progress");
-    meta.set_halign(gtk::Align::Start);
+    card.append(&cover);
+    card.append(&title);
+    card.append(&author);
+    card
+}
 
-    text.append(&title);
-    text.append(&author);
-    text.append(&meta);
-    row.append(&text);
+/// FlowBox of cover cards.
+pub fn build_book_grid(
+    books: &[Book],
+    on_full: impl Fn(i64) + Clone + 'static,
+    on_float: impl Fn(i64) + Clone + 'static,
+) -> gtk::FlowBox {
+    let grid = gtk::FlowBox::new();
+    grid.set_valign(gtk::Align::Start);
+    grid.set_max_children_per_line(8);
+    grid.set_min_children_per_line(2);
+    grid.set_selection_mode(gtk::SelectionMode::None);
+    grid.set_homogeneous(true);
+    grid.set_column_spacing(16);
+    grid.set_row_spacing(18);
+    grid.set_hexpand(true);
+    grid.add_css_class("kalam-book-grid");
 
-    let actions = gtk::Box::new(gtk::Orientation::Vertical, 6);
-    actions.set_valign(gtk::Align::Center);
-
-    let open_btn = gtk::Button::with_label("Open");
-    open_btn.add_css_class("kalam-secondary-btn");
-    open_btn.connect_clicked(move |_| on_open());
-
-    let float_btn = gtk::Button::with_label("Float");
-    float_btn.add_css_class("kalam-secondary-btn");
-    float_btn.set_tooltip_text(Some("Open in a floating window"));
-    float_btn.connect_clicked(move |_| on_dialog());
-
-    actions.append(&open_btn);
-    actions.append(&float_btn);
-    row.append(&actions);
-
-    row
+    for book in books {
+        let id = book.id;
+        let f1 = on_full.clone();
+        let f2 = on_float.clone();
+        let card = build_book_card(book, move || f1(id), move || f2(id));
+        grid.insert(&card, -1);
+    }
+    grid
 }
 
 pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
@@ -69,6 +92,7 @@ pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
             let picture = gtk::Picture::for_filename(path);
             picture.set_content_fit(gtk::ContentFit::Cover);
             picture.set_size_request(w, h);
+            picture.set_can_shrink(false);
             picture.add_css_class("kalam-cover-img");
             return picture.upcast();
         }

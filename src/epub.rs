@@ -78,7 +78,7 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     } else {
         meta.authors.join(", ")
     };
-    let description = meta.description.clone().unwrap_or_default();
+    let description = strip_html(&meta.description.clone().unwrap_or_default());
     let series = meta.series.clone();
     let tags = meta.subjects.clone();
 
@@ -372,4 +372,35 @@ fn from_hex(c: u8) -> Option<u8> {
 
 fn collapse_ws(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// EPUB OPF descriptions are often HTML (`<p>`, `<b>`, …). Strip to plain text.
+pub fn strip_html(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut in_tag = false;
+    for ch in input.chars() {
+        if in_tag {
+            if ch == '>' {
+                in_tag = false;
+            }
+            continue;
+        }
+        if ch == '<' {
+            in_tag = true;
+            continue;
+        }
+        out.push(ch);
+    }
+    // Common entities after tag strip
+    let plain = out
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#39;", "'")
+        .replace("&nbsp;", " ")
+        .replace("<br/>", " ")
+        .replace("<br />", " ");
+    collapse_ws(&plain)
 }

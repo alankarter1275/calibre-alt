@@ -195,42 +195,18 @@ window.kalam-window {
 }
 
 /* ── book row in shelf list ─────────────────────────── */
-.kalam-book-row {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 12px;
-    padding: 12px 14px;
-    margin-bottom: 8px;
-}
-
-.kalam-book-row:hover {
-    border-color: @kalam_accent;
-    background: @kalam_surface_2;
-}
-
 .kalam-cover-placeholder {
     background: linear-gradient(145deg, #2a3148, #1a1f30);
-    border-radius: 6px;
+    border-radius: 8px;
     min-width: 48px;
     min-height: 72px;
     border: 1px solid @kalam_border;
 }
 
 .kalam-cover-img {
-    border-radius: 6px;
+    border-radius: 8px;
     border: 1px solid @kalam_border;
     background: @kalam_surface_2;
-}
-
-.kalam-book-title {
-    font-weight: 600;
-    font-size: 0.98rem;
-    color: @kalam_text;
-}
-
-.kalam-book-author {
-    font-size: 0.84rem;
-    color: @kalam_text_dim;
 }
 
 .kalam-progress {
@@ -332,40 +308,116 @@ window.kalam-window {
     margin-top: 8px;
 }
 
-/* ── floating book panel (Suwayomi-style compact) ───── */
+/* ── cover cards (library grid) ─────────────────────── */
+.kalam-book-grid {
+    margin-top: 4px;
+}
+
+.kalam-book-card {
+    padding: 6px;
+    border-radius: 12px;
+    background: transparent;
+    transition: background 120ms ease;
+}
+
+.kalam-book-card:hover {
+    background: @kalam_surface;
+}
+
+.kalam-book-card-cover {
+    border-radius: 8px;
+    border: 1px solid @kalam_border;
+    box-shadow: 0 6px 18px alpha(#000, 0.35);
+}
+
+.kalam-book-card-title {
+    font-weight: 600;
+    font-size: 0.88rem;
+    color: @kalam_text;
+    margin-top: 2px;
+}
+
+.kalam-book-card-author {
+    font-size: 0.78rem;
+    color: @kalam_text_dim;
+}
+
+/* ── floating book panel (Suwayomi-style) ───────────── */
 window.kalam-float-window {
     background: @kalam_surface;
-    border-radius: 14px;
+    border-radius: 16px;
     border: 1px solid @kalam_border;
+    box-shadow: 0 24px 64px alpha(#000, 0.55);
 }
 
 .kalam-float {
     background: @kalam_surface;
     padding: 0;
-    min-width: 620px;
-    min-height: 340px;
+    min-width: 820px;
+    min-height: 480px;
+}
+
+/* Left column: cover fills height */
+.kalam-float-cover-col {
+    background: #0c0e14;
+    border-right: 1px solid @kalam_border;
+    min-width: 240px;
+    max-width: 260px;
+    padding: 14px 14px 10px 14px;
+}
+
+.kalam-float-cover-host {
+    border-radius: 10px;
+    min-height: 320px;
+}
+
+.kalam-float-cover {
+    border-radius: 10px;
+    border: 1px solid @kalam_border;
+    background: @kalam_surface_2;
+}
+
+.kalam-float-side-actions {
+    margin-top: 10px;
+}
+
+.kalam-float-side-btn {
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: @kalam_text_dim;
+    padding: 8px 6px;
+    font-size: 0.84rem;
+}
+
+.kalam-float-side-btn:hover {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+}
+
+.kalam-float-right {
+    background: @kalam_surface;
 }
 
 .kalam-float-header {
-    padding: 14px 16px 10px 18px;
-    border-bottom: 1px solid @kalam_border;
+    padding: 16px 18px 12px 20px;
 }
 
 .kalam-float-title {
-    font-size: 1.25rem;
+    font-size: 1.45rem;
     font-weight: 700;
     color: @kalam_text;
 }
 
 .kalam-float-close {
-    min-width: 32px;
-    min-height: 32px;
+    min-width: 34px;
+    min-height: 34px;
     padding: 0;
     border-radius: 8px;
     background: transparent;
     border: none;
     color: @kalam_text_dim;
-    font-size: 1rem;
+    font-size: 1.05rem;
 }
 
 .kalam-float-close:hover {
@@ -374,43 +426,24 @@ window.kalam-float-window {
 }
 
 .kalam-float-body {
-    padding: 16px 18px 18px 18px;
+    padding: 4px 22px 12px 20px;
 }
 
-.kalam-float-cover-host {
-    border-radius: 8px;
-}
-
-.kalam-float-cover {
-    border-radius: 8px;
-    border: 1px solid @kalam_border;
-    background: @kalam_surface_2;
-}
-
-.kalam-float-side-btn {
-    background: transparent;
-    border: 1px solid @kalam_border;
-    border-radius: 8px;
-    color: @kalam_text_dim;
-    padding: 7px 10px;
-    font-size: 0.82rem;
-}
-
-.kalam-float-side-btn:hover {
-    border-color: @kalam_accent;
-    color: @kalam_text;
-    background: @kalam_accent_dim;
+.kalam-float-footer {
+    padding: 10px 20px 16px 20px;
+    border-top: 1px solid @kalam_border;
 }
 
 .kalam-float-read {
-    padding: 10px 22px;
-    font-size: 0.95rem;
+    padding: 11px 26px;
+    font-size: 0.98rem;
+    min-width: 120px;
 }
 
 .kalam-float-desc {
-    font-size: 0.88rem;
+    font-size: 0.9rem;
     color: @kalam_text_dim;
-    line-height: 1.45;
+    line-height: 1.5;
 }
 
 .kalam-float-meta-key {
@@ -421,7 +454,7 @@ window.kalam-float-window {
 }
 
 .kalam-float-meta-val {
-    font-size: 0.88rem;
+    font-size: 0.9rem;
     color: @kalam_text;
 }
 

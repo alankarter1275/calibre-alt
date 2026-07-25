@@ -1,9 +1,9 @@
-//! My Library → All books: search, sort, import, list.
+//! My Library → All books: search, sort, import, cover grid.
 
 use crate::db::{Catalog, SortKey};
 use crate::epub;
 use crate::models::Book;
-use crate::widgets::book_row::build_book_row;
+use crate::widgets::book_row::build_book_grid;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::path::PathBuf;
@@ -21,7 +21,6 @@ pub enum AllBooksMsg {
     SortChanged(SortKey),
     PickFiles,
     FilesChosen(Vec<PathBuf>),
-    Delete { book_id: i64 },
 }
 
 pub struct AllBooksModel {
@@ -52,7 +51,6 @@ impl Component for AllBooksModel {
                 set_halign: gtk::Align::Start,
             },
 
-            // Toolbar
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_spacing: 8,
@@ -90,6 +88,7 @@ impl Component for AllBooksModel {
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 0,
+                set_hexpand: true,
             },
         }
     }
@@ -125,10 +124,8 @@ impl Component for AllBooksModel {
                     s.input(AllBooksMsg::SortChanged(k));
                 }
             });
-            // group toggles
             widgets.sort_box.append(&btn);
         }
-        // Make sort buttons exclusive
         group_toggles(&widgets.sort_box);
 
         rebuild_list(&widgets.list, &model.books, &sender);
@@ -169,7 +166,6 @@ impl Component for AllBooksModel {
                 dialog.set_filters(Some(&filters));
 
                 let s = sender.clone();
-                // Find parent window
                 let window = root.root().and_then(|r| r.downcast::<gtk::Window>().ok());
                 let window = window.or_else(|| {
                     relm4::main_application()
@@ -231,14 +227,6 @@ impl Component for AllBooksModel {
                     }
                 );
             }
-            AllBooksMsg::Delete { book_id } => {
-                if let Err(err) = self.catalog.delete_book(book_id) {
-                    self.status = format!("Delete failed: {err}");
-                } else {
-                    self.reload();
-                    self.status = "Book removed.".into();
-                }
-            }
         }
 
         rebuild_list(&widgets.list, &self.books, &sender);
@@ -252,10 +240,7 @@ impl AllBooksModel {
             Ok(books) => {
                 let n = books.len();
                 self.books = books;
-                // Keep one-shot action messages; otherwise show count.
-                let keep = self.status.starts_with("Import done")
-                    || self.status.starts_with("Book removed")
-                    || self.status.starts_with("Delete failed");
+                let keep = self.status.starts_with("Import done");
                 if !keep {
                     self.status = status_line(n, &self.query);
                 }
@@ -273,7 +258,10 @@ fn status_line(n: usize, query: &str) -> String {
         if n == 0 {
             "No books yet — import an EPUB to get started.".into()
         } else {
-            format!("{n} book{}", if n == 1 { "" } else { "s" })
+            format!(
+                "{n} book{} · click cover for float · Ctrl+click for full page",
+                if n == 1 { "" } else { "s" }
+            )
         }
     } else {
         format!("{n} result{}", if n == 1 { "" } else { "s" })
@@ -303,7 +291,7 @@ fn rebuild_list(list: &gtk::Box, books: &[Book], sender: &ComponentSender<AllBoo
 
     if books.is_empty() {
         let empty = gtk::Label::new(Some(
-            "Your library is empty.\nClick “+ Import EPUB” or drop files here later.",
+            "Your library is empty.\nClick “+ Import EPUB” to add books.",
         ));
         empty.add_css_class("kalam-placeholder");
         empty.set_wrap(true);
@@ -311,27 +299,16 @@ fn rebuild_list(list: &gtk::Box, books: &[Book], sender: &ComponentSender<AllBoo
         return;
     }
 
-    for book in books {
-        let id = book.id;
-        let s1 = sender.clone();
-        let s2 = sender.clone();
-        let s3 = sender.clone();
-        let row = build_book_row(
-            book,
-            move || {
-                s1.output(AllBooksOut::OpenBook { book_id: id }).ok();
-            },
-            move || {
-                s2.output(AllBooksOut::OpenBookDialog { book_id: id }).ok();
-            },
-        );
-
-        let del = gtk::Button::with_label("Remove");
-        del.add_css_class("kalam-secondary-btn");
-        del.connect_clicked(move |_| {
-            s3.input(AllBooksMsg::Delete { book_id: id });
-        });
-        row.append(&del);
-        list.append(&row);
-    }
+    let s = sender.clone();
+    let s2 = sender.clone();
+    let grid = build_book_grid(
+        books,
+        move |id| {
+            s.output(AllBooksOut::OpenBook { book_id: id }).ok();
+        },
+        move |id| {
+            s2.output(AllBooksOut::OpenBookDialog { book_id: id }).ok();
+        },
+    );
+    list.append(&grid);
 }

@@ -462,12 +462,12 @@ impl Component for AppModel {
                     .map(|b| b.title)
                     .unwrap_or_else(|| "Book".into());
 
-                // Compact landscape panel — not a tall phone-style window.
+                // Bigger Suwayomi-style panel: tall cover left, details right.
                 let window = gtk::Window::builder()
                     .title(title)
                     .transient_for(root)
-                    .default_width(720)
-                    .default_height(400)
+                    .default_width(900)
+                    .default_height(560)
                     .resizable(true)
                     .modal(false)
                     .decorated(false)
@@ -476,7 +476,10 @@ impl Component for AppModel {
                 window.add_css_class("kalam-float-window");
                 window.set_child(Some(ctrl.widget()));
 
-                // q / Escape on the window itself as well
+                // Start slightly small + transparent, then expand (card → panel feel).
+                window.set_opacity(0.0);
+                window.set_default_size(720, 420);
+
                 let key = gtk::EventControllerKey::new();
                 let s_key = sender.clone();
                 key.connect_key_pressed(move |_, keyval, _, _| {
@@ -496,6 +499,31 @@ impl Component for AppModel {
 
                 window.present();
                 ctrl.widget().grab_focus();
+
+                // Animate open: fade + grow toward target size.
+                let win_anim = window.clone();
+                let mut step = 0u32;
+                gtk::glib::timeout_add_local(std::time::Duration::from_millis(16), move || {
+                    step += 1;
+                    let t = (step as f64 / 12.0).min(1.0);
+                    // ease-out
+                    let e = 1.0 - (1.0 - t) * (1.0 - t);
+                    win_anim.set_opacity(e);
+                    let w = 720.0 + (900.0 - 720.0) * e;
+                    let h = 420.0 + (560.0 - 420.0) * e;
+                    win_anim.set_default_size(w as i32, h as i32);
+                    // Also resize if already mapped
+                    win_anim.set_size_request(w as i32, h as i32);
+                    if step >= 12 {
+                        win_anim.set_opacity(1.0);
+                        win_anim.set_size_request(-1, -1);
+                        win_anim.set_default_size(900, 560);
+                        gtk::glib::ControlFlow::Break
+                    } else {
+                        gtk::glib::ControlFlow::Continue
+                    }
+                });
+
                 self.floating = Some(FloatingBook {
                     _controller: ctrl,
                     window,
