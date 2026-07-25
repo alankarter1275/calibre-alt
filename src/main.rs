@@ -13,12 +13,14 @@ use app::AppModel;
 use relm4::{gtk, RelmApp};
 
 fn main() {
+    // RelmApp::new initializes GTK; only touch Settings after that.
+    let app = RelmApp::new("app.kalam.Kalam");
+
     // Prefer a dark baseline until the custom design system lands.
     if let Some(settings) = gtk::Settings::default() {
         settings.set_gtk_application_prefer_dark_theme(true);
     }
 
-    let app = RelmApp::new("app.kalam.Kalam");
     relm4::set_global_css(style::APP_CSS);
     app.run::<AppModel>(());
 }
