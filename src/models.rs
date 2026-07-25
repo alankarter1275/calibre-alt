@@ -255,8 +255,7 @@ fn build_sample_books() -> Vec<Book> {
             tags: vec!["mythology".into(), "literary".into()],
             format: "EPUB",
             progress: 15,
-            description: "The witch of Aiaia, retold. Demo book for shelf grids."
-                .into(),
+            description: "The witch of Aiaia, retold. Demo book for shelf grids.".into(),
             added: "2026-03-20",
             path: "library/0003/book.epub",
         },
@@ -268,8 +267,7 @@ fn build_sample_books() -> Vec<Book> {
             tags: vec!["scifi".into(), "classics".into()],
             format: "EPUB",
             progress: 0,
-            description: "Gender, politics, and ice on Gethen. Sample entry."
-                .into(),
+            description: "Gender, politics, and ice on Gethen. Sample entry.".into(),
             added: "2026-04-01",
             path: "library/0004/book.epub",
         },
@@ -281,8 +279,7 @@ fn build_sample_books() -> Vec<Book> {
             tags: vec!["nonfiction".into(), "math".into()],
             format: "PDF",
             progress: 5,
-            description: "A metaphorical fugue on minds and machines. Demo PDF."
-                .into(),
+            description: "A metaphorical fugue on minds and machines. Demo PDF.".into(),
             added: "2025-11-18",
             path: "library/0005/book.pdf",
         },
@@ -374,11 +371,6 @@ pub fn shelf_by_id(id: u64) -> Option<&'static Shelf> {
 
 pub fn books_on_shelf(shelf_id: u64) -> Vec<&'static Book> {
     shelf_by_id(shelf_id)
-        .map(|s| {
-            s.book_ids
-                .iter()
-                .filter_map(|id| book_by_id(*id))
-                .collect()
-        })
+        .map(|s| s.book_ids.iter().filter_map(|id| book_by_id(*id)).collect())
         .unwrap_or_default()
 }

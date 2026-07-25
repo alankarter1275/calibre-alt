@@ -56,26 +56,18 @@ fn placeholder_copy(item: NavItem) -> String {
              Nothing in the queue yet — this module activates with online sources."
                 .into()
         }
-        NavItem::Comics => {
-            "Comics hub (local CBZ/CBR first, catalogue later).\n\n\
+        NavItem::Comics => "Comics hub (local CBZ/CBR first, catalogue later).\n\n\
              Suwayomi-like browsing will live here without leaving Kalam."
-                .into()
-        }
-        NavItem::Ao3 => {
-            "Archive of Our Own — search, download EPUB, track updates.\n\n\
+            .into(),
+        NavItem::Ao3 => "Archive of Our Own — search, download EPUB, track updates.\n\n\
              Source adapter lands after the local reader is solid."
-                .into()
-        }
-        NavItem::Fanfiction => {
-            "Other fanfiction sources, same adapter pattern as AO3.\n\n\
+            .into(),
+        NavItem::Fanfiction => "Other fanfiction sources, same adapter pattern as AO3.\n\n\
              Placeholder until the sources framework exists."
-                .into()
-        }
-        NavItem::Settings => {
-            "Library path, appearance, dictionary packs, keyboard shortcuts.\n\n\
+            .into(),
+        NavItem::Settings => "Library path, appearance, dictionary packs, keyboard shortcuts.\n\n\
              Config will live in ~/.config/kalam/."
-                .into()
-        }
+            .into(),
         other => format!("{} — placeholder page.", other.label()),
     }
 }

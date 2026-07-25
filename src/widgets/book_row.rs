@@ -34,10 +34,7 @@ pub fn build_book_row(
     author.add_css_class("kalam-book-author");
     author.set_halign(gtk::Align::Start);
 
-    let meta = gtk::Label::new(Some(&format!(
-        "{} · {}%",
-        book.format, book.progress
-    )));
+    let meta = gtk::Label::new(Some(&format!("{} · {}%", book.format, book.progress)));
     meta.add_css_class("kalam-progress");
     meta.set_halign(gtk::Align::Start);
 

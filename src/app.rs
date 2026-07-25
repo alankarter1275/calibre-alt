@@ -77,59 +77,67 @@ impl AppModel {
     fn build_page(route: &Route, sender: &ComponentSender<Self>) -> PageSlot {
         match route {
             Route::Module(NavItem::Home) => {
-                let ctrl = HomePageModel::builder().launch(()).forward(
-                    sender.input_sender(),
-                    |out| match out {
-                        HomeOut::OpenBook { book_id } => AppMsg::Push(Route::BookPage { book_id }),
-                        HomeOut::OpenBookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
-                    },
-                );
+                let ctrl =
+                    HomePageModel::builder()
+                        .launch(())
+                        .forward(sender.input_sender(), |out| match out {
+                            HomeOut::OpenBook { book_id } => {
+                                AppMsg::Push(Route::BookPage { book_id })
+                            }
+                            HomeOut::OpenBookDialog { book_id } => {
+                                AppMsg::OpenBookDialog { book_id }
+                            }
+                        });
                 PageSlot::Home(ctrl)
             }
             Route::Module(NavItem::Library) => {
-                let ctrl = LibraryPageModel::builder().launch(()).forward(
-                    sender.input_sender(),
-                    |out| match out {
-                        LibraryOut::OpenSection(sec) => AppMsg::Push(Route::LibrarySection(sec)),
-                    },
-                );
+                let ctrl =
+                    LibraryPageModel::builder()
+                        .launch(())
+                        .forward(sender.input_sender(), |out| match out {
+                            LibraryOut::OpenSection(sec) => {
+                                AppMsg::Push(Route::LibrarySection(sec))
+                            }
+                        });
                 PageSlot::Library(ctrl)
             }
             Route::LibrarySection(section) => {
                 PageSlot::Widget(build_library_section_page(*section, sender.clone()))
             }
             Route::Module(NavItem::Shelves) | Route::ShelvesGrid => {
-                let ctrl = ShelvesGridModel::builder().launch(()).forward(
-                    sender.input_sender(),
-                    |out| match out {
-                        ShelvesOut::OpenShelf { shelf_id } => {
-                            AppMsg::Push(Route::ShelfDetail { shelf_id })
-                        }
-                    },
-                );
+                let ctrl =
+                    ShelvesGridModel::builder()
+                        .launch(())
+                        .forward(sender.input_sender(), |out| match out {
+                            ShelvesOut::OpenShelf { shelf_id } => {
+                                AppMsg::Push(Route::ShelfDetail { shelf_id })
+                            }
+                        });
                 PageSlot::Shelves(ctrl)
             }
             Route::ShelfDetail { shelf_id } => {
-                let ctrl = ShelfDetailModel::builder()
-                    .launch(*shelf_id)
-                    .forward(sender.input_sender(), |out| match out {
+                let ctrl = ShelfDetailModel::builder().launch(*shelf_id).forward(
+                    sender.input_sender(),
+                    |out| match out {
                         ShelfDetailOut::OpenBook { book_id } => {
                             AppMsg::Push(Route::BookPage { book_id })
                         }
                         ShelfDetailOut::OpenBookDialog { book_id } => {
                             AppMsg::OpenBookDialog { book_id }
                         }
-                    });
+                    },
+                );
                 PageSlot::ShelfDetail(ctrl)
             }
             Route::BookPage { book_id } => {
-                let ctrl = BookPageModel::builder()
-                    .launch(*book_id)
-                    .forward(sender.input_sender(), |out| match out {
+                let ctrl = BookPageModel::builder().launch(*book_id).forward(
+                    sender.input_sender(),
+                    |out| match out {
                         BookPageOut::Back => AppMsg::Back,
                         // Reader is P2 — keep the user on the book page.
                         BookPageOut::OpenReader => AppMsg::CloseBookDialog,
-                    });
+                    },
+                );
                 PageSlot::Book(ctrl)
             }
             Route::Module(item) => {
@@ -366,11 +374,12 @@ impl Component for AppModel {
                     f.window.close();
                 }
 
-                let ctrl = BookPageModel::builder()
-                    .launch(book_id)
-                    .forward(sender.input_sender(), |out| match out {
+                let ctrl = BookPageModel::builder().launch(book_id).forward(
+                    sender.input_sender(),
+                    |out| match out {
                         BookPageOut::Back | BookPageOut::OpenReader => AppMsg::CloseBookDialog,
-                    });
+                    },
+                );
 
                 let title = book_by_id(book_id)
                     .map(|b| b.title.clone())
