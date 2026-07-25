@@ -137,8 +137,7 @@ pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
     // AspectFrame with obey_child=false forces the geometric ratio and
     // ignores the child's natural size (the root cause of the banner bug).
     let ratio = w as f32 / h as f32; // width/height; for 128×204 ≈ 0.627
-    let aspect = gtk::AspectFrame::new(None, 0.5, 0.5, ratio, false);
-    aspect.set_obey_child(false);
+    let aspect = gtk::AspectFrame::new(0.5, 0.5, ratio, false);
     aspect.set_size_request(w, h);
     aspect.set_hexpand(false);
     aspect.set_vexpand(false);
