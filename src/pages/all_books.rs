@@ -88,7 +88,9 @@ impl Component for AllBooksModel {
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 0,
-                set_hexpand: true,
+                set_halign: gtk::Align::Start,
+                set_hexpand: false,
+                set_vexpand: false,
             },
         }
     }

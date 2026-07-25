@@ -336,7 +336,7 @@ fn fill(widgets: &BookFloatModelWidgets, book: Option<&Book>) {
     let Some(book) = book else {
         widgets.header_title.set_label("Book not found");
         widgets.description.set_label("This book was removed.");
-        let ph = cover_widget(None, 200, 300);
+        let ph = cover_widget(None, 200, 320);
         ph.add_css_class("kalam-float-cover");
         widgets.cover_host.append(&ph);
         return;
@@ -344,8 +344,10 @@ fn fill(widgets: &BookFloatModelWidgets, book: Option<&Book>) {
 
     widgets.header_title.set_label(&book.title);
 
-    // Fixed portrait cover in the left column (does not blow up the panel).
-    let cover = cover_widget(book.cover_path.as_deref(), 200, 300);
+    // Fixed 1.6:1 portrait cover in the left column.
+    let cover_w = 200;
+    let cover_h = (cover_w as f64 * 1.6) as i32;
+    let cover = cover_widget(book.cover_path.as_deref(), cover_w, cover_h);
     cover.add_css_class("kalam-float-cover");
     cover.set_hexpand(false);
     cover.set_vexpand(false);

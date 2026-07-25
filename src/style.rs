@@ -202,10 +202,6 @@ window.kalam-window {
     padding: 0;
 }
 
-.kalam-cover-frame > * {
-    border-radius: 7px;
-}
-
 .kalam-cover-placeholder {
     background: linear-gradient(145deg, #2a3148, #1a1f30);
     border-radius: 8px;
@@ -213,6 +209,10 @@ window.kalam-window {
 
 .kalam-cover-img {
     border-radius: 8px;
+}
+
+.kalam-book-grid-shell {
+    /* stops parents from stretching the card grid */
 }
 
 .kalam-progress {

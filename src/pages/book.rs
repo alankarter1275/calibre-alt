@@ -250,7 +250,9 @@ fn fill(
     }
 
     if let Some(book) = book {
-        let cover = cover_widget(book.cover_path.as_deref(), 160, 240);
+        let cover_w = 160;
+        let cover_h = (cover_w as f64 * 1.6) as i32;
+        let cover = cover_widget(book.cover_path.as_deref(), cover_w, cover_h);
         cover.add_css_class("kalam-detail-cover");
         cover.set_hexpand(false);
         cover.set_vexpand(false);
@@ -283,7 +285,7 @@ fn fill(
             tags_box.append(&chip);
         }
     } else {
-        let cover = cover_widget(None, 160, 240);
+        let cover = cover_widget(None, 160, 256);
         cover_host.append(&cover);
         title.set_label("Book not found");
         author.set_label("");

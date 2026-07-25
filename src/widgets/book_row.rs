@@ -1,25 +1,37 @@
 //! Cover cards for library grids (click → float, Ctrl+click → full page).
 //!
-//! Uses a plain Grid of fixed-size cards — FlowBox was stretching children
-//! full-width when only one/few books were present.
+//! Cover image area is always a fixed portrait box (height:width = 1.6:1).
+//! Title and author sit *below* that box and are not part of the cover ratio.
 
 use crate::models::Book;
 use gtk::gdk::ModifierType;
 use gtk::prelude::*;
 use std::path::Path;
 
-/// Portrait ebook cover on cards (~2:3).
-pub const CARD_COVER_W: i32 = 120;
-pub const CARD_COVER_H: i32 = 180;
-/// Total card width including padding (must match cover + a little margin).
-pub const CARD_WIDTH: i32 = 128;
-/// How many cards per row in library grids.
+/// Cover width in CSS px. Height = width × COVER_ASPECT (1.6:1 portrait).
+pub const COVER_W: i32 = 128;
+/// height / width — standard ebook cover proportion.
+pub const COVER_ASPECT: f64 = 1.6;
+pub const COVER_H: i32 = (COVER_W as f64 * COVER_ASPECT) as i32; // 204
+
+/// Card width (cover + small padding). Card height is cover + text below.
+pub const CARD_W: i32 = COVER_W + 8;
+/// Approximate text block under the cover (title 2 lines + author).
+const TEXT_BLOCK_H: i32 = 52;
+pub const CARD_H: i32 = COVER_H + TEXT_BLOCK_H + 12;
+
 const GRID_COLS: i32 = 6;
 
-/// Build a cover-first card at fixed size.
+/// Build a cover-first card.
 ///
-/// * plain click → `on_float`
-/// * Ctrl+click → `on_full`
+/// Layout:
+/// ```text
+/// ┌──────────┐  ← cover only, fixed 1.6:1
+/// │  cover   │
+/// └──────────┘
+///   Title       ← outside the cover ratio
+///   Author
+/// ```
 pub fn build_book_card(
     book: &Book,
     on_full: impl Fn() + 'static,
@@ -31,14 +43,12 @@ pub fn build_book_card(
     card.set_vexpand(false);
     card.set_halign(gtk::Align::Start);
     card.set_valign(gtk::Align::Start);
-    // Hard clamp — parent cannot grow this widget past CARD_WIDTH.
-    card.set_size_request(CARD_WIDTH, CARD_COVER_H + 56);
+    card.set_size_request(CARD_W, CARD_H);
 
-    let cover = cover_widget(book.cover_path.as_deref(), CARD_COVER_W, CARD_COVER_H);
+    // Cover slot — always COVER_W × COVER_H, even with no image / no metadata.
+    let cover = cover_widget(book.cover_path.as_deref(), COVER_W, COVER_H);
     cover.add_css_class("kalam-book-card-cover");
     cover.set_halign(gtk::Align::Center);
-    cover.set_hexpand(false);
-    cover.set_vexpand(false);
 
     let click = gtk::GestureClick::new();
     click.set_button(1);
@@ -59,19 +69,21 @@ pub fn build_book_card(
     title.set_halign(gtk::Align::Center);
     title.set_justify(gtk::Justification::Center);
     title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    title.set_max_width_chars(13);
-    title.set_width_chars(13);
+    title.set_max_width_chars(14);
+    title.set_width_chars(14);
     title.set_lines(2);
     title.set_wrap(true);
     title.set_hexpand(false);
+    title.set_size_request(COVER_W, -1);
 
     let author = gtk::Label::new(Some(book.authors_display()));
     author.add_css_class("kalam-book-card-author");
     author.set_halign(gtk::Align::Center);
     author.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    author.set_max_width_chars(13);
-    author.set_width_chars(13);
+    author.set_max_width_chars(14);
+    author.set_width_chars(14);
     author.set_hexpand(false);
+    author.set_size_request(COVER_W, -1);
 
     card.append(&cover);
     card.append(&title);
@@ -79,12 +91,12 @@ pub fn build_book_card(
     card
 }
 
-/// Fixed-size cover grid (no FlowBox — avoids full-width stretch).
+/// Horizontal grid of fixed-size cards inside a non-expanding shell.
 pub fn build_book_grid(
     books: &[Book],
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
-) -> gtk::Grid {
+) -> gtk::Box {
     let grid = gtk::Grid::new();
     grid.set_column_spacing(16);
     grid.set_row_spacing(18);
@@ -96,6 +108,14 @@ pub fn build_book_grid(
     grid.set_vexpand(false);
     grid.add_css_class("kalam-book-grid");
 
+    // Outer shell stops parents from stretching the card grid full-width.
+    let shell = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    shell.set_halign(gtk::Align::Start);
+    shell.set_valign(gtk::Align::Start);
+    shell.set_hexpand(false);
+    shell.set_vexpand(false);
+    shell.add_css_class("kalam-book-grid-shell");
+
     for (i, book) in books.iter().enumerate() {
         let id = book.id;
         let f1 = on_full.clone();
@@ -105,50 +125,68 @@ pub fn build_book_grid(
         let row = (i as i32) / GRID_COLS;
         grid.attach(&card, col, row, 1, 1);
     }
-    grid
+    shell.append(&grid);
+    shell
 }
 
-/// Fixed-size cover (or placeholder). Allocation is hard-capped at `w`×`h`.
+/// Cover slot: always exactly `w`×`h` (portrait 1.6:1 for library cards).
+///
+/// Images are **scaled down at load** so GTK never sees a huge natural size.
+/// Missing covers get the same empty frame — same dimensions always.
 pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
-    let frame = gtk::Frame::new(None);
-    frame.add_css_class("kalam-cover-frame");
-    frame.set_size_request(w, h);
-    frame.set_hexpand(false);
-    frame.set_vexpand(false);
-    frame.set_halign(gtk::Align::Center);
-    frame.set_valign(gtk::Align::Center);
-    // Frame won't grow with parent when hexpand is false + size_request set.
+    // AspectFrame with obey_child=false forces the geometric ratio and
+    // ignores the child's natural size (the root cause of the banner bug).
+    let ratio = w as f32 / h as f32; // width/height; for 128×204 ≈ 0.627
+    let aspect = gtk::AspectFrame::new(None, 0.5, 0.5, ratio, false);
+    aspect.set_obey_child(false);
+    aspect.set_size_request(w, h);
+    aspect.set_hexpand(false);
+    aspect.set_vexpand(false);
+    aspect.set_halign(gtk::Align::Center);
+    aspect.set_valign(gtk::Align::Center);
+    aspect.add_css_class("kalam-cover-frame");
+    aspect.set_overflow(gtk::Overflow::Hidden);
 
     if let Some(path) = path {
         if path.is_file() {
-            // GdkTexture + Picture: keep paintable, clamp allocation via Frame size.
-            if let Ok(texture) = gtk::gdk::Texture::from_filename(path) {
-                let picture = gtk::Picture::for_paintable(&texture);
-                picture.set_content_fit(gtk::ContentFit::Cover);
-                picture.set_can_shrink(true);
-                picture.set_size_request(w, h);
-                picture.set_hexpand(false);
-                picture.set_vexpand(false);
-                picture.add_css_class("kalam-cover-img");
-                frame.set_child(Some(&picture));
-                return frame.upcast();
+            if let Some(picture) = load_scaled_picture(path, w, h) {
+                aspect.set_child(Some(&picture));
+                return aspect.upcast();
             }
-            // Fallback if texture load fails
-            let picture = gtk::Picture::for_filename(path);
-            picture.set_content_fit(gtk::ContentFit::Cover);
-            picture.set_can_shrink(true);
-            picture.set_size_request(w, h);
-            picture.set_hexpand(false);
-            picture.set_vexpand(false);
-            picture.add_css_class("kalam-cover-img");
-            frame.set_child(Some(&picture));
-            return frame.upcast();
         }
     }
 
     let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
     placeholder.add_css_class("kalam-cover-placeholder");
-    placeholder.set_size_request(w, h);
-    frame.set_child(Some(&placeholder));
-    frame.upcast()
+    placeholder.set_hexpand(true);
+    placeholder.set_vexpand(true);
+    aspect.set_child(Some(&placeholder));
+    aspect.upcast()
+}
+
+/// Decode image and scale to exactly w×h so natural size cannot blow the layout.
+fn load_scaled_picture(path: &Path, w: i32, h: i32) -> Option<gtk::Picture> {
+    use gtk::gdk_pixbuf::InterpType;
+    use gtk::gdk_pixbuf::Pixbuf;
+
+    // Scale to fill the box (cover crop): load larger side then we'll clip via AspectFrame.
+    // from_file_at_scale with preserve_aspect_ratio=false stretches to exact w×h —
+    // good enough for a thumbnail and guarantees natural size = w×h.
+    let pixbuf = Pixbuf::from_file_at_scale(path, w, h, false).ok()?;
+    // Ensure exact size even if loader rounded.
+    let pixbuf = if pixbuf.width() != w || pixbuf.height() != h {
+        pixbuf.scale_simple(w, h, InterpType::Bilinear)?
+    } else {
+        pixbuf
+    };
+
+    let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
+    let picture = gtk::Picture::for_paintable(&texture);
+    picture.set_content_fit(gtk::ContentFit::Fill);
+    picture.set_can_shrink(true);
+    picture.set_size_request(w, h);
+    picture.set_hexpand(false);
+    picture.set_vexpand(false);
+    picture.add_css_class("kalam-cover-img");
+    Some(picture)
 }

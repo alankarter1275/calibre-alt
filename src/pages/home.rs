@@ -42,9 +42,13 @@ impl SimpleComponent for HomePageModel {
                 set_halign: gtk::Align::Start,
             },
 
+            // Must NOT expand — otherwise a single card can be given the full row width.
             #[name = "continue_host"]
             gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
+                set_orientation: gtk::Orientation::Horizontal,
+                set_halign: gtk::Align::Start,
+                set_hexpand: false,
+                set_vexpand: false,
             },
 
             gtk::Label {
@@ -56,6 +60,9 @@ impl SimpleComponent for HomePageModel {
             #[name = "recent_host"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
+                set_halign: gtk::Align::Start,
+                set_hexpand: false,
+                set_vexpand: false,
                 set_spacing: 0,
             },
         }
