@@ -62,7 +62,10 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     let meta = parse_epub_meta(source)?;
     let title = meta
         .title
-        .filter(|t| !t.trim().is_empty())
+        .as_ref()
+        .map(|t| t.trim())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_string())
         .unwrap_or_else(|| {
             source
                 .file_stem()
