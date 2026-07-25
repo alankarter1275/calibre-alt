@@ -195,17 +195,21 @@ window.kalam-window {
 }
 
 /* ── book row in shelf list ─────────────────────────── */
+.kalam-cover-frame {
+    border-radius: 8px;
+    border: 1px solid @kalam_border;
+    background: @kalam_surface_2;
+}
+
 .kalam-cover-placeholder {
     background: linear-gradient(145deg, #2a3148, #1a1f30);
     border-radius: 8px;
-    min-width: 48px;
-    min-height: 72px;
-    border: 1px solid @kalam_border;
+    min-width: 0;
+    min-height: 0;
 }
 
 .kalam-cover-img {
     border-radius: 8px;
-    border: 1px solid @kalam_border;
     background: @kalam_surface_2;
 }
 
@@ -216,11 +220,7 @@ window.kalam-window {
 
 /* ── book detail page ───────────────────────────────── */
 .kalam-detail-cover {
-    background: linear-gradient(145deg, #3a4570, #1c2238);
     border-radius: 10px;
-    min-width: 160px;
-    min-height: 240px;
-    border: 1px solid @kalam_border;
 }
 
 .kalam-detail-title {
@@ -313,11 +313,18 @@ window.kalam-window {
     margin-top: 4px;
 }
 
+/* Prevent FlowBox from stretching the single/few children */
+flowbox.kalam-book-grid > flowboxchild {
+    padding: 0;
+    min-width: 0;
+    min-height: 0;
+}
+
 .kalam-book-card {
-    padding: 6px;
-    border-radius: 12px;
+    padding: 4px;
+    border-radius: 10px;
     background: transparent;
-    transition: background 120ms ease;
+    max-width: 132px;
 }
 
 .kalam-book-card:hover {
@@ -326,19 +333,18 @@ window.kalam-window {
 
 .kalam-book-card-cover {
     border-radius: 8px;
-    border: 1px solid @kalam_border;
-    box-shadow: 0 6px 18px alpha(#000, 0.35);
+    box-shadow: 0 4px 12px alpha(#000, 0.35);
 }
 
 .kalam-book-card-title {
     font-weight: 600;
-    font-size: 0.88rem;
+    font-size: 0.82rem;
     color: @kalam_text;
     margin-top: 2px;
 }
 
 .kalam-book-card-author {
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     color: @kalam_text_dim;
 }
 
@@ -357,24 +363,22 @@ window.kalam-float-window {
     min-height: 480px;
 }
 
-/* Left column: cover fills height */
+/* Left column: fixed-width cover rail */
 .kalam-float-cover-col {
     background: #0c0e14;
     border-right: 1px solid @kalam_border;
-    min-width: 240px;
-    max-width: 260px;
-    padding: 14px 14px 10px 14px;
+    min-width: 228px;
+    max-width: 228px;
+    padding: 16px 14px 12px 14px;
 }
 
 .kalam-float-cover-host {
     border-radius: 10px;
-    min-height: 320px;
+    min-height: 0;
 }
 
 .kalam-float-cover {
     border-radius: 10px;
-    border: 1px solid @kalam_border;
-    background: @kalam_surface_2;
 }
 
 .kalam-float-side-actions {

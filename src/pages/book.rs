@@ -252,6 +252,8 @@ fn fill(
     if let Some(book) = book {
         let cover = cover_widget(book.cover_path.as_deref(), 160, 240);
         cover.add_css_class("kalam-detail-cover");
+        cover.set_hexpand(false);
+        cover.set_vexpand(false);
         cover_host.append(&cover);
 
         title.set_label(&book.title);
