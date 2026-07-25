@@ -7,7 +7,7 @@ use anyhow::{anyhow, Context, Result};
 use roxmltree::Document;
 use std::fs::{self, File};
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use uuid::Uuid;
 use zip::ZipArchive;
 
@@ -74,9 +74,9 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     } else {
         meta.authors.join(", ")
     };
-    let description = meta.description.unwrap_or_default();
-    let series = meta.series;
-    let tags = meta.subjects;
+    let description = meta.description.clone().unwrap_or_default();
+    let series = meta.series.clone();
+    let tags = meta.subjects.clone();
 
     let uuid = Uuid::new_v4().to_string();
     let dest_dir = book_dir(&uuid);

@@ -12,7 +12,7 @@ mod style;
 mod widgets;
 
 use app::AppModel;
-use relm4::{gtk, RelmApp};
+use relm4::RelmApp;
 
 fn main() {
     // RelmApp::new initializes GTK; only touch Adwaita/GTK after that.
