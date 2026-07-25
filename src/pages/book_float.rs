@@ -13,9 +13,15 @@ use std::rc::Rc;
 #[derive(Debug)]
 pub enum BookFloatOut {
     Close,
-    OpenFullPage { book_id: i64 },
-    OpenReader { book_id: i64 },
-    Deleted { book_id: i64 },
+    OpenFullPage {
+        book_id: i64,
+    },
+    OpenReader {
+        book_id: i64,
+    },
+    Deleted {
+        book_id: i64,
+    },
 }
 
 #[derive(Debug)]

@@ -446,15 +446,10 @@ impl Component for AppModel {
                 let ctrl = BookFloatModel::builder()
                     .launch((self.catalog.clone(), book_id))
                     .forward(sender.input_sender(), |out| match out {
-                        BookFloatOut::Close | BookFloatOut::OpenReader { .. } => {
-                            AppMsg::CloseBookDialog
-                        }
-                        BookFloatOut::Deleted { .. } => AppMsg::CloseBookDialog,
+                        BookFloatOut::Close
+                        | BookFloatOut::OpenReader { .. }
+                        | BookFloatOut::Deleted { .. } => AppMsg::CloseBookDialog,
                         BookFloatOut::OpenFullPage { book_id } => {
-                            // Close float then open full page — handled below via two msgs.
-                            // We only get one output; close and push.
-                            // Use a combined path in update by returning Close then Push is hard;
-                            // push after close via dedicated handling.
                             AppMsg::FloatOpenFull { book_id }
                         }
                     });
