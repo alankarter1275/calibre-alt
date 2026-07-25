@@ -4,6 +4,8 @@ use relm4::prelude::*;
 
 #[derive(Debug)]
 pub enum BookPageOut {
+    /// Reserved for an in-page back control (top bar handles Back today).
+    #[allow(dead_code)]
     Back,
     OpenReader,
 }

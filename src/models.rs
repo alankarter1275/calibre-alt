@@ -190,6 +190,8 @@ pub struct Shelf {
     pub description: String,
     pub smart: bool,
     pub book_ids: Vec<u64>,
+    /// Reserved for shelf card accent colour in a later UI pass.
+    #[allow(dead_code)]
     pub accent: String,
 }
 
