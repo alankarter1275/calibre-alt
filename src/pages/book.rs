@@ -141,7 +141,10 @@ impl SimpleComponent for BookPageModel {
             },
 
             gtk::Label {
-                set_label: "Reader, highlights, and dictionary land in P2–P3. This page is the permanent home for a book's metadata and actions.",
+                set_label: concat!(
+                    "Reader, highlights, and dictionary land in P2–P3. ",
+                    "This page is the permanent home for a book's metadata and actions.",
+                ),
                 add_css_class: "kalam-placeholder",
                 set_wrap: true,
                 set_margin_top: 8,

@@ -12,7 +12,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Primary: plain Ubuntu + apt GTK4 headers (most reliable on GitHub-hosted runners).
   build:
     name: build (ubuntu)
     runs-on: ubuntu-latest
@@ -40,7 +39,15 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: rustfmt
-        run: cargo fmt --all -- --check
+        run: |
+          cargo fmt --all
+          if git diff --quiet; then
+            echo "rustfmt: clean"
+          else
+            echo "::error::rustfmt would change files — full diff follows"
+            git --no-pager diff
+            exit 1
+          fi
 
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings

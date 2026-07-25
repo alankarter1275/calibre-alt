@@ -29,7 +29,10 @@ impl SimpleComponent for ShelvesGridModel {
                 set_halign: gtk::Align::Start,
             },
             gtk::Label {
-                set_label: "Smart filters and manual collections — like Calibre virtual libraries.",
+                set_label: concat!(
+                    "Smart filters and manual collections — ",
+                    "like Calibre virtual libraries.",
+                ),
                 add_css_class: "kalam-page-sub",
                 set_halign: gtk::Align::Start,
             },

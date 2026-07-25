@@ -5,8 +5,8 @@ use gtk::prelude::*;
 
 /// Build a clickable book row.
 ///
-/// * `on_open` — open the full book page in the main column  
-/// * `on_dialog` — open the floating book window  
+/// * `on_open` — open the full book page in the main column
+/// * `on_dialog` — open the floating book window
 pub fn build_book_row(
     book: &Book,
     on_open: impl Fn() + 'static,
