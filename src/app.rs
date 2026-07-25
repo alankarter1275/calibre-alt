@@ -5,6 +5,7 @@ use crate::models::{LibrarySection, NavItem, Route};
 use crate::pages::{
     all_books::{AllBooksModel, AllBooksOut},
     book::{BookPageModel, BookPageOut},
+    book_float::{BookFloatModel, BookFloatOut},
     home::{HomeOut, HomePageModel},
     library::{LibraryOut, LibraryPageModel},
     placeholder::PlaceholderPageModel,
@@ -22,6 +23,8 @@ pub enum AppMsg {
     Push(Route),
     Back,
     OpenBookDialog { book_id: i64 },
+    /// Close float and open full book page in the main column.
+    FloatOpenFull { book_id: i64 },
     CloseBookDialog,
 }
 
@@ -54,7 +57,7 @@ impl PageSlot {
 }
 
 struct FloatingBook {
-    _controller: Controller<BookPageModel>,
+    _controller: Controller<BookFloatModel>,
     window: gtk::Window,
 }
 
@@ -436,15 +439,24 @@ impl Component for AppModel {
             }
             AppMsg::OpenBookDialog { book_id } => {
                 if let Some(f) = self.floating.take() {
+                    f.window.set_child(None::<&gtk::Widget>);
                     f.window.close();
                 }
 
-                let ctrl = BookPageModel::builder()
+                let ctrl = BookFloatModel::builder()
                     .launch((self.catalog.clone(), book_id))
                     .forward(sender.input_sender(), |out| match out {
-                        BookPageOut::Back
-                        | BookPageOut::OpenReader
-                        | BookPageOut::Deleted { .. } => AppMsg::CloseBookDialog,
+                        BookFloatOut::Close | BookFloatOut::OpenReader { .. } => {
+                            AppMsg::CloseBookDialog
+                        }
+                        BookFloatOut::Deleted { .. } => AppMsg::CloseBookDialog,
+                        BookFloatOut::OpenFullPage { book_id } => {
+                            // Close float then open full page — handled below via two msgs.
+                            // We only get one output; close and push.
+                            // Use a combined path in update by returning Close then Push is hard;
+                            // push after close via dedicated handling.
+                            AppMsg::FloatOpenFull { book_id }
+                        }
                     });
 
                 let title = self
@@ -455,15 +467,32 @@ impl Component for AppModel {
                     .map(|b| b.title)
                     .unwrap_or_else(|| "Book".into());
 
+                // Compact landscape panel — not a tall phone-style window.
                 let window = gtk::Window::builder()
                     .title(title)
                     .transient_for(root)
-                    .default_width(560)
-                    .default_height(680)
+                    .default_width(720)
+                    .default_height(400)
+                    .resizable(true)
                     .modal(false)
+                    .decorated(false)
                     .build();
                 window.add_css_class("kalam-window");
+                window.add_css_class("kalam-float-window");
                 window.set_child(Some(ctrl.widget()));
+
+                // q / Escape on the window itself as well
+                let key = gtk::EventControllerKey::new();
+                let s_key = sender.clone();
+                key.connect_key_pressed(move |_, keyval, _, _| {
+                    use gtk::gdk::Key;
+                    if keyval == Key::q || keyval == Key::Q || keyval == Key::Escape {
+                        s_key.input(AppMsg::CloseBookDialog);
+                        return gtk::glib::Propagation::Stop;
+                    }
+                    gtk::glib::Propagation::Proceed
+                });
+                window.add_controller(key);
 
                 let s = sender.clone();
                 window.connect_destroy(move |_| {
@@ -471,14 +500,26 @@ impl Component for AppModel {
                 });
 
                 window.present();
+                ctrl.widget().grab_focus();
                 self.floating = Some(FloatingBook {
                     _controller: ctrl,
                     window,
                 });
             }
+            AppMsg::FloatOpenFull { book_id } => {
+                if let Some(f) = self.floating.take() {
+                    f.window.set_child(None::<&gtk::Widget>);
+                    f.window.close();
+                }
+                self.swap_page(
+                    &widgets.content_host,
+                    Route::BookPage { book_id },
+                    true,
+                    &sender,
+                );
+            }
             AppMsg::CloseBookDialog => {
                 if let Some(f) = self.floating.take() {
-                    // Unset child before close so controllers drop cleanly.
                     f.window.set_child(None::<&gtk::Widget>);
                     f.window.close();
                 }

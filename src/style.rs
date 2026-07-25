@@ -331,4 +331,137 @@ window.kalam-window {
     margin-bottom: 10px;
     margin-top: 8px;
 }
+
+/* ── floating book panel (Suwayomi-style compact) ───── */
+window.kalam-float-window {
+    background: @kalam_surface;
+    border-radius: 14px;
+    border: 1px solid @kalam_border;
+}
+
+.kalam-float {
+    background: @kalam_surface;
+    padding: 0;
+    min-width: 620px;
+    min-height: 340px;
+}
+
+.kalam-float-header {
+    padding: 14px 16px 10px 18px;
+    border-bottom: 1px solid @kalam_border;
+}
+
+.kalam-float-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-float-close {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    border-radius: 8px;
+    background: transparent;
+    border: none;
+    color: @kalam_text_dim;
+    font-size: 1rem;
+}
+
+.kalam-float-close:hover {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+}
+
+.kalam-float-body {
+    padding: 16px 18px 18px 18px;
+}
+
+.kalam-float-cover-host {
+    border-radius: 8px;
+}
+
+.kalam-float-cover {
+    border-radius: 8px;
+    border: 1px solid @kalam_border;
+    background: @kalam_surface_2;
+}
+
+.kalam-float-side-btn {
+    background: transparent;
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
+    color: @kalam_text_dim;
+    padding: 7px 10px;
+    font-size: 0.82rem;
+}
+
+.kalam-float-side-btn:hover {
+    border-color: @kalam_accent;
+    color: @kalam_text;
+    background: @kalam_accent_dim;
+}
+
+.kalam-float-read {
+    padding: 10px 22px;
+    font-size: 0.95rem;
+}
+
+.kalam-float-desc {
+    font-size: 0.88rem;
+    color: @kalam_text_dim;
+    line-height: 1.45;
+}
+
+.kalam-float-meta-key {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: @kalam_text_dim;
+}
+
+.kalam-float-meta-val {
+    font-size: 0.88rem;
+    color: @kalam_text;
+}
+
+.kalam-badge-format {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #0e1016;
+    background: #7cffc3;
+    border-radius: 6px;
+    padding: 3px 8px;
+}
+
+.kalam-badge-unread {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #1a1208;
+    background: #ffc37c;
+    border-radius: 6px;
+    padding: 3px 8px;
+}
+
+.kalam-badge-progress {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #0e1016;
+    background: @kalam_accent;
+    border-radius: 6px;
+    padding: 3px 8px;
+}
+
+.kalam-badge-done {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #e8eaf0;
+    background: #3a4560;
+    border-radius: 6px;
+    padding: 3px 8px;
+}
 "#;
