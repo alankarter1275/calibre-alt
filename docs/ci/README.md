@@ -5,39 +5,37 @@ GitHub App has the `workflows` permission. The workflow body lives here instead:
 
 **Canonical file:** [`github-actions-ci.yml`](./github-actions-ci.yml)
 
-## What you need to do (once)
+## Working agreement (manual CI handoff)
 
-Pick **one** of these:
+The Arena agent **cannot** create or update `.github/workflows/*` (GitHub App
+has no `workflows` permission, and that cannot be toggled from your side).
 
-### Option A — Copy on your machine (simplest)
+So we do this forever:
+
+| Situation | Who | What |
+|-----------|-----|------|
+| Need a workflow change | Agent | Writes the full file under `docs/ci/` and gives you paste/copy steps |
+| Apply workflow change | **You** | Copy into `.github/workflows/ci.yml` (CLI or GitHub UI) and push |
+| CI fails | Agent | Says which run/step failed |
+| Share the failure | **You** | Paste the failed step log (or the “Diff in …” / rustc error block) |
+| Fix code | Agent | Pushes code fixes (not workflow files) |
+
+You already enabled CI once (Option C). Good — leave it.
+
+### If the agent asks you to update the workflow
 
 ```bash
 cd /path/to/calibre-alt
 git checkout arena/019f9529-calibre-alt
 git pull
-
-mkdir -p .github/workflows
 cp docs/ci/github-actions-ci.yml .github/workflows/ci.yml
-
 git add .github/workflows/ci.yml
-git commit -m "ci: enable GitHub Actions compile workflow"
+git commit -m "ci: update workflow"
 git push origin arena/019f9529-calibre-alt
 ```
 
-Then open the **Actions** tab on GitHub and confirm the **CI** run is green.
-
-### Option B — Grant the Arena GitHub App `workflows` permission
-
-In the GitHub App / installation settings used by Arena, allow **Workflows:
-Read and write**. After that, ask the agent to move the file back to
-`.github/workflows/ci.yml` and push — future CI edits won’t need you.
-
-### Option C — GitHub UI
-
-1. Repo → **Add file** → **Create new file**
-2. Path: `.github/workflows/ci.yml`
-3. Paste contents of `docs/ci/github-actions-ci.yml`
-4. Commit to this branch
+Or GitHub UI: edit `.github/workflows/ci.yml` and paste the contents of
+`docs/ci/github-actions-ci.yml`.
 
 ## What CI does
 

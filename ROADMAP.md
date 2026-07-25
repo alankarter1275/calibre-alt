@@ -10,11 +10,14 @@ change requests).
 
 | Who | Does |
 |-----|------|
-| **Agent** | Implements the phase, keeps CI green, updates this doc |
+| **Agent** | Implements the phase, pushes code, keeps CI green, updates this doc |
 | **CI (GitHub Actions)** | `fmt` · `clippy` · `cargo build` on every push (no GUI) |
-| **You (Arch)** | Run the app **once per completed phase**, send feedback / screenshots / paste errors |
+| **You** | (1) Apply workflow file changes when the agent asks (manual — App cannot push workflows). (2) Paste failed CI step logs when the agent cannot read them. (3) Run the app on Arch **once per completed phase** for UX feedback |
 
 You do **not** need to build between small commits. Only at phase boundaries.
+
+**Workflow files:** agent edits `docs/ci/github-actions-ci.yml` and gives copy
+instructions; you install into `.github/workflows/ci.yml`. See `docs/ci/README.md`.
 
 ### Definition of Done (every phase)
 
