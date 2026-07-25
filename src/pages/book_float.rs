@@ -300,9 +300,7 @@ impl Component for BookFloatModel {
             BookFloatMsg::Read => {
                 if let Some(b) = &self.book {
                     let id = b.id;
-                    sender
-                        .output(BookFloatOut::OpenReader { book_id: id })
-                        .ok();
+                    sender.output(BookFloatOut::OpenReader { book_id: id }).ok();
                 }
             }
             BookFloatMsg::Remove => {
@@ -310,9 +308,7 @@ impl Component for BookFloatModel {
                     let id = b.id;
                     if self.catalog.delete_book(id).is_ok() {
                         self.book = None;
-                        sender
-                            .output(BookFloatOut::Deleted { book_id: id })
-                            .ok();
+                        sender.output(BookFloatOut::Deleted { book_id: id }).ok();
                     }
                 }
             }
@@ -362,10 +358,7 @@ fn fill(widgets: &BookFloatModelWidgets, book: Option<&Book>) {
     } else if book.progress >= 100 {
         chip("FINISHED", "kalam-badge-done")
     } else {
-        chip(
-            &format!("{}% READ", book.progress),
-            "kalam-badge-progress",
-        )
+        chip(&format!("{}% READ", book.progress), "kalam-badge-progress")
     };
     widgets.badges.append(&prog);
 

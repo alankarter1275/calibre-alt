@@ -22,9 +22,13 @@ pub enum AppMsg {
     Navigate(NavItem),
     Push(Route),
     Back,
-    OpenBookDialog { book_id: i64 },
+    OpenBookDialog {
+        book_id: i64,
+    },
     /// Close float and open full book page in the main column.
-    FloatOpenFull { book_id: i64 },
+    FloatOpenFull {
+        book_id: i64,
+    },
     CloseBookDialog,
 }
 
@@ -450,9 +454,7 @@ impl Component for AppModel {
                         BookFloatOut::Close
                         | BookFloatOut::OpenReader { .. }
                         | BookFloatOut::Deleted { .. } => AppMsg::CloseBookDialog,
-                        BookFloatOut::OpenFullPage { book_id } => {
-                            AppMsg::FloatOpenFull { book_id }
-                        }
+                        BookFloatOut::OpenFullPage { book_id } => AppMsg::FloatOpenFull { book_id },
                     });
 
                 let title = self
