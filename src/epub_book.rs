@@ -10,6 +10,7 @@ use zip::ZipArchive;
 #[derive(Debug, Clone)]
 pub struct TocEntry {
     pub label: String,
+    #[allow(dead_code)]
     pub href: String,
     /// Spine index if this href maps to a spine item.
     pub spine_index: Option<usize>,
@@ -17,6 +18,7 @@ pub struct TocEntry {
 
 #[derive(Debug, Clone)]
 pub struct SpineItem {
+    #[allow(dead_code)]
     pub id: String,
     pub href: String,
     /// Absolute path on disk after extract (under cache dir).
@@ -26,6 +28,7 @@ pub struct SpineItem {
 
 #[derive(Debug)]
 pub struct OpenBook {
+    #[allow(dead_code)]
     pub title: String,
     pub extract_dir: PathBuf,
     pub spine: Vec<SpineItem>,
@@ -134,17 +137,7 @@ impl OpenBook {
         ))
     }
 
-    pub fn spine_index_for_href(&self, href: &str) -> Option<usize> {
-        let clean = href.split('#').next().unwrap_or(href);
-        let clean = clean.trim_start_matches("./");
-        self.spine.iter().position(|s| {
-            s.href == clean
-                || s.href.ends_with(clean)
-                || clean.ends_with(&s.href)
-                || s.href.rsplit('/').next() == clean.rsplit('/').next()
-        })
     }
-}
 
 fn extract_zip(epub: &Path, dest: &Path) -> Result<()> {
     let file = File::open(epub)?;
@@ -178,9 +171,11 @@ fn find_opf_path(container_xml: &str) -> Result<String> {
     Err(anyhow!("no rootfile in container.xml"))
 }
 
-fn parse_opf_spine(
-    opf: &str,
-) -> Result<(String, Vec<(String, String, Option<String>)>, Vec<String>)> {
+/// (id, href, media-type)
+type ManifestItem = (String, String, Option<String>);
+
+#[allow(clippy::type_complexity)]
+fn parse_opf_spine(opf: &str) -> Result<(String, Vec<ManifestItem>, Vec<String>)> {
     let doc = Document::parse(opf)?;
     let mut title = String::from("Untitled");
     let mut manifest = Vec::new();
@@ -582,15 +577,4 @@ pub enum ReadingTheme {
     Dark,
 }
 
-impl ReadingTheme {
-    pub fn label(self) -> &'static str {
-        match self {
-            ReadingTheme::Light => "Light",
-            ReadingTheme::Sepia => "Sepia",
-            ReadingTheme::Dark => "Dark",
-        }
-    }
 
-    pub const ALL: &'static [ReadingTheme] =
-        &[ReadingTheme::Light, ReadingTheme::Sepia, ReadingTheme::Dark];
-}
