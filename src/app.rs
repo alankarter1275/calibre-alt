@@ -266,13 +266,13 @@ impl Component for AppModel {
                 set_hexpand: true,
                 set_vexpand: true,
 
-gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                add_css_class: "kalam-sidebar",
-                set_hexpand: false,
-                set_vexpand: true,
-                #[watch]
-                set_visible: !model.route.is_reader(),
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    add_css_class: "kalam-sidebar",
+                    set_hexpand: false,
+                    set_vexpand: true,
+                    #[watch]
+                    set_visible: !model.route.is_reader(),
 
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
@@ -487,9 +487,7 @@ gtk::Box {
                             AppMsg::CloseBookDialog
                         }
                         BookFloatOut::OpenReader { book_id } => AppMsg::OpenReader { book_id },
-                        BookFloatOut::OpenFullPage { book_id } => {
-                            AppMsg::FloatOpenFull { book_id }
-                        }
+                        BookFloatOut::OpenFullPage { book_id } => AppMsg::FloatOpenFull { book_id },
                     });
 
                 let title = self

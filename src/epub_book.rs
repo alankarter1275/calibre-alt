@@ -120,11 +120,7 @@ impl OpenBook {
             .ok_or_else(|| anyhow!("chapter index {index} out of range"))?;
         let raw = fs::read_to_string(&item.path)
             .with_context(|| format!("read chapter {}", item.path.display()))?;
-        let base = path_to_file_url(
-            item.path
-                .parent()
-                .unwrap_or_else(|| Path::new(".")),
-        );
+        let base = path_to_file_url(item.path.parent().unwrap_or_else(|| Path::new(".")));
         Ok(inject_reading_shell(&raw, &base, reading_css))
     }
 
@@ -570,9 +566,6 @@ impl ReadingTheme {
         }
     }
 
-    pub const ALL: &'static [ReadingTheme] = &[
-        ReadingTheme::Light,
-        ReadingTheme::Sepia,
-        ReadingTheme::Dark,
-    ];
+    pub const ALL: &'static [ReadingTheme] =
+        &[ReadingTheme::Light, ReadingTheme::Sepia, ReadingTheme::Dark];
 }

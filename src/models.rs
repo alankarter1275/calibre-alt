@@ -63,10 +63,16 @@ pub enum Route {
     Module(NavItem),
     LibrarySection(LibrarySection),
     ShelvesGrid,
-    ShelfDetail { shelf_id: u64 },
-    BookPage { book_id: i64 },
+    ShelfDetail {
+        shelf_id: u64,
+    },
+    BookPage {
+        book_id: i64,
+    },
     /// Immersive EPUB reader.
-    Reader { book_id: i64 },
+    Reader {
+        book_id: i64,
+    },
 }
 
 impl Route {

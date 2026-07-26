@@ -202,12 +202,7 @@ impl Component for ReaderModel {
                 }
             }
         } else {
-            (
-                "Missing book".into(),
-                OpenBook::empty_placeholder(),
-                0,
-                0.0,
-            )
+            ("Missing book".into(), OpenBook::empty_placeholder(), 0, 0.0)
         };
 
         let model = ReaderModel {
@@ -494,12 +489,7 @@ fn build_toc(list: &gtk::Box, open: &OpenBook, sender: &ComponentSender<ReaderMo
     }
 }
 
-fn append_toc_btn(
-    list: &gtk::Box,
-    label: &str,
-    idx: usize,
-    sender: &ComponentSender<ReaderModel>,
-) {
+fn append_toc_btn(list: &gtk::Box, label: &str, idx: usize, sender: &ComponentSender<ReaderModel>) {
     let btn = gtk::Button::with_label(label);
     btn.add_css_class("kalam-toc-item");
     btn.set_halign(gtk::Align::Fill);
