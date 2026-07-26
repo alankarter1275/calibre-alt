@@ -136,8 +136,7 @@ impl OpenBook {
             restore_fraction,
         ))
     }
-
-    }
+}
 
 fn extract_zip(epub: &Path, dest: &Path) -> Result<()> {
     let file = File::open(epub)?;
