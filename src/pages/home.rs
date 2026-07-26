@@ -47,7 +47,7 @@ impl SimpleComponent for HomePageModel {
             #[name = "continue_host"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
-                set_halign: gtk::Align::Center,
+                set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Start,
                 set_hexpand: true,
                 set_vexpand: false,
@@ -117,14 +117,14 @@ impl SimpleComponent for HomePageModel {
             empty.set_halign(gtk::Align::Start);
             widgets.recent_host.append(&empty);
         } else {
-            // Use FlowBox for responsive wrapping — avoids crooked overflow after reader
+            // FlowBox left-aligned to avoid centered covers
             let flow = gtk::FlowBox::builder()
                 .max_children_per_line(6)
                 .min_children_per_line(2)
                 .selection_mode(gtk::SelectionMode::None)
                 .column_spacing(16)
                 .row_spacing(20)
-                .halign(gtk::Align::Center)
+                .halign(gtk::Align::Start)
                 .valign(gtk::Align::Start)
                 .hexpand(true)
                 .vexpand(false)
@@ -154,7 +154,7 @@ impl SimpleComponent for HomePageModel {
                 // Wrap card in fixed cell to keep uniform size in FlowBox
                 let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
                 cell.set_size_request(CARD_W, CARD_H);
-                cell.set_halign(gtk::Align::Center);
+                cell.set_halign(gtk::Align::Start);
                 cell.set_valign(gtk::Align::Start);
                 cell.append(&card);
                 flow.insert(&cell, -1);

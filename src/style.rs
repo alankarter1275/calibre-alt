@@ -547,6 +547,13 @@ window.kalam-float-window {
     background: rgba(255, 255, 255, 0.12);
 }
 
+/* ensure MenuButton inner button is also capsule */
+.kalam-reader-pill menubutton.kalam-reader-pill-btn,
+.kalam-reader-pill menubutton.kalam-reader-pill-btn > button,
+.kalam-reader-pill button.kalam-reader-pill-btn {
+    border-radius: 999px;
+}
+
 .kalam-reader-pill-meta {
     font-size: 0.78rem;
     font-weight: 600;
