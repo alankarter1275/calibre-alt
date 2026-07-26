@@ -174,7 +174,6 @@ fn find_opf_path(container_xml: &str) -> Result<String> {
 /// (id, href, media-type)
 type ManifestItem = (String, String, Option<String>);
 
-#[allow(clippy::type_complexity)]
 fn parse_opf_spine(opf: &str) -> Result<(String, Vec<ManifestItem>, Vec<String>)> {
     let doc = Document::parse(opf)?;
     let mut title = String::from("Untitled");
@@ -576,5 +575,3 @@ pub enum ReadingTheme {
     Sepia,
     Dark,
 }
-
-
