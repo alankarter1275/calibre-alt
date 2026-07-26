@@ -461,7 +461,7 @@ window.kalam-float-window {
     letter-spacing: 0.04em;
     color: #0e1016;
     background: #7cffc3;
-    border-radius: 6px;
+    border-radius: 999px;
     padding: 3px 8px;
 }
 
@@ -471,7 +471,7 @@ window.kalam-float-window {
     letter-spacing: 0.04em;
     color: #1a1208;
     background: #ffc37c;
-    border-radius: 6px;
+    border-radius: 999px;
     padding: 3px 8px;
 }
 
@@ -481,7 +481,7 @@ window.kalam-float-window {
     letter-spacing: 0.04em;
     color: #0e1016;
     background: @kalam_accent;
-    border-radius: 6px;
+    border-radius: 999px;
     padding: 3px 8px;
 }
 
@@ -491,7 +491,7 @@ window.kalam-float-window {
     letter-spacing: 0.04em;
     color: #e8eaf0;
     background: #3a4560;
-    border-radius: 6px;
+    border-radius: 999px;
     padding: 3px 8px;
 }
 

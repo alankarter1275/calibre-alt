@@ -1,5 +1,5 @@
 use crate::db::{Catalog, SortKey};
-use crate::widgets::book_row::{build_book_card, build_book_grid};
+use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::rc::Rc;
@@ -24,6 +24,8 @@ impl SimpleComponent for HomePageModel {
             set_orientation: gtk::Orientation::Vertical,
             set_spacing: 16,
             set_hexpand: true,
+            set_vexpand: false,
+            set_margin_all: 0,
 
             gtk::Label {
                 set_label: "Home",
@@ -42,14 +44,14 @@ impl SimpleComponent for HomePageModel {
                 set_halign: gtk::Align::Start,
             },
 
-            // Single card — never a full-width container.
             #[name = "continue_host"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
-                set_halign: gtk::Align::Start,
+                set_halign: gtk::Align::Center,
                 set_valign: gtk::Align::Start,
                 set_hexpand: true,
                 set_vexpand: false,
+                set_margin_bottom: 8,
             },
 
             gtk::Label {
@@ -79,7 +81,6 @@ impl SimpleComponent for HomePageModel {
 
         let books = catalog.list_books(SortKey::Added, "").unwrap_or_default();
 
-        // One book for continue — attach a single card, not a stretchy grid.
         let cont = books
             .iter()
             .find(|b| b.progress > 0 && b.progress < 100)
@@ -105,6 +106,7 @@ impl SimpleComponent for HomePageModel {
             ));
             empty.add_css_class("kalam-placeholder");
             empty.set_wrap(true);
+            empty.set_halign(gtk::Align::Start);
             widgets.continue_host.append(&empty);
         }
 
@@ -112,20 +114,52 @@ impl SimpleComponent for HomePageModel {
         if recent.is_empty() {
             let empty = gtk::Label::new(Some("Your library is empty."));
             empty.add_css_class("kalam-muted");
+            empty.set_halign(gtk::Align::Start);
             widgets.recent_host.append(&empty);
         } else {
-            let s = sender.clone();
-            let s2 = sender.clone();
-            let grid = build_book_grid(
-                &recent,
-                move |id| {
-                    s.output(HomeOut::OpenBook { book_id: id }).ok();
-                },
-                move |id| {
-                    s2.output(HomeOut::OpenBookDialog { book_id: id }).ok();
-                },
-            );
-            widgets.recent_host.append(&grid);
+            // Use FlowBox for responsive wrapping — avoids crooked overflow after reader
+            let flow = gtk::FlowBox::builder()
+                .max_children_per_line(6)
+                .min_children_per_line(2)
+                .selection_mode(gtk::SelectionMode::None)
+                .column_spacing(16)
+                .row_spacing(20)
+                .halign(gtk::Align::Center)
+                .valign(gtk::Align::Start)
+                .hexpand(true)
+                .vexpand(false)
+                .build();
+            flow.add_css_class("kalam-book-grid");
+            flow.add_css_class("kalam-home-flow");
+
+            for book in &recent {
+                let id = book.id;
+                let s1 = sender.clone();
+                let s2 = sender.clone();
+                let card = build_book_card(
+                    book,
+                    {
+                        let s = s1.clone();
+                        move || {
+                            s.output(HomeOut::OpenBook { book_id: id }).ok();
+                        }
+                    },
+                    {
+                        let s = s2.clone();
+                        move || {
+                            s.output(HomeOut::OpenBookDialog { book_id: id }).ok();
+                        }
+                    },
+                );
+                // Wrap card in fixed cell to keep uniform size in FlowBox
+                let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                cell.set_size_request(CARD_W, CARD_H);
+                cell.set_halign(gtk::Align::Center);
+                cell.set_valign(gtk::Align::Start);
+                cell.append(&card);
+                flow.insert(&cell, -1);
+            }
+            widgets.recent_host.append(&flow);
         }
 
         ComponentParts { model, widgets }
