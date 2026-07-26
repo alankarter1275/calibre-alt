@@ -307,7 +307,7 @@ color:#3e3226;font-family:Georgia,serif'>\
         let anno_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
         anno_box.set_margin_all(12);
         anno_box.set_hexpand(true);
-        anno_box.set_size_request(900, -1);
+        anno_box.set_size_request(460, -1);
         let anno_title = gtk::Label::new(Some("Highlights & quotes"));
         anno_title.add_css_class("kalam-reader-popover-title");
         anno_title.set_halign(gtk::Align::Start);
@@ -315,7 +315,7 @@ color:#3e3226;font-family:Georgia,serif'>\
 
         let anno_scroll = gtk::ScrolledWindow::builder()
             .min_content_height(360)
-            .min_content_width(850)
+            .min_content_width(425)
             .hscrollbar_policy(gtk::PolicyType::Never)
             .hexpand(true)
             .vexpand(false)
@@ -323,7 +323,7 @@ color:#3e3226;font-family:Georgia,serif'>\
         let anno_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
         anno_list.set_margin_all(4);
         anno_list.set_hexpand(true);
-        anno_list.set_size_request(820, -1);
+        anno_list.set_size_request(410, -1);
         anno_scroll.set_child(Some(&anno_list));
         anno_box.append(&anno_scroll);
 
@@ -331,7 +331,7 @@ color:#3e3226;font-family:Georgia,serif'>\
         anno_pop.add_css_class("kalam-reader-popover");
         anno_pop.set_child(Some(&anno_box));
         anno_pop.set_position(gtk::PositionType::Top);
-        anno_pop.set_size_request(900, -1);
+        anno_pop.set_size_request(460, -1);
         unsafe {
             anno_pop.set_data("kalam-anno-list", anno_list.clone());
         }
