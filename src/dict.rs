@@ -1,4 +1,5 @@
 //! Offline dictionary handling — StarDict + Kalam SQLite packs.
+#![allow(dead_code)]
 //!
 //! StarDict format (minimal parser):
 //!   .ifo – metadata (wordcount)
@@ -23,9 +24,11 @@ pub struct DictSearchResult {
 }
 
 /// Import a dictionary pack into the catalog.
+///
 /// Supports:
 /// - StarDict triple (.ifo + .idx + .dict[.dz]): provide any one file path, we find siblings.
 /// - SQLite file with entries table.
+///
 /// Returns the dictionary name and entry count.
 pub fn import_dictionary(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
     let ext = path
@@ -188,7 +191,6 @@ fn import_tsv(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        // split by tab or "  -  " or first whitespace groups?
         if let Some(tab) = line.find('\t') {
             let w = line[..tab].trim();
             let d = line[tab + 1..].trim();
@@ -196,7 +198,6 @@ fn import_tsv(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
                 entries.push((w.to_string(), d.to_string()));
             }
         } else if let Some(sep) = line.find("  ") {
-            // double space delimiter fallback
             let w = line[..sep].trim();
             let d = line[sep..].trim();
             if !w.is_empty() && !d.is_empty() {
@@ -232,10 +233,8 @@ fn import_stardict(catalog: &Catalog, any_path: &Path) -> Result<(String, i64)> 
     let base = stardict_base_path(any_path)?;
     let ifo_path = base.with_extension("ifo");
     let idx_path = base.with_extension("idx");
-    // .dict may be .dict or .dict.dz
     let dict_path = base.with_extension("dict");
     let dict_dz_path = PathBuf::from(format!("{}.dict.dz", base.display()));
-    // Also variant where base already includes extension? We handle.
 
     let ifo_path = if ifo_path.exists() {
         ifo_path
@@ -244,7 +243,6 @@ fn import_stardict(catalog: &Catalog, any_path: &Path) -> Result<(String, i64)> 
     } else if Path::new(&format!("{}.ifo", base.display())).exists() {
         PathBuf::from(format!("{}.ifo", base.display()))
     } else {
-        // try to find .ifo sibling with same stem
         find_sibling_with_ext(any_path, "ifo").ok_or_else(|| {
             anyhow!(
                 "StarDict .ifo not found for {}",
@@ -267,10 +265,8 @@ fn import_stardict(catalog: &Catalog, any_path: &Path) -> Result<(String, i64)> 
     } else if let Some(p) = find_sibling_with_ext(&ifo_path, "dict") {
         Some(p)
     } else if let Some(p) = find_sibling_with_ext(&ifo_path, "dz") {
-        // .dict.dz has ext dz
         Some(p)
     } else {
-        // Try to find file ending with .dict.dz by scanning dir
         find_file_ending_with(
             ifo_path.parent().unwrap_or_else(|| Path::new(".")),
             ".dict.dz",
@@ -285,18 +281,13 @@ fn import_stardict(catalog: &Catalog, any_path: &Path) -> Result<(String, i64)> 
         .cloned()
         .unwrap_or_else(|| base.file_stem().and_then(|s| s.to_str()).unwrap_or("StarDict").to_string());
 
-    // Read idx
     let entries_meta = parse_idx(&idx_path, &meta)?;
-
-    // Read dict file (maybe gz)
     let dict_bytes = read_dict_file(&dict_path)?;
 
-    // Extract definitions
     let mut entries = Vec::with_capacity(entries_meta.len());
     for em in entries_meta {
         if em.offset as usize + em.size as usize <= dict_bytes.len() {
             let slice = &dict_bytes[em.offset as usize..em.offset as usize + em.size as usize];
-            // Definition may be null-terminated; trim nulls
             let def = String::from_utf8_lossy(slice)
                 .trim_end_matches('\0')
                 .trim()
@@ -317,7 +308,6 @@ fn import_stardict(catalog: &Catalog, any_path: &Path) -> Result<(String, i64)> 
     catalog
         .clear_dict_entries(dict_id)
         .map_err(|e| anyhow!("clear: {e}"))?;
-    // Batch in chunks to avoid huge transaction
     for chunk in entries.chunks(2000) {
         catalog
             .batch_insert_dict_entries(dict_id, chunk)
@@ -329,7 +319,6 @@ fn import_stardict(catalog: &Catalog, any_path: &Path) -> Result<(String, i64)> 
 
 fn stardict_base_path(any_path: &Path) -> Result<PathBuf> {
     let s = any_path.to_string_lossy();
-    // Strip known extensions
     let mut base = s.to_string();
     for ext in &[".ifo", ".idx", ".dict.dz", ".dict", ".dz"] {
         if base.to_ascii_lowercase().ends_with(ext) {
@@ -347,21 +336,29 @@ fn find_sibling_with_ext(base: &Path, ext: &str) -> Option<PathBuf> {
     if candidate.exists() {
         return Some(candidate);
     }
-    // Also try when base includes double extension like name.dict.dz -> stem is name.dict
-    // Try scanning dir for files containing stem and ending with ext
     if let Ok(dir) = std::fs::read_dir(parent) {
         for entry in dir.flatten() {
             let p = entry.path();
-            if p.extension().and_then(|e| e.to_str()).map(|e| e.eq_ignore_ascii_case(ext)).unwrap_or(false) {
-                if p.file_name().and_then(|n| n.to_str()).map(|n| n.contains(stem)).unwrap_or(false) {
-                    return Some(p);
-                }
+            let ext_match = p
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case(ext))
+                .unwrap_or(false);
+            let name_match = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.contains(stem))
+                .unwrap_or(false);
+            if ext_match && name_match {
+                return Some(p);
             }
-            // For .dict.dz, ext is dz but file name ends with .dict.dz
             if ext == "dz" && p.to_string_lossy().ends_with(".dict.dz") {
                 return Some(p);
             }
-            if ext == "dict" && (p.to_string_lossy().ends_with(".dict") || p.to_string_lossy().ends_with(".dict.dz")) {
+            if ext == "dict"
+                && (p.to_string_lossy().ends_with(".dict")
+                    || p.to_string_lossy().ends_with(".dict.dz"))
+            {
                 return Some(p);
             }
         }
@@ -411,10 +408,7 @@ fn parse_idx(path: &Path, _ifo_meta: &HashMap<String, String>) -> Result<Vec<Idx
     let data = std::fs::read(path).context("read .idx")?;
     let mut out = Vec::new();
     let mut i = 0usize;
-    // Heuristic: try 32-bit offsets first; if we detect 64-bit pattern (sametypesequence contains 'g' or 'h'), use 64
-    // For simplicity, attempt to parse as 32-bit; if parsing fails or produces unrealistic offsets, try 64.
     let mut try_64 = false;
-    // Check ifo for hint: if idxoffsetbits=64
     if let Some(bits) = _ifo_meta.get("idxoffsetbits") {
         if bits.trim() == "64" {
             try_64 = true;
@@ -422,7 +416,6 @@ fn parse_idx(path: &Path, _ifo_meta: &HashMap<String, String>) -> Result<Vec<Idx
     }
     if try_64 {
         while i < data.len() {
-            // word until \0
             let start = i;
             while i < data.len() && data[i] != 0 {
                 i += 1;
@@ -432,7 +425,7 @@ fn parse_idx(path: &Path, _ifo_meta: &HashMap<String, String>) -> Result<Vec<Idx
             }
             let word_bytes = &data[start..i];
             let word = String::from_utf8_lossy(word_bytes).to_string();
-            i += 1; // skip \0
+            i += 1;
             if i + 16 > data.len() {
                 break;
             }
@@ -474,16 +467,12 @@ fn parse_idx(path: &Path, _ifo_meta: &HashMap<String, String>) -> Result<Vec<Idx
             if i + 8 > data.len() {
                 break;
             }
-            let offset = u32::from_be_bytes([data[i], data[i + 1], data[i + 2], data[i + 3]]) as u64;
-            let size = u32::from_be_bytes([data[i + 4], data[i + 5], data[i + 6], data[i + 7]]) as u64;
+            let offset =
+                u32::from_be_bytes([data[i], data[i + 1], data[i + 2], data[i + 3]]) as u64;
+            let size =
+                u32::from_be_bytes([data[i + 4], data[i + 5], data[i + 6], data[i + 7]]) as u64;
             i += 8;
             out.push(IdxEntryMeta { word, offset, size });
-            // Safety: if offset grows beyond reasonable, might be actually 64-bit format; break and retry as 64?
-            if offset > 500_000_000 && out.len() < 10 {
-                // small heuristic failure -> restart as 64-bit
-                // We could restart parsing quickly by recalling with 64 mode
-                // For brevity, we continue; but we can also attempt 64 fallback if first few offsets are huge.
-            }
         }
     }
     Ok(out)
@@ -492,7 +481,6 @@ fn parse_idx(path: &Path, _ifo_meta: &HashMap<String, String>) -> Result<Vec<Idx
 fn read_dict_file(path: &Path) -> Result<Vec<u8>> {
     let s = path.to_string_lossy().to_ascii_lowercase();
     if s.ends_with(".dz") || s.ends_with(".gz") {
-        // Decompress with flate2 (gzip)
         let file = File::open(path).context("open dict.dz")?;
         let mut gz = flate2::read::GzDecoder::new(file);
         let mut buf = Vec::new();
@@ -508,7 +496,6 @@ fn read_dict_file(path: &Path) -> Result<Vec<u8>> {
 // ---------------------------------------------------------------------------
 
 pub fn strip_dict_html(input: &str) -> String {
-    // Very minimal stripping: remove tags, decode entities roughly
     let mut out = String::new();
     let mut in_tag = false;
     for ch in input.chars() {
@@ -524,6 +511,5 @@ pub fn strip_dict_html(input: &str) -> String {
         }
         out.push(ch);
     }
-    // Collapse whitespace
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }

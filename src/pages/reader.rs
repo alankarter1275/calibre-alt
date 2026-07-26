@@ -45,6 +45,7 @@ struct JsPayload {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum ReaderMsg {
     Close,
     TocSelect(usize),
@@ -437,9 +438,11 @@ color:#3e3226;font-family:Georgia,serif'>\
         webview.connect_title_notify(move |wv| {
             if let Some(title) = wv.title() {
                 let t = title.to_string();
-                if t.contains("kalam://") || (t.starts_with('{') && t.contains("\"type\"")) {
-                    s.input(ReaderMsg::JsRaw(t));
-                } else if t.starts_with("kalam-selection::") || t.starts_with("kalam-progress::") {
+                if t.contains("kalam://")
+                    || (t.starts_with('{') && t.contains("\"type\""))
+                    || t.starts_with("kalam-selection::")
+                    || t.starts_with("kalam-progress::")
+                {
                     s.input(ReaderMsg::JsRaw(t));
                 }
             }

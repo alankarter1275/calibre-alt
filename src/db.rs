@@ -1,4 +1,5 @@
 //! SQLite catalog access — P1 books + P2 progress + P3 annotations & dictionary.
+#![allow(dead_code)]
 
 use crate::models::{Book, BookFormat};
 use crate::paths::{book_dir, catalog_db, ensure_data_dirs};
@@ -28,6 +29,7 @@ pub struct Catalog {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Annotation {
     pub id: i64,
     pub book_id: i64,
@@ -46,6 +48,7 @@ pub struct Annotation {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct SavedWord {
     pub id: i64,
     pub word: String,
@@ -58,6 +61,7 @@ pub struct SavedWord {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Dictionary {
     pub id: i64,
     pub name: String,
@@ -67,6 +71,7 @@ pub struct Dictionary {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct DictEntry {
     pub id: i64,
     pub dict_id: i64,

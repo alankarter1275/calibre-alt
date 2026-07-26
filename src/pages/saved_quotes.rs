@@ -5,6 +5,7 @@ use relm4::prelude::*;
 use std::rc::Rc;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum SavedQuotesOut {
     OpenBook { book_id: i64 },
     JumpTo {
@@ -143,7 +144,7 @@ impl Component for SavedQuotesModel {
                     .unwrap_or_else(|| std::path::PathBuf::from("."))
                     .join("Quotes.md");
                 let res = std::fs::write(&out_path, exported);
-                if let Ok(_) = res {
+                if res.is_ok() {
                     self.status = format!("Exported to {}", out_path.display());
                 } else {
                     self.status = format!("Export failed: {:?}", res.err());
