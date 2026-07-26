@@ -1,0 +1,35 @@
+[package]
+name = "kalam"
+version = "0.1.0"
+edition = "2021"
+description = "Kalam — a lightweight personal ebook manager and reader for Linux"
+license = "GPL-3.0-or-later"
+authors = ["Kalam Contributors"]
+repository = "https://github.com/alankarter1275/calibre-alt"
+default-run = "kalam"
+
+[dependencies]
+relm4 = { version = "0.9", features = ["libadwaita", "gnome_45"] }
+libadwaita = { version = "0.7", features = ["v1_4"] }
+gtk = { version = "0.9", package = "gtk4", features = ["v4_12"] }
+gdk-pixbuf = "0.20"
+webkit6 = { version = "0.4", package = "webkit6", features = ["v2_44"] }
+
+# Library / persistence
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+hex = "0.4"
+thiserror = "2"
+anyhow = "1"
+
+# EPUB (zip + OPF XML)
+zip = { version = "2", default-features = false, features = ["deflate"] }
+roxmltree = "0.20"
+quick-xml = "0.37"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3
