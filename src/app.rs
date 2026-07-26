@@ -511,7 +511,9 @@ impl Component for AppModel {
                     if prev.is_reader() {
                         widgets.content_host.add_css_class("kalam-content-reader");
                     } else {
-                        widgets.content_host.remove_css_class("kalam-content-reader");
+                        widgets
+                            .content_host
+                            .remove_css_class("kalam-content-reader");
                     }
 
                     self.route = prev;
