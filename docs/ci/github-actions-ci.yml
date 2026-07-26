@@ -47,10 +47,28 @@ jobs:
           git --no-pager diff --stat || true
 
       - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: |
+          cargo clippy --all-targets -- -D warnings 2>&1 | tee clippy.log
+          exit ${PIPESTATUS[0]}
 
       - name: build (debug)
-        run: cargo build --verbose
+        if: always()
+        run: |
+          cargo build --verbose 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
 
       - name: build (release)
-        run: cargo build --release
+        if: always()
+        run: |
+          cargo build --release 2>&1 | tee build-release.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: |
+            clippy.log
+            build.log
+            build-release.log
