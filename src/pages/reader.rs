@@ -306,18 +306,22 @@ color:#3e3226;font-family:Georgia,serif'>\
         // Annotations popover
         let anno_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
         anno_box.set_margin_all(12);
+        anno_box.set_hexpand(true);
         let anno_title = gtk::Label::new(Some("Highlights & quotes"));
         anno_title.add_css_class("kalam-reader-popover-title");
         anno_title.set_halign(gtk::Align::Start);
         anno_box.append(&anno_title);
 
         let anno_scroll = gtk::ScrolledWindow::builder()
-            .min_content_height(520)
-            .min_content_width(800)
+            .min_content_height(600)
+            .min_content_width(900)
             .hscrollbar_policy(gtk::PolicyType::Never)
+            .hexpand(true)
+            .vexpand(true)
             .build();
         let anno_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
         anno_list.set_margin_all(4);
+        anno_list.set_hexpand(true);
         anno_scroll.set_child(Some(&anno_list));
         anno_box.append(&anno_scroll);
 
@@ -1101,7 +1105,7 @@ fn rebuild_anno_list(list: &gtk::Box, annos: &[Annotation], sender: &ComponentSe
         let txt = gtk::Label::new(Some(&a.text_excerpt));
         txt.set_wrap(true);
         txt.set_xalign(0.0);
-        txt.set_max_width_chars(40);
+        txt.set_max_width_chars(80);
         txt.add_css_class("kalam-quote-text");
         row.append(&txt);
 

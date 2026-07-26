@@ -532,7 +532,7 @@ window.kalam-float-window {
 .kalam-reader-pill-btn {
     min-width: 36px;
     min-height: 36px;
-    padding: 0;
+    padding: 0 12px;
     border-radius: 999px;
     border: none;
     background: transparent;
@@ -545,10 +545,10 @@ window.kalam-float-window {
     background: rgba(255, 255, 255, 0.12);
 }
 
-/* ensure MenuButton inner button is also capsule and hover is tight */
+/* ensure MenuButton inner button is also capsule and hover is tight — same size as button */
 .kalam-reader-pill menubutton.kalam-reader-pill-btn {
-    min-width: 36px;
-    min-height: 36px;
+    min-width: 0;
+    min-height: 0;
     padding: 0;
     border-radius: 999px;
     background: transparent;
@@ -557,7 +557,7 @@ window.kalam-float-window {
 .kalam-reader-pill menubutton.kalam-reader-pill-btn > button {
     min-width: 36px;
     min-height: 36px;
-    padding: 0;
+    padding: 0 12px;
     border-radius: 999px;
 }
 
