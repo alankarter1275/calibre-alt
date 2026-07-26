@@ -4,6 +4,8 @@ Living plan. Phases are **sequential gates**: we do not start phase N+1 until
 phase N compiles on CI **and** you have run it on Arch and signed off (or filed
 change requests).
 
+This file is updated whenever product/UX decisions change.
+
 ---
 
 ## Working agreement
@@ -23,7 +25,7 @@ instructions; you install into `.github/workflows/ci.yml`. See `docs/ci/README.m
 
 1. CI green on the branch  
 2. Feature list for that phase implemented (see below)  
-3. README / ARCH updated if behaviour changed  
+3. README / ARCH / **this ROADMAP** updated if behaviour or UX targets changed  
 4. You ran it on Arch (or explicitly deferred) and listed change requests  
 
 ### Non-goals (whole project)
@@ -41,160 +43,181 @@ instructions; you install into `.github/workflows/ci.yml`. See `docs/ci/README.m
 > EPUB reading & annotation, honest metadata, modular sources (AO3, fanfic,
 > comics) later — no bloat.
 
-**Stack:** Rust · GTK4 · Relm4 · custom CSS · SQLite · WebKitGTK (EPUB) · MuPDF later (PDF)
+**Stack:** Rust · GTK4 · Relm4 · custom CSS · SQLite · WebKitGTK (EPUB) · image
+pipeline (comics) · MuPDF later (PDF)
+
+---
+
+## Two readers (architecture — locked)
+
+Kalam has **two distinct viewing modes**. Same library; `Read` routes by format.
+
+| | **Text reader** | **Comics reader** |
+|--|-----------------|-------------------|
+| **Formats** | EPUB now; PDF later; AO3/fanfic as downloaded EPUB/HTML | CBZ/CBR local first; remote later |
+| **Engine** | WebKitGTK (EPUB/HTML); MuPDF/Poppler later for PDF | Decode images from zip/rar on demand |
+| **Motion** | Continuous long scroll, **chapter-wise** for EPUB | Page mode and/or webtoon long-strip |
+| **Look target** | Immersive “tablet book” (cream/sepia page, floating chrome) | Immersive “Moku-like” (black stage, top meta + bottom scrub) |
+| **Chrome** | Top-left close/crumb; bottom pill: ‹ ☰ ch Aa › | Top: ✕ title chapter pages; bottom: scrubber + zoom |
+| **Progress** | Chapter index + in-chapter fraction → SQLite | Page index (+ chapter/volume) → SQLite |
+| **Phase** | **P2** shipped (shell + read); **P3** annotations | **P8** local; **P9** sources |
+
+**Text reader visual rules (agreed):**
+
+- Default theme: **sepia** (cream paper, brown ink)  
+- Body text is **never** browser-blue; EPUB `<a>` wrappers forced to ink color  
+- **No underlines** on body/links while reading  
+- Selection highlight tint reserved for P3 (pink-ish mark, Apple Books–like)  
+- Heavy top toolbars avoided; controls live in floating pills  
+
+**Comics reader visual rules (agreed — Moku reference):**
+
+- Pure **black** letterbox; art centered  
+- Thin **top bar**: close, prev/next chapter, title, page `i / N`, zoom %  
+- **Bottom bar**: page scrubber, zoom control, prev/next page  
+- Fit width / fit height / RTL; optional continuous strip mode  
+- Memory-safe: only nearby pages decoded (4 GB RAM)  
 
 ---
 
 ## Phase map (overview)
 
 ```text
-P0  Shell ───────────── sidebar, routing, sample shelves/books     ← current
-P1  Library core ────── SQLite, import EPUB, covers, all-books UI
-P2  Reader ──────────── WebKit, chapter-wise scroll, fonts, progress
-P3  Annotations ─────── highlights, quotes, offline dictionary
-P4  Library depth ───── home real data, shelves engine, lists, tags
-P5  Metadata ────────── edit metadata, cover pick, Open Library fetch
-P6  Downloads hub ───── unified queue UI + local folder watch
+P0  Shell ───────────── sidebar, routing, float/detail shells     ✅ done
+P1  Library core ────── SQLite, import EPUB, cover cards, search  ✅ done
+P2  Text reader ─────── WebKit EPUB, themes, TOC, progress, UI    ✅ done
+P3  Annotations ─────── highlights, quotes, offline dictionary    ← next
+P4  Library depth ───── shelves engine, lists, tags, analytics
+P5  Metadata ────────── edit metadata, cover pick, Open Library
+P6  Downloads hub ───── unified queue + folder watch
 P7  Fiction sources ─── AO3 first, then other fanfic adapters
-P8  Comics local ────── CBZ/CBR reader (webtoon + page modes)
-P9  Comics sources ──── browse/download module (careful, legal-first)
-P10 PDF ─────────────── view + basic highlights
-P11 Tools ───────────── convert (external), polish, extras
+P8  Comics local ────── CBZ/CBR + Moku-style comics reader
+P9  Comics sources ──── browse/download (legal / self-hosted first)
+P10 PDF ─────────────── MuPDF in text-reader family + basic marks
+P11 Tools ───────────── convert (external), polish, Calibre import
 ```
 
-Phases P6–P11 may be reordered once P3 is solid; **P0→P5 stay in order**.
+**Order lock:** P0→P5 stay sequential. P6–P11 may reorder after P3 if priorities shift.
+Comics UI design is frozen in this doc now; **implementation is P8**.
 
 ---
 
-## P0 — Application shell  ✅ in progress
+## P0 — Application shell  ✅ done
 
-**Goal:** A real window you can click while the design evolves. No real files.
+**Goal:** Real window + navigation skeleton.
 
-### Scope
+### Shipped
 
-- [x] Cargo project `kalam`, app id `app.kalam.Kalam`
+- [x] `kalam` / `app.kalam.Kalam`
 - [x] Slim sidebar: Home, Library, Shelves, Downloads, Comics, AO3, Fanfic, Settings
-- [x] Settings pinned to bottom
-- [x] Home placeholder with demo continue/recent
-- [x] My Library hub tiles → section pages (sample lists where relevant)
-- [x] Shelves: 2-column grid → shelf detail → book page
-- [x] Book page (metadata layout) + **Float** window option
-- [x] Back stack within a module
-- [x] Draft dark CSS (`src/style.rs`)
-- [x] CI workflow
-- [x] ROADMAP + ARCH docs
-- [x] CI green (`fmt` · `clippy` · `build` · `release`)
-- [ ] Your Arch smoke-test sign-off
-
-### Explicitly out
-
-Real DB, import, reader, network.
-
-### Arch check (you)
-
-```bash
-sudo pacman -S --needed rust gtk4 libadwaita base-devel pkgconf
-cargo run
-```
-
-Click: Shelves → shelf → Open / Float → Back → Library hub → Settings.
-
-### Exit criteria
-
-CI green + you OK with nav model (change requests allowed before P1).
-
----
-
-## P1 — Library core
-
-**Goal:** Your real EPUBs live in Kalam.
-
-### Scope
-
-- SQLite catalog at `~/.local/share/kalam/catalog.db`
-- Schema v1: `books`, `authors`, `book_authors`, `tags`, `book_tags`, `covers` path, file hash, format, added_at
-- Import: file picker + drag-drop (EPUB first)
-- Copy book into `library/<uuid>/book.epub`, extract cover → `cover.jpg`
-- My Library → All books: grid + list toggle (virtualized `GridView`/`ListView`)
-- Search box (title/author `LIKE`; FTS5 optional same phase if easy)
-- Sort: title, author, added
-- Remove book (DB + files)
-- Empty states
-- Drop sample-only models for library views (keep tiny demo seed behind `cfg` or delete)
+- [x] Settings bottom-pinned
+- [x] Route stack + Back
+- [x] Draft dark CSS; later refined with library/reader skins
+- [x] CI workflow (manual install of `.github/workflows` by you)
+- [x] Arch smoke-test signed off
 
 ### Out
 
-Reader, shelves rules engine, network metadata.
-
-### Arch check
-
-Import 5–10 EPUBs, search, delete one, restart app — data persists.
-
-### Exit criteria
-
-Persistent library feels usable as a dumb catalog.
+Real DB, import, reader (those are P1/P2).
 
 ---
 
-## P2 — EPUB reader
+## P1 — Library core  ✅ done
 
-**Goal:** Read comfortably; position restores.
+**Goal:** Real EPUBs live in Kalam.
 
-### Scope
+### Shipped
 
-- WebKitGTK 6 view inside app (immersive: collapse/hide slim rail)
-- Open from book page **Read**
-- Parse EPUB spine/nav; chapter-wise continuous scroll
-- Prefetch next chapter ~85–90%; keep ≤3 chapters mounted
-- Seamless boundary (no full reload flash when prefetch wins)
-- Inject CSS: font family/size, line-height, margins, width, theme (light/sepia/dark)
-- Instant theme/font updates (CSS variables, no reload)
-- Progress: chapter id + % ; debounce write to SQLite; restore on open
-- TOC sidebar / popover
-- Keyboard: scroll, next/prev chapter, Esc back, fullscreen
-- Typography popover (Aa)
+- [x] SQLite `~/.local/share/kalam/catalog.db`
+- [x] Import EPUB (file dialog); copy to `library/<uuid>/`; cover extract
+- [x] OPF title/authors/tags/description (HTML stripped to plain text)
+- [x] Cover-card grid (Goodreads-like): fixed **1.6:1** cover, title+author under
+- [x] Click cover → float; Ctrl+click → full book page
+- [x] Search + sort (title / author / added)
+- [x] Remove book (DB + files)
+- [x] Home: continue + recently added (real data)
+- [x] Float panel: Suwayomi-style compact detail (cover rail, badges, Read, meta)
+- [x] Settings shows data paths
 
-### Out
+### UX notes locked in P1
 
-Highlights, dictionary, PDF.
+- Cards must stay **uniform grid cells**; long titles **ellipsize**, full text on tooltip  
+- No full-width stretched single covers  
+- Float: no open/close morph animations for now (can return later)  
 
-### Arch check
+### Out (still later)
 
-Long EPUB, scroll across chapters, change font, quit, reopen mid-book.
-
-### Exit criteria
-
-Daily-driver reading for EPUB without annotations.
+Shelves rules engine, network metadata, comics import.
 
 ---
 
-## P3 — Annotations & dictionary
+## P2 — Text reader (EPUB)  ✅ done
 
-**Goal:** “Editor in the viewer” for personal use.
+**Goal:** Comfortable EPUB reading; position restores.
 
-### Scope
+### Shipped
 
-- Selection → Highlight (colors) / Save quote / Dictionary
-- Shortcut `d` → dictionary popover near word
-- Offline dict packs (import StarDict or prebuilt SQLite); none shipped by default
-- Persist annotations: loc (CFI or chapter+offsets), color, note text
-- Reinject highlights on chapter load
-- Annotations list UI (jump to)
-- Saved quotes page under My Library (real data)
-- Saved words from dict popover
-- Export quotes → Markdown file
+- [x] WebKitGTK 6 reader surface
+- [x] Open from book page / float **Read**
+- [x] Parse spine + NAV/NCX TOC; chapter-wise load
+- [x] Themes: Light / Sepia / Dark (default **Sepia**)
+- [x] Font size A± ; keyboard N/P, arrows, Esc
+- [x] TOC via bottom pill popover
+- [x] Progress in SQLite (`reading_progress` + `books.progress`)
+- [x] Immersive chrome: sidebar/topbar hidden while reading
+- [x] **Restyle (P2.1):** top-left close+crumb; bottom floating pill (‹ ☰ ch Aa ›)
+- [x] Reading CSS: force ink color, kill blue + underlines on body/links
+- [x] No background FlushProgress timer (crash fix on leave)
 
-### Out
+### Partial / deferred
 
-Full EPUB HTML editing, collaborative sync.
+- [ ] Near-end auto-advance (JS bridge removed for CI stability; use N/›)
+- [ ] True multi-chapter DOM buffer (still one chapter WebView load)
+- [ ] Instant CSS var updates without reload (currently reload chapter on Aa/theme)
+- [ ] Selection toolbar (P3)
 
 ### Arch check
 
-Highlight, quit, reopen; dictionary offline; export quotes.
+Read long EPUB, change theme/font, TOC jump, quit, reopen mid-book; no crash on leave; text not blue/underlined.
 
 ### Exit criteria
 
-Annotations trustworthy enough you stop using another reader for EPUB.
+Daily-driver EPUB reading without annotations — **met for P2 scope**.
+
+---
+
+## P3 — Annotations & dictionary  ← **next**
+
+**Goal:** “Editor in the viewer” on the text-reader surface.
+
+### Scope
+
+- Selection in WebView → floating chip: **Highlight** (colors) / **Save quote** / **Dictionary** / copy  
+- Shortcut **`d`** → dictionary popover near word  
+- Offline dict packs (import StarDict or prebuilt SQLite); none shipped by default  
+- Persist annotations: loc (CFI or chapter + offsets), color, note text  
+- Reinject highlights on chapter load  
+- Annotations list (jump to)  
+- My Library → Saved quotes / Saved words (real data)  
+- Export quotes → Markdown  
+
+### Look
+
+- Selection UI inspired by tablet readers (compact chip above selection)  
+- Highlight colors soft (incl. pink/rose option like reference photo)  
+- Must not reintroduce blue underlines on body text  
+
+### Out
+
+Full EPUB HTML editing, sync, collaborative notes.
+
+### Arch check
+
+Highlight, quit, reopen; offline dictionary; export quotes.
+
+### Exit criteria
+
+Annotations trustworthy enough you stop using another app for EPUB markup.
 
 ---
 
@@ -204,28 +227,20 @@ Annotations trustworthy enough you stop using another reader for EPUB.
 
 ### Scope
 
-- Home: continue, recent, reading-list peek, counts
-- Reading list (ordered TBR)
-- History (opened/finished)
+- Home polish: continue, recent, reading-list peek, counts  
+- Reading list (ordered TBR)  
+- History (opened/finished)  
 - **Shelves engine**
-  - Manual shelf (book ids)
-  - Smart shelf (rules: tag, author, format, progress range, series, and/or)
-  - Shelves grid shows live counts
-- Tags browse
-- Light analytics (minutes approx, finished count) — simple
-- Book page wired to real DB fields
+  - Manual shelf (book ids)  
+  - Smart shelf (rules: tag, author, format, progress, series, and/or)  
+  - Shelves grid: 2 columns, live counts (as designed in P0)  
+- Tags browse  
+- Light analytics  
+- Book page / float wired fully to DB  
 
 ### Out
 
 Online sources.
-
-### Arch check
-
-Create smart shelf “unread EPUB”, pin manual favorites, Home correct.
-
-### Exit criteria
-
-No need for Calibre virtual libraries for daily browsing.
 
 ---
 
@@ -235,51 +250,37 @@ No need for Calibre virtual libraries for daily browsing.
 
 ### Scope
 
-- Edit metadata dialog: title, authors, tags, series, series_index, identifiers
-- Replace / crop cover (basic)
-- Fetch metadata from **Open Library** (and maybe one backup) — user-triggered
-- Apply fetch with confirm (don’t silently overwrite)
-- Filename / folder optional rename policy (default: keep uuid paths)
-
-### Out
-
-Calibre plugin ecosystem, bulk magic beyond multi-select edit if time.
-
-### Arch check
-
-Fetch one book’s metadata, edit tags, cover swap.
+- Edit metadata dialog  
+- Replace cover  
+- Fetch from **Open Library** (user-triggered, confirm before overwrite)  
+- Keep uuid paths by default  
 
 ---
 
 ## P6 — Downloads hub
 
-**Goal:** One place for “stuff coming in.”
+**Goal:** One place for inbound files/jobs.
 
 ### Scope
 
-- Queue model: queued / active / done / failed
-- UI under sidebar Downloads
-- Local **folder watch** import (drop EPUB in folder → queue → library)
-- Hook points for future AO3/comics jobs
-- Persist queue state lightly
-
-### Out
-
-Actual AO3/comics fetch (next phases).
+- Queue: queued / active / done / failed  
+- Sidebar Downloads UI  
+- Folder-watch import  
+- Hooks for AO3/comics jobs  
 
 ---
 
 ## P7 — Fiction sources (AO3 first)
 
-**Goal:** Search/read/track fanfiction without a browser.
+**Goal:** Search/read/track fanfiction inside Kalam.
 
 ### Scope
 
-- `FictionSource` adapter trait
-- AO3: search, work detail, download EPUB into library, store `source` + `remote_id`
-- Track updates: manual “Check updates” → re-download if new chapters
-- Respect rate limits / ToS; clear errors
-- Optional second adapter (e.g. another FF site you name) only after AO3 is solid
+- `FictionSource` trait  
+- AO3: search, detail, download EPUB into library, `source` + `remote_id`  
+- Manual “Check updates”  
+- Rate limits / clear errors  
+- Open downloads in **text reader**  
 
 ### Out
 
@@ -287,89 +288,89 @@ Piracy sources.
 
 ---
 
-## P8 — Comics local
+## P8 — Comics local + Moku-style reader
 
-**Goal:** CBZ/CBR you already have.
+**Goal:** Local CBZ/CBR with a dedicated comics viewer.
 
 ### Scope
 
-- Import CBZ/CBR into library
-- Reader: page mode LTR/RTL, webtoon long-strip, progress, double-page optional
-- Memory-safe image pipeline (decode viewport only)
-- Book page format-aware actions
+- Import CBZ/CBR into same catalog (`format = cbz|cbr`)  
+- **Comics reader UI (Moku reference — locked):**  
+  - Black immersive stage, art centered  
+  - Top bar: close, chapter/title, page `i / N`, zoom %  
+  - Bottom: scrubber, zoom, prev/next page  
+  - Page mode LTR/RTL; webtoon long-strip mode  
+  - Fit width / fit height  
+  - Tap center toggle chrome (optional)  
+- Memory-safe decode (viewport ± neighbors only)  
+- Progress per book  
+- Book page / float: **Read** routes to comics viewer when format is comic  
 
 ### Out
 
-Remote catalogues.
+Remote catalogues (P9).
+
+### Arch check
+
+Open large CBZ, scrub pages, zoom, RTL, quit/restore page; RAM stays reasonable.
 
 ---
 
 ## P9 — Comics sources
 
-**Goal:** Suwayomi-*like* **module**, not a full extension store on day one.
+**Goal:** Browse/download into library → open in P8 viewer.
 
 ### Scope
 
-- Source framework + 1–2 **legitimate / self-hosted** backends first  
-  (e.g. OPDS, Komga, Kavita, or user-owned archive)
-- Browse → download → library → open in comics reader
-- Downloads hub integration
+- Source framework  
+- Prefer **self-hosted / legitimate** backends first (OPDS, Komga, Kavita, own archive)  
+- Downloads hub integration  
+- Suwayomi-*like* module depth only as needed — not a full extension store on day one  
 
 ### Policy
 
-Only sources you’re allowed to use. No assistance for unauthorized manga scrapers.
+Only sources you’re allowed to use. No unauthorized scraper assistance.
 
 ---
 
-## P10 — PDF
+## P10 — PDF (text-reader family)
 
-**Goal:** Read and lightly mark PDFs.
+**Goal:** Read PDFs with light marks.
 
 ### Scope
 
-- MuPDF (or Poppler) view
-- Continuous or page mode
-- Basic highlight/underline (browser-like), store in DB
-- Share library entry with EPUB flow
-
-### Out
-
-Full PDF editor, forms, heavy annotation suite.
+- MuPDF (or Poppler) view inside **text-reader chrome family** (not comics shell)  
+- Continuous or page mode  
+- Basic highlight/underline stored like EPUB annotations where possible  
+- Same library entry model  
 
 ---
 
 ## P11 — Tools
 
-**Goal:** Occasional Calibre jobs you still need.
+**Goal:** Occasional Calibre-class jobs.
 
 ### Scope
 
-- Convert via external tool if present (`ebook-convert` / `pandoc`) — not reimplemented
-- Polish: strip junk CSS, simple cleanup passes on EPUB
-- Batch metadata / cover refresh
-- Optional Calibre `metadata.db` one-shot import
+- Convert via external `ebook-convert` / `pandoc` if present  
+- EPUB polish (strip junk CSS, etc.)  
+- Batch metadata / cover refresh  
+- Optional Calibre `metadata.db` one-shot import  
 
 ---
 
-## Schema preview (P1+, expands later)
+## Schema (current + planned)
 
 ```text
-books            id, uuid, title, sort_title, path, format, hash, added_at, …
-authors          id, name, sort_name
-book_authors     book_id, author_id, role, position
-tags             id, name
-book_tags        book_id, tag_id
-progress         book_id, chapter_id, fraction, updated_at
-annotations      id, book_id, kind, loc, color, body, created_at
-saved_words      id, word, snapshot, book_id, created_at
-shelves          id, name, kind (manual|smart), rules_json, …
-shelf_books      shelf_id, book_id, position   -- manual only
-reading_list     book_id, position
-sources_state    book_id, source, remote_id, last_check, …
-download_jobs    id, kind, state, payload_json, …
+books              id, uuid, title, sort_title, authors, series, description,
+                   format, file_name, file_hash, cover_name, added_at, progress
+tags / book_tags
+reading_progress   book_id, chapter_index, fraction, updated_at   -- P2
+annotations        id, book_id, kind, loc, color, body, …         -- P3
+saved_words        …                                              -- P3
+shelves / shelf_books / reading_list                              -- P4
+sources_state / download_jobs                                     -- P6+
 ```
-
-Exact SQL lands in P1 migration files.
 
 ---
 
@@ -379,12 +380,10 @@ Exact SQL lands in P1 migration files.
 |-------|------|
 | `cargo fmt --check` | every push |
 | `cargo clippy -D warnings` | every push |
-| `cargo build` | every push |
-| `cargo build --release` | primary job |
-| GUI / WebKit smoke | **your Arch machine** at phase end |
+| `cargo build` / `release` | every push |
+| GUI smoke | **your Arch machine** at phase end |
 
-Workflow: `.github/workflows/ci.yml`  
-Two jobs: gtk-rs container + plain Ubuntu apt (belt and suspenders).
+Deps include `webkitgtk-6.0` for P2+.
 
 ---
 
@@ -392,21 +391,20 @@ Two jobs: gtk-rs container + plain Ubuntu apt (belt and suspenders).
 
 | Risk | Mitigation |
 |------|------------|
-| WebKit RAM on 4 GB | One WebView; chapter-wise mount; immersive unload library heavies |
-| HDD lag on chapter turn | Prefetch early; decode off UI thread |
-| Scope creep (comics+AO3+reader) | Hard phase gates; P0–P5 before sources |
-| Custom UI thrash | Shell first; skin CSS without rewriting routes |
-| EPUB edge cases | Prefer WebKit fidelity; quarantine broken files with error UI |
-| Annotation loc breaks on re-download | P7: best-effort; may reset progress on major spine change |
+| WebKit RAM on 4 GB | One WebView; chapter-wise load |
+| EPUB blue link spam | Aggressive reading CSS; inject at end of body |
+| Reader timer after drop | No background progress timer; save on nav/close |
+| Comics RAM | Decode only nearby pages (P8) |
+| Scope creep | Phase gates; comics design locked, code in P8 |
+| Annotation loc vs re-download | P7 best-effort; may reset on spine change |
 
 ---
 
 ## Immediate next steps
 
-1. Finish **P2** CI green + Arch smoke-test (read EPUB, fonts, progress restore)  
-2. Then **P3** annotations + dictionary  
-
-
+1. **P3 — Annotations & dictionary** on the text reader  
+2. Keep refining text-reader polish only if you file specific UX bugs  
+3. **P8** when you want comics for real (UI target already specified above)  
 
 ---
 
@@ -415,9 +413,16 @@ Two jobs: gtk-rs container + plain Ubuntu apt (belt and suspenders).
 | Date | Decision |
 |------|----------|
 | 2026-07-24 | Name: Kalam; Linux only; Relm4+GTK4; no Z-Library |
-| 2026-07-24 | EPUB engine: WebKit; chapter-wise seamless scroll |
-| 2026-07-24 | Custom UI; slim sidebar IA agreed |
+| 2026-07-24 | EPUB engine: WebKit; chapter-wise scroll |
+| 2026-07-24 | Custom UI; slim sidebar IA |
 | 2026-07-24 | Shelves: grid → detail → book page or float |
-| 2026-07-24 | CI for compile; Arch only at phase boundaries |
-| 2026-07-24 | This roadmap P0–P11 |
-| 2026-07-25 | P0 signed off on Arch; start P1 library core |
+| 2026-07-24 | CI compile; Arch at phase boundaries |
+| 2026-07-24 | Roadmap P0–P11 |
+| 2026-07-25 | P0 signed off; P1 library core |
+| 2026-07-25 | Cover cards: 1.6:1 cover, title/author below; click=float, Ctrl+click=page |
+| 2026-07-25 | Float: Suwayomi-style panel; later no open/close morph animations |
+| 2026-07-26 | P2 EPUB reader; restyle to tablet-book floating chrome |
+| 2026-07-26 | Two readers locked: text vs comics |
+| 2026-07-26 | Text reader look: sepia default, no blue body/links, no underlines |
+| 2026-07-26 | Comics reader look: Moku-like black stage, top meta + bottom scrub (P8) |
+| 2026-07-26 | P0–P2 treated complete; **next = P3** |
