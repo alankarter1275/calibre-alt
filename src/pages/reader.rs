@@ -1,4 +1,4 @@
-//! Immersive EPUB reader (WebKitGTK) — chapter-wise continuous scroll.
+//! Immersive EPUB reader — full page + floating chrome (tablet-book look).
 
 use crate::db::Catalog;
 use crate::epub_book::{reading_css, OpenBook, ReadingTheme};
@@ -16,7 +16,6 @@ pub enum ReaderOut {
 #[derive(Debug)]
 pub enum ReaderMsg {
     Close,
-    TocToggle,
     TocSelect(usize),
     PrevChapter,
     NextChapter,
@@ -31,13 +30,11 @@ pub struct ReaderModel {
     book_title: String,
     open: OpenBook,
     chapter: usize,
-    /// In-chapter fraction 0..1 (best-effort; restored on chapter load).
     fraction: f64,
     theme: ReadingTheme,
     font_px: u32,
     line_height: f32,
     margin_em: f32,
-    toc_visible: bool,
     loading: bool,
     dirty: bool,
     webview: webkit6::WebView,
@@ -52,109 +49,100 @@ impl Component for ReaderModel {
 
     view! {
         #[root]
-        gtk::Box {
-            set_orientation: gtk::Orientation::Vertical,
+        gtk::Overlay {
             add_css_class: "kalam-reader",
             set_hexpand: true,
             set_vexpand: true,
 
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                add_css_class: "kalam-reader-bar",
-                set_spacing: 8,
-
-                gtk::Button {
-                    set_label: "← Library",
-                    add_css_class: "kalam-secondary-btn",
-                    connect_clicked => ReaderMsg::Close,
-                },
-
-                gtk::Button {
-                    set_label: "TOC",
-                    add_css_class: "kalam-secondary-btn",
-                    connect_clicked => ReaderMsg::TocToggle,
-                },
-
-                #[name = "title_label"]
-                gtk::Label {
-                    add_css_class: "kalam-reader-title",
-                    set_hexpand: true,
-                    set_ellipsize: gtk::pango::EllipsizeMode::End,
-                    set_halign: gtk::Align::Center,
-                },
-
-                gtk::Button {
-                    set_label: "A−",
-                    add_css_class: "kalam-secondary-btn",
-                    connect_clicked => ReaderMsg::FontDelta(-1),
-                },
-                gtk::Button {
-                    set_label: "A+",
-                    add_css_class: "kalam-secondary-btn",
-                    connect_clicked => ReaderMsg::FontDelta(1),
-                },
-
-                gtk::Button {
-                    set_label: "Light",
-                    add_css_class: "kalam-secondary-btn",
-                    connect_clicked => ReaderMsg::Theme(ReadingTheme::Light),
-                },
-                gtk::Button {
-                    set_label: "Sepia",
-                    add_css_class: "kalam-secondary-btn",
-                    connect_clicked => ReaderMsg::Theme(ReadingTheme::Sepia),
-                },
-                gtk::Button {
-                    set_label: "Dark",
-                    add_css_class: "kalam-secondary-btn",
-                    connect_clicked => ReaderMsg::Theme(ReadingTheme::Dark),
-                },
-
-                gtk::Button {
-                    set_label: "‹",
-                    add_css_class: "kalam-secondary-btn",
-                    set_tooltip_text: Some("Previous chapter (P)"),
-                    connect_clicked => ReaderMsg::PrevChapter,
-                },
-                #[name = "chapter_label"]
-                gtk::Label {
-                    add_css_class: "kalam-muted",
-                    set_width_chars: 8,
-                },
-                gtk::Button {
-                    set_label: "›",
-                    add_css_class: "kalam-secondary-btn",
-                    set_tooltip_text: Some("Next chapter (N)"),
-                    connect_clicked => ReaderMsg::NextChapter,
-                },
-            },
-
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
+            #[wrap(Some)]
+            set_child = &gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
                 set_hexpand: true,
                 set_vexpand: true,
-
-                #[name = "toc_scroll"]
-                gtk::ScrolledWindow {
-                    set_width_request: 240,
-                    set_vexpand: true,
-                    #[watch]
-                    set_visible: model.toc_visible,
-                    set_hscrollbar_policy: gtk::PolicyType::Never,
-
-                    #[name = "toc_list"]
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        add_css_class: "kalam-reader-toc",
-                        set_spacing: 2,
-                    },
-                },
+                add_css_class: "kalam-reader-stage",
 
                 #[name = "web_host"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_hexpand: true,
                     set_vexpand: true,
+                },
+            },
+
+            // Top-left floating crumb
+            add_overlay = &gtk::Box {
+                set_halign: gtk::Align::Start,
+                set_valign: gtk::Align::Start,
+                set_margin_top: 14,
+                set_margin_start: 14,
+
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    add_css_class: "kalam-reader-top-float",
+                    set_spacing: 6,
+
+                    gtk::Button {
+                        set_label: "✕",
+                        add_css_class: "kalam-reader-pill-btn",
+                        set_tooltip_text: Some("Back (Esc)"),
+                        connect_clicked => ReaderMsg::Close,
+                    },
+
+                    #[name = "crumb_label"]
+                    gtk::Label {
+                        add_css_class: "kalam-reader-crumb",
+                        set_ellipsize: gtk::pango::EllipsizeMode::End,
+                        set_max_width_chars: 40,
+                    },
+                },
+            },
+
+            // Bottom floating pill
+            add_overlay = &gtk::Box {
+                set_halign: gtk::Align::Center,
+                set_valign: gtk::Align::End,
+                set_margin_bottom: 22,
+
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    add_css_class: "kalam-reader-pill",
+                    set_spacing: 2,
+
+                    gtk::Button {
+                        set_label: "‹",
+                        add_css_class: "kalam-reader-pill-btn",
+                        set_tooltip_text: Some("Previous chapter (P)"),
+                        connect_clicked => ReaderMsg::PrevChapter,
+                    },
+
+                    #[name = "toc_btn"]
+                    gtk::MenuButton {
+                        set_label: "☰",
+                        add_css_class: "kalam-reader-pill-btn",
+                        set_tooltip_text: Some("Contents (T)"),
+                        set_direction: gtk::ArrowType::Up,
+                    },
+
+                    #[name = "chapter_label"]
+                    gtk::Label {
+                        add_css_class: "kalam-reader-pill-meta",
+                        set_width_chars: 7,
+                    },
+
+                    #[name = "aa_btn"]
+                    gtk::MenuButton {
+                        set_label: "Aa",
+                        add_css_class: "kalam-reader-pill-btn",
+                        set_tooltip_text: Some("Typography & theme"),
+                        set_direction: gtk::ArrowType::Up,
+                    },
+
+                    gtk::Button {
+                        set_label: "›",
+                        add_css_class: "kalam-reader-pill-btn",
+                        set_tooltip_text: Some("Next chapter (N)"),
+                        connect_clicked => ReaderMsg::NextChapter,
+                    },
                 },
             },
         }
@@ -185,10 +173,10 @@ impl Component for ReaderModel {
                 Err(err) => {
                     eprintln!("kalam: open epub failed: {err:#}");
                     let msg = format!(
-                        "<html><body style='padding:2rem;background:#12141a;\
-color:#e8eaf0;font-family:sans-serif'>\
+                        "<html><body style='padding:2rem;background:#f4ecd8;\
+color:#3e3226;font-family:Georgia,serif'>\
 <h1>Could not open book</h1><pre>{err:#}</pre>\
-<p>Press Esc or ← Library to go back.</p></body></html>"
+<p>Press Esc to go back.</p></body></html>"
                     );
                     webview.load_html(&msg, None);
                     (book.title, OpenBook::empty_placeholder(), 0, 0.0)
@@ -205,11 +193,10 @@ color:#e8eaf0;font-family:sans-serif'>\
             open,
             chapter,
             fraction,
-            theme: ReadingTheme::Dark,
-            font_px: 20,
-            line_height: 1.55,
-            margin_em: 1.25,
-            toc_visible: false,
+            theme: ReadingTheme::Sepia,
+            font_px: 19,
+            line_height: 1.65,
+            margin_em: 1.4,
             loading: false,
             dirty: false,
             webview: webview.clone(),
@@ -218,7 +205,73 @@ color:#e8eaf0;font-family:sans-serif'>\
         let widgets = view_output!();
         widgets.web_host.append(&webview);
         update_chrome_labels(&widgets, &model);
-        build_toc(&widgets.toc_list, &model.open, &sender);
+
+        // TOC popover
+        let toc_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        build_toc(&toc_box, &model.open, &sender);
+        let toc_scroll = gtk::ScrolledWindow::builder()
+            .min_content_height(280)
+            .min_content_width(260)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .child(&toc_box)
+            .build();
+        let toc_wrap = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        toc_wrap.set_margin_all(10);
+        let toc_title = gtk::Label::new(Some("Contents"));
+        toc_title.add_css_class("kalam-reader-popover-title");
+        toc_title.set_halign(gtk::Align::Start);
+        toc_wrap.append(&toc_title);
+        toc_wrap.append(&toc_scroll);
+        let toc_pop = gtk::Popover::new();
+        toc_pop.add_css_class("kalam-reader-popover");
+        toc_pop.set_child(Some(&toc_wrap));
+        toc_pop.set_position(gtk::PositionType::Top);
+        widgets.toc_btn.set_popover(Some(&toc_pop));
+
+        // Aa popover
+        let aa_wrap = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        aa_wrap.set_margin_all(12);
+        let size_l = gtk::Label::new(Some("TEXT SIZE"));
+        size_l.add_css_class("kalam-reader-popover-title");
+        size_l.set_halign(gtk::Align::Start);
+        aa_wrap.append(&size_l);
+        let size_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        size_row.set_halign(gtk::Align::Center);
+        let a_minus = gtk::Button::with_label("A−");
+        a_minus.add_css_class("kalam-reader-pill-btn");
+        let s1 = sender.clone();
+        a_minus.connect_clicked(move |_| s1.input(ReaderMsg::FontDelta(-1)));
+        let a_plus = gtk::Button::with_label("A+");
+        a_plus.add_css_class("kalam-reader-pill-btn");
+        let s2 = sender.clone();
+        a_plus.connect_clicked(move |_| s2.input(ReaderMsg::FontDelta(1)));
+        size_row.append(&a_minus);
+        size_row.append(&a_plus);
+        aa_wrap.append(&size_row);
+
+        let theme_l = gtk::Label::new(Some("THEME"));
+        theme_l.add_css_class("kalam-reader-popover-title");
+        theme_l.set_halign(gtk::Align::Start);
+        aa_wrap.append(&theme_l);
+        let theme_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        for (label, theme) in [
+            ("Light", ReadingTheme::Light),
+            ("Sepia", ReadingTheme::Sepia),
+            ("Dark", ReadingTheme::Dark),
+        ] {
+            let b = gtk::Button::with_label(label);
+            b.add_css_class("kalam-reader-theme-btn");
+            let s = sender.clone();
+            b.connect_clicked(move |_| s.input(ReaderMsg::Theme(theme)));
+            theme_row.append(&b);
+        }
+        aa_wrap.append(&theme_row);
+
+        let aa_pop = gtk::Popover::new();
+        aa_pop.add_css_class("kalam-reader-popover");
+        aa_pop.set_child(Some(&aa_wrap));
+        aa_pop.set_position(gtk::PositionType::Top);
+        widgets.aa_btn.set_popover(Some(&aa_pop));
 
         if model.open.chapter_count() > 0 {
             load_chapter(&model);
@@ -231,10 +284,6 @@ color:#e8eaf0;font-family:sans-serif'>\
             match keyval {
                 Key::Escape => {
                     s.input(ReaderMsg::Close);
-                    gtk::glib::Propagation::Stop
-                }
-                Key::t | Key::T => {
-                    s.input(ReaderMsg::TocToggle);
                     gtk::glib::Propagation::Stop
                 }
                 Key::n | Key::N | Key::Right => {
@@ -259,7 +308,6 @@ color:#e8eaf0;font-family:sans-serif'>\
         root.add_controller(key);
         root.set_can_focus(true);
 
-        // Mark chapter as "in progress" while reading (fraction bumps slowly as proxy).
         let s_flush = sender.clone();
         gtk::glib::timeout_add_local(std::time::Duration::from_secs(2), move || {
             s_flush.input(ReaderMsg::FlushProgress);
@@ -278,18 +326,15 @@ color:#e8eaf0;font-family:sans-serif'>\
     ) {
         match msg {
             ReaderMsg::Close => {
-                // Leaving a chapter: treat as ~mid if we never tracked scroll.
                 if self.fraction < 0.05 {
                     self.fraction = 0.15;
                 }
                 self.save_progress();
                 sender.output(ReaderOut::Close).ok();
             }
-            ReaderMsg::TocToggle => {
-                self.toc_visible = !self.toc_visible;
-            }
             ReaderMsg::TocSelect(idx) => {
                 if idx < self.open.chapter_count() && idx != self.chapter && !self.loading {
+                    widgets.toc_btn.popdown();
                     self.go_chapter(idx, 0.0);
                 }
             }
@@ -300,15 +345,16 @@ color:#e8eaf0;font-family:sans-serif'>\
             }
             ReaderMsg::NextChapter => {
                 if self.chapter + 1 < self.open.chapter_count() && !self.loading {
-                    // Finished this chapter.
                     self.fraction = 1.0;
                     self.go_chapter(self.chapter + 1, 0.0);
                 }
             }
             ReaderMsg::Theme(t) => {
                 self.theme = t;
+                widgets.aa_btn.popdown();
                 self.loading = true;
                 load_chapter(self);
+                self.loading = false;
             }
             ReaderMsg::FontDelta(d) => {
                 let next = (self.font_px as i32 + d).clamp(14, 36) as u32;
@@ -316,11 +362,11 @@ color:#e8eaf0;font-family:sans-serif'>\
                     self.font_px = next;
                     self.loading = true;
                     load_chapter(self);
+                    self.loading = false;
                 }
             }
             ReaderMsg::FlushProgress => {
                 if self.open.chapter_count() > 0 {
-                    // Gentle progress while sitting in a chapter.
                     if self.fraction < 0.85 {
                         self.fraction = (self.fraction + 0.02).min(0.85);
                         self.dirty = true;
@@ -372,12 +418,12 @@ impl ReaderModel {
 
 fn update_chrome_labels(widgets: &ReaderModelWidgets, model: &ReaderModel) {
     if model.open.chapter_count() == 0 {
-        widgets.title_label.set_label(&model.book_title);
+        widgets.crumb_label.set_label(&model.book_title);
         widgets.chapter_label.set_label("—");
         return;
     }
-    widgets.title_label.set_label(&format!(
-        "{} — {}",
+    widgets.crumb_label.set_label(&format!(
+        "{} · {}",
         model.book_title, model.open.spine[model.chapter].title
     ));
     widgets.chapter_label.set_label(&format!(
@@ -406,8 +452,8 @@ fn load_chapter(model: &ReaderModel) {
         }
         Err(err) => {
             let err_html = format!(
-                "<html><body style='padding:2rem;background:#12141a;\
-color:#e8eaf0;font-family:sans-serif'>\
+                "<html><body style='padding:2rem;background:#f4ecd8;\
+color:#3e3226;font-family:Georgia,serif'>\
 <h1>Could not load chapter</h1><pre>{err:#}</pre></body></html>"
             );
             model.webview.load_html(&err_html, None);

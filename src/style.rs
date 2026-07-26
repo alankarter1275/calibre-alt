@@ -98,11 +98,6 @@ window.kalam-window {
     background: @kalam_bg;
 }
 
-/* When reader is mounted it fills the content host; zero padding via child. */
-.kalam-content > .kalam-reader {
-    margin: -20px -24px;
-}
-
 /* ── breadcrumbs / back ─────────────────────────────── */
 .kalam-back-btn {
     padding: 6px 10px;
@@ -502,47 +497,95 @@ window.kalam-float-window {
     padding: 3px 8px;
 }
 
-/* ── reader ─────────────────────────────────────────── */
-.kalam-content-reader {
-    padding: 0;
-    background: @kalam_bg;
+/* ── reader (immersive tablet-book) ─────────────────── */
+.kalam-content > .kalam-reader {
+    margin: -20px -24px;
 }
 
 .kalam-reader {
-    background: @kalam_bg;
+    background: #0a0a0b;
 }
 
-.kalam-reader-bar {
-    background: @kalam_surface;
-    border-bottom: 1px solid @kalam_border;
-    padding: 8px 12px;
-    min-height: 48px;
+.kalam-reader-stage {
+    background: #0a0a0b;
+    min-height: 100%;
 }
 
-.kalam-reader-title {
+.kalam-reader-top-float {
+    background: alpha(#1c1917, 0.72);
+    border: 1px solid alpha(#fff, 0.08);
+    border-radius: 999px;
+    padding: 4px 10px 4px 4px;
+    box-shadow: 0 8px 28px alpha(#000, 0.35);
+}
+
+.kalam-reader-crumb {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: alpha(#fafaf9, 0.88);
+    padding-right: 6px;
+}
+
+/* Bottom floating control pill */
+.kalam-reader-pill {
+    background: alpha(#1c1917, 0.88);
+    border: 1px solid alpha(#fff, 0.10);
+    border-radius: 999px;
+    padding: 6px 10px;
+    box-shadow: 0 12px 40px alpha(#000, 0.45);
+}
+
+.kalam-reader-pill-btn {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: none;
+    background: transparent;
+    color: #f5f5f4;
     font-weight: 600;
     font-size: 0.95rem;
-    color: @kalam_text;
 }
 
-.kalam-reader-toc {
-    background: @kalam_sidebar;
-    border-right: 1px solid @kalam_border;
-    padding: 8px;
-    min-width: 220px;
+.kalam-reader-pill-btn:hover {
+    background: alpha(#fff, 0.12);
+}
+
+.kalam-reader-pill-meta {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: alpha(#e7e5e4, 0.75);
+    padding: 0 6px;
+    min-width: 3.5rem;
+}
+
+.kalam-reader-popover {
+    padding: 4px;
+}
+
+.kalam-reader-popover-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: @kalam_text_dim;
+}
+
+.kalam-reader-theme-btn {
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.85rem;
 }
 
 .kalam-toc-item {
     background: transparent;
     border: none;
     border-radius: 8px;
-    color: @kalam_text_dim;
+    color: @kalam_text;
     padding: 8px 10px;
-    font-size: 0.85rem;
+    font-size: 0.88rem;
 }
 
 .kalam-toc-item:hover {
     background: @kalam_surface_2;
-    color: @kalam_text;
 }
 "#;

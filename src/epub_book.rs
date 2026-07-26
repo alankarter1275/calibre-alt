@@ -529,15 +529,19 @@ fn join_zip_path(dir: &str, href: &str) -> String {
     parts.join("/")
 }
 
-/// Default reading stylesheet (CSS variables for instant updates).
+/// Default reading stylesheet — book-like, not webpage-like.
+/// Body text is never forced blue; links are subtle.
 pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, margin_em: f32) -> String {
-    let (bg, fg, link) = match theme {
-        ReadingTheme::Light => ("#f7f3ea", "#1a1a1a", "#0b57d0"),
-        ReadingTheme::Sepia => ("#f4ecd8", "#5b4636", "#8b4513"),
-        ReadingTheme::Dark => ("#12141a", "#e8eaf0", "#7c9cff"),
+    let (bg, fg, muted, link) = match theme {
+        ReadingTheme::Light => ("#faf8f5", "#1c1917", "#57534e", "#44403c"),
+        ReadingTheme::Sepia => ("#f4ecd8", "#3e3226", "#6b5a48", "#5c4a3a"),
+        ReadingTheme::Dark => ("#1a1b1e", "#e7e5e4", "#a8a29e", "#d6d3d1"),
     };
     format!(
         r#"
+html {{
+  background: {bg} !important;
+}}
 html, body {{
   background: {bg} !important;
   color: {fg} !important;
@@ -547,21 +551,51 @@ html, body {{
   padding: 0 !important;
 }}
 body {{
-  max-width: 42rem;
+  max-width: 38rem;
   margin-left: auto !important;
   margin-right: auto !important;
-  padding: {margin}em {margin}em 4em {margin}em !important;
-  font-family: "Literata", "Georgia", "Times New Roman", serif !important;
+  padding: {margin}em {margin}em 6em {margin}em !important;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
+    "Literata", Georgia, "Times New Roman", serif !important;
+  -webkit-font-smoothing: antialiased;
 }}
-p, div, span, li, td, th {{
+/* Kill common EPUB blue / gray overrides on body copy */
+p, div, span, li, td, th, blockquote, h1, h2, h3, h4, h5, h6,
+section, article, main, font {{
+  color: inherit !important;
   line-height: {lh} !important;
+  background: transparent !important;
 }}
-a {{ color: {link} !important; }}
-img {{ max-width: 100% !important; height: auto !important; }}
+h1, h2, h3, h4, h5, h6 {{
+  color: {fg} !important;
+  font-weight: 650 !important;
+  line-height: 1.25 !important;
+  margin-top: 1.4em !important;
+}}
+/* Links: bookish, not browser-blue walls of text */
+a, a:link, a:visited {{
+  color: {fg} !important;
+  text-decoration: underline !important;
+  text-decoration-color: {muted} !important;
+  text-underline-offset: 0.15em !important;
+}}
+a:hover {{
+  color: {fg} !important;
+  text-decoration-color: {fg} !important;
+}}
+img, svg {{
+  max-width: 100% !important;
+  height: auto !important;
+}}
+/* Selection preview (P3 will use proper highlights) */
+::selection {{
+  background: rgba(244, 114, 182, 0.35);
+  color: inherit;
+}}
 "#,
         bg = bg,
         fg = fg,
-        link = link,
+        muted = muted,
         font_px = font_px,
         lh = line_height,
         margin = margin_em,
