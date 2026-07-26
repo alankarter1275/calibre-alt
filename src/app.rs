@@ -639,10 +639,8 @@ fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     let btn = gtk::Button::new();
     btn.set_child(Some(&inner));
     btn.add_css_class("kalam-nav-btn");
-    // Make hover highlight tight around content, not full sidebar width — capsule
-    btn.set_halign(gtk::Align::Center);
-    btn.set_hexpand(false);
-    btn.set_hexpand_set(true);
+    btn.set_halign(gtk::Align::Fill);
+    btn.set_hexpand(true);
     if active {
         btn.add_css_class("active");
     }

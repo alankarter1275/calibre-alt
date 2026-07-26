@@ -40,16 +40,16 @@ window.kalam-window {
 }
 
 .kalam-nav-btn {
-    padding: 8px 14px;
+    padding: 10px 6px;
     border-radius: 999px;
-    margin: 3px auto;
+    margin-top: 2px;
+    margin-bottom: 2px;
     background: transparent;
     border: none;
     color: @kalam_text_dim;
     font-size: 0.72rem;
     font-weight: 500;
-    min-width: 0;
-    min-height: 0;
+    min-width: 48px;
 }
 
 .kalam-nav-btn:hover {
@@ -314,12 +314,9 @@ window.kalam-window {
 /* ── cover cards (Goodreads-style bookshelf grid) ───── */
 .kalam-book-grid {
     margin-top: 4px;
-    max-width: 100%;
 }
 
 .kalam-book-grid-shell {
-    max-width: 100%;
-    overflow: hidden;
 }
 
 .kalam-book-card {
@@ -535,7 +532,7 @@ window.kalam-float-window {
 .kalam-reader-pill-btn {
     min-width: 36px;
     min-height: 36px;
-    padding: 0 10px;
+    padding: 0;
     border-radius: 999px;
     border: none;
     background: transparent;
@@ -548,11 +545,28 @@ window.kalam-float-window {
     background: rgba(255, 255, 255, 0.12);
 }
 
-/* ensure MenuButton inner button is also capsule */
-.kalam-reader-pill menubutton.kalam-reader-pill-btn,
-.kalam-reader-pill menubutton.kalam-reader-pill-btn > button,
-.kalam-reader-pill button.kalam-reader-pill-btn {
+/* ensure MenuButton inner button is also capsule and hover is tight */
+.kalam-reader-pill menubutton.kalam-reader-pill-btn {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0;
     border-radius: 999px;
+    background: transparent;
+}
+
+.kalam-reader-pill menubutton.kalam-reader-pill-btn > button {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0;
+    border-radius: 999px;
+}
+
+.kalam-reader-pill menubutton.kalam-reader-pill-btn:hover {
+    background: transparent;
+}
+
+.kalam-reader-pill menubutton.kalam-reader-pill-btn > button:hover {
+    background: rgba(255, 255, 255, 0.12);
 }
 
 .kalam-reader-pill-meta {

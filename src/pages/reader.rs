@@ -312,8 +312,8 @@ color:#3e3226;font-family:Georgia,serif'>\
         anno_box.append(&anno_title);
 
         let anno_scroll = gtk::ScrolledWindow::builder()
-            .min_content_height(460)
-            .min_content_width(680)
+            .min_content_height(520)
+            .min_content_width(800)
             .hscrollbar_policy(gtk::PolicyType::Never)
             .build();
         let anno_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
