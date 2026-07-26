@@ -196,23 +196,25 @@ window.kalam-window {
 
 /* ── book row in shelf list ─────────────────────────── */
 .kalam-cover-frame {
-    border-radius: 8px;
-    border: 1px solid @kalam_border;
+    border-radius: 6px;
     background: @kalam_surface_2;
+    /* no extra padding — grey side bars came from empty frame chrome */
     padding: 0;
+    margin: 0;
+    border: none;
+    box-shadow: 0 2px 10px alpha(#000, 0.35);
 }
 
 .kalam-cover-placeholder {
-    background: linear-gradient(145deg, #2a3148, #1a1f30);
-    border-radius: 8px;
+    background: linear-gradient(160deg, #2a3148 0%, #1a1f30 100%);
+    border-radius: 6px;
 }
 
 .kalam-cover-img {
-    border-radius: 8px;
+    border-radius: 6px;
 }
 
 .kalam-book-grid-shell {
-    /* stops parents from stretching the card grid */
 }
 
 .kalam-progress {
@@ -310,34 +312,34 @@ window.kalam-window {
     margin-top: 8px;
 }
 
-/* ── cover cards (library grid) ─────────────────────── */
+/* ── cover cards (Goodreads-style bookshelf) ────────── */
 .kalam-book-grid {
     margin-top: 4px;
 }
 
 .kalam-book-card {
-    padding: 4px;
-    border-radius: 10px;
+    padding: 0;
+    border-radius: 0;
     background: transparent;
 }
 
-.kalam-book-card:hover {
-    background: @kalam_surface;
+.kalam-book-card:hover .kalam-cover-frame {
+    box-shadow: 0 6px 18px alpha(#000, 0.5);
 }
 
 .kalam-book-card-cover {
-    box-shadow: 0 4px 12px alpha(#000, 0.35);
+    /* cover widget itself */
 }
 
 .kalam-book-card-title {
     font-weight: 600;
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     color: @kalam_text;
     margin-top: 2px;
 }
 
 .kalam-book-card-author {
-    font-size: 0.74rem;
+    font-size: 0.72rem;
     color: @kalam_text_dim;
 }
 

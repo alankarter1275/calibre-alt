@@ -340,13 +340,11 @@ fn fill(widgets: &BookFloatModelWidgets, book: Option<&Book>) {
 
     widgets.header_title.set_label(&book.title);
 
-    // Fixed 1.6:1 portrait cover in the left column.
+    // Fixed 1.6:1 portrait cover (same helper as cards).
     let cover_w = 200;
-    let cover_h = (cover_w as f64 * 1.6) as i32;
+    let cover_h = ((cover_w as f64) * 1.6) as i32;
     let cover = cover_widget(book.cover_path.as_deref(), cover_w, cover_h);
     cover.add_css_class("kalam-float-cover");
-    cover.set_hexpand(false);
-    cover.set_vexpand(false);
     cover.set_halign(gtk::Align::Center);
     widgets.cover_host.append(&cover);
 

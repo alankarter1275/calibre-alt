@@ -1,5 +1,5 @@
 use crate::db::{Catalog, SortKey};
-use crate::widgets::book_row::build_book_grid;
+use crate::widgets::book_row::{build_book_card, build_book_grid};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::rc::Rc;
@@ -31,7 +31,7 @@ impl SimpleComponent for HomePageModel {
                 set_halign: gtk::Align::Start,
             },
             gtk::Label {
-                set_label: "Continue reading and recently added · click cover = float · Ctrl+click = full page",
+                set_label: "Continue reading and recently added · click = float · Ctrl+click = full page",
                 add_css_class: "kalam-page-sub",
                 set_halign: gtk::Align::Start,
             },
@@ -42,11 +42,12 @@ impl SimpleComponent for HomePageModel {
                 set_halign: gtk::Align::Start,
             },
 
-            // Must NOT expand — otherwise a single card can be given the full row width.
+            // Single card — never a full-width container.
             #[name = "continue_host"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_halign: gtk::Align::Start,
+                set_valign: gtk::Align::Start,
                 set_hexpand: false,
                 set_vexpand: false,
             },
@@ -78,38 +79,33 @@ impl SimpleComponent for HomePageModel {
 
         let books = catalog.list_books(SortKey::Added, "").unwrap_or_default();
 
-        let cont: Vec<_> = books
+        // One book for continue — attach a single card, not a stretchy grid.
+        let cont = books
             .iter()
-            .filter(|b| b.progress > 0 && b.progress < 100)
-            .take(1)
-            .cloned()
-            .collect();
-        let cont = if cont.is_empty() {
-            books.iter().take(1).cloned().collect::<Vec<_>>()
-        } else {
-            cont
-        };
+            .find(|b| b.progress > 0 && b.progress < 100)
+            .or_else(|| books.first());
 
-        if cont.is_empty() {
+        if let Some(book) = cont {
+            let id = book.id;
+            let s1 = sender.clone();
+            let s2 = sender.clone();
+            let card = build_book_card(
+                book,
+                move || {
+                    s1.output(HomeOut::OpenBook { book_id: id }).ok();
+                },
+                move || {
+                    s2.output(HomeOut::OpenBookDialog { book_id: id }).ok();
+                },
+            );
+            widgets.continue_host.append(&card);
+        } else {
             let empty = gtk::Label::new(Some(
                 "Nothing to continue — import books from My Library → All books.",
             ));
             empty.add_css_class("kalam-placeholder");
             empty.set_wrap(true);
             widgets.continue_host.append(&empty);
-        } else {
-            let s = sender.clone();
-            let s2 = sender.clone();
-            let grid = build_book_grid(
-                &cont,
-                move |id| {
-                    s.output(HomeOut::OpenBook { book_id: id }).ok();
-                },
-                move |id| {
-                    s2.output(HomeOut::OpenBookDialog { book_id: id }).ok();
-                },
-            );
-            widgets.continue_host.append(&grid);
         }
 
         let recent: Vec<_> = books.iter().take(12).cloned().collect();
