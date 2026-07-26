@@ -3,7 +3,7 @@
 use anyhow::{anyhow, Context, Result};
 use roxmltree::Document;
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
