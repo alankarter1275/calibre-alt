@@ -113,7 +113,12 @@ impl OpenBook {
     }
 
     /// HTML document for a spine chapter, with reading CSS injected and base href set.
-    pub fn chapter_html(&self, index: usize, reading_css: &str) -> Result<String> {
+    pub fn chapter_html(
+        &self,
+        index: usize,
+        reading_css: &str,
+        restore_fraction: f64,
+    ) -> Result<String> {
         let item = self
             .spine
             .get(index)
@@ -121,7 +126,12 @@ impl OpenBook {
         let raw = fs::read_to_string(&item.path)
             .with_context(|| format!("read chapter {}", item.path.display()))?;
         let base = path_to_file_url(item.path.parent().unwrap_or_else(|| Path::new(".")));
-        Ok(inject_reading_shell(&raw, &base, reading_css))
+        Ok(inject_reading_shell(
+            &raw,
+            &base,
+            reading_css,
+            restore_fraction,
+        ))
     }
 
     pub fn spine_index_for_href(&self, href: &str) -> Option<usize> {
@@ -383,7 +393,13 @@ fn strip_tags(s: &str) -> String {
     out
 }
 
-fn inject_reading_shell(raw_html: &str, base_url: &str, reading_css: &str) -> String {
+fn inject_reading_shell(
+    raw_html: &str,
+    base_url: &str,
+    reading_css: &str,
+    restore_fraction: f64,
+) -> String {
+    let restore = restore_fraction.clamp(0.0, 1.0);
     let inject = format!(
         r#"<base href="{base}">
 <style id="kalam-reading-css">{css}</style>
@@ -391,30 +407,37 @@ fn inject_reading_shell(raw_html: &str, base_url: &str, reading_css: &str) -> St
 (function() {{
   var lastSent = -1;
   var advanced = false;
+  var restoreFrac = {restore};
   function fraction() {{
     var se = document.scrollingElement || document.documentElement;
     var max = Math.max(1, se.scrollHeight - se.clientHeight);
     return se.scrollTop / max;
   }}
-  function pingProgress() {{
-    var f = fraction();
-    // throttle: only when change >= 1%
-    if (Math.abs(f - lastSent) < 0.01) return;
-    lastSent = f;
-    // Bridge via custom URL — host intercepts with decide_policy.
+  function setScroll(frac) {{
+    var se = document.scrollingElement || document.documentElement;
+    var max = Math.max(0, se.scrollHeight - se.clientHeight);
+    se.scrollTop = max * Math.min(1, Math.max(0, frac || 0));
+  }}
+  function bridge(path) {{
     try {{
       var i = document.createElement('iframe');
       i.style.display = 'none';
-      i.src = 'kalam://progress/' + f.toFixed(4);
+      i.src = 'kalam://' + path;
       document.documentElement.appendChild(i);
       setTimeout(function() {{ try {{ i.remove(); }} catch(e) {{}} }}, 0);
     }} catch (e) {{}}
+  }}
+  function pingProgress() {{
+    var f = fraction();
+    if (Math.abs(f - lastSent) < 0.01) return;
+    lastSent = f;
+    bridge('progress/' + f.toFixed(4));
   }}
   function maybeNext() {{
     if (advanced) return;
     if (fraction() > 0.90) {{
       advanced = true;
-      try {{ location.href = 'kalam://next'; }} catch (e) {{}}
+      bridge('next');
     }}
   }}
   var t = null;
@@ -425,18 +448,20 @@ fn inject_reading_shell(raw_html: &str, base_url: &str, reading_css: &str) -> St
       maybeNext();
     }});
   }}, {{ passive: true }});
-  window.kalamSetScroll = function(frac) {{
-    var se = document.scrollingElement || document.documentElement;
-    var max = Math.max(0, se.scrollHeight - se.clientHeight);
-    se.scrollTop = max * Math.min(1, Math.max(0, frac || 0));
+  function tryRestore() {{
+    if (restoreFrac > 0) setScroll(restoreFrac);
+    restoreFrac = 0;
     advanced = false;
     lastSent = -1;
-  }};
-  setTimeout(pingProgress, 150);
+    pingProgress();
+  }}
+  if (document.readyState === 'complete') setTimeout(tryRestore, 50);
+  else window.addEventListener('load', function() {{ setTimeout(tryRestore, 50); }});
 }})();
 </script>"#,
         base = base_url,
-        css = reading_css
+        css = reading_css,
+        restore = restore,
     );
 
     // Insert after <head> if present, else prepend.

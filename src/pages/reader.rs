@@ -5,7 +5,6 @@ use crate::epub_book::{reading_css, OpenBook, ReadingTheme};
 use crate::paths::reader_cache_dir;
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::cell::Cell;
 use std::rc::Rc;
 use webkit6::prelude::*;
 
@@ -23,11 +22,8 @@ pub enum ReaderMsg {
     NextChapter,
     Theme(ReadingTheme),
     FontDelta(i32),
-    /// fraction 0..1 from JS bridge
     ScrollFraction(f64),
-    /// JS requested next chapter (near end)
     RequestNext,
-    LoadFinished,
     FlushProgress,
 }
 
@@ -46,7 +42,6 @@ pub struct ReaderModel {
     loading: bool,
     dirty: bool,
     webview: webkit6::WebView,
-    pending_restore: Cell<Option<f64>>,
 }
 
 #[relm4::component(pub)]
@@ -220,7 +215,6 @@ impl Component for ReaderModel {
             loading: false,
             dirty: false,
             webview: webview.clone(),
-            pending_restore: Cell::new(Some(fraction)),
         };
 
         let widgets = view_output!();
@@ -232,7 +226,6 @@ impl Component for ReaderModel {
             load_chapter(&model);
         }
 
-        // Keyboard
         let key = gtk::EventControllerKey::new();
         let s = sender.clone();
         key.connect_key_pressed(move |_, keyval, _, _| {
@@ -268,10 +261,10 @@ impl Component for ReaderModel {
         root.add_controller(key);
         root.set_can_focus(true);
 
-        // Navigation policy: intercept kalam:// bridge URLs from injected JS.
+        // Intercept kalam:// bridge navigations from injected JS.
         let s_nav = sender.clone();
         webview.connect_decide_policy(move |_wv, decision, decision_type| {
-            use webkit6::{NavigationPolicyDecision, PolicyDecisionType};
+            use webkit6::{NavigationPolicyDecision, PolicyDecisionType, PolicyDecisionExt};
             if decision_type != PolicyDecisionType::NavigationAction {
                 return false;
             }
@@ -302,14 +295,6 @@ impl Component for ReaderModel {
             false
         });
 
-        let s_load = sender.clone();
-        webview.connect_load_changed(move |_, event| {
-            if event == webkit6::LoadEvent::Finished {
-                s_load.input(ReaderMsg::LoadFinished);
-            }
-        });
-
-        // Periodic progress ping via location bridge (also fires on scroll in JS).
         let s_flush = sender.clone();
         gtk::glib::timeout_add_local(std::time::Duration::from_secs(2), move || {
             s_flush.input(ReaderMsg::FlushProgress);
@@ -351,8 +336,6 @@ impl Component for ReaderModel {
             }
             ReaderMsg::Theme(t) => {
                 self.theme = t;
-                // Reload chapter with new CSS (simplest reliable path).
-                self.pending_restore.set(Some(self.fraction));
                 self.loading = true;
                 load_chapter(self);
             }
@@ -360,7 +343,6 @@ impl Component for ReaderModel {
                 let next = (self.font_px as i32 + d).clamp(14, 36) as u32;
                 if next != self.font_px {
                     self.font_px = next;
-                    self.pending_restore.set(Some(self.fraction));
                     self.loading = true;
                     load_chapter(self);
                 }
@@ -371,21 +353,6 @@ impl Component for ReaderModel {
                 }
                 self.fraction = fraction.clamp(0.0, 1.0);
                 self.dirty = true;
-            }
-            ReaderMsg::LoadFinished => {
-                self.loading = false;
-                if let Some(frac) = self.pending_restore.take() {
-                    let js = format!(
-                        "try{{window.kalamSetScroll&&window.kalamSetScroll({frac});}}catch(e){{}}"
-                    );
-                    self.webview.evaluate_javascript(
-                        &js,
-                        None,
-                        None,
-                        gtk::gio::Cancellable::NONE,
-                        |_| {},
-                    );
-                }
             }
             ReaderMsg::FlushProgress => {
                 if self.dirty {
@@ -425,7 +392,6 @@ impl ReaderModel {
         self.save_progress();
         self.chapter = idx;
         self.fraction = frac;
-        self.pending_restore.set(Some(frac));
         self.loading = true;
         load_chapter(self);
     }
@@ -452,7 +418,10 @@ fn load_chapter(model: &ReaderModel) {
     if model.open.chapter_count() == 0 {
         return;
     }
-    match model.open.chapter_html(model.chapter, &model.css()) {
+    match model
+        .open
+        .chapter_html(model.chapter, &model.css(), model.fraction)
+    {
         Ok(html) => {
             let base = model.open.extract_dir.to_string_lossy();
             let base_uri = if base.starts_with('/') {
