@@ -86,8 +86,8 @@ Kalam has **two distinct viewing modes**. Same library; `Read` routes by format.
 P0  Shell ───────────── sidebar, routing, float/detail shells     ✅ done
 P1  Library core ────── SQLite, import EPUB, cover cards, search  ✅ done
 P2  Text reader ─────── WebKit EPUB, themes, TOC, progress, UI    ✅ done
-P3  Annotations ─────── highlights, quotes, offline dictionary    ← next
-P4  Library depth ───── shelves engine, lists, tags, analytics
+P3  Annotations ─────── highlights, quotes, offline dictionary    ✅ done
+P4  Library depth ───── shelves engine, lists, tags, analytics    ← next
 P5  Metadata ────────── edit metadata, cover pick, Open Library
 P6  Downloads hub ───── unified queue + folder watch
 P7  Fiction sources ─── AO3 first, then other fanfic adapters
@@ -186,38 +186,58 @@ Daily-driver EPUB reading without annotations — **met for P2 scope**.
 
 ---
 
-## P3 — Annotations & dictionary  ← **next**
+## P3 — Annotations & dictionary  ✅ done
 
 **Goal:** “Editor in the viewer” on the text-reader surface.
 
-### Scope
+### Shipped
 
-- Selection in WebView → floating chip: **Highlight** (colors) / **Save quote** / **Dictionary** / copy  
-- Shortcut **`d`** → dictionary popover near word  
-- Offline dict packs (import StarDict or prebuilt SQLite); none shipped by default  
-- Persist annotations: loc (CFI or chapter + offsets), color, note text  
-- Reinject highlights on chapter load  
-- Annotations list (jump to)  
-- My Library → Saved quotes / Saved words (real data)  
-- Export quotes → Markdown  
+- [x] Selection in WebView → floating chip: **Highlight** (yellow/green/blue/pink/orange) / **Save quote** (❝) / **Dictionary** (Aa) / copy
+- [x] Shortcut **`d`** → dictionary popover near word (via JS + GTK popover search)
+- [x] Offline dict packs: **StarDict** (.ifo/.idx/.dict[.dz]), **SQLite** .db with entries(word,definition), **TSV** (word<TAB>def)
+- [x] Import via Settings → Offline dictionaries → + Import dictionary; list & remove
+- [x] Persist annotations: chapter_index + DOM path (nodePath) + offsets, color, text_excerpt, note, kind
+- [x] Reinject highlights on chapter load (`kalamInjectHighlights` + `wrapRangeByPaths`)
+- [x] Annotations list: reader bottom pill **✎** shows highlights/quotes for current book, Jump & Delete
+- [x] My Library → **Saved quotes** (real data, search, delete, Export Markdown → `~/Quotes.md`)
+- [x] My Library → **Saved words** (real data, search, delete, saved from dict lookup with context)
+- [x] Export quotes → Markdown with book title, chapter, color, timestamp, quote block
+- [x] Selection chip UI: semi-transparent dark pill above selection, color dots + ❝ Aa ⧉
+- [x] Dictionary popup inside WebView: shows definition near selection rect, Save word / Copy
+- [x] Reader typography popover now includes dictionary search (prefix → substring fallback) + Save/Clear
+- [x] Highlight storage: SQLite `annotations` table, `saved_words`, `dictionaries`, `dict_entries`
+- [x] CSS: soft highlight tints (yellow 0.62, green, blue, pink 0.70, orange), chip & dict popup styling, badge colors for annotation list, P3 GTK rows
 
 ### Look
 
-- Selection UI inspired by tablet readers (compact chip above selection)  
-- Highlight colors soft (incl. pink/rose option like reference photo)  
-- Must not reintroduce blue underlines on body text  
+- Selection UI inspired by tablet readers (compact chip above selection) — implemented as `#kalam-chip` inside WebView
+- Highlight colors soft (incl. pink/rose option like reference photo) — `kalam-hl-pink` rgba(251,207,232,0.70)
+- Must not reintroduce blue underlines on body text — preserved via reading CSS `!important`
 
-### Out
+### Out (deferred)
 
-Full EPUB HTML editing, sync, collaborative notes.
+- Full EPUB HTML editing, sync, collaborative notes, note editing UI (note field exists but no inline editor yet)
+- CFI spec (using path+offset, robust enough for P3; CFI reserved for later)
+- Dictionary definition HTML rendering (currently stripped to plain text for GTK popover, WebView popup escapes HTML)
 
 ### Arch check
 
-Highlight, quit, reopen; offline dictionary; export quotes.
+- Highlight, quit, reopen → highlight persists and re-injects
+- Offline dictionary import (StarDict + SQLite) → lookup via chip or D, save word, appears in Saved words
+- Export quotes → `~/Quotes.md` with Markdown
 
 ### Exit criteria
 
-Annotations trustworthy enough you stop using another app for EPUB markup.
+Annotations trustworthy enough you stop using another app for EPUB markup — **met**: highlights survive reload, quotes & words saved, dictionary offline.
+
+### Notes on implementation
+
+- JS bridge via `window.webkit.messageHandlers.kalam.postMessage` + fallback `kalam://` iframe + `title` notify; Rust side via `UserContentManager::register_script_message_handler` (world None) + `connect_script_message_received` + `decide_policy` fallback
+- Progress still via JS bridge (`progress` payload) + fraction restore
+- `evaluate_javascript` signature: 5 args (script, world_name, source_uri, cancellable, callback) — fixed after CI errors
+- `set_data`/`data` require unsafe blocks in gtk-rs 0.9; handled via `unsafe {}` 
+- CI now auto-formats and pushes fix commits (`cargo fmt --all` + push) to avoid fmt blockers in sandbox without rustfmt binary
+- Clippy -D warnings enforced; dead_code allowed for some P3 structs/methods still evolving
 
 ---
 
@@ -402,8 +422,8 @@ Deps include `webkitgtk-6.0` for P2+.
 
 ## Immediate next steps
 
-1. **P3 — Annotations & dictionary** on the text reader  
-2. Keep refining text-reader polish only if you file specific UX bugs  
+1. **P4 — Library depth** (shelves engine, real home, tags browse)
+2. Keep refining text-reader polish only if you file specific UX bugs (note editing UI, CFI, dict HTML rendering)
 3. **P8** when you want comics for real (UI target already specified above)  
 
 ---
@@ -426,3 +446,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-26 | Text reader look: sepia default, no blue body/links, no underlines |
 | 2026-07-26 | Comics reader look: Moku-like black stage, top meta + bottom scrub (P8) |
 | 2026-07-26 | P0–P2 treated complete; **next = P3** |
+| 2026-07-26 | P3 annotations & dictionary shipped: highlights (5 colors), quotes, offline dict packs (StarDict/SQLite/TSV), Saved quotes/words real data, export Markdown, annotations list, dictionary popup, Settings import |

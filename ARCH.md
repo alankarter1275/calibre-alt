@@ -33,24 +33,30 @@ Smart shelf ≈ Calibre virtual library (saved rules).
 Manual shelf ≈ pinned book ids.  
 Rule engine is **not** implemented in P0 (sample data only).
 
-## EPUB reader (planned P2)
+## EPUB reader (P2 + P3 enhancements)
 
 - WebKitGTK  
 - **Chapter-wise** continuous scroll  
-- Prefetch next chapter near ~85–90% scroll  
+- Prefetch next chapter near ~85–90% scroll (P2: manual N/›; auto-next disabled for stability)  
 - Keep at most ~3 chapters mounted  
-- Instant CSS (fonts, theme, margins)  
-- Highlights / quotes / dictionary in P3  
+- Instant CSS (fonts, theme, margins) — reload chapter on theme/font change  
+- Highlights / quotes / dictionary in P3:
+  - Selection → `#kalam-chip` floating inside WebView (colors, quote, dict, copy)
+  - `wrapRangeByPaths` via nodePath (child index path) + offsets for persistence
+  - Reinject via `kalamInjectHighlights` on `LoadEvent::Finished`
+  - JS bridge: `window.webkit.messageHandlers.kalam.postMessage(JSON)` + fallback `kalam://` iframe + title notify; Rust: `UCM::register_script_message_handler("kalam", None)` + `connect_script_message_received` + `decide_policy`
+  - Dictionary: Settings → import StarDict/SQLite/TSV → `dict_entries` → search (exact → prefix → substring) → popup near rect via `kalamShowDict`
 
-## Data dirs (planned)
+## Data dirs (P3 actual)
 
 ```text
 ~/.local/share/kalam/
-  catalog.db
-  library/<uuid>/
-  dictionaries/
-  cache/covers/
-~/.config/kalam/config.toml
+  catalog.db                 # books, tags, reading_progress, annotations, saved_words, dictionaries, dict_entries
+  library/<uuid>/            # book.epub + cover.*
+  dictionaries/              # (placeholder dir, actual entries in catalog.db)
+  cache/reader/<uuid>/       # extracted EPUB for WebView
+~/Quotes.md                  # exported quotes Markdown
+~/.config/kalam/config.toml  (future)
 ```
 
 ## Out of scope
@@ -63,9 +69,9 @@ Rule engine is **not** implemented in P0 (sample data only).
 
 | Phase | Deliverable |
 |-------|-------------|
-| P0 | Shell + nav + sample shelves/books ← **you are here** |
-| P1 | SQLite + EPUB import + covers |
-| P2 | Reader (chapter scroll, fonts, progress) |
-| P3 | Highlights, quotes, offline dictionary |
+| P0 | Shell + nav + sample shelves/books ✅ |
+| P1 | SQLite + EPUB import + covers ✅ |
+| P2 | Reader (chapter scroll, fonts, progress) ✅ |
+| P3 | Highlights, quotes, offline dictionary ✅ ← **you are here** |
 | P4 | Real home / shelves / lists |
 | P5+ | Sources (AO3, FF), comics, convert |

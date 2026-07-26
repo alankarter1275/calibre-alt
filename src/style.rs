@@ -41,13 +41,15 @@ window.kalam-window {
 
 .kalam-nav-btn {
     padding: 10px 6px;
-    border-radius: 10px;
-    margin: 2px 0;
+    border-radius: 999px;
+    margin-top: 2px;
+    margin-bottom: 2px;
     background: transparent;
     border: none;
     color: @kalam_text_dim;
     font-size: 0.72rem;
     font-weight: 500;
+    min-width: 48px;
 }
 
 .kalam-nav-btn:hover {
@@ -96,12 +98,13 @@ window.kalam-window {
 .kalam-content {
     padding: 20px 24px;
     background: @kalam_bg;
+    min-width: 0;
 }
 
 /* ── breadcrumbs / back ─────────────────────────────── */
 .kalam-back-btn {
-    padding: 6px 10px;
-    border-radius: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
     background: @kalam_surface_2;
     color: @kalam_text;
     border: 1px solid @kalam_border;
@@ -169,7 +172,7 @@ window.kalam-window {
 .kalam-hub-tile {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
-    border-radius: 12px;
+    border-radius: 14px;
     padding: 18px 14px;
     min-width: 120px;
 }
@@ -198,7 +201,6 @@ window.kalam-window {
 .kalam-cover-frame {
     border-radius: 6px;
     background: @kalam_surface_2;
-    /* no extra padding — grey side bars came from empty frame chrome */
     padding: 0;
     margin: 0;
     border: none;
@@ -212,9 +214,6 @@ window.kalam-window {
 
 .kalam-cover-img {
     border-radius: 6px;
-}
-
-.kalam-book-grid-shell {
 }
 
 .kalam-progress {
@@ -261,8 +260,8 @@ window.kalam-window {
     background: @kalam_accent;
     color: #0e1016;
     font-weight: 700;
-    border-radius: 10px;
-    padding: 10px 18px;
+    border-radius: 999px;
+    padding: 10px 22px;
     border: none;
 }
 
@@ -273,8 +272,8 @@ window.kalam-window {
 .kalam-secondary-btn {
     background: @kalam_surface_2;
     color: @kalam_text;
-    border-radius: 10px;
-    padding: 10px 16px;
+    border-radius: 999px;
+    padding: 10px 18px;
     border: 1px solid @kalam_border;
 }
 
@@ -318,7 +317,6 @@ window.kalam-window {
 }
 
 .kalam-book-grid-shell {
-    /* parent must not stretch this */
 }
 
 .kalam-book-card {
@@ -335,7 +333,6 @@ window.kalam-window {
     font-weight: 600;
     font-size: 0.78rem;
     color: @kalam_text;
-    /* force label to respect allocation width */
     min-width: 0;
 }
 
@@ -360,7 +357,6 @@ window.kalam-float-window {
     min-height: 480px;
 }
 
-/* Left column: fixed-width cover rail */
 .kalam-float-cover-col {
     background: #0c0e14;
     border-right: 1px solid @kalam_border;
@@ -383,9 +379,9 @@ window.kalam-float-window {
 .kalam-float-side-btn {
     background: transparent;
     border: none;
-    border-radius: 8px;
+    border-radius: 999px;
     color: @kalam_text_dim;
-    padding: 8px 6px;
+    padding: 8px 10px;
     font-size: 0.84rem;
 }
 
@@ -412,7 +408,7 @@ window.kalam-float-window {
     min-width: 34px;
     min-height: 34px;
     padding: 0;
-    border-radius: 8px;
+    border-radius: 999px;
     background: transparent;
     border: none;
     color: @kalam_text_dim;
@@ -463,7 +459,7 @@ window.kalam-float-window {
     letter-spacing: 0.04em;
     color: #0e1016;
     background: #7cffc3;
-    border-radius: 6px;
+    border-radius: 999px;
     padding: 3px 8px;
 }
 
@@ -473,7 +469,7 @@ window.kalam-float-window {
     letter-spacing: 0.04em;
     color: #1a1208;
     background: #ffc37c;
-    border-radius: 6px;
+    border-radius: 999px;
     padding: 3px 8px;
 }
 
@@ -483,7 +479,7 @@ window.kalam-float-window {
     letter-spacing: 0.04em;
     color: #0e1016;
     background: @kalam_accent;
-    border-radius: 6px;
+    border-radius: 999px;
     padding: 3px 8px;
 }
 
@@ -493,12 +489,11 @@ window.kalam-float-window {
     letter-spacing: 0.04em;
     color: #e8eaf0;
     background: #3a4560;
-    border-radius: 6px;
+    border-radius: 999px;
     padding: 3px 8px;
 }
 
 /* ── reader (immersive tablet-book) ─────────────────── */
-/* Do NOT use negative margins here — GtkOverlay reports min size < 0. */
 .kalam-content.kalam-content-reader {
     padding: 0;
 }
@@ -526,7 +521,6 @@ window.kalam-float-window {
     padding-right: 6px;
 }
 
-/* Bottom floating control pill */
 .kalam-reader-pill {
     background: rgba(28, 25, 23, 0.88);
     border: 1px solid rgba(255, 255, 255, 0.10);
@@ -538,7 +532,7 @@ window.kalam-float-window {
 .kalam-reader-pill-btn {
     min-width: 36px;
     min-height: 36px;
-    padding: 0 10px;
+    padding: 0 12px;
     border-radius: 999px;
     border: none;
     background: transparent;
@@ -551,6 +545,30 @@ window.kalam-float-window {
     background: rgba(255, 255, 255, 0.12);
 }
 
+/* ensure MenuButton inner button is also capsule and hover is tight — same size as button */
+.kalam-reader-pill menubutton.kalam-reader-pill-btn {
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border-radius: 999px;
+    background: transparent;
+}
+
+.kalam-reader-pill menubutton.kalam-reader-pill-btn > button {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0 12px;
+    border-radius: 999px;
+}
+
+.kalam-reader-pill menubutton.kalam-reader-pill-btn:hover {
+    background: transparent;
+}
+
+.kalam-reader-pill menubutton.kalam-reader-pill-btn > button:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
 .kalam-reader-pill-meta {
     font-size: 0.78rem;
     font-weight: 600;
@@ -559,7 +577,28 @@ window.kalam-float-window {
     min-width: 3.5rem;
 }
 
+/* Popovers — no thick borders */
 .kalam-reader-popover {
+    padding: 4px;
+    background: @kalam_surface;
+    border: none;
+    outline: none;
+    border-radius: 14px;
+    box-shadow: 0 16px 40px alpha(#000, 0.45);
+}
+
+popover.kalam-reader-popover {
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    padding: 0;
+}
+
+popover.kalam-reader-popover > contents {
+    border: none;
+    border-radius: 14px;
+    box-shadow: 0 16px 40px alpha(#000, 0.55);
+    background: @kalam_surface;
     padding: 4px;
 }
 
@@ -571,21 +610,67 @@ window.kalam-float-window {
 }
 
 .kalam-reader-theme-btn {
-    border-radius: 8px;
-    padding: 8px 12px;
+    border-radius: 999px;
+    padding: 8px 14px;
     font-size: 0.85rem;
 }
 
 .kalam-toc-item {
     background: transparent;
     border: none;
-    border-radius: 8px;
+    border-radius: 999px;
     color: @kalam_text;
-    padding: 8px 10px;
+    padding: 8px 14px;
     font-size: 0.88rem;
 }
 
 .kalam-toc-item:hover {
     background: @kalam_surface_2;
+}
+
+/* ── P3: annotations, quotes, words, dict ──────────── */
+.kalam-quote-row, .kalam-word-row, .kalam-dict-row {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 12px 14px;
+}
+
+.kalam-quote-text {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: @kalam_text;
+    font-style: italic;
+}
+
+.kalam-word-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-badge-yellow {
+    background: #fef08a;
+    color: #1a1a12;
+}
+.kalam-badge-green {
+    background: #bbf7d0;
+    color: #0e1a12;
+}
+.kalam-badge-blue {
+    background: #bfdbfe;
+    color: #0e141e;
+}
+.kalam-badge-pink {
+    background: #fbcfe8;
+    color: #1e1216;
+}
+.kalam-badge-orange {
+    background: #fed7aa;
+    color: #1e1410;
+}
+
+.kalam-dict-row {
+    padding: 10px 12px;
 }
 "#;

@@ -36,7 +36,7 @@ pub fn build_book_card(
     card.add_css_class("kalam-book-card");
     card.set_hexpand(false);
     card.set_vexpand(false);
-    card.set_halign(gtk::Align::Center);
+    card.set_halign(gtk::Align::Start);
     card.set_valign(gtk::Align::Start);
     // Lock both axes so long titles never widen the cell.
     card.set_size_request(CARD_W, CARD_H);
@@ -125,15 +125,15 @@ pub fn build_book_grid(
     grid.set_row_homogeneous(false);
     grid.set_halign(gtk::Align::Start);
     grid.set_valign(gtk::Align::Start);
-    grid.set_hexpand(false);
+    grid.set_hexpand(true);
     grid.set_vexpand(false);
     grid.add_css_class("kalam-book-grid");
 
-    // Shell keeps the whole grid from being stretched by the parent.
+    // Shell keeps the whole grid from being stretched by the parent but allows fill.
     let shell = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    shell.set_halign(gtk::Align::Start);
+    shell.set_halign(gtk::Align::Fill);
     shell.set_valign(gtk::Align::Start);
-    shell.set_hexpand(false);
+    shell.set_hexpand(true);
     shell.set_vexpand(false);
     shell.add_css_class("kalam-book-grid-shell");
 
@@ -148,7 +148,7 @@ pub fn build_book_grid(
         cell.set_size_request(CARD_W, CARD_H);
         cell.set_hexpand(false);
         cell.set_vexpand(false);
-        cell.set_halign(gtk::Align::Center);
+        cell.set_halign(gtk::Align::Start);
         cell.append(&card);
 
         let col = (i as i32) % GRID_COLS;

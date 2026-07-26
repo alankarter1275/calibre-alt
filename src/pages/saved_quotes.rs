@@ -1,0 +1,332 @@
+use crate::db::{Annotation, Catalog};
+use crate::models::Book;
+use gtk::prelude::*;
+use relm4::prelude::*;
+use std::rc::Rc;
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum SavedQuotesOut {
+    OpenBook { book_id: i64 },
+    JumpTo { book_id: i64, chapter_index: usize },
+}
+
+#[derive(Debug)]
+pub enum SavedQuotesMsg {
+    SearchChanged(String),
+    Delete(i64),
+    Export,
+    Refresh,
+}
+
+pub struct SavedQuotesModel {
+    catalog: Rc<Catalog>,
+    query: String,
+    quotes: Vec<(Annotation, Option<Book>)>,
+    status: String,
+}
+
+#[relm4::component(pub)]
+impl Component for SavedQuotesModel {
+    type Init = Rc<Catalog>;
+    type Input = SavedQuotesMsg;
+    type Output = SavedQuotesOut;
+    type CommandOutput = ();
+
+    view! {
+        #[root]
+        gtk::Box {
+            set_orientation: gtk::Orientation::Vertical,
+            set_spacing: 12,
+            set_hexpand: true,
+
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 10,
+
+                gtk::Label {
+                    set_label: "Saved quotes",
+                    add_css_class: "kalam-page-title",
+                    set_halign: gtk::Align::Start,
+                    set_hexpand: true,
+                },
+                gtk::Button {
+                    set_label: "Export Markdown",
+                    add_css_class: "kalam-secondary-btn",
+                    set_tooltip_text: Some("Export all quotes to ~/Quotes.md"),
+                    connect_clicked => SavedQuotesMsg::Export,
+                },
+                gtk::Button {
+                    set_label: "↻",
+                    add_css_class: "kalam-secondary-btn",
+                    set_tooltip_text: Some("Refresh"),
+                    connect_clicked => SavedQuotesMsg::Refresh,
+                },
+            },
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 6,
+                #[name = "search_entry"]
+                gtk::SearchEntry {
+                    set_placeholder_text: Some("Search quotes…"),
+                    set_hexpand: true,
+                    connect_search_changed[sender] => move |e| {
+                        sender.input(SavedQuotesMsg::SearchChanged(e.text().to_string()));
+                    },
+                },
+            },
+            #[name = "status_label"]
+            gtk::Label {
+                add_css_class: "kalam-muted",
+                set_halign: gtk::Align::Start,
+                set_wrap: true,
+            },
+            #[name = "scroll"]
+            gtk::ScrolledWindow {
+                set_vexpand: true,
+                set_hexpand: true,
+                #[name = "list_box"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 10,
+                    set_margin_top: 6,
+                }
+            },
+        }
+    }
+
+    fn init(
+        catalog: Self::Init,
+        _root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let model = SavedQuotesModel {
+            catalog: catalog.clone(),
+            query: String::new(),
+            quotes: Vec::new(),
+            status: String::new(),
+        };
+        let widgets = view_output!();
+        // initial load
+        let mut model = model;
+        model.reload();
+        rebuild(&widgets.list_box, &model.quotes, &sender);
+        widgets.status_label.set_label(&model.status);
+        ComponentParts { model, widgets }
+    }
+
+    fn update_with_view(
+        &mut self,
+        widgets: &mut Self::Widgets,
+        msg: Self::Input,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
+        match msg {
+            SavedQuotesMsg::SearchChanged(q) => {
+                self.query = q;
+                self.reload();
+                rebuild(&widgets.list_box, &self.quotes, &sender);
+                widgets.status_label.set_label(&self.status);
+            }
+            SavedQuotesMsg::Delete(id) => {
+                let _ = self.catalog.delete_annotation(id);
+                self.reload();
+                rebuild(&widgets.list_box, &self.quotes, &sender);
+                widgets.status_label.set_label(&self.status);
+            }
+            SavedQuotesMsg::Export => {
+                let exported = export_quotes_markdown(&self.quotes);
+                let out_path = dirs::home_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join("Quotes.md");
+                let res = std::fs::write(&out_path, exported);
+                if res.is_ok() {
+                    self.status = format!("Exported to {}", out_path.display());
+                } else {
+                    self.status = format!("Export failed: {:?}", res.err());
+                }
+                widgets.status_label.set_label(&self.status);
+            }
+            SavedQuotesMsg::Refresh => {
+                self.reload();
+                rebuild(&widgets.list_box, &self.quotes, &sender);
+                widgets.status_label.set_label(&self.status);
+            }
+        }
+        self.update_view(widgets, sender);
+    }
+}
+
+impl SavedQuotesModel {
+    fn reload(&mut self) {
+        match self.catalog.list_all_quotes(&self.query) {
+            Ok(annos) => {
+                let mut enriched = Vec::new();
+                for a in annos {
+                    let book = self.catalog.get_book(a.book_id).ok().flatten();
+                    enriched.push((a, book));
+                }
+                let n = enriched.len();
+                self.quotes = enriched;
+                if self.query.trim().is_empty() {
+                    self.status = if n == 0 {
+                        "No saved quotes yet — highlight or save quotes while reading.".into()
+                    } else {
+                        format!("{n} quote{} saved", if n == 1 { "" } else { "s" })
+                    };
+                } else {
+                    self.status = format!(
+                        "{n} result{} for \"{}\"",
+                        if n == 1 { "" } else { "s" },
+                        self.query
+                    );
+                }
+            }
+            Err(e) => {
+                self.quotes.clear();
+                self.status = format!("DB error: {e}");
+            }
+        }
+    }
+}
+
+fn rebuild(
+    list: &gtk::Box,
+    quotes: &[(Annotation, Option<Book>)],
+    sender: &ComponentSender<SavedQuotesModel>,
+) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+    if quotes.is_empty() {
+        let l = gtk::Label::new(Some("Nothing to show here."));
+        l.add_css_class("kalam-placeholder");
+        list.append(&l);
+        return;
+    }
+    for (anno, book_opt) in quotes {
+        let row = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        row.add_css_class("kalam-quote-row");
+        row.set_margin_bottom(8);
+        row.set_margin_top(4);
+
+        let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        header.set_halign(gtk::Align::Fill);
+
+        let title = if let Some(b) = book_opt {
+            b.title.clone()
+        } else {
+            format!("Book #{}", anno.book_id)
+        };
+        let title_l = gtk::Label::new(Some(&format!("{} — ch {}", title, anno.chapter_index + 1)));
+        title_l.add_css_class("kalam-muted");
+        title_l.set_halign(gtk::Align::Start);
+        title_l.set_hexpand(true);
+        header.append(&title_l);
+
+        let color_badge = gtk::Label::new(Some(&anno.color));
+        color_badge.add_css_class("kalam-chip");
+        color_badge.add_css_class(&format!("kalam-badge-{}", anno.color));
+        header.append(&color_badge);
+
+        let del_btn = gtk::Button::with_label("✕");
+        del_btn.add_css_class("kalam-secondary-btn");
+        let id = anno.id;
+        let s = sender.clone();
+        del_btn.connect_clicked(move |_| s.input(SavedQuotesMsg::Delete(id)));
+        header.append(&del_btn);
+
+        row.append(&header);
+
+        let quote_l = gtk::Label::new(Some(&anno.text_excerpt));
+        quote_l.add_css_class("kalam-quote-text");
+        quote_l.set_wrap(true);
+        quote_l.set_xalign(0.0);
+        quote_l.set_halign(gtk::Align::Start);
+        row.append(&quote_l);
+
+        if !anno.note.trim().is_empty() {
+            let note_l = gtk::Label::new(Some(&format!("Note: {}", anno.note)));
+            note_l.add_css_class("kalam-muted");
+            note_l.set_wrap(true);
+            note_l.set_xalign(0.0);
+            row.append(&note_l);
+        }
+
+        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let jump_btn = gtk::Button::with_label("Open in book");
+        jump_btn.add_css_class("kalam-secondary-btn");
+        let bid = anno.book_id;
+        let ch = anno.chapter_index as usize;
+        let s2 = sender.clone();
+        jump_btn.connect_clicked(move |_| {
+            s2.output(SavedQuotesOut::JumpTo {
+                book_id: bid,
+                chapter_index: ch,
+            })
+            .ok();
+            s2.output(SavedQuotesOut::OpenBook { book_id: bid }).ok();
+        });
+        actions.append(&jump_btn);
+        row.append(&actions);
+
+        let sep = gtk::Separator::new(gtk::Orientation::Horizontal);
+        sep.set_margin_top(8);
+        row.append(&sep);
+
+        list.append(&row);
+    }
+}
+
+fn export_quotes_markdown(quotes: &[(Annotation, Option<Book>)]) -> String {
+    let mut md = String::new();
+    md.push_str("# Kalam — Saved Quotes\n\n");
+    md.push_str(&format!("Exported {}\n\n", chrono_like_now()));
+    for (anno, book) in quotes {
+        let title = book
+            .as_ref()
+            .map(|b| b.title.as_str())
+            .unwrap_or("Unknown Book");
+        let authors = book
+            .as_ref()
+            .map(|b| b.authors_display())
+            .unwrap_or("Unknown");
+        md.push_str(&format!("## {title} — {authors}\n\n"));
+        md.push_str(&format!(
+            "> {}\n\n",
+            anno.text_excerpt.replace('\n', "\n> ")
+        ));
+        if !anno.note.trim().is_empty() {
+            md.push_str(&format!("**Note:** {}\n\n", anno.note));
+        }
+        md.push_str(&format!(
+            "*Chapter {}, {} — {}{}*\n\n---\n\n",
+            anno.chapter_index + 1,
+            anno.color,
+            anno.created_at,
+            if anno.kind == "highlight" {
+                " · highlight"
+            } else {
+                ""
+            }
+        ));
+    }
+    md
+}
+
+fn chrono_like_now() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("{secs}")
+}
+
+mod dirs {
+    use std::path::PathBuf;
+    pub fn home_dir() -> Option<PathBuf> {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
+}
