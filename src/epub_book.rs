@@ -532,10 +532,10 @@ fn join_zip_path(dir: &str, href: &str) -> String {
 /// Default reading stylesheet — book-like, not webpage-like.
 /// Body text is never forced blue; links are subtle.
 pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, margin_em: f32) -> String {
-    let (bg, fg, muted, link) = match theme {
-        ReadingTheme::Light => ("#faf8f5", "#1c1917", "#57534e", "#44403c"),
-        ReadingTheme::Sepia => ("#f4ecd8", "#3e3226", "#6b5a48", "#5c4a3a"),
-        ReadingTheme::Dark => ("#1a1b1e", "#e7e5e4", "#a8a29e", "#d6d3d1"),
+    let (bg, fg, muted) = match theme {
+        ReadingTheme::Light => ("#faf8f5", "#1c1917", "#57534e"),
+        ReadingTheme::Sepia => ("#f4ecd8", "#3e3226", "#6b5a48"),
+        ReadingTheme::Dark => ("#1a1b1e", "#e7e5e4", "#a8a29e"),
     };
     format!(
         r#"
