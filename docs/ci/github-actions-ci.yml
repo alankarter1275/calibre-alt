@@ -15,9 +15,13 @@ jobs:
   build:
     name: build (ubuntu)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install system dependencies
         run: |
@@ -28,9 +32,6 @@ jobs:
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
             libgraphene-1.0-dev \
             libwebkitgtk-6.0-dev libsoup-3.0-dev
-          pkg-config --modversion gtk4
-          pkg-config --modversion libadwaita-1
-          pkg-config --modversion webkitgtk-6.0 || true
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -40,35 +41,25 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: rustfmt
+      - name: rustfmt (auto-fix and push if needed)
         run: |
           cargo fmt --all
-          echo "rustfmt: auto-formatted (P3 dev — diff ignored)"
-          git --no-pager diff --stat || true
+          if git diff --quiet; then
+            echo "rustfmt: clean"
+          else
+            echo "rustfmt: formatting and pushing fix"
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git add -A
+            git commit -m "style: rustfmt auto-fix"
+            git push
+          fi
 
       - name: clippy
-        run: |
-          cargo clippy --all-targets -- -D warnings 2>&1 | tee clippy.log
-          exit ${PIPESTATUS[0]}
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: build (debug)
-        if: always()
-        run: |
-          cargo build --verbose 2>&1 | tee build.log
-          exit ${PIPESTATUS[0]}
+        run: cargo build --verbose
 
       - name: build (release)
-        if: always()
-        run: |
-          cargo build --release 2>&1 | tee build-release.log
-          exit ${PIPESTATUS[0]}
-
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: logs
-          path: |
-            clippy.log
-            build.log
-            build-release.log
+        run: cargo build --release
