@@ -11,7 +11,7 @@ use crate::db::Catalog;
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
 /// Result of a dictionary search.

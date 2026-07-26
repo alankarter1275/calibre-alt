@@ -1,12 +1,11 @@
 //! Immersive EPUB reader — P3 with highlights, quotes, offline dictionary.
-//! Uses WebKitGTK 6 reader surface + JS bridge via title+script-message.
 
 use crate::db::{Annotation, Catalog, HighlightColor};
 use crate::epub_book::{reading_css, OpenBook, ReadingTheme};
 use crate::paths::reader_cache_dir;
 use gtk::prelude::*;
 use relm4::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::rc::Rc;
 use webkit6::prelude::*;
 
@@ -53,7 +52,6 @@ pub enum ReaderMsg {
     NextChapter,
     Theme(ReadingTheme),
     FontDelta(i32),
-    /// Raw JSON from JS bridge (title or UCM)
     JsRaw(String),
     Progress(f64),
     AnnotationsReload,
@@ -120,7 +118,6 @@ impl Component for ReaderModel {
                 },
             },
 
-            // Top-left floating crumb
             add_overlay = &gtk::Box {
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Start,
@@ -148,7 +145,6 @@ impl Component for ReaderModel {
                 },
             },
 
-            // Bottom floating pill
             add_overlay = &gtk::Box {
                 set_halign: gtk::Align::Center,
                 set_valign: gtk::Align::End,
@@ -284,7 +280,7 @@ color:#3e3226;font-family:Georgia,serif'>\
         widgets.web_host.append(&webview);
         update_chrome_labels(&widgets, &model);
 
-        // --- TOC popover ---
+        // TOC popover
         let toc_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
         build_toc(&toc_box, &model.open, &sender);
         let toc_scroll = gtk::ScrolledWindow::builder()
@@ -306,7 +302,7 @@ color:#3e3226;font-family:Georgia,serif'>\
         toc_pop.set_position(gtk::PositionType::Top);
         widgets.toc_btn.set_popover(Some(&toc_pop));
 
-        // --- Annotations popover ---
+        // Annotations popover
         let anno_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
         anno_box.set_margin_all(12);
         let anno_title = gtk::Label::new(Some("Highlights & quotes"));
@@ -322,31 +318,23 @@ color:#3e3226;font-family:Georgia,serif'>\
         let anno_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
         anno_list.set_margin_all(4);
         anno_scroll.set_child(Some(&anno_list));
-
-        // store list box in data for later rebuild via closure? We'll use sender to trigger rebuild but need widget refs.
-        // For simplicity, we store anno_list in a wrapper box and rebuild on each update via function that captures widgets.anno_btn popover.
         anno_box.append(&anno_scroll);
 
         let anno_pop = gtk::Popover::new();
         anno_pop.add_css_class("kalam-reader-popover");
         anno_pop.set_child(Some(&anno_box));
         anno_pop.set_position(gtk::PositionType::Top);
-        // We'll keep a reference to anno_list for rebuilding in update.
-        // Use data key to retrieve later.
-        anno_pop.set_data("kalam-anno-list", anno_list.clone());
-
+        unsafe {
+            anno_pop.set_data("kalam-anno-list", anno_list.clone());
+        }
         widgets.anno_btn.set_popover(Some(&anno_pop));
-        // Trigger initial build after popover created via idle
-        let anno_list_clone = anno_list.clone();
-        let sender_clone = sender.clone();
-        let catalog_clone = model.catalog.clone();
-        let book_id_clone = model.book_id;
-        glib::idle_add_local_once(move || {
-            // initial build will be handled in update
-            let _ = (anno_list_clone, sender_clone, catalog_clone, book_id_clone);
+
+        let _anno_list_clone = anno_list.clone();
+        gtk::glib::idle_add_local_once(move || {
+            let _ = _anno_list_clone;
         });
 
-        // --- Aa / Dictionary popover ---
+        // Aa / Dictionary popover
         let aa_wrap = gtk::Box::new(gtk::Orientation::Vertical, 10);
         aa_wrap.set_margin_all(12);
 
@@ -386,7 +374,6 @@ color:#3e3226;font-family:Georgia,serif'>\
         }
         aa_wrap.append(&theme_row);
 
-        // Dictionary search
         let dict_l = gtk::Label::new(Some("DICTIONARY"));
         dict_l.add_css_class("kalam-reader-popover-title");
         dict_l.set_halign(gtk::Align::Start);
@@ -413,7 +400,6 @@ color:#3e3226;font-family:Georgia,serif'>\
         dict_scroll.set_child(Some(&dict_list));
         aa_wrap.append(&dict_scroll);
 
-        // dict lookup result area
         let dict_res_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
         dict_res_box.set_margin_top(6);
         let dict_res_label = gtk::Label::new(None);
@@ -434,26 +420,24 @@ color:#3e3226;font-family:Georgia,serif'>\
         clear_btn.connect_clicked(move |_| s.input(ReaderMsg::ClearDict));
         dict_actions.append(&clear_btn);
         dict_res_box.append(&dict_actions);
-
         aa_wrap.append(&dict_res_box);
 
         let aa_pop = gtk::Popover::new();
         aa_pop.add_css_class("kalam-reader-popover");
         aa_pop.set_child(Some(&aa_wrap));
         aa_pop.set_position(gtk::PositionType::Top);
-        aa_pop.set_data("kalam-dict-list", dict_list.clone());
-        aa_pop.set_data("kalam-dict-res", dict_res_label.clone());
+        unsafe {
+            aa_pop.set_data("kalam-dict-list", dict_list.clone());
+            aa_pop.set_data("kalam-dict-res", dict_res_label.clone());
+        }
         widgets.dict_btn.set_popover(Some(&aa_pop));
 
-        // --- WebView signals ---
-        // Title notify: fallback bridge via document.title
+        // Title notify fallback
         let s = sender.clone();
         webview.connect_title_notify(move |wv| {
             if let Some(title) = wv.title() {
                 let t = title.to_string();
-                // Look for kalam JSON payloads encoded in title
-                // Our JS no longer uses title for progress, but we keep fallback for old bridge
-                if t.contains("kalam://") || t.starts_with('{') && t.contains("\"type\"") {
+                if t.contains("kalam://") || (t.starts_with('{') && t.contains("\"type\"")) {
                     s.input(ReaderMsg::JsRaw(t));
                 } else if t.starts_with("kalam-selection::") || t.starts_with("kalam-progress::") {
                     s.input(ReaderMsg::JsRaw(t));
@@ -461,7 +445,7 @@ color:#3e3226;font-family:Georgia,serif'>\
             }
         });
 
-        // Load changed: inject highlights when finished
+        // Load changed
         let s = sender.clone();
         webview.connect_load_changed(move |_wv, event| {
             if event == webkit6::LoadEvent::Finished {
@@ -469,100 +453,38 @@ color:#3e3226;font-family:Georgia,serif'>\
             }
         });
 
-        // --- Script message handler (preferred) ---
-        let ucm = webview.user_content_manager();
-        // register handler "kalam"
-        let _ = ucm.register_script_message_handler("kalam");
-        let s = sender.clone();
-        // The closure signature for webkit6: (UserContentManager, JavascriptResult)
-        // We'll attempt to handle both possible types via dynamic checks.
-        ucm.connect_script_message_received(Some("kalam"), move |_mgr, msg| {
-            // msg is a JSCValue or similar. Try to get string representation.
-            // We try several approaches to extract JSON string.
-            let mut json_str: Option<String> = None;
-
-            // Try via javascriptcore6 ValueExt if available
-            // msg.to_string() might return string
-            // For webkit6, msg is expected to be a JSCValue
-            // We attempt to call to_string via debug or via methods if they exist.
-            // Since we can't know exact API, we use a trick: format as debug and try to parse?
-            // Instead, we attempt to use downcast and methods via glib.
-
-            // Approach 1: if msg has method to_string (JSCValue::to_string)
-            // We'll try to use unsafe? For now we will attempt to get via property "toString" evaluation?
-            // Simplest: msg is a glib object that might have a string representation via to_string?
-            // Let's try to use serde_json? Actually we need the raw string that JS posted, which is JSON.
-
-            // In javascriptcore6, Value has method to_string() -> Option<String> via trait.
-            // We attempt to use `msg` as `javascriptcore6::Value` if possible.
-            // We will try to downcast or use trait bound via Any.
-            // Since compile-time unknown, we will use a generic attempt: if msg implements ToString, use it.
-
-            // Placeholder: we will try to get string via `format!("{:?}", msg)` and extract?
-
-            // For webkit6 0.4, the callback receives `webkit6::JavascriptResult` which has `js_value()`?
-            // Let's try to reflect common pattern from wry:
-            // `let js = msg.js_value(); let s = msg.to_string(&js)`? No.
-
-            // We'll attempt to handle via dynamic: if msg is a Value, we can try `msg.to_string()` method if exists.
-            // To keep compilation, we will use a helper function that attempts multiple conversions via glib.
-
-            // For now, we will try to call `msg` as `javascriptcore6::Value` and get string via `to_string`
-            // The compiler will tell us if method exists; we will adjust in next iteration.
-
-            // As a fallback, we try to get the JS value as string by evaluating? No.
-
-            // We'll attempt to use `msg` directly as string if it's already a string type.
-
-            // Below is a best-effort extraction that should compile if `msg` is `webkit6::JavascriptResult` or `JSCValue`.
-
-            // We use `unsafe`? No.
-
-            // For compilation, we will try to call `msg.to_string()` via trait `ToString` from std? That will give debug string, not useful.
-            // We need real JS value.
-
-            // To make it compile, we will attempt:
-            // let s = msg.to_string(); // if msg is JSCValue, it might have to_string method that returns Option<String> via ValueExt
-
-            // Let's attempt to import ValueExt and call.
-            use javascriptcore6::prelude::*;
-            if let Some(val) = msg.downcast_ref::<javascriptcore6::Value>() {
-                if let Some(s) = val.to_string() {
-                    json_str = Some(s);
+        // Script message handler
+        if let Some(ucm) = webview.user_content_manager() {
+            let _ = ucm.register_script_message_handler("kalam", None);
+            let s = sender.clone();
+            ucm.connect_script_message_received(Some("kalam"), move |_mgr, msg| {
+                // msg is &javascriptcore::Value
+                let json_str = msg.to_string();
+                if let Some(js) = json_str {
+                    s.input(ReaderMsg::JsRaw(js));
                 }
-            } else {
-                // Try direct: msg is Value?
-                // If msg itself is Value
-                // We can try to transmute? No.
-                // As last resort, try `format!("{:?}")`
-                // But that won't be JSON.
-                json_str = Some(format!("{}", msg.to_string()));
-            }
+            });
+        }
 
-            // If still None, try alternative: msg is JavascriptResult with js_value()
-            // We can attempt to get via `msg.js_value()` if method exists.
-            // This will be handled in next compile fix iteration.
-
-            if let Some(js) = json_str {
-                s.input(ReaderMsg::JsRaw(js));
-            }
-        });
-
-        // Alternative decide_policy fallback for kalam:// iframe bridge (old P2)
+        // Decide policy fallback for kalam://
         let s = sender.clone();
         webview.connect_decide_policy(move |_wv, decision, decision_type| {
             if decision_type == webkit6::PolicyDecisionType::NavigationAction {
-                if let Some(nav_decision) = decision.downcast_ref::<webkit6::NavigationPolicyDecision>() {
-                    let nav_action = nav_decision.navigation_action();
-                    let request = nav_action.request();
-                    if let Some(uri) = request.uri() {
-                        if uri.starts_with("kalam://") {
-                            let payload = uri.trim_start_matches("kalam://");
-                            // payload is url-encoded JSON
-                            let decoded = url_decode(payload);
-                            s.input(ReaderMsg::JsRaw(decoded));
-                            decision.ignore();
-                            return true;
+                if let Some(nav_decision) =
+                    decision.downcast_ref::<webkit6::NavigationPolicyDecision>()
+                {
+                    if let Some(nav_action) = nav_decision.navigation_action() {
+                        if let Some(request) = nav_action.request() {
+                            if let Some(uri) = request.uri() {
+                                let uri_str = uri.to_string();
+                                if uri_str.starts_with("kalam://") {
+                                    let payload = uri_str.trim_start_matches("kalam://");
+                                    let decoded = url_decode(payload);
+                                    s.input(ReaderMsg::JsRaw(decoded));
+                                    decision.ignore();
+                                    return true;
+                                }
+                            }
                         }
                     }
                 }
@@ -600,9 +522,7 @@ color:#3e3226;font-family:Georgia,serif'>\
                     gtk::glib::Propagation::Stop
                 }
                 Key::d | Key::D => {
-                    // Trigger dict lookup from selection
-                    s.input(ReaderMsg::DictSearch("".into())); // will provoke JS bridge via evaluate?
-                    // We'll also send a JS evaluation to trigger dict
+                    s.input(ReaderMsg::DictSearch(String::new()));
                     gtk::glib::Propagation::Stop
                 }
                 _ => gtk::glib::Propagation::Proceed,
@@ -663,13 +583,10 @@ color:#3e3226;font-family:Georgia,serif'>\
                 }
             }
             ReaderMsg::JsRaw(raw) => {
-                // Try parse as JSON payload
                 let cleaned = raw.trim();
-                // Remove kalam:// prefix if present
                 let json_part = if cleaned.starts_with("kalam://") {
                     url_decode(cleaned.trim_start_matches("kalam://"))
                 } else if cleaned.contains("kalam://") {
-                    // maybe encoded
                     if let Some(idx) = cleaned.find("kalam://") {
                         url_decode(&cleaned[idx + 8..])
                     } else {
@@ -678,32 +595,20 @@ color:#3e3226;font-family:Georgia,serif'>\
                 } else {
                     cleaned.to_string()
                 };
-                // json_part may be URL-encoded JSON string
                 let decoded = url_decode(&json_part);
-                // Try parse as JSON object or array
                 if let Ok(payload) = serde_json::from_str::<JsPayload>(&decoded) {
                     self.handle_js_payload(payload, sender.clone());
                 } else if let Ok(payload) = serde_json::from_str::<JsPayload>(&json_part) {
                     self.handle_js_payload(payload, sender.clone());
-                } else {
-                    // Try as plain fraction number (old P2 progress bridge)
-                    if let Ok(f) = decoded.parse::<f64>() {
-                        if (0.0..=1.0).contains(&f) {
+                } else if let Ok(f) = decoded.parse::<f64>() {
+                    if (0.0..=1.0).contains(&f) {
+                        self.fraction = f;
+                    }
+                } else if decoded.starts_with("progress/") {
+                    if let Some(num) = decoded.strip_prefix("progress/") {
+                        if let Ok(f) = num.parse::<f64>() {
                             self.fraction = f;
                         }
-                    } else if decoded.starts_with("progress/") {
-                        if let Some(num) = decoded.strip_prefix("progress/") {
-                            if let Ok(f) = num.parse::<f64>() {
-                                self.fraction = f;
-                                // auto save if significant change
-                                // we defer save to chapter change or close, but also save occasionally
-                            }
-                        }
-                    } else if decoded == "next" {
-                        // auto next chapter when near end — optional, keep manual for now
-                    } else {
-                        // Try parse as generic JSON value for debugging
-                        // eprintln!("kalam: unparsed js raw: {}", decoded.chars().take(200).collect::<String>());
                     }
                 }
             }
@@ -711,7 +616,6 @@ color:#3e3226;font-family:Georgia,serif'>\
                 self.fraction = frac.clamp(0.0, 1.0);
             }
             ReaderMsg::AnnotationsReload => {
-                // Chapter finished loading, inject highlights
                 self.chapter_annotations = self
                     .catalog
                     .get_annotations_for_chapter(self.book_id, self.chapter as i64)
@@ -721,12 +625,13 @@ color:#3e3226;font-family:Georgia,serif'>\
                     .get_annotations_for_book(self.book_id)
                     .unwrap_or_default();
                 self.inject_highlights();
-                // also rebuild anno popover list if popover exists
                 if let Some(pop) = widgets.anno_btn.popover() {
                     if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
-                        if let Some(list) = pop.data::<gtk::Box>("kalam-anno-list") {
-                            let list = list.as_ref().clone();
-                            rebuild_anno_list(&list, &self.all_book_annotations, &sender);
+                        unsafe {
+                            if let Some(list) = pop.data::<gtk::Box>("kalam-anno-list") {
+                                let list = list.as_ref().clone();
+                                rebuild_anno_list(&list, &self.all_book_annotations, &sender);
+                            }
                         }
                     }
                 }
@@ -741,18 +646,18 @@ color:#3e3226;font-family:Georgia,serif'>\
                     .catalog
                     .get_annotations_for_book(self.book_id)
                     .unwrap_or_default();
-                // remove highlight from DOM
                 let script = format!(
                     "if (window.kalamRemoveHighlight) window.kalamRemoveHighlight('{}');",
                     id
                 );
                 eval_js(&self.webview, &script);
-                // rebuild anno list
                 if let Some(pop) = widgets.anno_btn.popover() {
                     if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
-                        if let Some(list) = pop.data::<gtk::Box>("kalam-anno-list") {
-                            let list = list.as_ref().clone();
-                            rebuild_anno_list(&list, &self.all_book_annotations, &sender);
+                        unsafe {
+                            if let Some(list) = pop.data::<gtk::Box>("kalam-anno-list") {
+                                let list = list.as_ref().clone();
+                                rebuild_anno_list(&list, &self.all_book_annotations, &sender);
+                            }
                         }
                     }
                 }
@@ -772,27 +677,36 @@ color:#3e3226;font-family:Georgia,serif'>\
                 }
                 if let Some(pop) = widgets.dict_btn.popover() {
                     if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
-                        if let Some(list) = pop.data::<gtk::Box>("kalam-dict-list") {
-                            let list = list.as_ref().clone();
-                            rebuild_dict_list(&list, &self.dict_results, &sender);
+                        unsafe {
+                            if let Some(list) = pop.data::<gtk::Box>("kalam-dict-list") {
+                                let list = list.as_ref().clone();
+                                rebuild_dict_list(&list, &self.dict_results, &sender);
+                            }
                         }
                     }
                 }
             }
             ReaderMsg::DictSearchSelect(word) => {
-                // lookup that word fully
                 let results = self.catalog.search_dict(&word, 5).unwrap_or_default();
                 if let Some(entry) = results.first() {
                     self.dict_lookup_word = Some(entry.word.clone());
                     self.dict_lookup_def = Some(entry.definition.clone());
                     let rect_json = self.dict_lookup_rect_json.clone();
-                    self.show_dict_in_webview(entry.word.clone(), entry.definition.clone(), rect_json.clone());
+                    self.show_dict_in_webview(
+                        entry.word.clone(),
+                        entry.definition.clone(),
+                        rect_json.clone(),
+                    );
                     if let Some(pop) = widgets.dict_btn.popover() {
                         if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
-                            if let Some(label) = pop.data::<gtk::Label>("kalam-dict-res") {
-                                label
-                                    .as_ref()
-                                    .set_label(&format!("{}: {}", entry.word, truncate_def(&entry.definition, 400)));
+                            unsafe {
+                                if let Some(label) = pop.data::<gtk::Label>("kalam-dict-res") {
+                                    label.as_ref().set_label(&format!(
+                                        "{}: {}",
+                                        entry.word,
+                                        truncate_def(&entry.definition, 400)
+                                    ));
+                                }
                             }
                         }
                     }
@@ -811,11 +725,12 @@ color:#3e3226;font-family:Georgia,serif'>\
                     );
                     self.dict_lookup_word = None;
                     self.dict_lookup_def = None;
-                    // clear label
                     if let Some(pop) = widgets.dict_btn.popover() {
                         if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
-                            if let Some(label) = pop.data::<gtk::Label>("kalam-dict-res") {
-                                label.as_ref().set_label("Word saved to Saved words.");
+                            unsafe {
+                                if let Some(label) = pop.data::<gtk::Label>("kalam-dict-res") {
+                                    label.as_ref().set_label("Word saved to Saved words.");
+                                }
                             }
                         }
                     }
@@ -828,12 +743,17 @@ color:#3e3226;font-family:Georgia,serif'>\
                 self.dict_context = None;
                 if let Some(pop) = widgets.dict_btn.popover() {
                     if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
-                        if let Some(label) = pop.data::<gtk::Label>("kalam-dict-res") {
-                            label.as_ref().set_label("");
+                        unsafe {
+                            if let Some(label) = pop.data::<gtk::Label>("kalam-dict-res") {
+                                label.as_ref().set_label("");
+                            }
                         }
                     }
                 }
-                eval_js(&self.webview, "if (window.kalamHideDict) window.kalamHideDict();");
+                eval_js(
+                    &self.webview,
+                    "if (window.kalamHideDict) window.kalamHideDict();",
+                );
             }
             ReaderMsg::ToggleAnnoPopover => {
                 widgets.anno_btn.popup();
@@ -874,7 +794,6 @@ impl ReaderModel {
         self.chapter = idx;
         self.fraction = frac;
         self.loading = true;
-        // refresh annotations for new chapter
         self.chapter_annotations = self
             .catalog
             .get_annotations_for_chapter(self.book_id, idx as i64)
@@ -887,7 +806,6 @@ impl ReaderModel {
         if self.chapter_annotations.is_empty() {
             return;
         }
-        // Serialize annotations needed for JS
         let simple: Vec<serde_json::Value> = self
             .chapter_annotations
             .iter()
@@ -903,20 +821,30 @@ impl ReaderModel {
             })
             .collect();
         if let Ok(json) = serde_json::to_string(&simple) {
-            let escaped = json.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n");
-            let script = format!("if (window.kalamInjectHighlights) window.kalamInjectHighlights('{}');", escaped);
+            let escaped = json
+                .replace('\\', "\\\\")
+                .replace('\'', "\\'")
+                .replace('\n', "\\n");
+            let script = format!(
+                "if (window.kalamInjectHighlights) window.kalamInjectHighlights('{}');",
+                escaped
+            );
             eval_js(&self.webview, &script);
         }
     }
 
-    fn show_dict_in_webview(
-        &self,
-        word: String,
-        definition: String,
-        rect_json: Option<String>,
-    ) {
-        let word_esc = word.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n");
-        let def_esc = definition.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n").chars().take(2000).collect::<String>();
+    fn show_dict_in_webview(&self, word: String, definition: String, rect_json: Option<String>) {
+        let word_esc = word
+            .replace('\\', "\\\\")
+            .replace('\'', "\\'")
+            .replace('\n', "\\n");
+        let def_esc = definition
+            .replace('\\', "\\\\")
+            .replace('\'', "\\'")
+            .replace('\n', "\\n")
+            .chars()
+            .take(2000)
+            .collect::<String>();
         let rect_part = if let Some(rj) = rect_json {
             let rj_esc = rj.replace('\\', "\\\\").replace('\'', "\\'");
             format!("'{}'", rj_esc)
@@ -937,9 +865,6 @@ impl ReaderModel {
                     self.fraction = f.clamp(0.0, 1.0);
                 }
             }
-            "next" => {
-                // Auto-advance disabled for stability — user can press N/›
-            }
             "selection" => {
                 self.last_selection = payload.text;
             }
@@ -950,11 +875,12 @@ impl ReaderModel {
                 let so = payload.start_offset.unwrap_or(0);
                 let ep = payload.end_path.unwrap_or_default();
                 let eo = payload.end_offset.unwrap_or(0);
-                let tmp_id = payload.tmp_id.unwrap_or_else(|| format!("tmp_{}", chrono_now()));
+                let tmp_id = payload
+                    .tmp_id
+                    .unwrap_or_else(|| format!("tmp_{}", chrono_now()));
                 if sp.is_empty() || ep.is_empty() || text.trim().is_empty() {
                     return;
                 }
-                // Validate color
                 let col = HighlightColor::from_str_lossy(&color).as_str().to_string();
                 match self.catalog.insert_annotation(
                     self.book_id,
@@ -969,7 +895,6 @@ impl ReaderModel {
                     "",
                 ) {
                     Ok(real_id) => {
-                        // Update tmpId -> realId in DOM
                         let script = format!(
                             "try {{ var nodes = document.querySelectorAll('span[data-annotation-id=\"{tmp}\"]'); nodes.forEach(function(n){{ n.dataset.annotationId='{real}'; }}); }}catch(e){{}}",
                             tmp = tmp_id.replace('\'', "\\'"),
@@ -998,18 +923,22 @@ impl ReaderModel {
                 if sp.is_empty() || ep.is_empty() || text.trim().is_empty() {
                     return;
                 }
-                if let Ok(_id) = self.catalog.insert_annotation(
-                    self.book_id,
-                    "quote",
-                    self.chapter as i64,
-                    &sp,
-                    so,
-                    &ep,
-                    eo,
-                    "yellow",
-                    &text,
-                    "",
-                ) {
+                if self
+                    .catalog
+                    .insert_annotation(
+                        self.book_id,
+                        "quote",
+                        self.chapter as i64,
+                        &sp,
+                        so,
+                        &ep,
+                        eo,
+                        "yellow",
+                        &text,
+                        "",
+                    )
+                    .is_ok()
+                {
                     self.all_book_annotations = self
                         .catalog
                         .get_annotations_for_book(self.book_id)
@@ -1025,15 +954,21 @@ impl ReaderModel {
                 }
                 self.dict_context = context.clone();
                 self.dict_lookup_rect_json = rect_json.clone();
-                // Search dict
                 let results = self.catalog.search_dict(&word, 5).unwrap_or_default();
                 if let Some(entry) = results.first() {
                     self.dict_lookup_word = Some(entry.word.clone());
                     self.dict_lookup_def = Some(entry.definition.clone());
-                    self.show_dict_in_webview(entry.word.clone(), entry.definition.clone(), rect_json);
+                    self.show_dict_in_webview(
+                        entry.word.clone(),
+                        entry.definition.clone(),
+                        rect_json,
+                    );
                 } else {
-                    // No result: show not found but allow save?
-                    let def = format!("No definition found for '{}'. Total dict entries: {}", word, self.catalog.dict_entry_count().unwrap_or(0));
+                    let def = format!(
+                        "No definition found for '{}'. Total dict entries: {}",
+                        word,
+                        self.catalog.dict_entry_count().unwrap_or(0)
+                    );
                     self.dict_lookup_word = Some(word.clone());
                     self.dict_lookup_def = Some(def.clone());
                     self.show_dict_in_webview(word, def, rect_json);
@@ -1049,13 +984,14 @@ impl ReaderModel {
                         None,
                         Some(self.book_id),
                         Some(self.chapter as i64),
-                        payload.context.as_deref().or(self.dict_context.as_deref()),
+                        payload
+                            .context
+                            .as_deref()
+                            .or(self.dict_context.as_deref()),
                     );
                 }
             }
             "dict-shortcut" => {
-                // User pressed D without selection — try to get word under cursor? We already handle via JS getSelection fallback.
-                // For now, trigger dict search UI.
                 sender.input(ReaderMsg::ToggleDictPopover);
             }
             _ => {}
@@ -1143,7 +1079,9 @@ fn rebuild_anno_list(
         list.remove(&child);
     }
     if annos.is_empty() {
-        let l = gtk::Label::new(Some("No highlights or quotes in this book yet. Select text in reader → highlight (color) or save quote (❝)."));
+        let l = gtk::Label::new(Some(
+            "No highlights or quotes in this book yet. Select text → highlight (color) or save quote (❝).",
+        ));
         l.add_css_class("kalam-placeholder");
         l.set_wrap(true);
         l.set_xalign(0.0);
@@ -1234,14 +1172,12 @@ fn truncate_def(s: &str, n: usize) -> String {
 }
 
 fn eval_js(webview: &webkit6::WebView, script: &str) {
-    // Attempt to use evaluate_javascript with 5 args: script, world_name, source_uri, cancellable, callback
-    // We use None for world_name, source_uri, cancellable.
-    // Callback ignores result but logs error.
     webview.evaluate_javascript(
         script,
         None,
         None,
-        None::<gtk::gio::Cancellable>,
+        None,
+        None::<&gio::Cancellable>,
         |res| {
             if let Err(err) = res {
                 eprintln!("kalam js eval error: {err}");
@@ -1251,7 +1187,6 @@ fn eval_js(webview: &webkit6::WebView, script: &str) {
 }
 
 fn url_decode(s: &str) -> String {
-    // very small percent-decode for kalam:// bridge
     let mut out = String::new();
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {

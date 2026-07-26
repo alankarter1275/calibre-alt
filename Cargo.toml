@@ -14,6 +14,9 @@ libadwaita = { version = "0.7", features = ["v1_4"] }
 gtk = { version = "0.9", package = "gtk4", features = ["v4_12"] }
 gdk-pixbuf = "0.20"
 webkit6 = { version = "0.4", package = "webkit6", features = ["v2_44"] }
+javascriptcore = { version = "0.4", package = "javascriptcore6" }
+glib = "0.20"
+gio = { version = "0.20", package = "gio" }
 
 # Library / persistence
 rusqlite = { version = "0.32", features = ["bundled"] }

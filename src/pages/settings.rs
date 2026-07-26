@@ -3,7 +3,6 @@ use crate::dict;
 use crate::paths::{catalog_db, data_dir, dictionaries_dir, library_dir};
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 #[derive(Debug)]
