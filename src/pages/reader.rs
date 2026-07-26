@@ -458,11 +458,8 @@ color:#3e3226;font-family:Georgia,serif'>\
             let _ = ucm.register_script_message_handler("kalam", None);
             let s = sender.clone();
             ucm.connect_script_message_received(Some("kalam"), move |_mgr, msg| {
-                // msg is &javascriptcore::Value
-                let json_str = msg.to_string();
-                if let Some(js) = json_str {
-                    s.input(ReaderMsg::JsRaw(js));
-                }
+                let js = msg.to_string();
+                s.input(ReaderMsg::JsRaw(js));
             });
         }
 
@@ -1174,7 +1171,6 @@ fn truncate_def(s: &str, n: usize) -> String {
 fn eval_js(webview: &webkit6::WebView, script: &str) {
     webview.evaluate_javascript(
         script,
-        None,
         None,
         None,
         None::<&gio::Cancellable>,
