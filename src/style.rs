@@ -498,8 +498,9 @@ window.kalam-float-window {
 }
 
 /* ── reader (immersive tablet-book) ─────────────────── */
-.kalam-content > .kalam-reader {
-    margin: -20px -24px;
+/* Do NOT use negative margins here — GtkOverlay reports min size < 0. */
+.kalam-content.kalam-content-reader {
+    padding: 0;
 }
 
 .kalam-reader {
@@ -508,31 +509,30 @@ window.kalam-float-window {
 
 .kalam-reader-stage {
     background: #0a0a0b;
-    min-height: 100%;
 }
 
 .kalam-reader-top-float {
-    background: alpha(#1c1917, 0.72);
-    border: 1px solid alpha(#fff, 0.08);
+    background: rgba(28, 25, 23, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 999px;
     padding: 4px 10px 4px 4px;
-    box-shadow: 0 8px 28px alpha(#000, 0.35);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
 }
 
 .kalam-reader-crumb {
     font-size: 0.8rem;
     font-weight: 500;
-    color: alpha(#fafaf9, 0.88);
+    color: rgba(250, 250, 249, 0.88);
     padding-right: 6px;
 }
 
 /* Bottom floating control pill */
 .kalam-reader-pill {
-    background: alpha(#1c1917, 0.88);
-    border: 1px solid alpha(#fff, 0.10);
+    background: rgba(28, 25, 23, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.10);
     border-radius: 999px;
     padding: 6px 10px;
-    box-shadow: 0 12px 40px alpha(#000, 0.45);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
 .kalam-reader-pill-btn {
@@ -548,13 +548,13 @@ window.kalam-float-window {
 }
 
 .kalam-reader-pill-btn:hover {
-    background: alpha(#fff, 0.12);
+    background: rgba(255, 255, 255, 0.12);
 }
 
 .kalam-reader-pill-meta {
     font-size: 0.78rem;
     font-weight: 600;
-    color: alpha(#e7e5e4, 0.75);
+    color: rgba(231, 229, 228, 0.75);
     padding: 0 6px;
     min-width: 3.5rem;
 }

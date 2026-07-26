@@ -239,6 +239,13 @@ impl AppModel {
             }
         }
 
+        // Toggle reader padding class without negative margins.
+        if route.is_reader() {
+            content_host.add_css_class("kalam-content-reader");
+        } else {
+            content_host.remove_css_class("kalam-content-reader");
+        }
+
         self.route = route;
         let page = Self::build_page(&self.catalog, &self.route, sender);
         content_host.append(&page.widget());

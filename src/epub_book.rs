@@ -457,29 +457,40 @@ fn inject_reading_shell(
         restore = restore,
     );
 
-    // Insert after <head> if present, else prepend.
+    // Put our skin at the *end* of the document so it wins over author CSS
+    // (equal !important → later rule wins). Also keep a head copy for early paint.
     let lower = raw_html.to_ascii_lowercase();
-    if let Some(pos) = lower.find("<head>") {
+    let head_inject = inject.clone();
+    let mut out = if let Some(pos) = lower.find("<head>") {
         let insert_at = pos + 6;
-        let mut s = String::with_capacity(raw_html.len() + inject.len());
+        let mut s = String::with_capacity(raw_html.len() + inject.len() * 2);
         s.push_str(&raw_html[..insert_at]);
-        s.push_str(&inject);
+        s.push_str(&head_inject);
         s.push_str(&raw_html[insert_at..]);
         s
     } else if let Some(pos) = lower.find("<head ") {
         if let Some(gt) = raw_html[pos..].find('>') {
             let insert_at = pos + gt + 1;
-            let mut s = String::with_capacity(raw_html.len() + inject.len());
+            let mut s = String::with_capacity(raw_html.len() + inject.len() * 2);
             s.push_str(&raw_html[..insert_at]);
-            s.push_str(&inject);
+            s.push_str(&head_inject);
             s.push_str(&raw_html[insert_at..]);
             s
         } else {
-            format!("<!DOCTYPE html><html><head>{inject}</head><body>{raw_html}</body></html>")
+            format!("<!DOCTYPE html><html><head>{head_inject}</head><body>{raw_html}</body></html>")
         }
     } else {
-        format!("<!DOCTYPE html><html><head>{inject}</head><body>{raw_html}</body></html>")
+        format!("<!DOCTYPE html><html><head>{head_inject}</head><body>{raw_html}</body></html>")
+    };
+
+    // Append a second copy before </body> for cascade victory.
+    let lower2 = out.to_ascii_lowercase();
+    if let Some(pos) = lower2.rfind("</body>") {
+        out.insert_str(pos, &inject);
+    } else {
+        out.push_str(&inject);
     }
+    out
 }
 
 fn path_to_file_url(path: &Path) -> String {
@@ -530,21 +541,32 @@ fn join_zip_path(dir: &str, href: &str) -> String {
 }
 
 /// Default reading stylesheet — book-like, not webpage-like.
-/// Body text is never forced blue; links are subtle.
+///
+/// Many commercial EPUBs wrap almost every paragraph in `<a>` with blue
+/// link styling. We nuke link chrome entirely for reading.
 pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, margin_em: f32) -> String {
-    let (bg, fg, muted) = match theme {
-        ReadingTheme::Light => ("#faf8f5", "#1c1917", "#57534e"),
-        ReadingTheme::Sepia => ("#f4ecd8", "#3e3226", "#6b5a48"),
-        ReadingTheme::Dark => ("#1a1b1e", "#e7e5e4", "#a8a29e"),
+    let (bg, fg) = match theme {
+        ReadingTheme::Light => ("#faf8f5", "#1c1917"),
+        ReadingTheme::Sepia => ("#f4ecd8", "#3e3226"),
+        ReadingTheme::Dark => ("#1a1b1e", "#e7e5e4"),
     };
+    // Injected at the *end* of <body> so it wins over author stylesheets.
     format!(
         r#"
+/* kalam reading skin — highest priority overrides */
 html {{
   background: {bg} !important;
 }}
+html, body, body * {{
+  color: {fg} !important;
+  -webkit-text-fill-color: {fg} !important;
+  text-decoration: none !important;
+  text-decoration-line: none !important;
+  text-decoration-color: transparent !important;
+  border-bottom: none !important;
+}}
 html, body {{
   background: {bg} !important;
-  color: {fg} !important;
   font-size: {font_px}px !important;
   line-height: {lh} !important;
   margin: 0 !important;
@@ -559,43 +581,42 @@ body {{
     "Literata", Georgia, "Times New Roman", serif !important;
   -webkit-font-smoothing: antialiased;
 }}
-/* Kill common EPUB blue / gray overrides on body copy */
 p, div, span, li, td, th, blockquote, h1, h2, h3, h4, h5, h6,
-section, article, main, font {{
-  color: inherit !important;
-  line-height: {lh} !important;
+section, article, main, font, a, a:link, a:visited, a:hover, a:active {{
+  color: {fg} !important;
+  -webkit-text-fill-color: {fg} !important;
   background: transparent !important;
+  background-color: transparent !important;
+  line-height: {lh} !important;
+  text-decoration: none !important;
+  text-decoration-line: none !important;
+  border-bottom-width: 0 !important;
+  border-bottom-style: none !important;
 }}
 h1, h2, h3, h4, h5, h6 {{
-  color: {fg} !important;
   font-weight: 650 !important;
   line-height: 1.25 !important;
   margin-top: 1.4em !important;
 }}
-/* Links: bookish, not browser-blue walls of text */
-a, a:link, a:visited {{
+a[href], a[href]:link, a[href]:visited, a[href]:hover, a[href]:active {{
   color: {fg} !important;
-  text-decoration: underline !important;
-  text-decoration-color: {muted} !important;
-  text-underline-offset: 0.15em !important;
-}}
-a:hover {{
-  color: {fg} !important;
-  text-decoration-color: {fg} !important;
+  -webkit-text-fill-color: {fg} !important;
+  text-decoration: none !important;
+  cursor: text !important;
 }}
 img, svg {{
   max-width: 100% !important;
   height: auto !important;
+  -webkit-text-fill-color: initial !important;
 }}
-/* Selection preview (P3 will use proper highlights) */
 ::selection {{
   background: rgba(244, 114, 182, 0.35);
-  color: inherit;
+  color: {fg} !important;
+  -webkit-text-fill-color: {fg} !important;
 }}
 "#,
         bg = bg,
         fg = fg,
-        muted = muted,
         font_px = font_px,
         lh = line_height,
         margin = margin_em,

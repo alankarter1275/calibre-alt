@@ -21,7 +21,6 @@ pub enum ReaderMsg {
     NextChapter,
     Theme(ReadingTheme),
     FontDelta(i32),
-    FlushProgress,
 }
 
 pub struct ReaderModel {
@@ -36,7 +35,6 @@ pub struct ReaderModel {
     line_height: f32,
     margin_em: f32,
     loading: bool,
-    dirty: bool,
     webview: webkit6::WebView,
 }
 
@@ -198,7 +196,6 @@ color:#3e3226;font-family:Georgia,serif'>\
             line_height: 1.65,
             margin_em: 1.4,
             loading: false,
-            dirty: false,
             webview: webview.clone(),
         };
 
@@ -308,11 +305,8 @@ color:#3e3226;font-family:Georgia,serif'>\
         root.add_controller(key);
         root.set_can_focus(true);
 
-        let s_flush = sender.clone();
-        gtk::glib::timeout_add_local(std::time::Duration::from_secs(2), move || {
-            s_flush.input(ReaderMsg::FlushProgress);
-            gtk::glib::ControlFlow::Continue
-        });
+        // No background timer — progress is saved on chapter change / close /
+        // shutdown only (avoids panics after the component is dropped).
 
         ComponentParts { model, widgets }
     }
@@ -365,17 +359,6 @@ color:#3e3226;font-family:Georgia,serif'>\
                     self.loading = false;
                 }
             }
-            ReaderMsg::FlushProgress => {
-                if self.open.chapter_count() > 0 {
-                    if self.fraction < 0.85 {
-                        self.fraction = (self.fraction + 0.02).min(0.85);
-                        self.dirty = true;
-                    }
-                    if self.dirty {
-                        self.save_progress();
-                    }
-                }
-            }
         }
 
         update_chrome_labels(widgets, self);
@@ -402,7 +385,6 @@ impl ReaderModel {
             self.fraction,
             self.open.chapter_count(),
         );
-        self.dirty = false;
     }
 
     fn go_chapter(&mut self, idx: usize, frac: f64) {
@@ -412,7 +394,6 @@ impl ReaderModel {
         self.loading = true;
         load_chapter(self);
         self.loading = false;
-        self.dirty = true;
     }
 }
 
