@@ -22,8 +22,6 @@ pub enum ReaderMsg {
     NextChapter,
     Theme(ReadingTheme),
     FontDelta(i32),
-    ScrollFraction(f64),
-    RequestNext,
     FlushProgress,
 }
 
@@ -33,6 +31,7 @@ pub struct ReaderModel {
     book_title: String,
     open: OpenBook,
     chapter: usize,
+    /// In-chapter fraction 0..1 (best-effort; restored on chapter load).
     fraction: f64,
     theme: ReadingTheme,
     font_px: u32,
@@ -186,7 +185,10 @@ impl Component for ReaderModel {
                 Err(err) => {
                     eprintln!("kalam: open epub failed: {err:#}");
                     let msg = format!(
-                        "<html><body style='padding:2rem;background:#12141a;color:#e8eaf0;font-family:sans-serif'><h1>Could not open book</h1><pre>{err:#}</pre><p>Press Esc or ← Library to go back.</p></body></html>"
+                        "<html><body style='padding:2rem;background:#12141a;\
+color:#e8eaf0;font-family:sans-serif'>\
+<h1>Could not open book</h1><pre>{err:#}</pre>\
+<p>Press Esc or ← Library to go back.</p></body></html>"
                     );
                     webview.load_html(&msg, None);
                     (book.title, OpenBook::empty_placeholder(), 0, 0.0)
@@ -257,41 +259,7 @@ impl Component for ReaderModel {
         root.add_controller(key);
         root.set_can_focus(true);
 
-        // Intercept kalam:// bridge navigations from injected JS.
-        let s_nav = sender.clone();
-        webview.connect_decide_policy(move |_wv, decision, decision_type| {
-            use webkit6::prelude::*;
-            use webkit6::{NavigationPolicyDecision, PolicyDecisionType};
-            if decision_type != PolicyDecisionType::NavigationAction {
-                return false;
-            }
-            let Some(nav) = decision.downcast_ref::<NavigationPolicyDecision>() else {
-                return false;
-            };
-            let Some(mut action) = nav.navigation_action() else {
-                return false;
-            };
-            let Some(req) = action.request() else {
-                return false;
-            };
-            let Some(uri) = req.uri() else {
-                return false;
-            };
-            let uri = uri.as_str();
-            if let Some(rest) = uri.strip_prefix("kalam://") {
-                if rest == "next" {
-                    s_nav.input(ReaderMsg::RequestNext);
-                } else if let Some(frac_s) = rest.strip_prefix("progress/") {
-                    if let Ok(frac) = frac_s.parse::<f64>() {
-                        s_nav.input(ReaderMsg::ScrollFraction(frac));
-                    }
-                }
-                decision.ignore();
-                return true;
-            }
-            false
-        });
-
+        // Mark chapter as "in progress" while reading (fraction bumps slowly as proxy).
         let s_flush = sender.clone();
         gtk::glib::timeout_add_local(std::time::Duration::from_secs(2), move || {
             s_flush.input(ReaderMsg::FlushProgress);
@@ -310,6 +278,10 @@ impl Component for ReaderModel {
     ) {
         match msg {
             ReaderMsg::Close => {
+                // Leaving a chapter: treat as ~mid if we never tracked scroll.
+                if self.fraction < 0.05 {
+                    self.fraction = 0.15;
+                }
                 self.save_progress();
                 sender.output(ReaderOut::Close).ok();
             }
@@ -326,8 +298,10 @@ impl Component for ReaderModel {
                     self.go_chapter(self.chapter - 1, 0.0);
                 }
             }
-            ReaderMsg::NextChapter | ReaderMsg::RequestNext => {
+            ReaderMsg::NextChapter => {
                 if self.chapter + 1 < self.open.chapter_count() && !self.loading {
+                    // Finished this chapter.
+                    self.fraction = 1.0;
                     self.go_chapter(self.chapter + 1, 0.0);
                 }
             }
@@ -344,16 +318,16 @@ impl Component for ReaderModel {
                     load_chapter(self);
                 }
             }
-            ReaderMsg::ScrollFraction(fraction) => {
-                if self.open.chapter_count() == 0 {
-                    return;
-                }
-                self.fraction = fraction.clamp(0.0, 1.0);
-                self.dirty = true;
-            }
             ReaderMsg::FlushProgress => {
-                if self.dirty {
-                    self.save_progress();
+                if self.open.chapter_count() > 0 {
+                    // Gentle progress while sitting in a chapter.
+                    if self.fraction < 0.85 {
+                        self.fraction = (self.fraction + 0.02).min(0.85);
+                        self.dirty = true;
+                    }
+                    if self.dirty {
+                        self.save_progress();
+                    }
                 }
             }
         }
@@ -391,6 +365,8 @@ impl ReaderModel {
         self.fraction = frac;
         self.loading = true;
         load_chapter(self);
+        self.loading = false;
+        self.dirty = true;
     }
 }
 
@@ -430,7 +406,9 @@ fn load_chapter(model: &ReaderModel) {
         }
         Err(err) => {
             let err_html = format!(
-                "<html><body style='padding:2rem;background:#12141a;color:#e8eaf0;font-family:sans-serif'><h1>Could not load chapter</h1><pre>{err:#}</pre></body></html>"
+                "<html><body style='padding:2rem;background:#12141a;\
+color:#e8eaf0;font-family:sans-serif'>\
+<h1>Could not load chapter</h1><pre>{err:#}</pre></body></html>"
             );
             model.webview.load_html(&err_html, None);
         }
