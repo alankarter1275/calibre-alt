@@ -130,25 +130,17 @@ fn import_sqlite_pack(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
             .find(|c| c.eq_ignore_ascii_case("meaning"))
             .unwrap()
     } else if cols.iter().any(|c| c.eq_ignore_ascii_case("def")) {
-        cols.iter()
-            .find(|c| c.eq_ignore_ascii_case("def"))
-            .unwrap()
+        cols.iter().find(|c| c.eq_ignore_ascii_case("def")).unwrap()
     } else if cols.len() >= 2 {
         &cols[1]
     } else {
         &cols[0]
     };
 
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {}, {} FROM {}",
-        word_col, def_col, chosen
-    ))?;
+    let mut stmt = conn.prepare(&format!("SELECT {}, {} FROM {}", word_col, def_col, chosen))?;
     let mut entries = Vec::new();
     for r in stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-        ))
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     })? {
         let (w, d) = r?;
         let w = w.trim();
@@ -243,19 +235,14 @@ fn import_stardict(catalog: &Catalog, any_path: &Path) -> Result<(String, i64)> 
     } else if Path::new(&format!("{}.ifo", base.display())).exists() {
         PathBuf::from(format!("{}.ifo", base.display()))
     } else {
-        find_sibling_with_ext(any_path, "ifo").ok_or_else(|| {
-            anyhow!(
-                "StarDict .ifo not found for {}",
-                any_path.display()
-            )
-        })?
+        find_sibling_with_ext(any_path, "ifo")
+            .ok_or_else(|| anyhow!("StarDict .ifo not found for {}", any_path.display()))?
     };
 
     let idx_path = if idx_path.exists() {
         idx_path
     } else {
-        find_sibling_with_ext(&ifo_path, "idx")
-            .ok_or_else(|| anyhow!("StarDict .idx not found"))?
+        find_sibling_with_ext(&ifo_path, "idx").ok_or_else(|| anyhow!("StarDict .idx not found"))?
     };
 
     let dict_path_opt = if dict_path.exists() {
@@ -276,10 +263,12 @@ fn import_stardict(catalog: &Catalog, any_path: &Path) -> Result<(String, i64)> 
     let dict_path = dict_path_opt.ok_or_else(|| anyhow!("StarDict .dict/.dict.dz not found"))?;
 
     let meta = parse_ifo(&ifo_path)?;
-    let dict_name = meta
-        .get("bookname")
-        .cloned()
-        .unwrap_or_else(|| base.file_stem().and_then(|s| s.to_str()).unwrap_or("StarDict").to_string());
+    let dict_name = meta.get("bookname").cloned().unwrap_or_else(|| {
+        base.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("StarDict")
+            .to_string()
+    });
 
     let entries_meta = parse_idx(&idx_path, &meta)?;
     let dict_bytes = read_dict_file(&dict_path)?;

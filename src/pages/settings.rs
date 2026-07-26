@@ -134,7 +134,11 @@ impl Component for SettingsPageModel {
         let status = if dicts.is_empty() {
             "No dictionaries imported. Import StarDict (.ifo/.idx/.dict) or SQLite pack for offline lookup (D key in reader).".to_string()
         } else {
-            format!("{} dictionary pack{} imported.", dicts.len(), if dicts.len()==1{""} else {"s"})
+            format!(
+                "{} dictionary pack{} imported.",
+                dicts.len(),
+                if dicts.len() == 1 { "" } else { "s" }
+            )
         };
         let model = SettingsPageModel {
             catalog,
@@ -178,7 +182,10 @@ impl Component for SettingsPageModel {
                                         eprintln!("kalam: dict imported {name} {count} entries");
                                     }
                                     Err(e) => {
-                                        eprintln!("kalam: dict import failed {}: {e:#}", path.display());
+                                        eprintln!(
+                                            "kalam: dict import failed {}: {e:#}",
+                                            path.display()
+                                        );
                                     }
                                 }
                                 sender_clone.input(SettingsMsg::Refresh);
@@ -205,7 +212,11 @@ impl SettingsPageModel {
         if self.dicts.is_empty() {
             self.status = "No dictionaries.".into();
         } else {
-            self.status = format!("{} dicts, {} total entries.", self.dicts.len(), total_entries);
+            self.status = format!(
+                "{} dicts, {} total entries.",
+                self.dicts.len(),
+                total_entries
+            );
         }
     }
 }

@@ -8,10 +8,7 @@ use std::rc::Rc;
 #[allow(dead_code)]
 pub enum SavedQuotesOut {
     OpenBook { book_id: i64 },
-    JumpTo {
-        book_id: i64,
-        chapter_index: usize,
-    },
+    JumpTo { book_id: i64, chapter_index: usize },
 }
 
 #[derive(Debug)]
@@ -179,7 +176,11 @@ impl SavedQuotesModel {
                         format!("{n} quote{} saved", if n == 1 { "" } else { "s" })
                     };
                 } else {
-                    self.status = format!("{n} result{} for \"{}\"", if n == 1 { "" } else { "s" }, self.query);
+                    self.status = format!(
+                        "{n} result{} for \"{}\"",
+                        if n == 1 { "" } else { "s" },
+                        self.query
+                    );
                 }
             }
             Err(e) => {
@@ -260,7 +261,11 @@ fn rebuild(
         let ch = anno.chapter_index as usize;
         let s2 = sender.clone();
         jump_btn.connect_clicked(move |_| {
-            s2.output(SavedQuotesOut::JumpTo { book_id: bid, chapter_index: ch }).ok();
+            s2.output(SavedQuotesOut::JumpTo {
+                book_id: bid,
+                chapter_index: ch,
+            })
+            .ok();
             s2.output(SavedQuotesOut::OpenBook { book_id: bid }).ok();
         });
         actions.append(&jump_btn);
@@ -279,18 +284,32 @@ fn export_quotes_markdown(quotes: &[(Annotation, Option<Book>)]) -> String {
     md.push_str("# Kalam — Saved Quotes\n\n");
     md.push_str(&format!("Exported {}\n\n", chrono_like_now()));
     for (anno, book) in quotes {
-        let title = book.as_ref().map(|b| b.title.as_str()).unwrap_or("Unknown Book");
-        let authors = book.as_ref().map(|b| b.authors_display()).unwrap_or("Unknown");
+        let title = book
+            .as_ref()
+            .map(|b| b.title.as_str())
+            .unwrap_or("Unknown Book");
+        let authors = book
+            .as_ref()
+            .map(|b| b.authors_display())
+            .unwrap_or("Unknown");
         md.push_str(&format!("## {title} — {authors}\n\n"));
-        md.push_str(&format!("> {}\n\n", anno.text_excerpt.replace('\n', "\n> ")));
+        md.push_str(&format!(
+            "> {}\n\n",
+            anno.text_excerpt.replace('\n', "\n> ")
+        ));
         if !anno.note.trim().is_empty() {
             md.push_str(&format!("**Note:** {}\n\n", anno.note));
         }
-        md.push_str(&format!("*Chapter {}, {} — {}{}*\n\n---\n\n",
+        md.push_str(&format!(
+            "*Chapter {}, {} — {}{}*\n\n---\n\n",
             anno.chapter_index + 1,
             anno.color,
             anno.created_at,
-            if anno.kind == "highlight" { " · highlight" } else { "" }
+            if anno.kind == "highlight" {
+                " · highlight"
+            } else {
+                ""
+            }
         ));
     }
     md

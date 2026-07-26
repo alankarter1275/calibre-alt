@@ -25,12 +25,18 @@ pub enum AppMsg {
     Navigate(NavItem),
     Push(Route),
     Back,
-    OpenBookDialog { book_id: i64 },
+    OpenBookDialog {
+        book_id: i64,
+    },
     /// Close float and open full book page in the main column.
-    FloatOpenFull { book_id: i64 },
+    FloatOpenFull {
+        book_id: i64,
+    },
     CloseBookDialog,
     /// Open immersive reader for book_id.
-    OpenReader { book_id: i64 },
+    OpenReader {
+        book_id: i64,
+    },
 }
 
 enum PageSlot {
@@ -142,28 +148,29 @@ impl AppModel {
             }
             Route::LibrarySection(LibrarySection::SavedQuotes) => {
                 let cat = catalog.clone();
-                let ctrl = SavedQuotesModel::builder().launch(cat).forward(
-                    sender.input_sender(),
-                    |out| match out {
-                        SavedQuotesOut::OpenBook { book_id } => {
-                            AppMsg::Push(Route::BookPage { book_id })
-                        }
-                        SavedQuotesOut::JumpTo { book_id, .. } => {
-                            AppMsg::Push(Route::BookPage { book_id })
-                        }
-                    },
-                );
+                let ctrl =
+                    SavedQuotesModel::builder()
+                        .launch(cat)
+                        .forward(sender.input_sender(), |out| match out {
+                            SavedQuotesOut::OpenBook { book_id } => {
+                                AppMsg::Push(Route::BookPage { book_id })
+                            }
+                            SavedQuotesOut::JumpTo { book_id, .. } => {
+                                AppMsg::Push(Route::BookPage { book_id })
+                            }
+                        });
                 PageSlot::SavedQuotes(ctrl)
             }
             Route::LibrarySection(LibrarySection::SavedWords) => {
                 let cat = catalog.clone();
-                let ctrl = SavedWordsModel::builder()
-                    .launch(cat)
-                    .forward(sender.input_sender(), |out| match out {
-                        SavedWordsOut::OpenBook { book_id } => {
-                            AppMsg::Push(Route::BookPage { book_id })
-                        }
-                    });
+                let ctrl =
+                    SavedWordsModel::builder()
+                        .launch(cat)
+                        .forward(sender.input_sender(), |out| match out {
+                            SavedWordsOut::OpenBook { book_id } => {
+                                AppMsg::Push(Route::BookPage { book_id })
+                            }
+                        });
                 PageSlot::SavedWords(ctrl)
             }
             Route::LibrarySection(section) => PageSlot::Widget(placeholder_section(*section)),
@@ -660,10 +667,7 @@ fn placeholder_section(section: LibrarySection) -> gtk::Box {
     sub.set_halign(gtk::Align::Start);
     page.append(&sub);
 
-    let ph = gtk::Label::new(Some(&format!(
-        "{} — coming soon.",
-        section.label()
-    )));
+    let ph = gtk::Label::new(Some(&format!("{} — coming soon.", section.label())));
     ph.add_css_class("kalam-placeholder");
     ph.set_wrap(true);
     page.append(&ph);

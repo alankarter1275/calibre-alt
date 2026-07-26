@@ -146,7 +146,11 @@ impl SavedWordsModel {
                         format!("{n} word{} saved", if n == 1 { "" } else { "s" })
                     };
                 } else {
-                    self.status = format!("{n} result{} for \"{}\"", if n == 1 { "" } else { "s" }, self.query);
+                    self.status = format!(
+                        "{n} result{} for \"{}\"",
+                        if n == 1 { "" } else { "s" },
+                        self.query
+                    );
                 }
             }
             Err(e) => {
@@ -157,11 +161,7 @@ impl SavedWordsModel {
     }
 }
 
-fn rebuild(
-    list: &gtk::Box,
-    words: &[SavedWord],
-    sender: &ComponentSender<SavedWordsModel>,
-) {
+fn rebuild(list: &gtk::Box, words: &[SavedWord], sender: &ComponentSender<SavedWordsModel>) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }

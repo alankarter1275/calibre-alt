@@ -633,7 +633,8 @@ impl Catalog {
                  FROM saved_words ORDER BY created_at DESC LIMIT 500",
             )?;
             let rows = stmt.query_map([], row_to_saved_word)?;
-            rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
         } else {
             let like = format!("%{}%", escape_like(q));
             let mut stmt = conn.prepare(
@@ -643,7 +644,8 @@ impl Catalog {
                  ORDER BY created_at DESC LIMIT 500",
             )?;
             let rows = stmt.query_map(params![like], row_to_saved_word)?;
-            rows.collect::<std::result::Result<Vec<_>, _>>().map_err(Into::into)
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
         }
     }
 
@@ -715,12 +717,7 @@ impl Catalog {
         Ok(())
     }
 
-    pub fn insert_dict_entry(
-        &self,
-        dict_id: i64,
-        word: &str,
-        definition: &str,
-    ) -> Result<()> {
+    pub fn insert_dict_entry(&self, dict_id: i64, word: &str, definition: &str) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "INSERT INTO dict_entries (dict_id, word, definition) VALUES (?1, ?2, ?3)",

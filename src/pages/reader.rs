@@ -984,10 +984,7 @@ impl ReaderModel {
                         None,
                         Some(self.book_id),
                         Some(self.chapter as i64),
-                        payload
-                            .context
-                            .as_deref()
-                            .or(self.dict_context.as_deref()),
+                        payload.context.as_deref().or(self.dict_context.as_deref()),
                     );
                 }
             }
@@ -1070,11 +1067,7 @@ fn append_toc_btn(list: &gtk::Box, label: &str, idx: usize, sender: &ComponentSe
     list.append(&btn);
 }
 
-fn rebuild_anno_list(
-    list: &gtk::Box,
-    annos: &[Annotation],
-    sender: &ComponentSender<ReaderModel>,
-) {
+fn rebuild_anno_list(list: &gtk::Box, annos: &[Annotation], sender: &ComponentSender<ReaderModel>) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
@@ -1172,17 +1165,11 @@ fn truncate_def(s: &str, n: usize) -> String {
 }
 
 fn eval_js(webview: &webkit6::WebView, script: &str) {
-    webview.evaluate_javascript(
-        script,
-        None,
-        None,
-        None::<&gio::Cancellable>,
-        |res| {
-            if let Err(err) = res {
-                eprintln!("kalam js eval error: {err}");
-            }
-        },
-    );
+    webview.evaluate_javascript(script, None, None, None::<&gio::Cancellable>, |res| {
+        if let Err(err) = res {
+            eprintln!("kalam js eval error: {err}");
+        }
+    });
 }
 
 fn url_decode(s: &str) -> String {
