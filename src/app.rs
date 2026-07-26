@@ -507,6 +507,13 @@ impl Component for AppModel {
                         }
                     }
 
+                    // Fix crooked home after reader: ensure reader class is removed when leaving reader
+                    if prev.is_reader() {
+                        widgets.content_host.add_css_class("kalam-content-reader");
+                    } else {
+                        widgets.content_host.remove_css_class("kalam-content-reader");
+                    }
+
                     self.route = prev;
                     let page = Self::build_page(&self.catalog, &self.route, &sender);
                     widgets.content_host.append(&page.widget());
@@ -632,6 +639,10 @@ fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     let btn = gtk::Button::new();
     btn.set_child(Some(&inner));
     btn.add_css_class("kalam-nav-btn");
+    // Make hover highlight tight around content, not full sidebar width — capsule
+    btn.set_halign(gtk::Align::Center);
+    btn.set_hexpand(false);
+    btn.set_hexpand_set(true);
     if active {
         btn.add_css_class("active");
     }

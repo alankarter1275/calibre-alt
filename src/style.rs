@@ -40,15 +40,16 @@ window.kalam-window {
 }
 
 .kalam-nav-btn {
-    padding: 10px 10px;
+    padding: 8px 14px;
     border-radius: 999px;
-    margin: 3px 0;
+    margin: 3px auto;
     background: transparent;
     border: none;
     color: @kalam_text_dim;
     font-size: 0.72rem;
     font-weight: 500;
-    min-width: 48px;
+    min-width: 0;
+    min-height: 0;
 }
 
 .kalam-nav-btn:hover {

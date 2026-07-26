@@ -36,7 +36,7 @@ pub fn build_book_card(
     card.add_css_class("kalam-book-card");
     card.set_hexpand(false);
     card.set_vexpand(false);
-    card.set_halign(gtk::Align::Center);
+    card.set_halign(gtk::Align::Start);
     card.set_valign(gtk::Align::Start);
     // Lock both axes so long titles never widen the cell.
     card.set_size_request(CARD_W, CARD_H);
@@ -148,7 +148,7 @@ pub fn build_book_grid(
         cell.set_size_request(CARD_W, CARD_H);
         cell.set_hexpand(false);
         cell.set_vexpand(false);
-        cell.set_halign(gtk::Align::Center);
+        cell.set_halign(gtk::Align::Start);
         cell.append(&card);
 
         let col = (i as i32) % GRID_COLS;
