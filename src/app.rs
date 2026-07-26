@@ -465,18 +465,12 @@ impl Component for AppModel {
                     .map(|b| b.title)
                     .unwrap_or_else(|| "Book".into());
 
-                // Morph: card-sized start → panel. Smoother ease + more frames.
-                use crate::widgets::book_row::{CARD_H, CARD_W};
-                const OPEN_W: i32 = 900;
-                const OPEN_H: i32 = 560;
-                const STEPS: u32 = 22; // ~350ms at 16ms
-                const FRAME_MS: u64 = 16;
-
+                // No open/close animation for now — plain panel.
                 let window = gtk::Window::builder()
                     .title(title)
                     .transient_for(root)
-                    .default_width(CARD_W)
-                    .default_height(CARD_H)
+                    .default_width(900)
+                    .default_height(560)
                     .resizable(true)
                     .modal(false)
                     .decorated(false)
@@ -484,7 +478,6 @@ impl Component for AppModel {
                 window.add_css_class("kalam-window");
                 window.add_css_class("kalam-float-window");
                 window.set_child(Some(ctrl.widget()));
-                window.set_opacity(0.0);
 
                 let key = gtk::EventControllerKey::new();
                 let s_key = sender.clone();
@@ -507,29 +500,6 @@ impl Component for AppModel {
                 window.present();
                 ctrl.widget().grab_focus();
 
-                // ease-out-cubic: 1 - (1-t)^3
-                let win_anim = window.clone();
-                let mut step = 0u32;
-                gtk::glib::timeout_add_local(
-                    std::time::Duration::from_millis(FRAME_MS),
-                    move || {
-                        step += 1;
-                        let t = (step as f64 / STEPS as f64).min(1.0);
-                        let e = 1.0 - (1.0 - t).powi(3);
-                        win_anim.set_opacity(e);
-                        let w = CARD_W as f64 + (OPEN_W - CARD_W) as f64 * e;
-                        let h = CARD_H as f64 + (OPEN_H - CARD_H) as f64 * e;
-                        win_anim.set_default_size(w.round() as i32, h.round() as i32);
-                        if step >= STEPS {
-                            win_anim.set_opacity(1.0);
-                            win_anim.set_default_size(OPEN_W, OPEN_H);
-                            gtk::glib::ControlFlow::Break
-                        } else {
-                            gtk::glib::ControlFlow::Continue
-                        }
-                    },
-                );
-
                 self.floating = Some(FloatingBook {
                     _controller: ctrl,
                     window,
@@ -548,39 +518,9 @@ impl Component for AppModel {
                 );
             }
             AppMsg::CloseBookDialog => {
-                // Morph close: panel → card + fade (ease-in-cubic), smoother.
-                if let Some(FloatingBook {
-                    _controller,
-                    window: win,
-                }) = self.floating.take()
-                {
-                    use crate::widgets::book_row::{CARD_H, CARD_W};
-                    const OPEN_W: i32 = 900;
-                    const OPEN_H: i32 = 560;
-                    const STEPS: u32 = 20;
-                    const FRAME_MS: u64 = 16;
-                    let mut step = 0u32;
-                    let mut held = Some(_controller);
-                    gtk::glib::timeout_add_local(
-                        std::time::Duration::from_millis(FRAME_MS),
-                        move || {
-                            step += 1;
-                            let t = (step as f64 / STEPS as f64).min(1.0);
-                            let e = t.powi(3); // ease-in-cubic
-                            win.set_opacity((1.0 - e).max(0.0));
-                            let w = OPEN_W as f64 + (CARD_W - OPEN_W) as f64 * e;
-                            let h = OPEN_H as f64 + (CARD_H - OPEN_H) as f64 * e;
-                            win.set_default_size(w.round() as i32, h.round() as i32);
-                            if step >= STEPS {
-                                win.set_child(None::<&gtk::Widget>);
-                                win.destroy();
-                                held.take();
-                                gtk::glib::ControlFlow::Break
-                            } else {
-                                gtk::glib::ControlFlow::Continue
-                            }
-                        },
-                    );
+                if let Some(f) = self.floating.take() {
+                    f.window.set_child(None::<&gtk::Widget>);
+                    f.window.destroy();
                 }
             }
         }

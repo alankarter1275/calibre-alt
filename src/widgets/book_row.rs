@@ -23,8 +23,8 @@ pub const CARD_H: i32 = COVER_H + GAP + TITLE_AREA_H + AUTHOR_AREA_H;
 
 /// Columns in the library grid (uniform cells).
 const GRID_COLS: i32 = 6;
-const COL_SPACING: i32 = 16;
-const ROW_SPACING: i32 = 20;
+const COL_SPACING: u32 = 16;
+const ROW_SPACING: u32 = 20;
 
 /// One bookshelf card: fixed cover + title + author underneath.
 pub fn build_book_card(
