@@ -316,14 +316,11 @@ window.kalam-window {
     max-width: 100%;
 }
 
-<<<<<<< HEAD
-=======
 .kalam-book-grid-shell {
     max-width: 100%;
     overflow: hidden;
 }
 
->>>>>>> a474448 (fix: UI polish from screenshots — capsule buttons, no thick popover borders, sepia/light chip visibility, home crooked layout)
 .kalam-book-card {
     padding: 0;
     border-radius: 0;
@@ -562,11 +559,6 @@ window.kalam-float-window {
 .kalam-reader-popover {
     padding: 4px;
     background: @kalam_surface;
-<<<<<<< HEAD
-    border: 1px solid @kalam_border;
-    border-radius: 14px;
-    box-shadow: 0 16px 40px alpha(#000, 0.45);
-=======
     border: none;
     outline: none;
     border-radius: 14px;
@@ -586,7 +578,6 @@ popover.kalam-reader-popover > contents {
     box-shadow: 0 16px 40px alpha(#000, 0.55);
     background: @kalam_surface;
     padding: 4px;
->>>>>>> a474448 (fix: UI polish from screenshots — capsule buttons, no thick popover borders, sepia/light chip visibility, home crooked layout)
 }
 
 .kalam-reader-popover-title {
