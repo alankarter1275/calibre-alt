@@ -171,7 +171,7 @@ impl AppModel {
                 let id = *book_id;
                 let ctrl = BookPageModel::builder()
                     .launch((catalog.clone(), id))
-                    .forward(sender.input_sender(), |out| match out {
+                    .forward(sender.input_sender(), move |out| match out {
                         BookPageOut::Back => AppMsg::Back,
                         BookPageOut::OpenReader => AppMsg::OpenReader { book_id: id },
                         BookPageOut::Deleted { .. } => AppMsg::Back,

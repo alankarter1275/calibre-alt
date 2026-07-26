@@ -278,7 +278,7 @@ impl Component for ReaderModel {
             let Some(nav) = decision.downcast_ref::<NavigationPolicyDecision>() else {
                 return false;
             };
-            let Some(action) = nav.navigation_action() else {
+            let Some(mut action) = nav.navigation_action() else {
                 return false;
             };
             let Some(req) = action.request() else {
