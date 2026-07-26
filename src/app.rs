@@ -10,6 +10,8 @@ use crate::pages::{
     library::{LibraryOut, LibraryPageModel},
     placeholder::PlaceholderPageModel,
     reader::{ReaderModel, ReaderOut},
+    saved_quotes::{SavedQuotesModel, SavedQuotesOut},
+    saved_words::{SavedWordsModel, SavedWordsOut},
     settings::SettingsPageModel,
     shelf_detail::{ShelfDetailModel, ShelfDetailOut},
     shelves_grid::{ShelvesGridModel, ShelvesOut},
@@ -23,24 +25,20 @@ pub enum AppMsg {
     Navigate(NavItem),
     Push(Route),
     Back,
-    OpenBookDialog {
-        book_id: i64,
-    },
+    OpenBookDialog { book_id: i64 },
     /// Close float and open full book page in the main column.
-    FloatOpenFull {
-        book_id: i64,
-    },
+    FloatOpenFull { book_id: i64 },
     CloseBookDialog,
     /// Open immersive reader for book_id.
-    OpenReader {
-        book_id: i64,
-    },
+    OpenReader { book_id: i64 },
 }
 
 enum PageSlot {
     Home(Controller<HomePageModel>),
     Library(Controller<LibraryPageModel>),
     AllBooks(Controller<AllBooksModel>),
+    SavedQuotes(Controller<SavedQuotesModel>),
+    SavedWords(Controller<SavedWordsModel>),
     Shelves(Controller<ShelvesGridModel>),
     ShelfDetail(Controller<ShelfDetailModel>),
     Book(Controller<BookPageModel>),
@@ -56,6 +54,8 @@ impl PageSlot {
             PageSlot::Home(c) => c.widget().clone().upcast(),
             PageSlot::Library(c) => c.widget().clone().upcast(),
             PageSlot::AllBooks(c) => c.widget().clone().upcast(),
+            PageSlot::SavedQuotes(c) => c.widget().clone().upcast(),
+            PageSlot::SavedWords(c) => c.widget().clone().upcast(),
             PageSlot::Shelves(c) => c.widget().clone().upcast(),
             PageSlot::ShelfDetail(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
@@ -79,7 +79,6 @@ pub struct AppModel {
     sidebar_override: Option<NavItem>,
     page: Option<PageSlot>,
     floating: Option<FloatingBook>,
-    /// Dynamic top-bar title override (book pages).
     title_override: Option<String>,
     subtitle_override: Option<String>,
 }
@@ -141,6 +140,32 @@ impl AppModel {
                 );
                 PageSlot::AllBooks(ctrl)
             }
+            Route::LibrarySection(LibrarySection::SavedQuotes) => {
+                let cat = catalog.clone();
+                let ctrl = SavedQuotesModel::builder().launch(cat).forward(
+                    sender.input_sender(),
+                    |out| match out {
+                        SavedQuotesOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                        SavedQuotesOut::JumpTo { book_id, .. } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                    },
+                );
+                PageSlot::SavedQuotes(ctrl)
+            }
+            Route::LibrarySection(LibrarySection::SavedWords) => {
+                let cat = catalog.clone();
+                let ctrl = SavedWordsModel::builder()
+                    .launch(cat)
+                    .forward(sender.input_sender(), |out| match out {
+                        SavedWordsOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                    });
+                PageSlot::SavedWords(ctrl)
+            }
             Route::LibrarySection(section) => PageSlot::Widget(placeholder_section(*section)),
             Route::Module(NavItem::Shelves) | Route::ShelvesGrid => {
                 let ctrl =
@@ -188,7 +213,9 @@ impl AppModel {
                 PageSlot::Reader(ctrl)
             }
             Route::Module(NavItem::Settings) => {
-                let ctrl = SettingsPageModel::builder().launch(()).detach();
+                let ctrl = SettingsPageModel::builder()
+                    .launch(catalog.clone())
+                    .detach();
                 PageSlot::Settings(ctrl)
             }
             Route::Module(item) => {
@@ -389,7 +416,6 @@ impl Component for AppModel {
             Ok(c) => Rc::new(c),
             Err(err) => {
                 eprintln!("kalam: failed to open catalog: {err}");
-                // Last resort: still try — panic is worse UX
                 Rc::new(Catalog::open().expect("catalog open"))
             }
         };
@@ -455,7 +481,6 @@ impl Component for AppModel {
             }
             AppMsg::Back => {
                 if let Some(prev) = self.history.pop() {
-                    // Like swap_page but keep remaining history.
                     self.sidebar_override = match &prev {
                         Route::BookPage { .. } => self.sidebar_override,
                         _ => None,
@@ -505,7 +530,6 @@ impl Component for AppModel {
                     .map(|b| b.title)
                     .unwrap_or_else(|| "Book".into());
 
-                // No open/close animation for now — plain panel.
                 let window = gtk::Window::builder()
                     .title(title)
                     .transient_for(root)
@@ -637,7 +661,7 @@ fn placeholder_section(section: LibrarySection) -> gtk::Box {
     page.append(&sub);
 
     let ph = gtk::Label::new(Some(&format!(
-        "{} — coming in a later phase. Use All books for your catalog.",
+        "{} — coming soon.",
         section.label()
     )));
     ph.add_css_class("kalam-placeholder");

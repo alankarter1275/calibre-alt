@@ -1,4 +1,5 @@
 //! Open an on-disk EPUB for reading: spine, TOC, chapter HTML.
+//! P3 adds highlight CSS + selection chip + dictionary JS.
 
 use anyhow::{anyhow, Context, Result};
 use roxmltree::Document;
@@ -393,68 +394,400 @@ fn inject_reading_shell(
     restore_fraction: f64,
 ) -> String {
     let restore = restore_fraction.clamp(0.0, 1.0);
-    let inject = format!(
-        r#"<base href="{base}">
-<style id="kalam-reading-css">{css}</style>
-<script>
-(function() {{
-  var lastSent = -1;
-  var advanced = false;
-  var restoreFrac = {restore};
-  function fraction() {{
+    let core_js = r#"
+(function() {
+  window.kalam = window.kalam || {};
+  window.kalam._lastProgress = -1;
+  window.kalam._advanced = false;
+  window.kalam._restoreFrac = %RESTORE%;
+
+  function fraction() {
     var se = document.scrollingElement || document.documentElement;
     var max = Math.max(1, se.scrollHeight - se.clientHeight);
     return se.scrollTop / max;
-  }}
-  function setScroll(frac) {{
+  }
+  function setScroll(frac) {
     var se = document.scrollingElement || document.documentElement;
     var max = Math.max(0, se.scrollHeight - se.clientHeight);
     se.scrollTop = max * Math.min(1, Math.max(0, frac || 0));
-  }}
-  function bridge(path) {{
-    try {{
-      var i = document.createElement('iframe');
-      i.style.display = 'none';
-      i.src = 'kalam://' + path;
-      document.documentElement.appendChild(i);
-      setTimeout(function() {{ try {{ i.remove(); }} catch(e) {{}} }}, 0);
-    }} catch (e) {{}}
-  }}
-  function pingProgress() {{
+  }
+  function kalamBridge(payload) {
+    try {
+      var json = typeof payload === 'string' ? payload : JSON.stringify(payload);
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.kalam) {
+        window.webkit.messageHandlers.kalam.postMessage(json);
+      } else {
+        // fallback iframe scheme (old P2)
+        var i = document.createElement('iframe');
+        i.style.display = 'none';
+        i.src = 'kalam://' + encodeURIComponent(json);
+        document.documentElement.appendChild(i);
+        setTimeout(function(){ try{ i.remove(); }catch(e){} }, 30);
+      }
+    } catch(e) {}
+  }
+  window.kalamBridge = kalamBridge;
+
+  // ---- Progress reporting (P2) ----
+  function pingProgress() {
     var f = fraction();
-    if (Math.abs(f - lastSent) < 0.01) return;
-    lastSent = f;
-    bridge('progress/' + f.toFixed(4));
-  }}
-  function maybeNext() {{
-    if (advanced) return;
-    if (fraction() > 0.90) {{
-      advanced = true;
-      bridge('next');
-    }}
-  }}
-  var t = null;
-  window.addEventListener('scroll', function() {{
-    if (t) cancelAnimationFrame(t);
-    t = requestAnimationFrame(function() {{
-      pingProgress();
-      maybeNext();
-    }});
-  }}, {{ passive: true }});
-  function tryRestore() {{
-    if (restoreFrac > 0) setScroll(restoreFrac);
-    restoreFrac = 0;
-    advanced = false;
-    lastSent = -1;
+    if (Math.abs(f - window.kalam._lastProgress) < 0.01) return;
+    window.kalam._lastProgress = f;
+    kalamBridge({type:'progress', fraction:f});
+  }
+  function maybeNext() {
+    if (window.kalam._advanced) return;
+    if (fraction() > 0.90) {
+      window.kalam._advanced = true;
+      kalamBridge({type:'next'});
+    }
+  }
+  var scrollT = null;
+  window.addEventListener('scroll', function() {
+    if (scrollT) cancelAnimationFrame(scrollT);
+    scrollT = requestAnimationFrame(function(){ pingProgress(); maybeNext(); });
+  }, {passive:true});
+
+  function tryRestore() {
+    if (window.kalam._restoreFrac > 0) setScroll(window.kalam._restoreFrac);
+    window.kalam._restoreFrac = 0;
+    window.kalam._advanced = false;
+    window.kalam._lastProgress = -1;
     pingProgress();
-  }}
-  if (document.readyState === 'complete') setTimeout(tryRestore, 50);
-  else window.addEventListener('load', function() {{ setTimeout(tryRestore, 50); }});
-}})();
-</script>"#,
+  }
+  if (document.readyState === 'complete') setTimeout(tryRestore, 80);
+  else window.addEventListener('load', function(){ setTimeout(tryRestore, 80); });
+
+  // ---- Selection & paths ----
+  function nodePath(node) {
+    var path = [];
+    var cur = node;
+    while (cur && cur !== document.body && cur.parentNode) {
+      var idx = Array.prototype.indexOf.call(cur.parentNode.childNodes, cur);
+      if (idx < 0) break;
+      path.unshift(idx);
+      cur = cur.parentNode;
+      if (!cur) break;
+    }
+    return path.join('/');
+  }
+  function nodeFromPath(path) {
+    if (path === '' || path === null || path === undefined) return document.body;
+    var parts = path.split('/').filter(function(s){return s.length>0;}).map(function(n){return parseInt(n,10);});
+    var cur = document.body;
+    for (var i=0;i<parts.length;i++) {
+      var idx = parts[i];
+      if (!cur || !cur.childNodes || idx <0 || idx >= cur.childNodes.length) return null;
+      cur = cur.childNodes[idx];
+    }
+    return cur;
+  }
+  window.kalamNodePath = nodePath;
+  window.kalamNodeFromPath = nodeFromPath;
+
+  function getSelectionData() {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount===0 || sel.isCollapsed) return null;
+    var range = sel.getRangeAt(0);
+    var text = sel.toString();
+    if (!text || !text.trim()) return null;
+    // Avoid chip/dict UI
+    var anc = range.commonAncestorContainer;
+    if (anc && anc.nodeType !== 1) anc = anc.parentElement;
+    if (anc && anc.closest && (anc.closest('#kalam-chip') || anc.closest('#kalam-dict-popup') || anc.closest('#kalam-note-pop'))) return null;
+    var rect = null;
+    try { var r = range.getBoundingClientRect(); if (r) rect = {x:r.left, y:r.top, w:r.width, h:r.height, bottom:r.bottom}; } catch(e){}
+    return {
+      text: text,
+      startPath: nodePath(range.startContainer),
+      startOffset: range.startOffset,
+      endPath: nodePath(range.endContainer),
+      endOffset: range.endOffset,
+      rect: rect
+    };
+  }
+  window.kalamGetSelectionData = getSelectionData;
+
+  function wrapRangeByPaths(startPath, startOffset, endPath, endOffset, color, annId) {
+    var startNode = nodeFromPath(startPath);
+    var endNode = nodeFromPath(endPath);
+    if (!startNode || !endNode) { console.log('kalam wrap: nodes not found', startPath, endPath); return false; }
+    try {
+      var range = document.createRange();
+      range.setStart(startNode, startOffset);
+      range.setEnd(endNode, endOffset);
+      if (range.collapsed) return false;
+      // Do not wrap if already inside same annotation
+      var existing = range.commonAncestorContainer;
+      if (existing && existing.nodeType !== 1) existing = existing.parentElement;
+      if (existing && existing.closest && existing.closest('span.kalam-hl[data-annotation-id=\"'+annId+'\"]')) {
+        return true;
+      }
+      var span = document.createElement('span');
+      span.className = 'kalam-hl kalam-hl-' + color;
+      span.dataset.annotationId = annId;
+      span.dataset.color = color;
+      try {
+        var frag = range.extractContents();
+        // avoid empty
+        if (!frag || frag.textContent.trim() === '') return false;
+        span.appendChild(frag);
+        range.insertNode(span);
+      } catch(e) {
+        try {
+          var range2 = document.createRange();
+          range2.setStart(nodeFromPath(startPath), startOffset);
+          range2.setEnd(nodeFromPath(endPath), endOffset);
+          var span2 = document.createElement('span');
+          span2.className = 'kalam-hl kalam-hl-' + color;
+          span2.dataset.annotationId = annId;
+          span2.dataset.color = color;
+          range2.surroundContents(span2);
+        } catch(e2) {
+          console.log('kalam wrap fallback failed', e, e2);
+          return false;
+        }
+      }
+      return true;
+    } catch(e) {
+      console.log('kalam wrapRangeByPaths error', e);
+      return false;
+    }
+  }
+  window.kalamWrapRangeByPaths = wrapRangeByPaths;
+
+  window.kalamRemoveHighlight = function(annId) {
+    var nodes = document.querySelectorAll('span.kalam-hl[data-annotation-id=\"'+annId+'\"]');
+    nodes.forEach(function(n){
+      var parent = n.parentNode;
+      if (!parent) return;
+      while (n.firstChild) parent.insertBefore(n.firstChild, n);
+      parent.removeChild(n);
+      parent.normalize();
+    });
+  };
+
+  // ---- UI: selection chip ----
+  function ensureChip() {
+    var chip = document.getElementById('kalam-chip');
+    if (chip) return chip;
+    chip = document.createElement('div');
+    chip.id = 'kalam-chip';
+    chip.style.display = 'none';
+    chip.innerHTML = '<button class=\"kalam-chip-btn\" data-color=\"yellow\" title=\"Highlight yellow\" style=\"background:#fef08a\"></button>'
+      + '<button class=\"kalam-chip-btn\" data-color=\"green\" title=\"Highlight green\" style=\"background:#bbf7d0\"></button>'
+      + '<button class=\"kalam-chip-btn\" data-color=\"blue\" title=\"Highlight blue\" style=\"background:#bfdbfe\"></button>'
+      + '<button class=\"kalam-chip-btn\" data-color=\"pink\" title=\"Highlight pink\" style=\"background:#fbcfe8\"></button>'
+      + '<button class=\"kalam-chip-btn\" data-color=\"orange\" title=\"Highlight orange\" style=\"background:#fed7aa\"></button>'
+      + '<div class=\"kalam-chip-sep\"></div>'
+      + '<button class=\"kalam-chip-action\" id=\"kalam-chip-quote\" title=\"Save quote\">❝</button>'
+      + '<button class=\"kalam-chip-action\" id=\"kalam-chip-dict\" title=\"Dictionary (D)\">Aa</button>'
+      + '<button class=\"kalam-chip-action\" id=\"kalam-chip-copy\" title=\"Copy\">⧉</button>';
+    document.body.appendChild(chip);
+    chip.querySelectorAll('.kalam-chip-btn').forEach(function(b){
+      b.addEventListener('click', function(){
+        var color = b.dataset.color;
+        kalamHandleHighlight(color);
+      });
+    });
+    var q = document.getElementById('kalam-chip-quote');
+    if (q) q.addEventListener('click', function(){ kalamHandleQuote(); });
+    var d = document.getElementById('kalam-chip-dict');
+    if (d) d.addEventListener('click', function(){ kalamHandleDict(); });
+    var c = document.getElementById('kalam-chip-copy');
+    if (c) c.addEventListener('click', function(){
+      var sel = window.getSelection(); if (sel) { try{ document.execCommand('copy'); }catch(e){} }
+      hideChip();
+    });
+    return chip;
+  }
+  function showChipAt(rect) {
+    var chip = ensureChip();
+    var top, left;
+    if (rect) {
+      top = (window.scrollY + rect.y - 52);
+      left = (window.scrollX + rect.x);
+      // keep in viewport
+      if (left < 12) left = 12;
+      if (top < 12) top = window.scrollY + rect.y + rect.h + 8;
+    } else {
+      top = window.scrollY + 120;
+      left = window.scrollX + 80;
+    }
+    // clamp
+    var maxLeft = window.scrollX + window.innerWidth - 260;
+    if (left > maxLeft) left = maxLeft;
+    chip.style.top = top + 'px';
+    chip.style.left = left + 'px';
+    chip.style.display = 'flex';
+  }
+  function hideChip() {
+    var chip = document.getElementById('kalam-chip');
+    if (chip) chip.style.display = 'none';
+  }
+  window.kalamHideChip = hideChip;
+  window.kalamShowChipAt = showChipAt;
+
+  window.kalamHandleHighlight = function(color) {
+    var data = getSelectionData();
+    if (!data) return;
+    var provisional = 'tmp_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
+    var ok = wrapRangeByPaths(data.startPath, data.startOffset, data.endPath, data.endOffset, color, provisional);
+    if (!ok) return;
+    hideChip();
+    kalamBridge({type:'highlight', color:color, text:data.text, startPath:data.startPath, startOffset:data.startOffset, endPath:data.endPath, endOffset:data.endOffset, tmpId:provisional});
+  };
+  window.kalamHandleQuote = function() {
+    var data = getSelectionData();
+    if (!data) return;
+    hideChip();
+    kalamBridge({type:'quote', text:data.text, startPath:data.startPath, startOffset:data.startOffset, endPath:data.endPath, endOffset:data.endOffset});
+  };
+  window.kalamHandleDict = function() {
+    var data = getSelectionData();
+    var word = '';
+    var ctx = '';
+    var rect = null;
+    if (data) {
+      word = data.text.trim().split(/\s+/)[0] || '';
+      ctx = data.text;
+      rect = data.rect;
+    } else {
+      var sel = window.getSelection();
+      if (sel && sel.toString()) {
+        word = sel.toString().trim().split(/\s+/)[0];
+        ctx = sel.toString();
+        try { var r = sel.getRangeAt(0).getBoundingClientRect(); rect = {x:r.left, y:r.top, w:r.width, h:r.height, bottom:r.bottom}; } catch(e){}
+      }
+    }
+    if (!word) return;
+    hideChip();
+    kalamBridge({type:'dict-lookup', word:word, context:ctx, rect:rect});
+  };
+
+  // ---- Dictionary popup ----
+  function ensureDictPopup() {
+    var p = document.getElementById('kalam-dict-popup');
+    if (p) return p;
+    p = document.createElement('div');
+    p.id = 'kalam-dict-popup';
+    p.style.display='none';
+    document.body.appendChild(p);
+    return p;
+  }
+  function showDictPopup(word, definition, rect) {
+    var p = ensureDictPopup();
+    function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    p.innerHTML = '<div class=\"kalam-dict-head\"><span class=\"kalam-dict-word\">'+esc(word)+'</span><button class=\"kalam-dict-close\" onclick=\"window.kalamHideDict()\">✕</button></div>'
+      + '<div class=\"kalam-dict-body\">'+esc(definition)+'</div>'
+      + '<div class=\"kalam-dict-actions\"><button id=\"kalam-dict-save\" class=\"kalam-dict-save\">Save word</button><button id=\"kalam-dict-copy\" class=\"kalam-dict-copy\">Copy</button></div>';
+    p.dataset.word = word;
+    p.dataset.definition = definition;
+    var top, left;
+    if (rect) {
+      top = window.scrollY + rect.y + rect.h + 10;
+      left = window.scrollX + rect.x;
+      if (left < 8) left = 8;
+      var maxLeft = window.scrollX + window.innerWidth - 320;
+      if (left > maxLeft) left = maxLeft;
+      if (top + 180 > window.scrollY + window.innerHeight) {
+        top = window.scrollY + rect.y - 200;
+      }
+    } else {
+      top = window.scrollY + 180;
+      left = window.scrollX + 40;
+    }
+    p.style.top = top + 'px';
+    p.style.left = left + 'px';
+    p.style.display = 'block';
+    var save = document.getElementById('kalam-dict-save');
+    if (save) save.addEventListener('click', function(){ kalamBridge({type:'save-word', word:p.dataset.word, definition:p.dataset.definition}); hideDict(); });
+    var cp = document.getElementById('kalam-dict-copy');
+    if (cp) cp.addEventListener('click', function(){ try{ navigator.clipboard.writeText(p.dataset.definition); }catch(e){} hideDict(); });
+  }
+  function hideDict() {
+    var p = document.getElementById('kalam-dict-popup');
+    if (p) p.style.display='none';
+  }
+  window.kalamHideDict = hideDict;
+  window.kalamShowDict = function(word, definition, rectJson) {
+    var rect = null;
+    try { if (rectJson) rect = JSON.parse(rectJson); } catch(e){}
+    showDictPopup(word, definition, rect);
+  };
+
+  // ---- Highlights injection from Rust ----
+  window.kalamInjectHighlights = function(jsonStr) {
+    try {
+      var arr = JSON.parse(jsonStr);
+      arr.forEach(function(a){
+        if (document.querySelector('span.kalam-hl[data-annotation-id=\"'+a.id+'\"]')) return;
+        wrapRangeByPaths(a.start_path, a.start_offset, a.end_path, a.end_offset, a.color, a.id);
+      });
+    } catch(e){ console.log('kalam inject highlights failed', e, jsonStr?.slice(0,200)); }
+  };
+  window.kalamInjectSingleHighlight = function(aJson) {
+    try {
+      var a = JSON.parse(aJson);
+      wrapRangeByPaths(a.start_path, a.start_offset, a.end_path, a.end_offset, a.color, a.id);
+    } catch(e){ console.log('single inject failed', e); }
+  };
+
+  // ---- Selection listeners ----
+  var selTimeout = null;
+  document.addEventListener('mouseup', function(e){
+    if (e.target.closest && (e.target.closest('#kalam-chip') || e.target.closest('#kalam-dict-popup'))) return;
+    clearTimeout(selTimeout);
+    selTimeout = setTimeout(function(){
+      var data = getSelectionData();
+      if (data && data.text && data.text.trim().length>0 && data.text.trim().length < 2000) {
+        showChipAt(data.rect);
+        kalamBridge({type:'selection', text:data.text});
+      } else {
+        // do not hide immediately if dict is open
+        var dict = document.getElementById('kalam-dict-popup');
+        if (!dict || dict.style.display==='none') {
+          // keep chip if already visible? hide after delay
+          // hideChip();
+        }
+      }
+    }, 160);
+  });
+  document.addEventListener('mousedown', function(e){
+    if (e.target.closest && (e.target.closest('#kalam-chip') || e.target.closest('#kalam-dict-popup'))) return;
+    hideChip();
+    // don't hide dict on mousedown inside content
+  });
+  document.addEventListener('keydown', function(e){
+    if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // only if selection exists or chip visible
+      var data = getSelectionData();
+      if (data || document.getElementById('kalam-chip')?.style.display==='flex') {
+        e.preventDefault();
+        window.kalamHandleDict();
+      } else {
+        // try word under caret? fallback to dictionary shortcut via bridge
+        kalamBridge({type:'dict-shortcut'});
+      }
+    }
+    if (e.key === 'Escape') {
+      hideChip();
+      hideDict();
+    }
+  });
+
+  // ---- Existing progress restore already handled above ----
+})();
+"#;
+    let js = core_js.replace("%RESTORE%", &restore.to_string());
+
+    let inject = format!(
+        r#"<base href="{base}">
+<style id="kalam-reading-css">{css}</style>
+<script>{js}</script>"#,
         base = base_url,
         css = reading_css,
-        restore = restore,
+        js = js,
     );
 
     // Put our skin at the *end* of the document so it wins over author CSS
@@ -543,7 +876,8 @@ fn join_zip_path(dir: &str, href: &str) -> String {
 /// Default reading stylesheet — book-like, not webpage-like.
 ///
 /// Many commercial EPUBs wrap almost every paragraph in `<a>` with blue
-/// link styling. We nuke link chrome entirely for reading.
+/// link styling. We nuke link chrome entirely for reading. P3 adds highlight
+/// and chip styling.
 pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, margin_em: f32) -> String {
     let (bg, fg) = match theme {
         ReadingTheme::Light => ("#faf8f5", "#1c1917"),
@@ -609,10 +943,157 @@ img, svg {{
   height: auto !important;
   -webkit-text-fill-color: initial !important;
 }}
+/* selection tint pink-ish (Apple Books like) */
 ::selection {{
-  background: rgba(244, 114, 182, 0.35);
+  background: rgba(244, 114, 182, 0.38) !important;
   color: {fg} !important;
   -webkit-text-fill-color: {fg} !important;
+}}
+
+/* ── P3 highlights ── */
+.kalam-hl {{
+  border-radius: 3px !important;
+  padding: 0.08em 0.12em !important;
+  margin: 0 -0.08em !important;
+  cursor: pointer !important;
+  box-decoration-break: clone !important;
+  -webkit-box-decoration-break: clone !important;
+}}
+.kalam-hl-yellow {{
+  background: rgba(254, 240, 138, 0.62) !important;
+  background-color: rgba(254, 240, 138, 0.62) !important;
+}}
+.kalam-hl-green {{
+  background: rgba(187, 247, 208, 0.62) !important;
+  background-color: rgba(187, 247, 208, 0.62) !important;
+}}
+.kalam-hl-blue {{
+  background: rgba(191, 219, 254, 0.62) !important;
+  background-color: rgba(191, 219, 254, 0.62) !important;
+}}
+.kalam-hl-pink {{
+  background: rgba(251, 207, 232, 0.70) !important;
+  background-color: rgba(251, 207, 232, 0.70) !important;
+}}
+.kalam-hl-orange {{
+  background: rgba(254, 215, 170, 0.62) !important;
+  background-color: rgba(254, 215, 170, 0.62) !important;
+}}
+.kalam-hl:hover {{
+  filter: brightness(0.98) !important;
+}}
+
+/* ── selection chip (inside WebView) ── */
+#kalam-chip {{
+  position: absolute !important;
+  z-index: 999999 !important;
+  background: rgba(28, 25, 23, 0.92) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 999px !important;
+  padding: 6px 8px !important;
+  display: none;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 6px !important;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.45) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif !important;
+  backdrop-filter: blur(8px) !important;
+}}
+.kalam-chip-btn {{
+  width: 22px !important;
+  height: 22px !important;
+  border-radius: 999px !important;
+  border: 1.5px solid rgba(255,255,255,0.85) !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}}
+.kalam-chip-btn:hover {{
+  transform: scale(1.12) !important;
+}}
+.kalam-chip-sep {{
+  width: 1px !important;
+  height: 18px !important;
+  background: rgba(255,255,255,0.15) !important;
+  margin: 0 4px !important;
+}}
+.kalam-chip-action {{
+  min-width: 22px !important;
+  height: 22px !important;
+  border-radius: 999px !important;
+  border: none !important;
+  background: rgba(255,255,255,0.10) !important;
+  color: #f5f5f4 !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  padding: 0 6px !important;
+}}
+.kalam-chip-action:hover {{
+  background: rgba(255,255,255,0.20) !important;
+}}
+
+/* ── dictionary popup inside WebView ── */
+#kalam-dict-popup {{
+  position: absolute !important;
+  z-index: 999998 !important;
+  width: 300px !important;
+  max-width: 84vw !important;
+  background: #1c1917 !important;
+  color: #fafaf9 !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.45) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif !important;
+}}
+.kalam-dict-head {{
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  padding: 10px 12px 6px 12px !important;
+  font-weight: 700 !important;
+  font-size: 0.92rem !important;
+  background: rgba(255,255,255,0.04) !important;
+}}
+.kalam-dict-word {{
+  color: #fafaf9 !important;
+}}
+.kalam-dict-close {{
+  background: transparent !important;
+  border: none !important;
+  color: rgba(250,250,249,0.6) !important;
+  cursor: pointer !important;
+  font-size: 0.9rem !important;
+}}
+.kalam-dict-body {{
+  padding: 10px 12px !important;
+  font-size: 0.86rem !important;
+  line-height: 1.45 !important;
+  color: rgba(231,229,228,0.92) !important;
+  max-height: 180px !important;
+  overflow-y: auto !important;
+  white-space: pre-wrap !important;
+}}
+.kalam-dict-actions {{
+  display: flex !important;
+  gap: 8px !important;
+  padding: 8px 12px 10px 12px !important;
+  border-top: 1px solid rgba(255,255,255,0.08) !important;
+}}
+.kalam-dict-save, .kalam-dict-copy {{
+  border: none !important;
+  border-radius: 999px !important;
+  padding: 6px 12px !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  background: rgba(255,255,255,0.12) !important;
+  color: #fafaf9 !important;
+}}
+.kalam-dict-save:hover, .kalam-dict-copy:hover {{
+  background: rgba(255,255,255,0.20) !important;
 }}
 "#,
         bg = bg,

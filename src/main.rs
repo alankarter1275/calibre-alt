@@ -4,6 +4,7 @@
 
 mod app;
 mod db;
+mod dict;
 mod epub;
 mod epub_book;
 mod models;

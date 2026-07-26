@@ -35,6 +35,11 @@ pub fn reader_cache_dir(uuid: &str) -> PathBuf {
     data_dir().join("cache").join("reader").join(uuid)
 }
 
+/// `~/.local/share/kalam/dictionaries`
+pub fn dictionaries_dir() -> PathBuf {
+    data_dir().join("dictionaries")
+}
+
 fn dirs_next_home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
@@ -43,5 +48,6 @@ pub fn ensure_data_dirs() -> std::io::Result<()> {
     fs::create_dir_all(data_dir())?;
     fs::create_dir_all(library_dir())?;
     fs::create_dir_all(data_dir().join("cache").join("reader"))?;
+    fs::create_dir_all(dictionaries_dir())?;
     Ok(())
 }
