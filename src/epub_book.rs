@@ -1095,6 +1095,26 @@ img, svg {{
 .kalam-dict-save:hover, .kalam-dict-copy:hover {{
   background: rgba(255,255,255,0.20) !important;
 }}
+<<<<<<< HEAD
+=======
+
+/* Final override — ensure Kalam UI inside WebView stays visible in light/sepia/dark regardless of aggressive resets */
+#kalam-chip, #kalam-dict-popup {{
+  color-scheme: dark !important;
+}}
+#kalam-chip, #kalam-chip *, #kalam-dict-popup, #kalam-dict-popup * {{
+  color: #f5f5f4 !important;
+  -webkit-text-fill-color: #f5f5f4 !important;
+}}
+#kalam-chip {{
+  background: rgba(28,25,23,0.92) !important;
+  background-color: rgba(28,25,23,0.92) !important;
+}}
+#kalam-dict-popup {{
+  background: #1c1917 !important;
+  background-color: #1c1917 !important;
+}}
+>>>>>>> a474448 (fix: UI polish from screenshots — capsule buttons, no thick popover borders, sepia/light chip visibility, home crooked layout)
 "#,
         bg = bg,
         fg = fg,

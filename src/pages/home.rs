@@ -48,7 +48,7 @@ impl SimpleComponent for HomePageModel {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Start,
-                set_hexpand: false,
+                set_hexpand: true,
                 set_vexpand: false,
             },
 
@@ -61,8 +61,8 @@ impl SimpleComponent for HomePageModel {
             #[name = "recent_host"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
-                set_halign: gtk::Align::Start,
-                set_hexpand: false,
+                set_halign: gtk::Align::Fill,
+                set_hexpand: true,
                 set_vexpand: false,
                 set_spacing: 0,
             },

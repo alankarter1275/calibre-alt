@@ -125,15 +125,15 @@ pub fn build_book_grid(
     grid.set_row_homogeneous(false);
     grid.set_halign(gtk::Align::Start);
     grid.set_valign(gtk::Align::Start);
-    grid.set_hexpand(false);
+    grid.set_hexpand(true);
     grid.set_vexpand(false);
     grid.add_css_class("kalam-book-grid");
 
-    // Shell keeps the whole grid from being stretched by the parent.
+    // Shell keeps the whole grid from being stretched by the parent but allows fill.
     let shell = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    shell.set_halign(gtk::Align::Start);
+    shell.set_halign(gtk::Align::Fill);
     shell.set_valign(gtk::Align::Start);
-    shell.set_hexpand(false);
+    shell.set_hexpand(true);
     shell.set_vexpand(false);
     shell.add_css_class("kalam-book-grid-shell");
 

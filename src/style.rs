@@ -40,14 +40,15 @@ window.kalam-window {
 }
 
 .kalam-nav-btn {
-    padding: 10px 6px;
-    border-radius: 10px;
-    margin: 2px 0;
+    padding: 10px 10px;
+    border-radius: 999px;
+    margin: 3px 0;
     background: transparent;
     border: none;
     color: @kalam_text_dim;
     font-size: 0.72rem;
     font-weight: 500;
+    min-width: 48px;
 }
 
 .kalam-nav-btn:hover {
@@ -96,12 +97,13 @@ window.kalam-window {
 .kalam-content {
     padding: 20px 24px;
     background: @kalam_bg;
+    min-width: 0;
 }
 
 /* ── breadcrumbs / back ─────────────────────────────── */
 .kalam-back-btn {
-    padding: 6px 10px;
-    border-radius: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
     background: @kalam_surface_2;
     color: @kalam_text;
     border: 1px solid @kalam_border;
@@ -169,7 +171,7 @@ window.kalam-window {
 .kalam-hub-tile {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
-    border-radius: 12px;
+    border-radius: 14px;
     padding: 18px 14px;
     min-width: 120px;
 }
@@ -257,8 +259,8 @@ window.kalam-window {
     background: @kalam_accent;
     color: #0e1016;
     font-weight: 700;
-    border-radius: 10px;
-    padding: 10px 18px;
+    border-radius: 999px;
+    padding: 10px 22px;
     border: none;
 }
 
@@ -269,8 +271,8 @@ window.kalam-window {
 .kalam-secondary-btn {
     background: @kalam_surface_2;
     color: @kalam_text;
-    border-radius: 10px;
-    padding: 10px 16px;
+    border-radius: 999px;
+    padding: 10px 18px;
     border: 1px solid @kalam_border;
 }
 
@@ -311,8 +313,17 @@ window.kalam-window {
 /* ── cover cards (Goodreads-style bookshelf grid) ───── */
 .kalam-book-grid {
     margin-top: 4px;
+    max-width: 100%;
 }
 
+<<<<<<< HEAD
+=======
+.kalam-book-grid-shell {
+    max-width: 100%;
+    overflow: hidden;
+}
+
+>>>>>>> a474448 (fix: UI polish from screenshots — capsule buttons, no thick popover borders, sepia/light chip visibility, home crooked layout)
 .kalam-book-card {
     padding: 0;
     border-radius: 0;
@@ -373,9 +384,9 @@ window.kalam-float-window {
 .kalam-float-side-btn {
     background: transparent;
     border: none;
-    border-radius: 8px;
+    border-radius: 999px;
     color: @kalam_text_dim;
-    padding: 8px 6px;
+    padding: 8px 10px;
     font-size: 0.84rem;
 }
 
@@ -402,7 +413,7 @@ window.kalam-float-window {
     min-width: 34px;
     min-height: 34px;
     padding: 0;
-    border-radius: 8px;
+    border-radius: 999px;
     background: transparent;
     border: none;
     color: @kalam_text_dim;
@@ -547,12 +558,35 @@ window.kalam-float-window {
     min-width: 3.5rem;
 }
 
+/* Popovers — no thick borders */
 .kalam-reader-popover {
     padding: 4px;
     background: @kalam_surface;
+<<<<<<< HEAD
     border: 1px solid @kalam_border;
     border-radius: 14px;
     box-shadow: 0 16px 40px alpha(#000, 0.45);
+=======
+    border: none;
+    outline: none;
+    border-radius: 14px;
+    box-shadow: 0 16px 40px alpha(#000, 0.45);
+}
+
+popover.kalam-reader-popover {
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    padding: 0;
+}
+
+popover.kalam-reader-popover > contents {
+    border: none;
+    border-radius: 14px;
+    box-shadow: 0 16px 40px alpha(#000, 0.55);
+    background: @kalam_surface;
+    padding: 4px;
+>>>>>>> a474448 (fix: UI polish from screenshots — capsule buttons, no thick popover borders, sepia/light chip visibility, home crooked layout)
 }
 
 .kalam-reader-popover-title {
@@ -563,17 +597,17 @@ window.kalam-float-window {
 }
 
 .kalam-reader-theme-btn {
-    border-radius: 8px;
-    padding: 8px 12px;
+    border-radius: 999px;
+    padding: 8px 14px;
     font-size: 0.85rem;
 }
 
 .kalam-toc-item {
     background: transparent;
     border: none;
-    border-radius: 8px;
+    border-radius: 999px;
     color: @kalam_text;
-    padding: 8px 10px;
+    padding: 8px 14px;
     font-size: 0.88rem;
 }
 
