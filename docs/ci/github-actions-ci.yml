@@ -26,9 +26,11 @@ jobs:
             build-essential pkg-config \
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
-            libgraphene-1.0-dev
+            libgraphene-1.0-dev \
+            libwebkitgtk-6.0-dev libsoup-3.0-dev
           pkg-config --modversion gtk4
           pkg-config --modversion libadwaita-1
+          pkg-config --modversion webkitgtk-6.0 || true
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

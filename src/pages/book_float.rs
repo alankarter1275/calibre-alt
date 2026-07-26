@@ -17,7 +17,6 @@ pub enum BookFloatOut {
         book_id: i64,
     },
     OpenReader {
-        #[allow(dead_code)]
         book_id: i64,
     },
     Deleted {

@@ -9,6 +9,7 @@ use crate::pages::{
     home::{HomeOut, HomePageModel},
     library::{LibraryOut, LibraryPageModel},
     placeholder::PlaceholderPageModel,
+    reader::{ReaderModel, ReaderOut},
     settings::SettingsPageModel,
     shelf_detail::{ShelfDetailModel, ShelfDetailOut},
     shelves_grid::{ShelvesGridModel, ShelvesOut},
@@ -30,6 +31,10 @@ pub enum AppMsg {
         book_id: i64,
     },
     CloseBookDialog,
+    /// Open immersive reader for book_id.
+    OpenReader {
+        book_id: i64,
+    },
 }
 
 enum PageSlot {
@@ -39,6 +44,7 @@ enum PageSlot {
     Shelves(Controller<ShelvesGridModel>),
     ShelfDetail(Controller<ShelfDetailModel>),
     Book(Controller<BookPageModel>),
+    Reader(Controller<ReaderModel>),
     Settings(Controller<SettingsPageModel>),
     Placeholder(Controller<PlaceholderPageModel>),
     Widget(gtk::Box),
@@ -53,6 +59,7 @@ impl PageSlot {
             PageSlot::Shelves(c) => c.widget().clone().upcast(),
             PageSlot::ShelfDetail(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
+            PageSlot::Reader(c) => c.widget().clone().upcast(),
             PageSlot::Settings(c) => c.widget().clone().upcast(),
             PageSlot::Placeholder(c) => c.widget().clone().upcast(),
             PageSlot::Widget(b) => b.clone().upcast(),
@@ -166,10 +173,19 @@ impl AppModel {
                     .launch((catalog.clone(), id))
                     .forward(sender.input_sender(), |out| match out {
                         BookPageOut::Back => AppMsg::Back,
-                        BookPageOut::OpenReader => AppMsg::Back,
+                        BookPageOut::OpenReader => AppMsg::OpenReader { book_id: id },
                         BookPageOut::Deleted { .. } => AppMsg::Back,
                     });
                 PageSlot::Book(ctrl)
+            }
+            Route::Reader { book_id } => {
+                let id = *book_id;
+                let ctrl = ReaderModel::builder()
+                    .launch((catalog.clone(), id))
+                    .forward(sender.input_sender(), |out| match out {
+                        ReaderOut::Close => AppMsg::Back,
+                    });
+                PageSlot::Reader(ctrl)
             }
             Route::Module(NavItem::Settings) => {
                 let ctrl = SettingsPageModel::builder().launch(()).detach();
@@ -196,7 +212,7 @@ impl AppModel {
         }
 
         self.sidebar_override = match &route {
-            Route::BookPage { .. } => Some(self.sidebar_item()),
+            Route::BookPage { .. } | Route::Reader { .. } => Some(self.sidebar_item()),
             _ => None,
         };
 
@@ -214,6 +230,12 @@ impl AppModel {
             if let Ok(Some(b)) = self.catalog.get_book(*book_id) {
                 self.title_override = Some(b.title.clone());
                 self.subtitle_override = Some(b.authors_display().to_string());
+            }
+        }
+        if let Route::Reader { book_id } = &route {
+            if let Ok(Some(b)) = self.catalog.get_book(*book_id) {
+                self.title_override = Some(b.title.clone());
+                self.subtitle_override = Some("Reading".into());
             }
         }
 
@@ -244,11 +266,13 @@ impl Component for AppModel {
                 set_hexpand: true,
                 set_vexpand: true,
 
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    add_css_class: "kalam-sidebar",
-                    set_hexpand: false,
-                    set_vexpand: true,
+gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                add_css_class: "kalam-sidebar",
+                set_hexpand: false,
+                set_vexpand: true,
+                #[watch]
+                set_visible: !model.route.is_reader(),
 
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
@@ -291,6 +315,8 @@ impl Component for AppModel {
                         add_css_class: "kalam-topbar",
                         set_spacing: 12,
                         set_hexpand: true,
+                        #[watch]
+                        set_visible: !model.route.is_reader(),
 
                         #[name = "back_btn"]
                         gtk::Button {
@@ -327,6 +353,12 @@ impl Component for AppModel {
                         set_hexpand: true,
                         set_vexpand: true,
                         set_hscrollbar_policy: gtk::PolicyType::Never,
+                        #[watch]
+                        set_vscrollbar_policy: if model.route.is_reader() {
+                            gtk::PolicyType::Never
+                        } else {
+                            gtk::PolicyType::Automatic
+                        },
 
                         #[name = "content_host"]
                         gtk::Box {
@@ -451,10 +483,13 @@ impl Component for AppModel {
                 let ctrl = BookFloatModel::builder()
                     .launch((self.catalog.clone(), book_id))
                     .forward(sender.input_sender(), |out| match out {
-                        BookFloatOut::Close
-                        | BookFloatOut::OpenReader { .. }
-                        | BookFloatOut::Deleted { .. } => AppMsg::CloseBookDialog,
-                        BookFloatOut::OpenFullPage { book_id } => AppMsg::FloatOpenFull { book_id },
+                        BookFloatOut::Close | BookFloatOut::Deleted { .. } => {
+                            AppMsg::CloseBookDialog
+                        }
+                        BookFloatOut::OpenReader { book_id } => AppMsg::OpenReader { book_id },
+                        BookFloatOut::OpenFullPage { book_id } => {
+                            AppMsg::FloatOpenFull { book_id }
+                        }
                     });
 
                 let title = self
@@ -522,6 +557,18 @@ impl Component for AppModel {
                     f.window.set_child(None::<&gtk::Widget>);
                     f.window.destroy();
                 }
+            }
+            AppMsg::OpenReader { book_id } => {
+                if let Some(f) = self.floating.take() {
+                    f.window.set_child(None::<&gtk::Widget>);
+                    f.window.destroy();
+                }
+                self.swap_page(
+                    &widgets.content_host,
+                    Route::Reader { book_id },
+                    true,
+                    &sender,
+                );
             }
         }
 

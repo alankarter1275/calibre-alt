@@ -11,15 +11,13 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **Your Arch machine** is only needed at **phase boundaries** (smoke-test + design feedback).
 - Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md)
 
-## What works now (P1)
+## What works now (P2)
 
-- Slim sidebar shell (custom dark CSS draft)
+- Slim sidebar shell + cover-card library grid
 - **SQLite catalog** at `~/.local/share/kalam/catalog.db`
 - **Import EPUB** (My Library → All books → “+ Import EPUB”)
-- Cover extraction, title/author/tags from OPF
-- Search + sort (title / author / added)
-- Book page + Float window; Remove book (DB + files)
-- Home shows real continue / recently added
+- **EPUB reader** (WebKitGTK): chapter-wise scroll, TOC, themes, font size, progress restore
+- Float detail panel (Suwayomi-style); Read opens the viewer
 - Shelves / AO3 / comics / etc. still placeholders
 
 ## Phase overview
@@ -27,8 +25,8 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 | Phase | Feature |
 |-------|---------|
 | P0 | Shell + nav |
-| **P1** | SQLite library, EPUB import, covers ← current |
-| P2 | EPUB reader (WebKitGTK, chapter-wise scroll, fonts) |
+| P1 | SQLite library, EPUB import, covers |
+| **P2** | EPUB reader ← current |
 | P3 | Highlights, quotes, offline dictionary |
 | P4 | Home / shelves engine / lists (real data) |
 | P5 | Metadata edit + Open Library fetch |
@@ -37,13 +35,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 ## Requirements (Arch Linux)
 
 ```bash
-sudo pacman -S --needed rust gtk4 libadwaita base-devel pkgconf
-```
-
-Optional later (reader phase):
-
-```bash
-sudo pacman -S webkitgtk-6.0
+sudo pacman -S --needed rust gtk4 libadwaita webkitgtk-6.0 base-devel pkgconf
 ```
 
 ## Build & run

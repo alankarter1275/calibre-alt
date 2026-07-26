@@ -403,10 +403,8 @@ Two jobs: gtk-rs container + plain Ubuntu apt (belt and suspenders).
 
 ## Immediate next steps
 
-1. Finish **P1** CI green  
-2. You smoke-test import/search/delete on Arch  
-3. Design pass when you have page mockups  
-4. Start **P2** reader after P1 sign-off  
+1. Finish **P2** CI green + Arch smoke-test (read EPUB, fonts, progress restore)  
+2. Then **P3** annotations + dictionary  
 
 
 

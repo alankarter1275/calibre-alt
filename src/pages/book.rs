@@ -160,10 +160,7 @@ impl Component for BookPageModel {
             },
 
             gtk::Label {
-                set_label: concat!(
-                    "Reader lands in P2. This page is the home for a book's ",
-                    "metadata and library actions.",
-                ),
+                set_label: "Open Read for the immersive EPUB viewer.",
                 add_css_class: "kalam-placeholder",
                 set_wrap: true,
                 set_margin_top: 8,

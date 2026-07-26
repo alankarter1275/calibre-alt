@@ -79,6 +79,13 @@ impl Catalog {
             CREATE INDEX IF NOT EXISTS idx_books_title ON books(sort_title);
             CREATE INDEX IF NOT EXISTS idx_books_added ON books(added_at);
             CREATE INDEX IF NOT EXISTS idx_books_hash ON books(file_hash);
+
+            CREATE TABLE IF NOT EXISTS reading_progress (
+                book_id       INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+                chapter_index INTEGER NOT NULL DEFAULT 0,
+                fraction      REAL    NOT NULL DEFAULT 0.0,
+                updated_at    TEXT    NOT NULL
+            );
             "#,
         )?;
 
@@ -250,6 +257,53 @@ impl Catalog {
         if dir.exists() {
             let _ = fs::remove_dir_all(&dir);
         }
+        Ok(())
+    }
+
+    /// Detailed reading position (chapter + in-chapter fraction).
+    pub fn get_reading_progress(&self, book_id: i64) -> Result<Option<(usize, f64)>> {
+        let conn = self.conn.lock().expect("db lock");
+        let row = conn
+            .query_row(
+                "SELECT chapter_index, fraction FROM reading_progress WHERE book_id = ?1",
+                params![book_id],
+                |r| Ok((r.get::<_, i64>(0)? as usize, r.get::<_, f64>(1)?)),
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    /// Save position and update the books.progress percent (0–100).
+    pub fn set_reading_progress(
+        &self,
+        book_id: i64,
+        chapter_index: usize,
+        fraction: f64,
+        chapter_count: usize,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let frac = fraction.clamp(0.0, 1.0);
+        let now = chrono_like_now();
+        conn.execute(
+            "INSERT INTO reading_progress (book_id, chapter_index, fraction, updated_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(book_id) DO UPDATE SET
+               chapter_index = excluded.chapter_index,
+               fraction = excluded.fraction,
+               updated_at = excluded.updated_at",
+            params![book_id, chapter_index as i64, frac, now],
+        )?;
+        // Overall percent across chapters.
+        let overall = if chapter_count == 0 {
+            0.0
+        } else {
+            ((chapter_index as f64) + frac) / (chapter_count as f64) * 100.0
+        };
+        let pct = overall.round().clamp(0.0, 100.0) as i64;
+        conn.execute(
+            "UPDATE books SET progress = ?1 WHERE id = ?2",
+            params![pct, book_id],
+        )?;
         Ok(())
     }
 }

@@ -65,6 +65,8 @@ pub enum Route {
     ShelvesGrid,
     ShelfDetail { shelf_id: u64 },
     BookPage { book_id: i64 },
+    /// Immersive EPUB reader.
+    Reader { book_id: i64 },
 }
 
 impl Route {
@@ -75,6 +77,7 @@ impl Route {
             Route::ShelvesGrid => "Shelves".into(),
             Route::ShelfDetail { .. } => "Shelf".into(),
             Route::BookPage { .. } => "Book".into(),
+            Route::Reader { .. } => "Reading".into(),
         }
     }
 
@@ -85,6 +88,7 @@ impl Route {
             Route::ShelvesGrid => Some("Smart and manual collections".into()),
             Route::LibrarySection(s) => Some(s.blurb().into()),
             Route::Module(NavItem::Settings) => Some("Paths and preferences".into()),
+            Route::Reader { .. } => Some("Esc back · T TOC · N/P chapter · A+/A−".into()),
             _ => None,
         }
     }
@@ -94,8 +98,12 @@ impl Route {
             Route::Module(item) => *item,
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
-            Route::BookPage { .. } => NavItem::Library,
+            Route::BookPage { .. } | Route::Reader { .. } => NavItem::Library,
         }
+    }
+
+    pub fn is_reader(&self) -> bool {
+        matches!(self, Route::Reader { .. })
     }
 }
 

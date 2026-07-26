@@ -98,6 +98,11 @@ window.kalam-window {
     background: @kalam_bg;
 }
 
+/* When reader is mounted it fills the content host; zero padding via child. */
+.kalam-content > .kalam-reader {
+    margin: -20px -24px;
+}
+
 /* ── breadcrumbs / back ─────────────────────────────── */
 .kalam-back-btn {
     padding: 6px 10px;
@@ -495,5 +500,49 @@ window.kalam-float-window {
     background: #3a4560;
     border-radius: 6px;
     padding: 3px 8px;
+}
+
+/* ── reader ─────────────────────────────────────────── */
+.kalam-content-reader {
+    padding: 0;
+    background: @kalam_bg;
+}
+
+.kalam-reader {
+    background: @kalam_bg;
+}
+
+.kalam-reader-bar {
+    background: @kalam_surface;
+    border-bottom: 1px solid @kalam_border;
+    padding: 8px 12px;
+    min-height: 48px;
+}
+
+.kalam-reader-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: @kalam_text;
+}
+
+.kalam-reader-toc {
+    background: @kalam_sidebar;
+    border-right: 1px solid @kalam_border;
+    padding: 8px;
+    min-width: 220px;
+}
+
+.kalam-toc-item {
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: @kalam_text_dim;
+    padding: 8px 10px;
+    font-size: 0.85rem;
+}
+
+.kalam-toc-item:hover {
+    background: @kalam_surface_2;
+    color: @kalam_text;
 }
 "#;
