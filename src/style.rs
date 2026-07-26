@@ -312,9 +312,13 @@ window.kalam-window {
     margin-top: 8px;
 }
 
-/* ── cover cards (Goodreads-style bookshelf) ────────── */
+/* ── cover cards (Goodreads-style bookshelf grid) ───── */
 .kalam-book-grid {
     margin-top: 4px;
+}
+
+.kalam-book-grid-shell {
+    /* parent must not stretch this */
 }
 
 .kalam-book-card {
@@ -327,20 +331,18 @@ window.kalam-window {
     box-shadow: 0 6px 18px alpha(#000, 0.5);
 }
 
-.kalam-book-card-cover {
-    /* cover widget itself */
-}
-
 .kalam-book-card-title {
     font-weight: 600;
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     color: @kalam_text;
-    margin-top: 2px;
+    /* force label to respect allocation width */
+    min-width: 0;
 }
 
 .kalam-book-card-author {
-    font-size: 0.72rem;
+    font-size: 0.7rem;
     color: @kalam_text_dim;
+    min-width: 0;
 }
 
 /* ── floating book panel (Suwayomi-style) ───────────── */
