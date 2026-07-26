@@ -260,7 +260,8 @@ impl Component for ReaderModel {
         // Intercept kalam:// bridge navigations from injected JS.
         let s_nav = sender.clone();
         webview.connect_decide_policy(move |_wv, decision, decision_type| {
-            use webkit6::{NavigationPolicyDecision, PolicyDecisionExt, PolicyDecisionType};
+            use webkit6::prelude::*;
+            use webkit6::{NavigationPolicyDecision, PolicyDecisionType};
             if decision_type != PolicyDecisionType::NavigationAction {
                 return false;
             }
