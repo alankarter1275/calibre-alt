@@ -470,7 +470,7 @@ color:#3e3226;font-family:Georgia,serif'>\
                 if let Some(nav_decision) =
                     decision.downcast_ref::<webkit6::NavigationPolicyDecision>()
                 {
-                    if let Some(nav_action) = nav_decision.navigation_action() {
+                    if let Some(mut nav_action) = nav_decision.navigation_action() {
                         if let Some(request) = nav_action.request() {
                             if let Some(uri) = request.uri() {
                                 let uri_str = uri.to_string();
