@@ -185,14 +185,10 @@ impl Component for ReaderModel {
                 }
                 Err(err) => {
                     eprintln!("kalam: open epub failed: {err:#}");
-                    webview.load_html(
-                        &format!(
-                            "<html><body style='background:#12141a;color:#e8eaf0;padding:2rem;font-family:sans-serif'>\
-                             <h1>Could not open book</h1><pre>{err:#}</pre>\
-                             <p>Press Esc or ← Library to go back.</p></body></html>"
-                        ),
-                        None,
+                    let msg = format!(
+                        "<html><body style='padding:2rem;background:#12141a;color:#e8eaf0;font-family:sans-serif'><h1>Could not open book</h1><pre>{err:#}</pre><p>Press Esc or ← Library to go back.</p></body></html>"
                     );
+                    webview.load_html(&msg, None);
                     (book.title, OpenBook::empty_placeholder(), 0, 0.0)
                 }
             }
@@ -433,8 +429,7 @@ fn load_chapter(model: &ReaderModel) {
         }
         Err(err) => {
             let err_html = format!(
-                "<html><body style='background:#12141a;color:#e8eaf0;font-family:sans-serif;padding:2rem'>\
-                 <h1>Could not load chapter</h1><pre>{err:#}</pre></body></html>"
+                "<html><body style='padding:2rem;background:#12141a;color:#e8eaf0;font-family:sans-serif'><h1>Could not load chapter</h1><pre>{err:#}</pre></body></html>"
             );
             model.webview.load_html(&err_html, None);
         }
