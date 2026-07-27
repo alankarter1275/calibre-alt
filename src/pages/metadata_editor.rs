@@ -755,6 +755,7 @@ fn open_editor_inner(
                 &description,
                 &tags,
             ) {
+                crate::notify::error("Could not save metadata", &err.to_string());
                 status.set_label(&format!("Could not save: {err}"));
                 return false;
             }
@@ -765,6 +766,7 @@ fn open_editor_inner(
             if let Some(bytes) = pending_cover.borrow_mut().take() {
                 if let Ok(Some(fresh)) = catalog.get_book(book_id) {
                     if let Err(err) = crate::epub::replace_cover_bytes(&catalog, &fresh, &bytes) {
+                        crate::notify::error("Cover could not be saved", &err.to_string());
                         status.set_label(&format!("Metadata saved, but the cover failed: {err}"));
                         on_saved();
                         return false;
@@ -781,6 +783,12 @@ fn open_editor_inner(
                     }
                     Ok(_) => {}
                     Err(err) => {
+                        // The dialog closes right after this, so the status
+                        // line alone would vanish before it was read.
+                        crate::notify::error(
+                            "Metadata saved, but the book file was not updated",
+                            &err.to_string(),
+                        );
                         status.set_label(&format!(
                             "Saved in Kalam, but the file was not updated: {err}"
                         ));

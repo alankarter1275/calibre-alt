@@ -124,6 +124,19 @@ impl Component for SettingsPageModel {
             },
 
             gtk::Label {
+                set_label: "Library backup",
+                add_css_class: "kalam-page-title",
+                set_halign: gtk::Align::Start,
+                set_margin_top: 24,
+            },
+
+            #[name = "backup_row"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 6,
+            },
+
+            gtk::Label {
                 set_label: "Book files",
                 add_css_class: "kalam-page-title",
                 set_halign: gtk::Align::Start,
@@ -185,6 +198,7 @@ impl Component for SettingsPageModel {
         rebuild_dicts(&widgets.dict_list, &model.dicts, &sender);
         build_sources(&widgets.source_list, &model.catalog);
         build_file_write(&widgets.file_write_row, &model.catalog);
+        build_backup(&widgets.backup_row, &model.catalog);
         ComponentParts { model, widgets }
     }
 
@@ -301,6 +315,112 @@ fn rebuild_dicts(
 
         list.append(&row);
     }
+}
+
+/// Back up the catalog, and clear the reader cache.
+fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+
+    let row = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    row.add_css_class("kalam-list-row");
+
+    let note = gtk::Label::new(Some(
+        "Your highlights, quotes, ratings, shelves, reading history and metadata \
+         edits all live in catalog.db. Back it up before upgrades, or to move \
+         Kalam to another machine.",
+    ));
+    note.add_css_class("kalam-card-meta");
+    note.set_halign(gtk::Align::Start);
+    note.set_xalign(0.0);
+    note.set_wrap(true);
+    row.append(&note);
+
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let backup_btn = gtk::Button::with_label("Back up library…");
+    backup_btn.add_css_class("kalam-secondary-btn");
+    {
+        let catalog = catalog.clone();
+        backup_btn.connect_clicked(move |btn| {
+            let dialog = gtk::FileDialog::builder()
+                .title("Save library backup")
+                .modal(true)
+                .initial_name(format!("kalam-backup-{}.db", today_stamp()))
+                .build();
+            let window = btn
+                .root()
+                .and_then(|r| r.downcast::<gtk::Window>().ok());
+            let catalog = catalog.clone();
+            dialog.save(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+                let Ok(file) = res else { return };
+                let Some(path) = file.path() else { return };
+                match catalog.backup_to(&path) {
+                    Ok(size) => crate::notify::success(
+                        "Library backed up",
+                        &format!("{} · {}", crate::epub_write::human_size(size), path.display()),
+                    ),
+                    Err(err) => {
+                        crate::notify::error("Backup failed", &err.to_string());
+                    }
+                }
+            });
+        });
+    }
+    actions.append(&backup_btn);
+    row.append(&actions);
+
+    // ── reader cache ────────────────────────────────────────────────────
+    let cache_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    cache_row.set_margin_top(6);
+
+    let size = crate::paths::reader_cache_size();
+    let cache_label = gtk::Label::new(Some(&format!(
+        "Reader cache: {} of extracted books.",
+        crate::epub_write::human_size(size)
+    )));
+    cache_label.add_css_class("kalam-muted");
+    cache_label.set_halign(gtk::Align::Start);
+    cache_label.set_hexpand(true);
+    cache_label.set_xalign(0.0);
+    cache_row.append(&cache_label);
+
+    let clear = gtk::Button::with_label("Clear cache");
+    clear.add_css_class("kalam-mini-btn");
+    clear.set_valign(gtk::Align::Center);
+    clear.set_sensitive(size > 0);
+    {
+        let cache_label = cache_label.clone();
+        clear.connect_clicked(move |btn| {
+            let (_, freed) = crate::paths::clear_reader_cache();
+            cache_label.set_label(&format!(
+                "Reader cache cleared, freed {}.",
+                crate::epub_write::human_size(freed)
+            ));
+            btn.set_sensitive(false);
+        });
+    }
+    cache_row.append(&clear);
+    row.append(&cache_row);
+
+    let cache_note = gtk::Label::new(Some(
+        "Safe to clear: books are re-extracted the next time you open them.",
+    ));
+    cache_note.add_css_class("kalam-card-meta");
+    cache_note.set_halign(gtk::Align::Start);
+    cache_note.set_xalign(0.0);
+    cache_note.set_wrap(true);
+    row.append(&cache_note);
+
+    host.append(&row);
+}
+
+/// `2026-07-28`, for backup filenames.
+fn today_stamp() -> String {
+    gtk::glib::DateTime::now_local()
+        .and_then(|d| d.format("%Y-%m-%d"))
+        .map(|s| s.to_string())
+        .unwrap_or_default()
 }
 
 /// Toggle for writing metadata back into the EPUB itself.

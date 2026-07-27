@@ -960,6 +960,72 @@ popover.kalam-reader-popover > contents {
     background: @kalam_accent;
 }
 
+/* ── toasts (docs/design/notifications.png) ─────────── */
+.kalam-toast-host {
+    margin: 0 18px 18px 0;
+}
+
+.kalam-toast {
+    background: #16181d;
+    border: 1px solid alpha(#ffffff, 0.07);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px alpha(#000, 0.55);
+    overflow: hidden;
+    min-width: 340px;
+}
+
+.kalam-toast-body {
+    padding: 14px 18px 14px 14px;
+}
+
+.kalam-toast-title {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #e8eaf0;
+}
+
+.kalam-toast-detail {
+    font-size: 0.8rem;
+    color: alpha(#e8eaf0, 0.55);
+}
+
+.kalam-toast-icon {
+    font-size: 1.05rem;
+}
+
+/* The accent stripe carries the severity, as in the reference. */
+.kalam-toast-success .kalam-toast-accent {
+    background: #6ee7b7;
+}
+
+.kalam-toast-success .kalam-toast-icon {
+    color: #6ee7b7;
+}
+
+.kalam-toast-error .kalam-toast-accent {
+    background: #fca5a5;
+}
+
+.kalam-toast-error .kalam-toast-icon {
+    color: #fca5a5;
+}
+
+.kalam-toast-info .kalam-toast-accent {
+    background: alpha(#e8eaf0, 0.35);
+}
+
+.kalam-toast-info .kalam-toast-icon {
+    color: alpha(#e8eaf0, 0.6);
+}
+
+.kalam-toast-progress .kalam-toast-accent {
+    background: #86efac;
+}
+
+.kalam-toast-progress .kalam-toast-icon {
+    color: #86efac;
+}
+
 /* ── metadata editor ────────────────────────────────── */
 /* Pinned below the scroller, so Save never scrolls out of reach. */
 .kalam-dialog-actions {

@@ -11,6 +11,7 @@ mod epub_book;
 mod epub_write;
 mod metadata;
 mod models;
+mod notify;
 mod pages;
 mod paths;
 mod shelf_rules;

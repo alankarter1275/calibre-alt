@@ -267,9 +267,18 @@ impl Component for BookPageModel {
                     if let Some(path) = &book.cover_path {
                         invalidate_cover_cache(path);
                     }
-                    if self.catalog.delete_book(id).is_ok() {
-                        self.book = None;
-                        sender.output(BookPageOut::Deleted { book_id: id }).ok();
+                    let title = book.title.clone();
+                    match self.catalog.delete_book(id) {
+                        Ok(()) => {
+                            crate::notify::success("Book removed", &title);
+                            self.book = None;
+                            sender.output(BookPageOut::Deleted { book_id: id }).ok();
+                        }
+                        // Silently doing nothing was the worst outcome here:
+                        // the book stayed and no reason was given.
+                        Err(err) => {
+                            crate::notify::error("Could not remove the book", &err.to_string())
+                        }
                     }
                 }
             }

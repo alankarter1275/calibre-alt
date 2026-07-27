@@ -303,6 +303,18 @@ impl HighlightColor {
 }
 
 impl Catalog {
+    /// Take the connection lock, recovering from poisoning.
+    ///
+    /// A panic on any thread while holding this lock used to make every later
+    /// `expect("db lock")` abort the whole app. SQLite itself is unharmed by
+    /// the panic, so carrying on with the data is strictly better than dying.
+    fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap_or_else(|poisoned| {
+            eprintln!("kalam: recovered a poisoned database lock");
+            poisoned.into_inner()
+        })
+    }
+
     pub fn open() -> Result<Self> {
         ensure_data_dirs()?;
         let path = catalog_db();
@@ -345,7 +357,7 @@ impl Catalog {
     }
 
     fn migrate(&self) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS schema_version (
@@ -569,14 +581,22 @@ impl Catalog {
         Ok(())
     }
 
+    /// Every book's uuid — used to spot orphaned reader caches.
+    pub fn all_uuids(&self) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached("SELECT uuid FROM books")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        Ok(rows.flatten().collect())
+    }
+
     pub fn count_books(&self) -> Result<usize> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0))?;
         Ok(n as usize)
     }
 
     pub fn list_books(&self, sort: SortKey, query: &str) -> Result<Vec<Book>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let order = match sort {
             SortKey::Title => "sort_title COLLATE NOCASE ASC",
             SortKey::Author => "authors COLLATE NOCASE ASC, sort_title COLLATE NOCASE ASC",
@@ -611,7 +631,7 @@ impl Catalog {
     /// Newest books, capped. Pages that show a handful of covers were calling
     /// `list_books` and loading the entire library to display six of them.
     pub fn recent_books(&self, limit: usize) -> Result<Vec<Book>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let sql = format!("SELECT {BOOK_COLUMNS} FROM books ORDER BY books.added_at DESC LIMIT ?1");
         let mut stmt = conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![limit as i64], row_to_book)?;
@@ -621,7 +641,7 @@ impl Catalog {
     }
 
     pub fn get_book(&self, id: i64) -> Result<Option<Book>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let mut book = conn
             .query_row(
                 &format!("SELECT {BOOK_COLUMNS} FROM books WHERE books.id = ?1"),
@@ -641,7 +661,7 @@ impl Catalog {
     }
 
     pub fn find_by_hash(&self, hash: &str) -> Result<Option<i64>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let id = conn
             .query_row(
                 "SELECT id FROM books WHERE file_hash = ?1 LIMIT 1",
@@ -666,7 +686,7 @@ impl Catalog {
         cover_name: Option<&str>,
         tags: &[String],
     ) -> Result<i64> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let added = chrono_like_now();
         let sort_title = title.to_lowercase();
         conn.execute(
@@ -720,7 +740,7 @@ impl Catalog {
         // re-importing the same file should not lose your work.
         let _ = self.remember_overrides(id);
         {
-            let conn = self.conn.lock().expect("db lock");
+            let conn = self.conn();
             conn.execute("DELETE FROM books WHERE id = ?1", params![id])?;
         }
         let dir = book_dir(&book.uuid);
@@ -732,7 +752,7 @@ impl Catalog {
 
     /// Detailed reading position (chapter + in-chapter fraction).
     pub fn get_reading_progress(&self, book_id: i64) -> Result<Option<(usize, f64)>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let row = conn
             .query_row(
                 "SELECT chapter_index, fraction FROM reading_progress WHERE book_id = ?1",
@@ -751,7 +771,7 @@ impl Catalog {
         fraction: f64,
         chapter_count: usize,
     ) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let frac = fraction.clamp(0.0, 1.0);
         let now = chrono_like_now();
         conn.execute(
@@ -795,7 +815,7 @@ impl Catalog {
         text_excerpt: &str,
         note: &str,
     ) -> Result<i64> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let now = chrono_like_now();
         conn.execute(
             "INSERT INTO annotations
@@ -820,7 +840,7 @@ impl Catalog {
     }
 
     pub fn get_annotations_for_book(&self, book_id: i64) -> Result<Vec<Annotation>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
                     color, text_excerpt, note, cfi, created_at, updated_at
@@ -839,7 +859,7 @@ impl Catalog {
         book_id: i64,
         chapter_index: i64,
     ) -> Result<Vec<Annotation>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
                     color, text_excerpt, note, cfi, created_at, updated_at
@@ -858,7 +878,7 @@ impl Catalog {
     /// A few recent quotes with their book titles, in one query.
     /// The dashboard previously fetched 500 rows and then a book per card.
     pub fn recent_quotes(&self, limit: usize) -> Result<Vec<(Annotation, String)>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT a.id, a.book_id, a.kind, a.chapter_index, a.start_path, a.start_offset,
                     a.end_path, a.end_offset, a.color, a.text_excerpt, a.note, a.cfi,
@@ -877,7 +897,7 @@ impl Catalog {
 
     /// Total saved quotes, for counts that do not need the rows themselves.
     pub fn count_quotes(&self) -> Result<i64> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let n: i64 = conn.query_row(
             "SELECT COUNT(*) FROM annotations WHERE kind IN ('quote','highlight')",
             [],
@@ -887,7 +907,7 @@ impl Catalog {
     }
 
     pub fn list_all_quotes(&self, query: &str) -> Result<Vec<Annotation>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let q = query.trim();
         let mut stmt = if q.is_empty() {
             conn.prepare_cached(
@@ -920,13 +940,13 @@ impl Catalog {
     }
 
     pub fn delete_annotation(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute("DELETE FROM annotations WHERE id = ?1", params![id])?;
         Ok(())
     }
 
     pub fn update_annotation_note(&self, id: i64, note: &str) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let now = chrono_like_now();
         conn.execute(
             "UPDATE annotations SET note = ?1, updated_at = ?2 WHERE id = ?3",
@@ -936,7 +956,7 @@ impl Catalog {
     }
 
     pub fn update_annotation_color(&self, id: i64, color: &str) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let now = chrono_like_now();
         conn.execute(
             "UPDATE annotations SET color = ?1, updated_at = ?2 WHERE id = ?3",
@@ -958,7 +978,7 @@ impl Catalog {
         chapter_index: Option<i64>,
         context_text: Option<&str>,
     ) -> Result<i64> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let now = chrono_like_now();
         conn.execute(
             "INSERT INTO saved_words (word, definition, dict_name, book_id, chapter_index, context_text, created_at)
@@ -977,7 +997,7 @@ impl Catalog {
     }
 
     pub fn list_saved_words(&self, query: &str) -> Result<Vec<SavedWord>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let q = query.trim();
         if q.is_empty() {
             let mut stmt = conn.prepare_cached(
@@ -1002,7 +1022,7 @@ impl Catalog {
     }
 
     pub fn delete_saved_word(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute("DELETE FROM saved_words WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -1012,7 +1032,7 @@ impl Catalog {
     // -----------------------------------------------------------------------
 
     pub fn list_dictionaries(&self) -> Result<Vec<Dictionary>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT id, name, lang, entry_count, added_at FROM dictionaries ORDER BY name ASC",
         )?;
@@ -1038,7 +1058,7 @@ impl Catalog {
         lang: Option<&str>,
         entry_count: i64,
     ) -> Result<i64> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let now = chrono_like_now();
         conn.execute(
             "INSERT INTO dictionaries (name, lang, entry_count, added_at)
@@ -1055,13 +1075,13 @@ impl Catalog {
     }
 
     pub fn delete_dictionary(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute("DELETE FROM dictionaries WHERE id = ?1", params![id])?;
         Ok(())
     }
 
     pub fn set_dictionary_entry_count(&self, id: i64, count: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute(
             "UPDATE dictionaries SET entry_count = ?1 WHERE id = ?2",
             params![count, id],
@@ -1070,7 +1090,7 @@ impl Catalog {
     }
 
     pub fn insert_dict_entry(&self, dict_id: i64, word: &str, definition: &str) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO dict_entries (dict_id, word, definition) VALUES (?1, ?2, ?3)",
             params![dict_id, word, definition],
@@ -1083,7 +1103,7 @@ impl Catalog {
         dict_id: i64,
         entries: &[(String, String)],
     ) -> Result<()> {
-        let mut conn = self.conn.lock().expect("db lock");
+        let mut conn = self.conn();
         let tx = conn.transaction()?;
         {
             let mut stmt = tx.prepare(
@@ -1098,7 +1118,7 @@ impl Catalog {
     }
 
     pub fn clear_dict_entries(&self, dict_id: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute(
             "DELETE FROM dict_entries WHERE dict_id = ?1",
             params![dict_id],
@@ -1107,7 +1127,7 @@ impl Catalog {
     }
 
     pub fn search_dict(&self, word: &str, limit: usize) -> Result<Vec<DictEntry>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let clean = word.trim();
         if clean.is_empty() {
             return Ok(Vec::new());
@@ -1177,7 +1197,7 @@ impl Catalog {
     }
 
     pub fn dict_entry_count(&self) -> Result<i64> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM dict_entries", [], |r| r.get(0))?;
         Ok(n)
     }
@@ -1201,7 +1221,7 @@ impl Catalog {
         description: &str,
         tags: &[String],
     ) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let title = title.trim();
         // sort_title mirrors insert_book so ordering stays consistent.
         conn.execute(
@@ -1292,7 +1312,7 @@ impl Catalog {
             }
         });
 
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO metadata_overrides
                 (file_hash, title, authors, series, series_index, publisher,
@@ -1348,7 +1368,7 @@ impl Catalog {
         }
 
         let saved: Option<Saved> = {
-            let conn = self.conn.lock().expect("db lock");
+            let conn = self.conn();
             conn.query_row(
                 "SELECT IFNULL(title,''), IFNULL(authors,''), series,
                         IFNULL(series_index,0), IFNULL(publisher,''),
@@ -1440,7 +1460,7 @@ impl Catalog {
         // Drop the stashed cover too, otherwise the covers directory grows
         // forever with images nothing references.
         let stashed: Option<String> = {
-            let conn = self.conn.lock().expect("db lock");
+            let conn = self.conn();
             conn.query_row(
                 "SELECT IFNULL(cover_name, '') FROM metadata_overrides WHERE file_hash = ?1",
                 params![file_hash],
@@ -1454,7 +1474,7 @@ impl Catalog {
             let _ = fs::remove_file(path);
         }
 
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute(
             "DELETE FROM metadata_overrides WHERE file_hash = ?1",
             params![file_hash],
@@ -1471,7 +1491,7 @@ impl Catalog {
         if old_hash == new_hash {
             return Ok(());
         }
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute(
             "UPDATE books SET file_hash = ?2 WHERE id = ?1",
             params![book_id, new_hash],
@@ -1491,7 +1511,7 @@ impl Catalog {
     /// Point the book at a new cover file inside its own directory.
     pub fn set_cover_name(&self, book_id: i64, cover_name: Option<&str>) -> Result<()> {
         {
-            let conn = self.conn.lock().expect("db lock");
+            let conn = self.conn();
             conn.execute(
                 "UPDATE books SET cover_name = ?2 WHERE id = ?1",
                 params![book_id, cover_name],
@@ -1506,7 +1526,7 @@ impl Catalog {
     /// Like `set_cover_name`, but does not touch the remembered override.
     /// Used when *restoring* a cover, where re-stashing would be circular.
     fn set_cover_name_quiet(&self, book_id: i64, cover_name: Option<&str>) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute(
             "UPDATE books SET cover_name = ?2 WHERE id = ?1",
             params![book_id, cover_name],
@@ -1521,7 +1541,7 @@ impl Catalog {
     /// Ratings are stored as 0..=10 half-stars (7 == 3.5 stars); 0 == unrated.
     pub fn set_book_rating(&self, book_id: i64, half_stars: u8) -> Result<()> {
         {
-            let conn = self.conn.lock().expect("db lock");
+            let conn = self.conn();
             conn.execute(
                 "UPDATE books SET rating = ?2 WHERE id = ?1",
                 params![book_id, half_stars.min(10) as i64],
@@ -1621,7 +1641,7 @@ impl Catalog {
     /// All shelves ordered by position, each with a live book count.
     pub fn list_shelves(&self) -> Result<Vec<Shelf>> {
         let mut shelves = {
-            let conn = self.conn.lock().expect("db lock");
+            let conn = self.conn();
             let mut stmt = conn.prepare_cached(
                 "SELECT id, name, kind, description, rules, position, created_at, updated_at
                  FROM shelves
@@ -1634,7 +1654,7 @@ impl Catalog {
         // Manual counts come back in a single grouped query; only smart
         // shelves need their rules compiled and counted individually.
         let manual_counts: std::collections::HashMap<i64, usize> = {
-            let conn = self.conn.lock().expect("db lock");
+            let conn = self.conn();
             let mut stmt = conn
                 .prepare_cached("SELECT shelf_id, COUNT(*) FROM shelf_books GROUP BY shelf_id")?;
             let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
@@ -1654,7 +1674,7 @@ impl Catalog {
 
     pub fn get_shelf(&self, id: i64) -> Result<Option<Shelf>> {
         let shelf = {
-            let conn = self.conn.lock().expect("db lock");
+            let conn = self.conn();
             conn.query_row(
                 "SELECT id, name, kind, description, rules, position, created_at, updated_at
                  FROM shelves WHERE id = ?1",
@@ -1677,7 +1697,7 @@ impl Catalog {
         description: &str,
         rules: &str,
     ) -> Result<i64> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let now = chrono_like_now();
         let next_pos: i64 = conn
             .query_row(
@@ -1702,7 +1722,7 @@ impl Catalog {
     }
 
     pub fn update_shelf(&self, id: i64, name: &str, description: &str, rules: &str) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute(
             "UPDATE shelves SET name = ?2, description = ?3, rules = ?4, updated_at = ?5
              WHERE id = ?1",
@@ -1712,7 +1732,7 @@ impl Catalog {
     }
 
     pub fn delete_shelf(&self, id: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute("DELETE FROM shelves WHERE id = ?1", params![id])?;
         Ok(())
     }
@@ -1720,7 +1740,7 @@ impl Catalog {
     /// True when a shelf with this name already exists (case-insensitive).
     /// `except_id` lets the edit dialog ignore the shelf being renamed.
     pub fn shelf_name_taken(&self, name: &str, except_id: Option<i64>) -> Result<bool> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let n: i64 = conn.query_row(
             "SELECT COUNT(*) FROM shelves
              WHERE name = ?1 COLLATE NOCASE AND id <> IFNULL(?2, -1)",
@@ -1739,7 +1759,7 @@ impl Catalog {
     }
 
     fn manual_shelf_books(&self, shelf_id: i64, sort: SortKey, query: &str) -> Result<Vec<Book>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         // Manual shelves keep hand-sorted order unless the user picks a sort.
         let order = match sort {
             SortKey::Title => "books.sort_title COLLATE NOCASE ASC",
@@ -1768,7 +1788,7 @@ impl Catalog {
 
     fn smart_shelf_books(&self, shelf: &Shelf, sort: SortKey, query: &str) -> Result<Vec<Book>> {
         let (where_sql, rule_params) = shelf.rule_set().to_sql();
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let order = match sort {
             SortKey::Title => "books.sort_title COLLATE NOCASE ASC",
             SortKey::Author => {
@@ -1807,7 +1827,7 @@ impl Catalog {
     }
 
     fn shelf_book_count(&self, shelf: &Shelf) -> Result<usize> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let n: i64 = match shelf.kind {
             ShelfKind::Manual => conn.query_row(
                 "SELECT COUNT(*) FROM shelf_books WHERE shelf_id = ?1",
@@ -1831,7 +1851,7 @@ impl Catalog {
     /// Count matches for an unsaved rule set — powers the live count in the editor.
     pub fn count_matching_rules(&self, rules: &crate::shelf_rules::RuleSet) -> Result<usize> {
         let (where_sql, rule_params) = rules.to_sql();
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let sql = format!("SELECT COUNT(*) FROM books WHERE {where_sql}");
         let bound: Vec<&dyn rusqlite::ToSql> = rule_params
             .iter()
@@ -1842,7 +1862,7 @@ impl Catalog {
     }
 
     pub fn add_book_to_shelf(&self, shelf_id: i64, book_id: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let next_pos: i64 = conn
             .query_row(
                 "SELECT IFNULL(MAX(position), -1) + 1 FROM shelf_books WHERE shelf_id = ?1",
@@ -1859,7 +1879,7 @@ impl Catalog {
     }
 
     pub fn remove_book_from_shelf(&self, shelf_id: i64, book_id: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute(
             "DELETE FROM shelf_books WHERE shelf_id = ?1 AND book_id = ?2",
             params![shelf_id, book_id],
@@ -1869,7 +1889,7 @@ impl Catalog {
 
     /// Manual shelves this book belongs to (id, name) — for the book page chips.
     pub fn shelves_for_book(&self, book_id: i64) -> Result<Vec<(i64, String)>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT s.id, s.name FROM shelves s
              JOIN shelf_books sb ON sb.shelf_id = s.id
@@ -1882,7 +1902,7 @@ impl Catalog {
 
     /// Move a manual shelf entry up/down by swapping positions with its neighbour.
     pub fn move_shelf_book(&self, shelf_id: i64, book_id: i64, delta: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let ids: Vec<i64> = {
             let mut stmt = conn.prepare_cached(
                 "SELECT book_id FROM shelf_books WHERE shelf_id = ?1
@@ -1914,7 +1934,7 @@ impl Catalog {
     // -----------------------------------------------------------------------
 
     pub fn list_reading_list(&self) -> Result<Vec<ReadingListEntry>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let sql = format!(
             "SELECT {BOOK_COLUMNS}, rl.position, rl.note, rl.added_at
              FROM books
@@ -1941,7 +1961,7 @@ impl Catalog {
     }
 
     pub fn is_in_reading_list(&self, book_id: i64) -> Result<bool> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let n: i64 = conn.query_row(
             "SELECT COUNT(*) FROM reading_list WHERE book_id = ?1",
             params![book_id],
@@ -1951,7 +1971,7 @@ impl Catalog {
     }
 
     pub fn add_to_reading_list(&self, book_id: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let next_pos: i64 = conn
             .query_row(
                 "SELECT IFNULL(MAX(position), -1) + 1 FROM reading_list",
@@ -1968,7 +1988,7 @@ impl Catalog {
     }
 
     pub fn remove_from_reading_list(&self, book_id: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute(
             "DELETE FROM reading_list WHERE book_id = ?1",
             params![book_id],
@@ -1978,7 +1998,7 @@ impl Catalog {
 
     /// Move an entry up (`delta = -1`) or down (`delta = 1`).
     pub fn move_reading_list_entry(&self, book_id: i64, delta: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let ids: Vec<i64> = {
             let mut stmt = conn
                 .prepare("SELECT book_id FROM reading_list ORDER BY position ASC, added_at ASC")?;
@@ -2004,7 +2024,7 @@ impl Catalog {
     }
 
     pub fn set_reading_list_note(&self, book_id: i64, note: &str) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute(
             "UPDATE reading_list SET note = ?2 WHERE book_id = ?1",
             params![book_id, note],
@@ -2017,7 +2037,7 @@ impl Catalog {
     // -----------------------------------------------------------------------
 
     pub fn log_event(&self, book_id: i64, kind: EventKind, detail: &str) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO reading_events (book_id, kind, at, detail) VALUES (?1, ?2, ?3, ?4)",
             params![book_id, kind.as_str(), chrono_like_now(), detail],
@@ -2029,7 +2049,7 @@ impl Catalog {
     /// repeat opens within the same hour so flipping in and out of the reader
     /// doesn't flood History.
     pub fn mark_book_opened(&self, book_id: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let now = chrono_like_now();
         conn.execute(
             "UPDATE books SET last_opened_at = ?2 WHERE id = ?1",
@@ -2065,7 +2085,7 @@ impl Catalog {
     /// and drops the book off the reading list.
     pub fn set_book_finished(&self, book_id: i64, finished: bool) -> Result<()> {
         {
-            let conn = self.conn.lock().expect("db lock");
+            let conn = self.conn();
             let now = chrono_like_now();
             if finished {
                 conn.execute(
@@ -2100,7 +2120,7 @@ impl Catalog {
             return Ok(false);
         }
         let already: Option<String> = {
-            let conn = self.conn.lock().expect("db lock");
+            let conn = self.conn();
             conn.query_row(
                 "SELECT finished_at FROM books WHERE id = ?1",
                 params![book_id],
@@ -2113,7 +2133,7 @@ impl Catalog {
             return Ok(false);
         }
         {
-            let conn = self.conn.lock().expect("db lock");
+            let conn = self.conn();
             conn.execute(
                 "UPDATE books SET finished_at = ?2 WHERE id = ?1",
                 params![book_id, chrono_like_now()],
@@ -2125,7 +2145,7 @@ impl Catalog {
     }
 
     pub fn book_finished_at(&self, book_id: i64) -> Result<Option<String>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let v: Option<Option<String>> = conn
             .query_row(
                 "SELECT finished_at FROM books WHERE id = ?1",
@@ -2143,7 +2163,7 @@ impl Catalog {
         query: &str,
         limit: usize,
     ) -> Result<Vec<ReadingEvent>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let q = query.trim();
         let like = format!("%{}%", escape_like(q));
         let kind_str = kind.map(|k| k.as_str().to_string());
@@ -2173,14 +2193,14 @@ impl Catalog {
     }
 
     pub fn clear_history(&self) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute("DELETE FROM reading_events", [])?;
         Ok(())
     }
 
     /// Books ordered by most recently opened — powers Home → Continue.
     pub fn recently_opened(&self, limit: usize) -> Result<Vec<Book>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let sql = format!(
             "SELECT {BOOK_COLUMNS}
              FROM books
@@ -2202,7 +2222,7 @@ impl Catalog {
 
     /// Open a session row when the reader mounts; returns its id.
     pub fn start_reading_session(&self, book_id: i64, start_pct: i64) -> Result<i64> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO reading_sessions (book_id, started_at, ended_at, seconds, start_pct, end_pct)
              VALUES (?1, ?2, NULL, 0, ?3, ?3)",
@@ -2214,7 +2234,7 @@ impl Catalog {
     /// Close a session. Absurd durations (laptop suspended with the reader
     /// open) are clamped so one forgotten window can't claim 14 hours read.
     pub fn end_reading_session(&self, session_id: i64, seconds: i64, end_pct: i64) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let clamped = seconds.clamp(0, MAX_SESSION_SECONDS);
         conn.execute(
             "UPDATE reading_sessions SET ended_at = ?2, seconds = ?3, end_pct = ?4 WHERE id = ?1",
@@ -2224,7 +2244,7 @@ impl Catalog {
     }
 
     pub fn total_reading_seconds(&self, book_id: i64) -> Result<i64> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let n: i64 = conn.query_row(
             "SELECT IFNULL(SUM(seconds), 0) FROM reading_sessions WHERE book_id = ?1",
             params![book_id],
@@ -2239,7 +2259,7 @@ impl Catalog {
 
     /// (tag name, book count), most used first.
     pub fn list_tags_with_counts(&self) -> Result<Vec<(String, i64)>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT t.name, COUNT(bt.book_id) AS n
              FROM tags t
@@ -2253,7 +2273,7 @@ impl Catalog {
     }
 
     pub fn books_with_tag(&self, tag: &str, sort: SortKey) -> Result<Vec<Book>> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
         let order = match sort {
             SortKey::Title => "books.sort_title COLLATE NOCASE ASC",
             SortKey::Author => "books.authors COLLATE NOCASE ASC",
@@ -2278,6 +2298,24 @@ impl Catalog {
     // P4: Analytics
     // -----------------------------------------------------------------------
 
+    /// Write a consistent copy of the catalog to `dest`.
+    ///
+    /// Uses SQLite's own VACUUM INTO, so the result is a defragmented, valid
+    /// database even while the app is running — unlike copying the file, which
+    /// can catch a half-written WAL.
+    pub fn backup_to(&self, dest: &Path) -> Result<u64> {
+        if dest.exists() {
+            fs::remove_file(dest)?;
+        }
+        let conn = self.conn();
+        // The path is interpolated because VACUUM INTO does not take a bound
+        // parameter; single quotes are escaped to keep it safe.
+        let escaped = dest.to_string_lossy().replace('\'', "''");
+        conn.execute_batch(&format!("VACUUM INTO '{escaped}'"))?;
+        drop(conn);
+        Ok(fs::metadata(dest).map(|m| m.len()).unwrap_or(0))
+    }
+
     /// SQLite's write counter. Any INSERT/UPDATE/DELETE bumps it, so callers
     /// can cheaply tell whether the catalog changed since they last looked.
     pub fn change_token(&self) -> i64 {
@@ -2290,7 +2328,7 @@ impl Catalog {
     pub fn library_stats(&self) -> Result<LibraryStats> {
         // Cheap: total_changes() is an in-memory counter, not a query.
         let version = {
-            let conn = self.conn.lock().expect("db lock");
+            let conn = self.conn();
             conn.total_changes() as i64
         };
 
@@ -2310,7 +2348,7 @@ impl Catalog {
     }
 
     fn compute_library_stats(&self) -> Result<LibraryStats> {
-        let conn = self.conn.lock().expect("db lock");
+        let conn = self.conn();
 
         let one =
             |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap_or(0) };

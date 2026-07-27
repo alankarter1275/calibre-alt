@@ -468,7 +468,28 @@ impl Component for AppModel {
             set_default_width: 1100,
             set_default_height: 720,
 
-            gtk::Box {
+            // Overlay so toasts float over the app without displacing it.
+            gtk::Overlay {
+                add_overlay = &gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 8,
+                    set_halign: gtk::Align::End,
+                    set_valign: gtk::Align::End,
+                    add_css_class: "kalam-toast-host",
+                    // Must not swallow clicks meant for the app beneath.
+                    set_can_target: true,
+
+                    #[name = "toast_host"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 8,
+                        set_halign: gtk::Align::End,
+                        set_valign: gtk::Align::End,
+                    },
+                },
+
+            #[wrap(Some)]
+            set_child = &gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_hexpand: true,
                 set_vexpand: true,
@@ -577,6 +598,7 @@ impl Component for AppModel {
                     },
                 },
             },
+            },
         }
     }
 
@@ -588,7 +610,8 @@ impl Component for AppModel {
         let catalog = match Catalog::open() {
             Ok(c) => Arc::new(c),
             Err(err) => {
-                eprintln!("kalam: failed to open catalog: {err}");
+                // Raised before the overlay exists; notify queues it.
+                crate::notify::error("Could not open the library", &err.to_string());
                 Arc::new(Catalog::open().expect("catalog open"))
             }
         };
@@ -611,6 +634,22 @@ impl Component for AppModel {
         };
 
         let widgets = view_output!();
+
+        // From here on, any notify::* call lands on screen.
+        crate::notify::attach(widgets.toast_host.clone());
+
+        // Extracted-book caches are rebuilt on demand, so anything orphaned or
+        // untouched for a fortnight is pure waste on a small disk.
+        {
+            let uuids = catalog.all_uuids().unwrap_or_default();
+            let freed = crate::paths::prune_reader_cache(&uuids, 14);
+            if freed > 1024 * 1024 {
+                crate::notify::info(
+                    "Cleaned up reader cache",
+                    &format!("Freed {}", crate::epub_write::human_size(freed)),
+                );
+            }
+        }
 
         for item in NavItem::ALL {
             let btn = make_nav_button(*item, *item == NavItem::Home);

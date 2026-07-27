@@ -190,6 +190,17 @@ impl Component for AllBooksModel {
                 self.importing = false;
                 self.reload();
 
+                if tally.imported > 0 {
+                    crate::notify::success(
+                        &format!(
+                            "{} book{} imported",
+                            tally.imported,
+                            if tally.imported == 1 { "" } else { "s" }
+                        ),
+                        &tally.last_title,
+                    );
+                }
+
                 // Say when edits came back, so a restored title does not look
                 // like the import ignored the file.
                 let restored_note = if tally.restored > 0 {
@@ -304,7 +315,14 @@ impl Component for AllBooksModel {
                             }
                             Err(err) => {
                                 tally.errors += 1;
-                                eprintln!("kalam import error ({}): {err:#}", path.display());
+                                let name = path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().into_owned())
+                                    .unwrap_or_default();
+                                crate::notify::error(
+                                    &format!("Could not import {name}"),
+                                    &format!("{err:#}"),
+                                );
                             }
                         }
                         out.send(ImportProgress::Step {
