@@ -974,6 +974,13 @@ popover.kalam-reader-popover > contents {
     background: @kalam_surface;
 }
 
+/* Slide-out Open Library panel; separated from the form by its own edge. */
+.kalam-search-panel {
+    background: @kalam_surface;
+    border-left: 1px solid @kalam_border;
+    padding: 16px;
+}
+
 .kalam-metadata-side {
     border-left: 1px solid @kalam_border;
     padding-left: 16px;

@@ -18,6 +18,11 @@ use relm4::RelmWidgetExt;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+/// Width of the slide-out search panel, and how much the window grows to
+/// accommodate it so the form itself never gets squeezed.
+const PANEL_WIDTH: i32 = 330;
+const BASE_WIDTH: i32 = 780;
+
 /// What the worker thread sends back to the UI.
 enum FetchMsg {
     Results(Vec<Candidate>),
@@ -49,7 +54,7 @@ fn open_editor_inner(
     let window = gtk::Window::builder()
         .title("Edit metadata")
         .modal(true)
-        .default_width(780)
+        .default_width(BASE_WIDTH)
         // Deliberately short: on a 768px-tall laptop a 640px dialog plus window
         // chrome pushed the action bar off-screen. Content scrolls instead.
         .default_height(560)
@@ -169,10 +174,8 @@ fn open_editor_inner(
     top.append(&side);
     root.append(&top);
 
-    // ── Open Library ────────────────────────────────────────────────────
-    root.append(&section_label("FETCH FROM OPEN LIBRARY"));
-
-    let search_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    // ── Open Library: a slide-out panel, not an inline section ──────────
+    // Built here but revealed only on demand, so the form stays uncluttered.
     let search_entry = gtk::Entry::new();
     search_entry.set_hexpand(true);
     search_entry.set_placeholder_text(Some("Title and author…"));
@@ -182,41 +185,87 @@ fn open_editor_inner(
             .trim()
             .to_string(),
     );
-    search_row.append(&search_entry);
 
     let search_btn = gtk::Button::with_label("Search");
-    search_btn.add_css_class("kalam-secondary-btn");
-    search_row.append(&search_btn);
-    root.append(&search_row);
+    search_btn.add_css_class("kalam-primary-btn");
 
-    let status = gtk::Label::new(Some(
-        "Searching sends the text above to openlibrary.org. Nothing is changed until you save.",
-    ));
-    status.add_css_class("kalam-muted");
-    status.set_halign(gtk::Align::Start);
-    status.set_wrap(true);
-    status.set_xalign(0.0);
-    root.append(&status);
+    // Search progress lives in the panel; form-level messages use `status`,
+    // which sits in the action bar and is always visible.
+    let search_status = gtk::Label::new(Some("Type a title and press Search."));
+    search_status.add_css_class("kalam-muted");
+    search_status.set_halign(gtk::Align::Start);
+    search_status.set_wrap(true);
+    search_status.set_xalign(0.0);
 
     let results = gtk::Box::new(gtk::Orientation::Vertical, 6);
     let results_scroll = gtk::ScrolledWindow::builder()
-        .min_content_height(140)
-        .max_content_height(220)
+        .vexpand(true)
         .hscrollbar_policy(gtk::PolicyType::Never)
         .child(&results)
         .build();
-    root.append(&results_scroll);
+
+    let panel = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    panel.add_css_class("kalam-search-panel");
+    panel.set_size_request(PANEL_WIDTH, -1);
+
+    let panel_head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let panel_title = gtk::Label::new(Some("OPEN LIBRARY"));
+    panel_title.add_css_class("kalam-detail-section-title");
+    panel_title.set_halign(gtk::Align::Start);
+    panel_title.set_hexpand(true);
+    panel_head.append(&panel_title);
+    let panel_close = gtk::Button::with_label("✕");
+    panel_close.add_css_class("kalam-rule-remove");
+    panel_close.set_tooltip_text(Some("Close search"));
+    panel_head.append(&panel_close);
+    panel.append(&panel_head);
+
+    let search_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    search_row.append(&search_entry);
+    search_row.append(&search_btn);
+    panel.append(&search_row);
+    panel.append(&search_status);
+    panel.append(&results_scroll);
+
+    let hint = gtk::Label::new(Some(
+        "Clicking a result fills the form on the left. Nothing is saved until you press Save.",
+    ));
+    hint.add_css_class("kalam-muted");
+    hint.set_wrap(true);
+    hint.set_xalign(0.0);
+    panel.append(&hint);
+
+    // Revealer gives the slide-out; the window widens to match.
+    let revealer = gtk::Revealer::new();
+    revealer.set_child(Some(&panel));
+    revealer.set_transition_type(gtk::RevealerTransitionType::SlideLeft);
+    revealer.set_transition_duration(180);
+    revealer.set_reveal_child(false);
 
     // ── actions: pinned outside the scroller so Save is always reachable ─
     let content_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vexpand(true)
+        .hexpand(true)
         .child(&root)
         .build();
-    shell.append(&content_scroll);
+
+    let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    body.set_vexpand(true);
+    body.append(&content_scroll);
+    body.append(&revealer);
+    shell.append(&body);
 
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     actions.add_css_class("kalam-dialog-actions");
+
+    // Form-level feedback (save errors, cover picked) sits in the pinned bar
+    // so it is visible regardless of scroll position.
+    let status = gtk::Label::new(None);
+    status.add_css_class("kalam-muted");
+    status.set_halign(gtk::Align::Start);
+    status.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    status.set_max_width_chars(48);
 
     // Walk the library without closing the dialog — the point of a bulk
     // clean-up pass. Both save first, so nothing is silently discarded.
@@ -224,6 +273,12 @@ fn open_editor_inner(
         .list_books(crate::db::SortKey::Title, "")
         .unwrap_or_default();
     let position = neighbours.iter().position(|b| b.id == book_id);
+
+    // Opens the Open Library panel. A toggle so its state is obvious.
+    let search_toggle = gtk::ToggleButton::with_label("🔍 Open Library");
+    search_toggle.add_css_class("kalam-secondary-btn");
+    search_toggle.set_tooltip_text(Some("Search Open Library for metadata"));
+    actions.append(&search_toggle);
 
     let prev_btn = gtk::Button::with_label("← Previous");
     prev_btn.add_css_class("kalam-secondary-btn");
@@ -237,6 +292,8 @@ fn open_editor_inner(
     }
     actions.append(&prev_btn);
     actions.append(&next_btn);
+
+    actions.append(&status);
 
     let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
@@ -260,6 +317,7 @@ fn open_editor_inner(
 
     {
         let status = status.clone();
+        let search_status = search_status.clone();
         let results = results.clone();
         let title_entry = title_entry.clone();
         let authors_entry = authors_entry.clone();
@@ -279,7 +337,7 @@ fn open_editor_inner(
                         rebuild_results(
                             &results,
                             &list,
-                            &status,
+                            &search_status,
                             &title_entry,
                             &authors_entry,
                             &series_entry,
@@ -289,7 +347,7 @@ fn open_editor_inner(
                             &desc_view,
                             &tx_inner,
                         );
-                        status.set_label(&if list.is_empty() {
+                        search_status.set_label(&if list.is_empty() {
                             "No matches. Try a different title or author.".to_string()
                         } else {
                             format!(
@@ -300,7 +358,7 @@ fn open_editor_inner(
                         });
                     }
                     FetchMsg::Failed(err) => {
-                        status.set_label(&format!("Lookup failed. {err}"));
+                        search_status.set_label(&format!("Lookup failed. {err}"));
                     }
                     FetchMsg::CoverReady(bytes) => {
                         // Preview immediately; the file is written on Save.
@@ -327,17 +385,17 @@ fn open_editor_inner(
     // ── search ──────────────────────────────────────────────────────────
     {
         let entry = search_entry.clone();
-        let status = status.clone();
+        let search_status = search_status.clone();
         let tx = tx.clone();
         // Rc so both the button and Enter can trigger the same logic; a plain
         // move closure capturing widgets is not Clone.
         let run: Rc<dyn Fn()> = Rc::new(move || {
             let query = entry.text().to_string();
             if query.trim().is_empty() {
-                status.set_label("Type something to search for.");
+                search_status.set_label("Type something to search for.");
                 return;
             }
-            status.set_label("Searching Open Library…");
+            search_status.set_label("Searching Open Library…");
             let tx = tx.clone();
             // Blocking HTTP on a worker thread keeps the dialog responsive.
             std::thread::spawn(move || {
@@ -515,6 +573,38 @@ fn open_editor_inner(
             true
         })
     };
+
+    {
+        let window = window.clone();
+        let revealer = revealer.clone();
+        let search_entry = search_entry.clone();
+        search_toggle.connect_toggled(move |btn| {
+            let open = btn.is_active();
+            revealer.set_reveal_child(open);
+
+            // Grow the window rather than squeezing the form. Only widen if the
+            // user has not already made it bigger than we need.
+            let (w, h) = (window.width(), window.height());
+            if open {
+                if w < BASE_WIDTH + PANEL_WIDTH {
+                    window.set_default_size(BASE_WIDTH + PANEL_WIDTH, h.max(1));
+                }
+                search_entry.grab_focus();
+            } else if w >= BASE_WIDTH + PANEL_WIDTH {
+                window.set_default_size(BASE_WIDTH, h.max(1));
+            }
+        });
+    }
+
+    {
+        let revealer = revealer.clone();
+        let search_toggle = search_toggle.clone();
+        panel_close.connect_clicked(move |_| {
+            // Untoggling runs the handler above, which also restores the width.
+            search_toggle.set_active(false);
+            revealer.set_reveal_child(false);
+        });
+    }
 
     {
         let window = window.clone();
