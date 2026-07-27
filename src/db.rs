@@ -1990,6 +1990,15 @@ impl Catalog {
     // P4: Analytics
     // -----------------------------------------------------------------------
 
+    /// SQLite's write counter. Any INSERT/UPDATE/DELETE bumps it, so callers
+    /// can cheaply tell whether the catalog changed since they last looked.
+    pub fn change_token(&self) -> i64 {
+        self.conn
+            .lock()
+            .map(|c| c.total_changes() as i64)
+            .unwrap_or(0)
+    }
+
     pub fn library_stats(&self) -> Result<LibraryStats> {
         // Cheap: total_changes() is an in-memory counter, not a query.
         let version = {

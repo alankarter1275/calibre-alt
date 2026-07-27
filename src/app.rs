@@ -99,6 +99,39 @@ pub struct AppModel {
     floating: Option<FloatingBook>,
     title_override: Option<String>,
     subtitle_override: Option<String>,
+    /// Pages kept alive between visits, keyed by route.
+    ///
+    /// Rebuilding a whole widget tree on every click was the second half of
+    /// the UI lag: revisiting Home or Library reconstructed dozens of widgets
+    /// and re-ran their queries. Cached pages are unparented rather than
+    /// destroyed, so returning to one costs nothing.
+    cache: Vec<(String, PageSlot)>,
+    /// Catalog write counter at the time each cached page was built. A cached
+    /// page is only reused while this matches, so an import, delete or edit
+    /// anywhere automatically forces a rebuild — no write path has to
+    /// remember to invalidate.
+    cache_token: i64,
+}
+
+/// Cache key for a route, or `None` for pages that must always be rebuilt.
+///
+/// Reader is excluded deliberately: it owns a WebView and a reading session,
+/// and must be torn down on leave. Book and shelf pages are excluded because
+/// their content changes as you edit metadata, ratings and membership.
+fn cache_key(route: &Route) -> Option<String> {
+    match route {
+        Route::Module(NavItem::Home) => Some("home".into()),
+        Route::Module(NavItem::Library) => Some("library".into()),
+        Route::Module(NavItem::Shelves) | Route::ShelvesGrid => Some("shelves".into()),
+        Route::Module(NavItem::Settings) => Some("settings".into()),
+        Route::Module(item) => Some(format!("mod:{}", item.label())),
+        // Everything below reflects data the user is actively changing.
+        Route::LibrarySection(_)
+        | Route::ShelfDetail { .. }
+        | Route::TagBooks { .. }
+        | Route::BookPage { .. }
+        | Route::Reader { .. } => None,
+    }
 }
 
 impl AppModel {
@@ -315,12 +348,7 @@ impl AppModel {
         self.title_override = None;
         self.subtitle_override = None;
 
-        while let Some(child) = content_host.first_child() {
-            content_host.remove(&child);
-        }
-        // Drop old controller only after unparenting — avoids
-        // gtk_widget_is_ancestor criticals on disposed widgets.
-        self.page = None;
+        self.detach_current(content_host);
 
         if let Route::BookPage { book_id } = &route {
             if let Ok(Some(b)) = self.catalog.get_book(*book_id) {
@@ -352,9 +380,47 @@ impl AppModel {
         }
 
         self.route = route;
-        let page = Self::build_page(&self.catalog, &self.route, sender);
+        let page = self.take_or_build(sender);
         content_host.append(&page.widget());
         self.page = Some(page);
+    }
+
+    /// Unparent the current page, parking it in the cache when its route is
+    /// cacheable and dropping it otherwise.
+    fn detach_current(&mut self, content_host: &gtk::Box) {
+        while let Some(child) = content_host.first_child() {
+            content_host.remove(&child);
+        }
+
+        // Only drop the controller *after* unparenting — otherwise GTK probes
+        // a disposed widget and logs gtk_widget_is_ancestor criticals.
+        let Some(page) = self.page.take() else {
+            return;
+        };
+        if let Some(key) = cache_key(&self.route) {
+            if !self.cache.iter().any(|(k, _)| *k == key) {
+                self.cache.push((key, page));
+            }
+        }
+    }
+
+    /// Reuse a cached page for the current route, or build a fresh one.
+    fn take_or_build(&mut self, sender: &ComponentSender<Self>) -> PageSlot {
+        // Any catalog write invalidates every cached page: a stale Home would
+        // happily show a book you just deleted.
+        let token = self.catalog.change_token();
+        if token != self.cache_token {
+            self.cache.clear();
+            self.cache_token = token;
+        }
+
+        if let Some(key) = cache_key(&self.route) {
+            if let Some(idx) = self.cache.iter().position(|(k, _)| *k == key) {
+                let (_, page) = self.cache.remove(idx);
+                return page;
+            }
+        }
+        Self::build_page(&self.catalog, &self.route, sender)
     }
 }
 
@@ -501,6 +567,7 @@ impl Component for AppModel {
         let initial_route = Route::Module(NavItem::Home);
         let page = Self::build_page(&catalog, &initial_route, &sender);
 
+        let cache_token = catalog.change_token();
         let model = AppModel {
             catalog,
             route: initial_route,
@@ -510,6 +577,8 @@ impl Component for AppModel {
             floating: None,
             title_override: None,
             subtitle_override: None,
+            cache: Vec::new(),
+            cache_token,
         };
 
         let widgets = view_output!();
@@ -566,10 +635,7 @@ impl Component for AppModel {
                     self.title_override = None;
                     self.subtitle_override = None;
 
-                    while let Some(child) = widgets.content_host.first_child() {
-                        widgets.content_host.remove(&child);
-                    }
-                    self.page = None;
+                    self.detach_current(&widgets.content_host);
 
                     if let Route::BookPage { book_id } = &prev {
                         if let Ok(Some(b)) = self.catalog.get_book(*book_id) {
@@ -588,7 +654,7 @@ impl Component for AppModel {
                     }
 
                     self.route = prev;
-                    let page = Self::build_page(&self.catalog, &self.route, &sender);
+                    let page = self.take_or_build(&sender);
                     widgets.content_host.append(&page.widget());
                     self.page = Some(page);
                 }
