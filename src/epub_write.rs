@@ -61,8 +61,7 @@ pub fn write_metadata_to_epub(book: &Book, cover_bytes: Option<&[u8]>) -> Result
     // ── back up the untouched original, once ────────────────────────────
     let backup = backup_path(path);
     if !backup.exists() {
-        fs::copy(path, &backup)
-            .with_context(|| format!("back up to {}", backup.display()))?;
+        fs::copy(path, &backup).with_context(|| format!("back up to {}", backup.display()))?;
         report.backed_up = true;
     }
 
@@ -81,8 +80,7 @@ pub fn write_metadata_to_epub(book: &Book, cover_bytes: Option<&[u8]>) -> Result
             out.write_all(b"application/epub+zip")?;
         }
 
-        let deflated =
-            SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
         for i in 0..archive.len() {
             let entry = archive.by_index(i)?;
@@ -207,8 +205,8 @@ fn locate_cover_entry(opf_xml: &str, opf_path: &str) -> Option<String> {
 /// EPUBs carry manifests, spines and vendor extensions we have no business
 /// reformatting, and roxmltree is read-only.
 fn rewrite_opf(xml: &str, book: &Book) -> Result<String> {
-    let (start, end) = find_metadata_block(xml)
-        .ok_or_else(|| anyhow!("OPF has no <metadata> block"))?;
+    let (start, end) =
+        find_metadata_block(xml).ok_or_else(|| anyhow!("OPF has no <metadata> block"))?;
 
     let original = &xml[start..end];
     let prefix = detect_dc_prefix(original);
@@ -241,7 +239,12 @@ fn rewrite_opf(xml: &str, book: &Book) -> Result<String> {
     };
 
     push(&mut rebuilt, "title", &book.title);
-    for author in book.authors.split(',').map(str::trim).filter(|a| !a.is_empty()) {
+    for author in book
+        .authors
+        .split(',')
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+    {
         rebuilt.push_str(&format!(
             "    <{p}creator>{}</{p}creator>\n",
             escape_xml(author),
@@ -297,7 +300,14 @@ fn detect_dc_prefix(metadata: &str) -> String {
 
 /// Tags we replace wholesale, so old values are not left behind.
 fn is_managed_tag(line: &str, prefix: &str) -> bool {
-    const MANAGED: [&str; 6] = ["title", "creator", "description", "publisher", "date", "subject"];
+    const MANAGED: [&str; 6] = [
+        "title",
+        "creator",
+        "description",
+        "publisher",
+        "date",
+        "subject",
+    ];
     for tag in MANAGED {
         if line.starts_with(&format!("<{prefix}{tag}>"))
             || line.starts_with(&format!("<{prefix}{tag} "))

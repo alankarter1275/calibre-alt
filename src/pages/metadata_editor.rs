@@ -780,7 +780,9 @@ fn open_editor_inner(
                     }
                     Ok(_) => {}
                     Err(err) => {
-                        status.set_label(&format!("Saved in Kalam, but the file was not updated: {err}"));
+                        status.set_label(&format!(
+                            "Saved in Kalam, but the file was not updated: {err}"
+                        ));
                         on_saved();
                         return true;
                     }
