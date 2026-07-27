@@ -50,21 +50,34 @@ impl MetadataSource for GoogleBooks {
             return Ok(Vec::new());
         }
 
-        let mut req = agent()
-            .get(SEARCH_URL)
-            .query("q", query)
-            .query("maxResults", &limit.clamp(1, 40).to_string())
-            .query("printType", "books")
-            // Google refuses the request outright when it cannot geolocate the
-            // caller's IP ("Cannot determine user location for geographically
-            // restricted operation"), which happens on VPNs, some ISPs and most
-            // hosting providers. An explicit country sidesteps the lookup.
-            .query("country", &self.country);
-        if !self.api_key.trim().is_empty() {
-            req = req.query("key", self.api_key.trim());
+        // Built fresh per attempt: ureq::Request is consumed by call() and is
+        // not Clone, so a retry needs its own instance.
+        let build = || {
+            let mut req = agent()
+                .get(SEARCH_URL)
+                .query("q", query)
+                .query("maxResults", &limit.clamp(1, 40).to_string())
+                .query("printType", "books")
+                // Google refuses outright when it cannot geolocate the caller's
+                // IP ("Cannot determine user location for geographically
+                // restricted operation") — common on VPNs and some ISPs. An
+                // explicit country sidesteps the lookup.
+                .query("country", &self.country);
+            if !self.api_key.trim().is_empty() {
+                req = req.query("key", self.api_key.trim());
+            }
+            req
+        };
+
+        // One retry on 429: the anonymous quota is shared globally, so a refusal
+        // is often a momentary burst rather than a hard block.
+        let mut attempt = build().call();
+        if matches!(&attempt, Err(ureq::Error::Status(429, _))) {
+            std::thread::sleep(std::time::Duration::from_millis(700));
+            attempt = build().call();
         }
 
-        let body = match req.call() {
+        let body = match attempt {
             Ok(resp) => resp
                 .into_string()
                 .map_err(|e| FetchError::Network(e.to_string()))?,
@@ -82,10 +95,12 @@ impl MetadataSource for GoogleBooks {
                     .unwrap_or_default();
 
                 return Err(match code {
-                    429 => FetchError::Limited(
-                        "rate limited. Add a free API key in Settings for your own allowance."
+                    429 if self.api_key.trim().is_empty() => FetchError::Limited(
+                        "the shared quota is exhausted. Add a free API key in \
+                         Settings > Metadata sources for your own allowance."
                             .into(),
                     ),
+                    429 => FetchError::Limited("your API key hit its daily limit.".into()),
                     400 if !self.api_key.trim().is_empty() => {
                         FetchError::Limited("the API key in Settings was rejected.".into())
                     }

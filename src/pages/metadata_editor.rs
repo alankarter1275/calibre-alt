@@ -235,17 +235,23 @@ fn open_editor_inner(
     search_status.set_halign(gtk::Align::Start);
     search_status.set_wrap(true);
     search_status.set_xalign(0.0);
+    // Without a cap a long error message widens the whole panel.
+    search_status.set_width_chars(1);
+    search_status.set_max_width_chars(36);
 
     let results = gtk::Box::new(gtk::Orientation::Vertical, 6);
     let results_scroll = gtk::ScrolledWindow::builder()
         .vexpand(true)
         .hscrollbar_policy(gtk::PolicyType::Never)
+        .propagate_natural_width(false)
         .child(&results)
         .build();
 
     let panel = gtk::Box::new(gtk::Orientation::Vertical, 10);
     panel.add_css_class("kalam-search-panel");
     panel.set_size_request(PANEL_WIDTH, -1);
+    // The form owns the leftover space; the panel keeps exactly its width.
+    panel.set_hexpand(false);
 
     let panel_head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let panel_title = gtk::Label::new(Some("FIND METADATA"));
@@ -272,6 +278,8 @@ fn open_editor_inner(
     hint.add_css_class("kalam-muted");
     hint.set_wrap(true);
     hint.set_xalign(0.0);
+    hint.set_width_chars(1);
+    hint.set_max_width_chars(36);
     panel.append(&hint);
 
     // Revealer gives the slide-out; the window widens to match.
@@ -886,13 +894,22 @@ fn rebuild_results(
         title.set_halign(gtk::Align::Start);
         title.set_xalign(0.0);
         title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        // width_chars(1) makes the natural request tiny, so a long title
+        // ellipsizes instead of widening the panel.
+        title.set_width_chars(1);
+        title.set_max_width_chars(1);
+        title.set_tooltip_text(Some(&candidate.title));
         text.append(&title);
 
-        let meta = gtk::Label::new(Some(&candidate.summary()));
+        let summary = candidate.summary();
+        let meta = gtk::Label::new(Some(&summary));
         meta.add_css_class("kalam-card-meta");
         meta.set_halign(gtk::Align::Start);
         meta.set_xalign(0.0);
         meta.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        meta.set_width_chars(1);
+        meta.set_max_width_chars(1);
+        meta.set_tooltip_text(Some(&summary));
         text.append(&meta);
         row.append(&text);
 
