@@ -929,10 +929,7 @@ fn rebuild_results(
                 if !c.published.is_empty() {
                     published_entry.set_text(&c.published);
                 }
-                let origin = c
-                    .source
-                    .map(|s| s.label())
-                    .unwrap_or("the source");
+                let origin = c.source.map(|s| s.label()).unwrap_or("the source");
                 status.set_label(&format!("Filled from {origin} — review, then Save."));
 
                 // Google Books returns descriptions inline; Open Library needs

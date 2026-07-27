@@ -37,26 +37,25 @@ impl MetadataSource for GoogleBooks {
             req = req.query("key", self.api_key.trim());
         }
 
-        let body = match req.call() {
-            Ok(resp) => resp
-                .into_string()
-                .map_err(|e| FetchError::Network(e.to_string()))?,
-            // 429 is the common failure without a key; say so plainly rather
-            // than surfacing a bare status code.
-            Err(ureq::Error::Status(429, _)) => {
-                return Err(FetchError::Limited(
+        let body =
+            match req.call() {
+                Ok(resp) => resp
+                    .into_string()
+                    .map_err(|e| FetchError::Network(e.to_string()))?,
+                // 429 is the common failure without a key; say so plainly rather
+                // than surfacing a bare status code.
+                Err(ureq::Error::Status(429, _)) => return Err(FetchError::Limited(
                     "Google Books is rate limited right now. Add a free API key in Settings to \
                      get your own allowance."
                         .into(),
-                ))
-            }
-            Err(ureq::Error::Status(400, _)) if !self.api_key.trim().is_empty() => {
-                return Err(FetchError::Limited(
-                    "Google Books rejected the API key in Settings.".into(),
-                ))
-            }
-            Err(err) => return Err(FetchError::Network(err.to_string())),
-        };
+                )),
+                Err(ureq::Error::Status(400, _)) if !self.api_key.trim().is_empty() => {
+                    return Err(FetchError::Limited(
+                        "Google Books rejected the API key in Settings.".into(),
+                    ))
+                }
+                Err(err) => return Err(FetchError::Network(err.to_string())),
+            };
 
         let parsed: VolumesResponse =
             serde_json::from_str(&body).map_err(|e| FetchError::Parse(e.to_string()))?;
