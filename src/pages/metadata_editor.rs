@@ -22,6 +22,10 @@ use std::rc::Rc;
 /// accommodate it so the form itself never gets squeezed.
 const PANEL_WIDTH: i32 = 330;
 const BASE_WIDTH: i32 = 780;
+/// Total dialog width: form plus room for the search panel. Fixed for the
+/// lifetime of the dialog so revealing the panel cannot push it off-screen or
+/// leave it visually off-centre.
+const DIALOG_WIDTH: i32 = BASE_WIDTH + PANEL_WIDTH;
 
 /// What the worker thread sends back to the UI.
 enum FetchMsg {
@@ -53,10 +57,17 @@ fn open_editor_inner(
         return;
     };
 
+    // Clamp to the display so the dialog fits on small laptop screens.
+    let max_width = parent
+        .and_then(|p| p.surface())
+        .and_then(|s| gtk::gdk::Display::default().and_then(|d| d.monitor_at_surface(&s)))
+        .map(|m| m.geometry().width() - 80)
+        .unwrap_or(DIALOG_WIDTH);
+
     let window = gtk::Window::builder()
         .title("Edit metadata")
         .modal(true)
-        .default_width(BASE_WIDTH)
+        .default_width(DIALOG_WIDTH.min(max_width))
         // Deliberately short: on a 768px-tall laptop a 640px dialog plus window
         // chrome pushed the action bar off-screen. Content scrolls instead.
         .default_height(560)
@@ -268,6 +279,7 @@ fn open_editor_inner(
     revealer.set_transition_type(gtk::RevealerTransitionType::SlideLeft);
     revealer.set_transition_duration(180);
     revealer.set_reveal_child(false);
+    revealer.set_hexpand(false);
 
     // ── actions: pinned outside the scroller so Save is always reachable ─
     let content_scroll = gtk::ScrolledWindow::builder()
@@ -334,12 +346,15 @@ fn open_editor_inner(
     let pending_cover: Rc<RefCell<Option<Vec<u8>>>> = Rc::new(RefCell::new(None));
 
     // ── open/close the panel, reflowing the form as it goes ─────────────
-    // Opening moves the publication block under SERIES and the cover below the
-    // description, so the form becomes one column and the window can widen
-    // without anything being clipped.
+    // The dialog is a fixed width that already allows for the panel, so
+    // revealing it fills space that was always reserved: the window never
+    // resizes, never drifts off-centre, and nothing can be clipped.
+    //
+    // Opening still moves the publication block under Series and the cover
+    // below the description, so the form reads as one column while the panel
+    // has the right-hand side.
     let panel_open = Rc::new(std::cell::Cell::new(false));
     let set_panel: Rc<dyn Fn(bool)> = {
-        let window = window.clone();
         let revealer = revealer.clone();
         let search_entry = search_entry.clone();
         let top = top.clone();
@@ -374,26 +389,6 @@ fn open_editor_inner(
             }
 
             revealer.set_reveal_child(open);
-
-            // Resize *and* recentre, so the dialog does not run off-screen.
-            let height = window.height().max(1);
-            let target = if open {
-                BASE_WIDTH + PANEL_WIDTH
-            } else {
-                BASE_WIDTH
-            };
-            window.set_default_size(target, height);
-            if let Some(surface) = window.surface() {
-                // Clamp to the monitor: 1110px must not overflow a 1366px screen.
-                if let Some(monitor) =
-                    gtk::gdk::Display::default().and_then(|d| d.monitor_at_surface(&surface))
-                {
-                    let available = monitor.geometry().width();
-                    if target > available - 40 {
-                        window.set_default_size(available - 40, height);
-                    }
-                }
-            }
 
             if open {
                 search_entry.grab_focus();
