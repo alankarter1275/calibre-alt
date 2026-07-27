@@ -13,6 +13,8 @@ use zip::ZipArchive;
 
 #[derive(Debug)]
 pub struct ImportResult {
+    /// True when hand-edited metadata was re-applied from a previous import.
+    pub restored: bool,
     #[allow(dead_code)]
     pub book_id: i64,
     pub title: String,
@@ -57,6 +59,7 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
             book_id: existing,
             title,
             duplicate: true,
+            restored: false,
         });
     }
 
@@ -110,10 +113,26 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
     // undo an otherwise successful import.
     let _ = catalog.log_event(id, crate::db::EventKind::Imported, "");
 
+    // If this exact file was in the library before and had hand-edited
+    // metadata, put those edits back rather than silently reverting to
+    // whatever the EPUB's OPF says.
+    let restored = catalog.restore_overrides(id, &hash).unwrap_or(false);
+    let title = if restored {
+        catalog
+            .get_book(id)
+            .ok()
+            .flatten()
+            .map(|b| b.title)
+            .unwrap_or(title)
+    } else {
+        title
+    };
+
     Ok(ImportResult {
         book_id: id,
         title,
         duplicate: false,
+        restored,
     })
 }
 

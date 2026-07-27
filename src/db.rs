@@ -21,8 +21,9 @@ pub type Result<T> = std::result::Result<T, DbError>;
 
 /// Bumped whenever `migrate()` learns new tables/columns.
 /// v3 = P3 annotations & dictionary · v4 = P4 shelves, lists, history, sessions
-/// · v5 = ratings + reading goals · v6 = publisher/published/series index.
-pub const SCHEMA_VERSION: i64 = 6;
+/// · v5 = ratings + reading goals · v6 = publisher/published/series index
+/// · v7 = remembered metadata edits, keyed by file hash.
+pub const SCHEMA_VERSION: i64 = 7;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -492,6 +493,25 @@ impl Catalog {
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            -- v7: metadata you edited by hand, remembered against the file's
+            -- content hash so it survives removing and re-importing the book.
+            -- Deliberately NOT cascaded from books: the whole point is that it
+            -- outlives the catalog row.
+            CREATE TABLE IF NOT EXISTS metadata_overrides (
+                file_hash    TEXT PRIMARY KEY,
+                title        TEXT,
+                authors      TEXT,
+                series       TEXT,
+                series_index REAL,
+                publisher    TEXT,
+                published    TEXT,
+                description  TEXT,
+                tags         TEXT,
+                rating       INTEGER,
+                cover_name   TEXT,
+                updated_at   TEXT NOT NULL
+            );
             "#,
         )?;
 
@@ -687,6 +707,9 @@ impl Catalog {
             Some(b) => b,
             None => return Ok(()),
         };
+        // Capture any hand-edited metadata first: the row is about to go, and
+        // re-importing the same file should not lose your work.
+        let _ = self.remember_overrides(id);
         {
             let conn = self.conn.lock().expect("db lock");
             conn.execute("DELETE FROM books WHERE id = ?1", params![id])?;
@@ -1216,6 +1239,136 @@ impl Catalog {
             "DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM book_tags)",
             [],
         )?;
+        drop(conn);
+
+        // Remember the result so removing and re-importing this file does not
+        // silently discard the edit.
+        self.remember_overrides(book_id)?;
+        Ok(())
+    }
+
+    /// Remember the current metadata against the file's hash, so it can be
+    /// restored if the book is removed and imported again.
+    fn remember_overrides(&self, book_id: i64) -> Result<()> {
+        let Some(book) = self.get_book(book_id)? else {
+            return Ok(());
+        };
+        if book.file_hash.trim().is_empty() {
+            return Ok(());
+        }
+
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT INTO metadata_overrides
+                (file_hash, title, authors, series, series_index, publisher,
+                 published, description, tags, rating, cover_name, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+             ON CONFLICT(file_hash) DO UPDATE SET
+                title = excluded.title,
+                authors = excluded.authors,
+                series = excluded.series,
+                series_index = excluded.series_index,
+                publisher = excluded.publisher,
+                published = excluded.published,
+                description = excluded.description,
+                tags = excluded.tags,
+                rating = excluded.rating,
+                cover_name = excluded.cover_name,
+                updated_at = excluded.updated_at",
+            params![
+                book.file_hash,
+                book.title,
+                book.authors,
+                book.series,
+                book.series_index as f64,
+                book.publisher,
+                book.published,
+                book.description,
+                book.tags.join(", "),
+                book.rating as i64,
+                book.cover_name,
+                chrono_like_now(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Re-apply remembered edits to a freshly imported book. Returns true when
+    /// something was restored.
+    pub fn restore_overrides(&self, book_id: i64, file_hash: &str) -> Result<bool> {
+        #[allow(clippy::type_complexity)]
+        let row: Option<(
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<f64>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+        )> = {
+            let conn = self.conn.lock().expect("db lock");
+            conn.query_row(
+                "SELECT title, authors, series, series_index, publisher,
+                        published, description, tags, rating
+                 FROM metadata_overrides WHERE file_hash = ?1",
+                params![file_hash],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                        r.get(7)?,
+                        r.get(8)?,
+                    ))
+                },
+            )
+            .optional()?
+        };
+
+        let Some((title, authors, series, series_index, publisher, published, description, tags, rating)) =
+            row
+        else {
+            return Ok(false);
+        };
+
+        let tags: Vec<String> = tags
+            .unwrap_or_default()
+            .split(',')
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect();
+
+        self.update_book_metadata(
+            book_id,
+            &title.unwrap_or_default(),
+            &authors.unwrap_or_default(),
+            series.as_deref(),
+            series_index.unwrap_or(0.0) as f32,
+            &publisher.unwrap_or_default(),
+            &published.unwrap_or_default(),
+            &description.unwrap_or_default(),
+            &tags,
+        )?;
+
+        if let Some(rating) = rating {
+            self.set_book_rating(book_id, rating.clamp(0, 10) as u8)?;
+        }
+        Ok(true)
+    }
+
+    /// Forget remembered edits for a file — used by "import fresh".
+    pub fn forget_overrides(&self, file_hash: &str) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "DELETE FROM metadata_overrides WHERE file_hash = ?1",
+            params![file_hash],
+        )?;
         Ok(())
     }
 
@@ -1235,11 +1388,14 @@ impl Catalog {
 
     /// Ratings are stored as 0..=10 half-stars (7 == 3.5 stars); 0 == unrated.
     pub fn set_book_rating(&self, book_id: i64, half_stars: u8) -> Result<()> {
-        let conn = self.conn.lock().expect("db lock");
-        conn.execute(
-            "UPDATE books SET rating = ?2 WHERE id = ?1",
-            params![book_id, half_stars.min(10) as i64],
-        )?;
+        {
+            let conn = self.conn.lock().expect("db lock");
+            conn.execute(
+                "UPDATE books SET rating = ?2 WHERE id = ?1",
+                params![book_id, half_stars.min(10) as i64],
+            )?;
+        }
+        self.remember_overrides(book_id)?;
         Ok(())
     }
 
@@ -2712,6 +2868,83 @@ mod tests {
         assert_eq!(stats.reading, 1);
         assert_eq!(stats.unread, 1);
         assert_eq!(stats.minutes_by_day.len(), 14);
+    }
+
+    #[test]
+    fn edits_survive_delete_and_reimport() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "Nyxia", "S. Reintgen", &["scifi"]);
+        let hash = cat.get_book(id).unwrap().unwrap().file_hash;
+
+        cat.update_book_metadata(
+            id,
+            "Nyxia Uprising",
+            "Scott Reintgen",
+            Some("The Nyxia Triad"),
+            3.0,
+            "Random House",
+            "2019",
+            "Edited by hand.",
+            &["scifi".into(), "ya".into()],
+        )
+        .unwrap();
+        cat.set_book_rating(id, 9).unwrap();
+
+        // Removing the book must not discard the edits.
+        cat.delete_book(id).unwrap();
+        assert!(cat.get_book(id).unwrap().is_none());
+
+        // Re-import: same file, so the same hash.
+        let new_id = cat
+            .insert_book(
+                "uuid-again",
+                "Nyxia",
+                "S. Reintgen",
+                None,
+                "",
+                BookFormat::Epub,
+                "book.epub",
+                &hash,
+                None,
+                &[],
+            )
+            .unwrap();
+        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+
+        let restored = cat.get_book(new_id).unwrap().unwrap();
+        assert_eq!(restored.title, "Nyxia Uprising");
+        assert_eq!(restored.authors, "Scott Reintgen");
+        assert_eq!(restored.series.as_deref(), Some("The Nyxia Triad"));
+        assert_eq!(restored.series_index, 3.0);
+        assert_eq!(restored.publisher, "Random House");
+        assert_eq!(restored.rating, 9);
+        assert_eq!(restored.tags.len(), 2);
+    }
+
+    #[test]
+    fn a_different_file_gets_no_overrides() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "A", "x", &[]);
+        cat.update_book_metadata(id, "Edited", "x", None, 0.0, "", "", "", &[])
+            .unwrap();
+
+        // A book whose bytes differ has a different hash and must be untouched.
+        let other = seed(&cat, "B", "y", &[]);
+        let other_hash = cat.get_book(other).unwrap().unwrap().file_hash;
+        assert!(!cat.restore_overrides(other, &other_hash).unwrap());
+        assert_eq!(cat.get_book(other).unwrap().unwrap().title, "B");
+    }
+
+    #[test]
+    fn forgetting_overrides_gives_a_clean_import() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "A", "x", &[]);
+        let hash = cat.get_book(id).unwrap().unwrap().file_hash;
+        cat.update_book_metadata(id, "Edited", "x", None, 0.0, "", "", "", &[])
+            .unwrap();
+
+        cat.forget_overrides(&hash).unwrap();
+        assert!(!cat.restore_overrides(id, &hash).unwrap());
     }
 
     #[test]

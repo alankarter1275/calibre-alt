@@ -202,6 +202,7 @@ impl Component for AllBooksModel {
                 let mut imported = 0usize;
                 let mut dupes = 0usize;
                 let mut errors = 0usize;
+                let mut restored = 0usize;
                 let mut last_title = String::new();
                 for path in paths {
                     match epub::import_epub(&self.catalog, &path) {
@@ -211,6 +212,9 @@ impl Component for AllBooksModel {
                         }
                         Ok(r) => {
                             imported += 1;
+                            if r.restored {
+                                restored += 1;
+                            }
                             last_title = r.title;
                         }
                         Err(err) => {
@@ -220,8 +224,16 @@ impl Component for AllBooksModel {
                     }
                 }
                 self.reload();
+                // Say when edits came back, so a restored title does not look
+                // like the import ignored the file.
+                let restored_note = if restored > 0 {
+                    format!(" {restored} kept your earlier metadata edits.")
+                } else {
+                    String::new()
+                };
                 self.status = format!(
-                    "Import done — {imported} added, {dupes} already in library, {errors} failed.{}",
+                    "Import done — {imported} added, {dupes} already in library, \
+                     {errors} failed.{restored_note}{}",
                     if last_title.is_empty() {
                         String::new()
                     } else {
