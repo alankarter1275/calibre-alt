@@ -771,6 +771,22 @@ fn open_editor_inner(
                 }
             }
 
+            // Push the result into the EPUB so other readers see it too.
+            // Failing here is not fatal: the edit is already in the catalog.
+            if crate::epub_write::write_enabled(&catalog) {
+                match crate::epub_write::sync_book_to_file(&catalog, book_id) {
+                    Ok(report) if report.wrote_metadata || report.wrote_cover => {
+                        status.set_label("Saved, and written into the book file.");
+                    }
+                    Ok(_) => {}
+                    Err(err) => {
+                        status.set_label(&format!("Saved in Kalam, but the file was not updated: {err}"));
+                        on_saved();
+                        return true;
+                    }
+                }
+            }
+
             on_saved();
             true
         })

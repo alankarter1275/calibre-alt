@@ -124,6 +124,19 @@ impl Component for SettingsPageModel {
             },
 
             gtk::Label {
+                set_label: "Book files",
+                add_css_class: "kalam-page-title",
+                set_halign: gtk::Align::Start,
+                set_margin_top: 24,
+            },
+
+            #[name = "file_write_row"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 6,
+            },
+
+            gtk::Label {
                 set_label: "Metadata sources",
                 add_css_class: "kalam-page-title",
                 set_halign: gtk::Align::Start,
@@ -171,6 +184,7 @@ impl Component for SettingsPageModel {
         widgets.dict_status.set_label(&model.status);
         rebuild_dicts(&widgets.dict_list, &model.dicts, &sender);
         build_sources(&widgets.source_list, &model.catalog);
+        build_file_write(&widgets.file_write_row, &model.catalog);
         ComponentParts { model, widgets }
     }
 
@@ -287,6 +301,40 @@ fn rebuild_dicts(
 
         list.append(&row);
     }
+}
+
+/// Toggle for writing metadata back into the EPUB itself.
+fn build_file_write(host: &gtk::Box, catalog: &Rc<Catalog>) {
+    use crate::epub_write::{set_write_enabled, write_enabled};
+
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+
+    let row = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    row.add_css_class("kalam-list-row");
+
+    let check = gtk::CheckButton::with_label("Also write metadata into the EPUB file");
+    check.set_active(write_enabled(catalog));
+    {
+        let catalog = catalog.clone();
+        check.connect_toggled(move |c| set_write_enabled(&catalog, c.is_active()));
+    }
+    row.append(&check);
+
+    let note = gtk::Label::new(Some(
+        "On: saving in Edit metadata also updates the book file, so Calibre and other \
+         readers see your changes. The untouched original is kept once as \
+         <name>.epub.orig, and the new file is only swapped in after it is verified.\n\
+         Off: edits stay inside Kalam and your files are never modified.",
+    ));
+    note.add_css_class("kalam-card-meta");
+    note.set_halign(gtk::Align::Start);
+    note.set_xalign(0.0);
+    note.set_wrap(true);
+    row.append(&note);
+
+    host.append(&row);
 }
 
 /// Explains why a country code is needed at all.

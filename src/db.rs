@@ -1462,6 +1462,32 @@ impl Catalog {
         Ok(())
     }
 
+    /// Re-point a book (and its remembered edits) at a new content hash.
+    ///
+    /// Writing metadata into the EPUB changes the file's bytes, so the stored
+    /// hash goes stale. Left alone that would break duplicate detection on
+    /// re-import and orphan the override row, so both move together.
+    pub fn rehash_book(&self, book_id: i64, old_hash: &str, new_hash: &str) -> Result<()> {
+        if old_hash == new_hash {
+            return Ok(());
+        }
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE books SET file_hash = ?2 WHERE id = ?1",
+            params![book_id, new_hash],
+        )?;
+        // Drop any override already filed under the new hash, then move ours.
+        conn.execute(
+            "DELETE FROM metadata_overrides WHERE file_hash = ?1",
+            params![new_hash],
+        )?;
+        conn.execute(
+            "UPDATE metadata_overrides SET file_hash = ?2 WHERE file_hash = ?1",
+            params![old_hash, new_hash],
+        )?;
+        Ok(())
+    }
+
     /// Point the book at a new cover file inside its own directory.
     pub fn set_cover_name(&self, book_id: i64, cover_name: Option<&str>) -> Result<()> {
         {
