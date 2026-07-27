@@ -256,7 +256,7 @@ fn weekday_initials() -> [&'static str; 7] {
     const NAMES: [&str; 7] = ["M", "T", "W", "T", "F", "S", "S"];
     // 1970-01-01 was a Thursday, so day-of-week = (days + 3) mod 7 with Monday 0.
     let today = crate::db::days_since_epoch();
-    let mut out = ["" ; 7];
+    let mut out = [""; 7];
     for (i, slot) in out.iter_mut().enumerate() {
         let day = today - (6 - i as i64);
         *slot = NAMES[(((day + 3) % 7 + 7) % 7) as usize];

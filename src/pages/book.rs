@@ -1,8 +1,8 @@
 use crate::db::{Catalog, ShelfKind};
-use crate::widgets::book_row::invalidate_cover_cache;
-use crate::widgets::charts::star_picker;
 use crate::models::Book;
 use crate::widgets::book_row::cover_widget;
+use crate::widgets::book_row::invalidate_cover_cache;
+use crate::widgets::charts::star_picker;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::rc::Rc;
@@ -376,10 +376,13 @@ impl BookPageModel {
             host.append(&star_picker(book.rating, move |v| {
                 s.input(BookPageMsg::SetRating(v))
             }));
-            let hint = gtk::Label::new(Some(match book.rating_stars() {
-                Some(v) => return_rating_text(v),
-                None => "Not rated yet".into(),
-            }.as_str()));
+            let hint = gtk::Label::new(Some(
+                match book.rating_stars() {
+                    Some(v) => return_rating_text(v),
+                    None => "Not rated yet".into(),
+                }
+                .as_str(),
+            ));
             hint.add_css_class("kalam-muted");
             hint.set_valign(gtk::Align::Center);
             host.append(&hint);
