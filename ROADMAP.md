@@ -88,7 +88,7 @@ P1  Library core ────── SQLite, import EPUB, cover cards, search  �
 P2  Text reader ─────── WebKit EPUB, themes, TOC, progress, UI    ✅ done
 P3  Annotations ─────── highlights, quotes, offline dictionary    ✅ done
 P4  Library depth ───── shelves engine, lists, tags, analytics    ✅ done
-P5  Metadata ────────── edit metadata, cover pick, Open Library
+P5  Metadata ────────── edit metadata, cover pick, Open Library      ✅ done
 P6  Downloads hub ───── unified queue + folder watch
 P7  Fiction sources ─── AO3 first, then other fanfic adapters
 P8  Comics local ────── CBZ/CBR + Moku-style comics reader
@@ -298,16 +298,35 @@ Online sources.
 
 ---
 
-## P5 — Metadata
+## P5 — Metadata  ✅ done
 
 **Goal:** Fix messy imports without leaving Kalam.
 
-### Scope
+### Shipped
 
-- Edit metadata dialog  
-- Replace cover  
-- Fetch from **Open Library** (user-triggered, confirm before overwrite)  
-- Keep uuid paths by default  
+- [x] Edit metadata dialog: title, authors, series, tags, description
+- [x] Replace cover from disk (PNG/JPEG/WebP/GIF, sniffed by magic bytes)
+- [x] **Open Library** lookup: search, pick a candidate, pull description
+      and cover
+- [x] User-triggered only; results are staged into the form for review and
+      nothing is written until you press Save
+- [x] Sparse matches only fill fields they actually have, so a thin result
+      cannot blank out good local metadata
+- [x] Network on worker threads via async-channel — the dialog never blocks
+- [x] uuid paths unchanged; covers get a fresh file name per replacement
+- [x] Unit tests over captured Open Library payloads
+
+### Notes
+
+- `ureq` with rustls, so there is no OpenSSL system dependency to install
+- Covers are written as `cover-<n>.<ext>` rather than overwritten: GTK caches
+  textures by path, so reuse would show the old image until restart
+- Open Library's `description` is sometimes a string and sometimes
+  `{ "value": … }`; both are handled
+
+### Out
+
+Bulk metadata edit and cover refresh across many books — those live in P11.
 
 ---
 
@@ -460,8 +479,11 @@ Deps include `webkitgtk-6.0` for P2+.
 
 ## Immediate next steps
 
-1. **P5 — Metadata** (edit dialog, cover replace, Open Library fetch)
-2. Keep refining text-reader polish only if you file specific UX bugs (note editing UI, CFI, dict HTML rendering)
+1. **Performance pass** — agreed for after P5: page trees rebuild on every
+   navigation, the reader extracts whole EPUBs on open, and all DB work runs
+   on the UI thread. Cover caching and stats indexes landed early.
+2. **UI overhaul** once the Figma designs are final (see `docs/design/`)
+3. Keep refining text-reader polish only if you file specific UX bugs (note editing UI, CFI, dict HTML rendering)
 3. **P8** when you want comics for real (UI target already specified above)  
 
 ---
@@ -484,6 +506,8 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-26 | Text reader look: sepia default, no blue body/links, no underlines |
 | 2026-07-26 | Comics reader look: Moku-like black stage, top meta + bottom scrub (P8) |
 | 2026-07-26 | P0–P2 treated complete; **next = P3** |
+| 2026-07-27 | P5 shipped: metadata editor, cover replacement, Open Library lookup (staged for review, never auto-applied) |
+| 2026-07-27 | Ratings (half-star), yearly reading goals and quote notes added from the reference designs; social elements deliberately skipped |
 | 2026-07-27 | P4 shipped: shelves engine (manual + flat-rule smart shelves), reading list, event-log history, reading-time sessions, tags browse, analytics with streaks |
 | 2026-07-27 | Smart shelves locked as flat rules + All/Any; nested groups deferred and kept JSON-compatible |
 | 2026-07-26 | P3 annotations & dictionary shipped: highlights (5 colors), quotes, offline dict packs (StarDict/SQLite/TSV), Saved quotes/words real data, export Markdown, annotations list, dictionary popup, Settings import |

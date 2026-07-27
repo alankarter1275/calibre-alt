@@ -3,7 +3,7 @@
 **Kalam** is a lightweight, personal, all-in-one ebook manager and reader for Linux.
 Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest hardware.
 
-> Phase 4 — library depth: shelves engine, reading list, history, tags, analytics.
+> Phase 5 — metadata editing, cover replacement and Open Library lookup.
 
 ## Working agreement
 
@@ -11,7 +11,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **Your Arch machine** is only needed at **phase boundaries** (smoke-test + design feedback).
 - Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md)
 
-## What works now (P4)
+## What works now (P5)
 
 - Slim sidebar shell + cover-card library grid
 - **SQLite catalog** at `~/.local/share/kalam/catalog.db`
@@ -31,7 +31,11 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **Tags**: usage-weighted tag cloud → per-tag book grid
 - **Analytics**: counts, time read (7d/30d/all), streaks, 14-day bar chart,
   books-added-per-month, most read, top tags & authors
-- **Book page**: add to reading list, Mark finished / unread, shelf checklist
+- **Book page**: add to reading list, Mark finished / unread, shelf checklist,
+  half-star rating, **Edit metadata**
+- **Metadata editor**: title/authors/series/tags/description, replace cover
+  from disk, and **Open Library** search that stages results for review
+- **Ratings & goals**: half-star ratings, yearly reading goal, daily streak
 - Float detail panel (Suwayomi-style); Read opens the viewer
 - AO3 / comics / downloads still placeholders
 
@@ -43,8 +47,8 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 | P1 | SQLite library, EPUB import, covers ✅ |
 | P2 | EPUB reader ✅ |
 | P3 | Highlights, quotes, offline dictionary ✅ |
-| **P4** | **Shelves engine, lists, history, tags, analytics** ← current ✅ |
-| P5 | Metadata edit + Open Library fetch |
+| P4 | Shelves engine, lists, history, tags, analytics ✅ |
+| **P5** | **Metadata edit, cover replace, Open Library fetch** ← current ✅ |
 | P6–P11 | Downloads, AO3/FF, comics, PDF, tools — see ROADMAP |
 
 ## Requirements (Arch Linux)
@@ -90,7 +94,8 @@ src/
   db.rs            SQLite catalog + annotations + dict + P4 shelves/lists/stats
   dict.rs          StarDict / SQLite / TSV import & search
   shelf_rules.rs   smart-shelf rule documents → SQL
-  epub.rs          EPUB OPF metadata + cover extract
+  epub.rs          EPUB OPF metadata + cover extract/replace
+  openlibrary.rs   Open Library search / description / cover
   epub_book.rs     spine, TOC, chapter HTML + reading CSS/JS (highlights, chip, dict)
   models.rs        routes + books/shelves
   style.rs         global CSS (including P3 badges/rows)
