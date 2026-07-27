@@ -140,12 +140,8 @@ impl AppModel {
                     sender.input_sender(),
                     |out| match out {
                         LibraryOut::Section(sec) => AppMsg::Push(Route::LibrarySection(sec)),
-                        LibraryOut::Book { book_id } => {
-                            AppMsg::Push(Route::BookPage { book_id })
-                        }
-                        LibraryOut::BookDialog { book_id } => {
-                            AppMsg::OpenBookDialog { book_id }
-                        }
+                        LibraryOut::Book { book_id } => AppMsg::Push(Route::BookPage { book_id }),
+                        LibraryOut::BookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
                         LibraryOut::Tag { tag } => AppMsg::Push(Route::TagBooks { tag }),
                     },
                 );

@@ -541,13 +541,7 @@ fn stat_footer(stats: &LibraryStats, sender: &ComponentSender<LibraryPageModel>)
 }
 
 /// Compact headline figure with an inline trend line.
-fn mini_stat(
-    label: &str,
-    value: &str,
-    unit: &str,
-    series: &[i64],
-    spark_class: &str,
-) -> gtk::Box {
+fn mini_stat(label: &str, value: &str, unit: &str, series: &[i64], spark_class: &str) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Vertical, 4);
     card.add_css_class("kalam-hero-card");
 

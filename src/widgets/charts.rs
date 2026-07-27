@@ -153,4 +153,3 @@ pub fn line_chart(series: &[i64], labels: &[String]) -> gtk::Box {
     wrap.append(&axis);
     wrap
 }
-
