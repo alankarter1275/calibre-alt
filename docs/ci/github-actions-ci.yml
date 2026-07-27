@@ -71,7 +71,7 @@ jobs:
         run: |
           mkdir -p ci-logs
           # Keep only the diagnostic lines; the full log is mostly progress spam.
-          grep -E "^(error|warning)|^\s+-->" /tmp/clippy.txt \
+          grep -E "error(\[|:)|warning:" /tmp/clippy.txt \
             | head -200 > ci-logs/clippy-latest.txt || true
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/clippy-latest.txt
           git config user.name "github-actions"

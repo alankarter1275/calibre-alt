@@ -717,24 +717,19 @@ fn open_editor_inner(
         })
     };
 
-    // Title and author icons seed the query from their own field.
-    for (btn, entry) in [
-        (&title_search, &title_entry),
-        (&author_search, &authors_entry),
-    ] {
+    // Title and author icons both open the panel seeded with title + author;
+    // Open Library matches far better on the pair than on either alone.
+    for btn in [&title_search, &author_search] {
         let set_panel = set_panel.clone();
         let search_entry = search_entry.clone();
-        let entry = entry.clone();
         let title_entry = title_entry.clone();
         let authors_entry = authors_entry.clone();
-        let is_author = std::ptr::eq(btn, &author_search);
         btn.connect_clicked(move |_| {
-            // Author search still needs the title for a useful result set.
-            let query = if is_author {
-                format!("{} {}", title_entry.text().trim(), entry.text().trim())
-            } else {
-                format!("{} {}", entry.text().trim(), authors_entry.text().trim())
-            };
+            let query = format!(
+                "{} {}",
+                title_entry.text().trim(),
+                authors_entry.text().trim()
+            );
             search_entry.set_text(query.trim());
             set_panel(true);
         });
