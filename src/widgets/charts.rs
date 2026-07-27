@@ -190,32 +190,63 @@ pub fn star_picker(current: u8, on_pick: impl Fn(u8) + 'static) -> gtk::Box {
     row.add_css_class("kalam-star-picker");
     let on_pick = std::rc::Rc::new(on_pick);
 
+    // Each star is one button showing a real glyph, so the control is legible
+    // without hovering. Left half of the button = half star, right half = full.
     for star in 1..=5u8 {
-        // Two half-width buttons per star give half-star granularity without a
-        // fiddly custom drawing area.
-        for half in 0..2u8 {
-            let value = star * 2 - 1 + half;
-            let filled = current >= value;
-            let btn = gtk::Button::new();
-            btn.add_css_class("kalam-star-half");
-            btn.add_css_class(if half == 0 {
-                "kalam-star-left"
-            } else {
-                "kalam-star-right"
-            });
-            if filled {
-                btn.add_css_class("kalam-star-filled");
-            }
-            btn.set_tooltip_text(Some(&format!("{:.1} stars", value as f32 / 2.0)));
+        let full_value = star * 2;
+        let half_value = full_value - 1;
 
-            let on_pick = on_pick.clone();
-            btn.connect_clicked(move |_| {
-                // Clicking the active value clears it, so a rating is undoable.
-                on_pick(if current == value { 0 } else { value });
-            });
-            row.append(&btn);
+        let glyph = if current >= full_value {
+            "★"
+        } else if current == half_value {
+            "⯨"
+        } else {
+            "☆"
+        };
+
+        let label = gtk::Label::new(Some(glyph));
+        label.add_css_class("kalam-star-glyph");
+        if current >= half_value {
+            label.add_css_class("kalam-star-on");
         }
+
+        let btn = gtk::Button::new();
+        btn.set_child(Some(&label));
+        btn.add_css_class("kalam-star-btn");
+        btn.set_tooltip_text(Some(
+            "Click the left half for a half star, the right half for a whole one",
+        ));
+
+        // A click gesture gives us the x position, hence which half was hit.
+        let click = gtk::GestureClick::new();
+        click.set_button(1);
+        let on_pick_inner = on_pick.clone();
+        let btn_for_width = btn.clone();
+        click.connect_released(move |_, _, x, _| {
+            let width = btn_for_width.width().max(1) as f64;
+            let value = if x < width / 2.0 {
+                half_value
+            } else {
+                full_value
+            };
+            // Clicking the active value clears it, so a rating is undoable.
+            on_pick_inner(if current == value { 0 } else { value });
+        });
+        btn.add_controller(click);
+        row.append(&btn);
     }
+
+    // Explicit clear, since discovering "click the same star again" is unlikely.
+    let clear = gtk::Button::with_label("✕");
+    clear.add_css_class("kalam-star-clear");
+    clear.set_tooltip_text(Some("Clear rating"));
+    clear.set_visible(current > 0);
+    {
+        let on_pick = on_pick.clone();
+        clear.connect_clicked(move |_| on_pick(0));
+    }
+    row.append(&clear);
+
     row
 }
 

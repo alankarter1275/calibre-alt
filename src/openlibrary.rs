@@ -42,7 +42,6 @@ pub struct Candidate {
     pub title: String,
     pub authors: String,
     pub series: Option<String>,
-    pub description: String,
     pub tags: Vec<String>,
     pub first_year: Option<i64>,
     pub publisher: String,
@@ -72,11 +71,6 @@ impl Candidate {
             parts.push("has cover".into());
         }
         parts.join(" · ")
-    }
-
-    pub fn cover_url(&self, size: char) -> Option<String> {
-        self.cover_id
-            .map(|id| format!("{COVER_URL}/{id}-{size}.jpg"))
     }
 }
 
@@ -174,7 +168,6 @@ fn doc_to_candidate(doc: SearchDoc) -> Candidate {
         title: doc.title.unwrap_or_default(),
         authors: doc.author_name.unwrap_or_default().join(", "),
         series: doc.series.and_then(|s| s.into_iter().next()),
-        description: String::new(),
         // Open Library subjects are long-tailed; keep a usable handful.
         tags: doc
             .subject

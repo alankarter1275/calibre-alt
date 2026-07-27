@@ -27,6 +27,8 @@ const BASE_WIDTH: i32 = 780;
 enum FetchMsg {
     Results(Vec<Candidate>),
     Failed(String),
+    /// Thumbnails to choose between: (cover id, JPEG bytes).
+    CoverChoices(Vec<(i64, Vec<u8>)>),
     CoverReady(Vec<u8>),
     CoverFailed(String),
 }
@@ -70,15 +72,27 @@ fn open_editor_inner(
     let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
     root.set_margin_all(18);
 
-    // ── two columns: fields left, cover + publication right ─────────────
+    // ── two reflowable columns ──────────────────────────────────────────
+    // When the search panel opens, `side` is emptied into `fields` so the form
+    // becomes a single column and nothing is squeezed off-screen.
     let top = gtk::Box::new(gtk::Orientation::Horizontal, 20);
 
-    // LEFT — the fields you edit most.
     let fields = gtk::Box::new(gtk::Orientation::Vertical, 8);
     fields.set_hexpand(true);
 
-    let title_entry = labelled_entry(&fields, "TITLE", &book.title);
-    let authors_entry = labelled_entry(&fields, "AUTHORS", &book.authors);
+    // Search icons live on the field they act on, Calibre-style.
+    let (title_entry, title_search) = labelled_entry_with_search(
+        &fields,
+        "TITLE",
+        &book.title,
+        "Search Open Library by title",
+    );
+    let (authors_entry, author_search) = labelled_entry_with_search(
+        &fields,
+        "AUTHORS",
+        &book.authors,
+        "Search Open Library by author",
+    );
 
     // Series and its position sit on one row, as in Calibre.
     fields.append(&section_label("SERIES"));
@@ -102,36 +116,17 @@ fn open_editor_inner(
         &book.tags.join(", "),
     );
 
-    fields.append(&section_label("DESCRIPTION"));
-    let desc_view = gtk::TextView::new();
-    desc_view.set_wrap_mode(gtk::WrapMode::WordChar);
-    desc_view.add_css_class("kalam-desc-view");
-    desc_view
-        .buffer()
-        .set_text(&crate::epub::strip_html(&book.description));
-    let desc_scroll = gtk::ScrolledWindow::builder()
-        .min_content_height(150)
-        .max_content_height(150)
-        .hscrollbar_policy(gtk::PolicyType::Never)
-        .child(&desc_view)
-        .build();
-    desc_scroll.add_css_class("kalam-desc-scroll");
-    fields.append(&desc_scroll);
-    top.append(&fields);
+    // ── movable block: rating, publisher, published ─────────────────────
+    // Lives in `side` normally, moves under SERIES when the panel opens.
+    let pub_block = gtk::Box::new(gtk::Orientation::Vertical, 8);
 
-    // RIGHT — rating, publication details, cover.
-    let side = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    side.set_valign(gtk::Align::Start);
-    side.set_size_request(230, -1);
-    side.add_css_class("kalam-metadata-side");
-
-    side.append(&section_label("RATING"));
+    pub_block.append(&section_label("RATING"));
     let rating_host = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     let rating_value = Rc::new(std::cell::Cell::new(book.rating));
     {
         let rating_host_inner = rating_host.clone();
         let rating_value = rating_value.clone();
-        // Rebuilt on each pick so the filled state follows the click.
+        // Rebuilt on each pick so the filled glyphs follow the click.
         let rebuild: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
         let rebuild_ref = rebuild.clone();
         let f: Rc<dyn Fn()> = Rc::new(move || {
@@ -150,27 +145,59 @@ fn open_editor_inner(
         *rebuild.borrow_mut() = Some(f.clone());
         f();
     }
-    side.append(&rating_host);
+    pub_block.append(&rating_host);
 
-    let publisher_entry = labelled_entry(&side, "PUBLISHER", &book.publisher);
-    let published_entry = labelled_entry(&side, "PUBLISHED", &book.published);
+    let publisher_entry = labelled_entry(&pub_block, "PUBLISHER", &book.publisher);
+    let published_entry = labelled_entry(&pub_block, "PUBLISHED", &book.published);
 
-    side.append(&section_label("COVER"));
+    // ── movable block: description ──────────────────────────────────────
+    let desc_block = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    desc_block.append(&section_label("DESCRIPTION"));
+    let desc_view = gtk::TextView::new();
+    desc_view.set_wrap_mode(gtk::WrapMode::WordChar);
+    desc_view.add_css_class("kalam-desc-view");
+    desc_view
+        .buffer()
+        .set_text(&crate::epub::strip_html(&book.description));
+    let desc_scroll = gtk::ScrolledWindow::builder()
+        .min_content_height(150)
+        .max_content_height(150)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .child(&desc_view)
+        .build();
+    desc_scroll.add_css_class("kalam-desc-scroll");
+    desc_block.append(&desc_scroll);
+
+    // ── movable block: cover ────────────────────────────────────────────
+    let cover_block = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    let cover_head = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    let cover_label = section_label("COVER");
+    cover_label.set_hexpand(true);
+    cover_head.append(&cover_label);
+    let cover_search = icon_button("\u{f002}", "Search Open Library for a cover");
+    cover_head.append(&cover_search);
+    cover_block.append(&cover_head);
+
     let cover_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
     cover_host.append(&cover_widget(book.cover_path.as_deref(), 150, 240));
     cover_host.set_halign(gtk::Align::Start);
-    side.append(&cover_host);
+    cover_block.append(&cover_host);
 
-    let cover_btns = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     let pick_cover = gtk::Button::with_label("From file…");
     pick_cover.add_css_class("kalam-secondary-btn");
-    cover_btns.append(&pick_cover);
-    let find_cover = gtk::Button::with_label("🔍 Find");
-    find_cover.add_css_class("kalam-secondary-btn");
-    find_cover.set_tooltip_text(Some("Search Open Library for a cover"));
-    cover_btns.append(&find_cover);
-    side.append(&cover_btns);
+    pick_cover.set_halign(gtk::Align::Start);
+    cover_block.append(&pick_cover);
 
+    // Default arrangement: form left, publication + cover right.
+    fields.append(&desc_block);
+    top.append(&fields);
+
+    let side = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    side.set_valign(gtk::Align::Start);
+    side.set_size_request(230, -1);
+    side.add_css_class("kalam-metadata-side");
+    side.append(&pub_block);
+    side.append(&cover_block);
     top.append(&side);
     root.append(&top);
 
@@ -274,12 +301,6 @@ fn open_editor_inner(
         .unwrap_or_default();
     let position = neighbours.iter().position(|b| b.id == book_id);
 
-    // Opens the Open Library panel. A toggle so its state is obvious.
-    let search_toggle = gtk::ToggleButton::with_label("🔍 Open Library");
-    search_toggle.add_css_class("kalam-secondary-btn");
-    search_toggle.set_tooltip_text(Some("Search Open Library for metadata"));
-    actions.append(&search_toggle);
-
     let prev_btn = gtk::Button::with_label("← Previous");
     prev_btn.add_css_class("kalam-secondary-btn");
     let next_btn = gtk::Button::with_label("Next →");
@@ -360,6 +381,49 @@ fn open_editor_inner(
                     FetchMsg::Failed(err) => {
                         search_status.set_label(&format!("Lookup failed. {err}"));
                     }
+                    FetchMsg::CoverChoices(choices) => {
+                        // Show thumbnails; the chosen one is fetched at full
+                        // size and previewed before anything is written.
+                        while let Some(c) = results.first_child() {
+                            results.remove(&c);
+                        }
+                        let grid = gtk::FlowBox::builder()
+                            .selection_mode(gtk::SelectionMode::None)
+                            .max_children_per_line(3)
+                            .column_spacing(8)
+                            .row_spacing(8)
+                            .build();
+                        for (id, bytes) in choices {
+                            let Some(texture) = texture_from_bytes(&bytes) else {
+                                continue;
+                            };
+                            let pic = gtk::Picture::for_paintable(&texture);
+                            pic.set_size_request(84, 130);
+                            pic.set_content_fit(gtk::ContentFit::Cover);
+
+                            let btn = gtk::Button::new();
+                            btn.set_child(Some(&pic));
+                            btn.add_css_class("kalam-cover-choice");
+                            btn.set_tooltip_text(Some("Use this cover"));
+
+                            let tx2 = tx_inner.clone();
+                            let ss = search_status.clone();
+                            btn.connect_clicked(move |_| {
+                                ss.set_label("Fetching full-size cover…");
+                                let tx2 = tx2.clone();
+                                std::thread::spawn(move || {
+                                    let msg = match openlibrary::fetch_cover(id, 'L') {
+                                        Ok(b) => FetchMsg::CoverReady(b),
+                                        Err(e) => FetchMsg::CoverFailed(e.to_string()),
+                                    };
+                                    let _ = tx2.send_blocking(msg);
+                                });
+                            });
+                            grid.insert(&btn, -1);
+                        }
+                        results.append(&grid);
+                        search_status.set_label("Pick a cover to preview it.");
+                    }
                     FetchMsg::CoverReady(bytes) => {
                         // Preview immediately; the file is written on Save.
                         if let Some(texture) = texture_from_bytes(&bytes) {
@@ -411,13 +475,15 @@ fn open_editor_inner(
         search_entry.connect_activate(move |_| run2());
     }
 
-    // ── find a cover without touching the other fields ──────────────────
+    // ── cover search: previews in the panel, pick before committing ─────
     {
         let title_entry_c = title_entry.clone();
         let authors_entry_c = authors_entry.clone();
-        let status = status.clone();
+        let search_status = search_status.clone();
+        let search_entry_c = search_entry.clone();
+        let set_panel = set_panel.clone();
         let tx = tx.clone();
-        find_cover.connect_clicked(move |_| {
+        cover_search.connect_clicked(move |_| {
             let query = format!(
                 "{} {}",
                 title_entry_c.text().trim(),
@@ -426,21 +492,30 @@ fn open_editor_inner(
             .trim()
             .to_string();
             if query.is_empty() {
-                status.set_label("Fill in a title first.");
                 return;
             }
-            status.set_label("Looking for a cover…");
+            search_entry_c.set_text(&query);
+            set_panel(true);
+            search_status.set_label("Looking for covers…");
+
             let tx = tx.clone();
             std::thread::spawn(move || {
-                // Take the first result that actually has cover art.
-                let msg = match openlibrary::search(&query, 10) {
-                    Ok(list) => match list.iter().find_map(|c| c.cover_id) {
-                        Some(id) => match openlibrary::fetch_cover(id, 'L') {
-                            Ok(bytes) => FetchMsg::CoverReady(bytes),
-                            Err(err) => FetchMsg::CoverFailed(err.to_string()),
-                        },
-                        None => FetchMsg::CoverFailed("no cover found for that title".into()),
-                    },
+                let msg = match openlibrary::search(&query, 12) {
+                    Ok(list) => {
+                        // Fetch small thumbnails so the grid appears quickly;
+                        // the full-size image is only pulled once picked.
+                        let mut found = Vec::new();
+                        for c in list.iter().filter_map(|c| c.cover_id).take(6) {
+                            if let Ok(bytes) = openlibrary::fetch_cover(c, 'M') {
+                                found.push((c, bytes));
+                            }
+                        }
+                        if found.is_empty() {
+                            FetchMsg::CoverFailed("no covers found for that title".into())
+                        } else {
+                            FetchMsg::CoverChoices(found)
+                        }
+                    }
                     Err(err) => FetchMsg::CoverFailed(err.to_string()),
                 };
                 let _ = tx.send_blocking(msg);
@@ -574,36 +649,100 @@ fn open_editor_inner(
         })
     };
 
-    {
+    // ── open/close the panel, reflowing the form as it goes ─────────────
+    // Opening moves the publication block under SERIES and the cover below the
+    // description, so the form becomes one column and the window can widen
+    // without anything being clipped.
+    let panel_open = Rc::new(std::cell::Cell::new(false));
+    let set_panel: Rc<dyn Fn(bool)> = {
         let window = window.clone();
         let revealer = revealer.clone();
         let search_entry = search_entry.clone();
-        search_toggle.connect_toggled(move |btn| {
-            let open = btn.is_active();
+        let top = top.clone();
+        let fields = fields.clone();
+        let side = side.clone();
+        let pub_block = pub_block.clone();
+        let cover_block = cover_block.clone();
+        let desc_block = desc_block.clone();
+        let panel_open = panel_open.clone();
+
+        Rc::new(move |open: bool| {
+            if panel_open.get() == open {
+                return;
+            }
+            panel_open.set(open);
+
+            if open {
+                // Single column: publication under series, cover last.
+                side.remove(&pub_block);
+                side.remove(&cover_block);
+                top.remove(&side);
+                fields.remove(&desc_block);
+                fields.append(&pub_block);
+                fields.append(&desc_block);
+                fields.append(&cover_block);
+            } else {
+                fields.remove(&pub_block);
+                fields.remove(&cover_block);
+                side.append(&pub_block);
+                side.append(&cover_block);
+                top.append(&side);
+            }
+
             revealer.set_reveal_child(open);
 
-            // Grow the window rather than squeezing the form. Only widen if the
-            // user has not already made it bigger than we need.
-            let (w, h) = (window.width(), window.height());
-            if open {
-                if w < BASE_WIDTH + PANEL_WIDTH {
-                    window.set_default_size(BASE_WIDTH + PANEL_WIDTH, h.max(1));
+            // Resize *and* recentre, so the dialog does not run off-screen.
+            let height = window.height().max(1);
+            let target = if open {
+                BASE_WIDTH + PANEL_WIDTH
+            } else {
+                BASE_WIDTH
+            };
+            window.set_default_size(target, height);
+            if let Some(surface) = window.surface() {
+                // Clamp to the monitor: 1110px must not overflow a 1366px screen.
+                if let Some(monitor) = gtk::gdk::Display::default()
+                    .and_then(|d| d.monitor_at_surface(&surface))
+                {
+                    let available = monitor.geometry().width();
+                    if target > available - 40 {
+                        window.set_default_size(available - 40, height);
+                    }
                 }
-                search_entry.grab_focus();
-            } else if w >= BASE_WIDTH + PANEL_WIDTH {
-                window.set_default_size(BASE_WIDTH, h.max(1));
             }
+
+            if open {
+                search_entry.grab_focus();
+            }
+        })
+    };
+
+    // Title and author icons seed the query from their own field.
+    for (btn, entry) in [
+        (&title_search, &title_entry),
+        (&author_search, &authors_entry),
+    ] {
+        let set_panel = set_panel.clone();
+        let search_entry = search_entry.clone();
+        let entry = entry.clone();
+        let title_entry = title_entry.clone();
+        let authors_entry = authors_entry.clone();
+        let is_author = std::ptr::eq(btn, &author_search);
+        btn.connect_clicked(move |_| {
+            // Author search still needs the title for a useful result set.
+            let query = if is_author {
+                format!("{} {}", title_entry.text().trim(), entry.text().trim())
+            } else {
+                format!("{} {}", entry.text().trim(), authors_entry.text().trim())
+            };
+            search_entry.set_text(query.trim());
+            set_panel(true);
         });
     }
 
     {
-        let revealer = revealer.clone();
-        let search_toggle = search_toggle.clone();
-        panel_close.connect_clicked(move |_| {
-            // Untoggling runs the handler above, which also restores the width.
-            search_toggle.set_active(false);
-            revealer.set_reveal_child(false);
-        });
+        let set_panel = set_panel.clone();
+        panel_close.connect_clicked(move |_| set_panel(false));
     }
 
     {
@@ -780,6 +919,35 @@ fn section_label(text: &str) -> gtk::Label {
     label.add_css_class("kalam-detail-section-title");
     label.set_halign(gtk::Align::Start);
     label
+}
+
+/// Small flat button carrying a Nerd Font glyph.
+fn icon_button(glyph: &str, tooltip: &str) -> gtk::Button {
+    let btn = gtk::Button::with_label(glyph);
+    btn.add_css_class("kalam-icon-btn");
+    btn.set_tooltip_text(Some(tooltip));
+    btn.set_valign(gtk::Align::Center);
+    btn
+}
+
+/// Entry with a search icon on its right, sharing one row.
+fn labelled_entry_with_search(
+    parent: &gtk::Box,
+    label: &str,
+    value: &str,
+    tooltip: &str,
+) -> (gtk::Entry, gtk::Button) {
+    parent.append(&section_label(label));
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    let entry = gtk::Entry::new();
+    entry.set_text(value);
+    entry.set_hexpand(true);
+    row.append(&entry);
+    // U+F002 is the Nerd Font / Font Awesome magnifying glass.
+    let btn = icon_button("\u{f002}", tooltip);
+    row.append(&btn);
+    parent.append(&row);
+    (entry, btn)
 }
 
 fn labelled_entry(parent: &gtk::Box, label: &str, value: &str) -> gtk::Entry {

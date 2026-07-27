@@ -974,6 +974,35 @@ popover.kalam-reader-popover > contents {
     background: @kalam_surface;
 }
 
+/* Inline field-search icons (Nerd Font glyph). */
+.kalam-icon-btn {
+    font-family: "Symbols Nerd Font", "Symbols Nerd Font Mono",
+                 "JetBrainsMono Nerd Font", "FiraCode Nerd Font", monospace;
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
+    color: @kalam_text_dim;
+    padding: 0 10px;
+    min-width: 0;
+    min-height: 32px;
+}
+
+.kalam-icon-btn:hover {
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+.kalam-cover-choice {
+    padding: 2px;
+    border-radius: 8px;
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+}
+
+.kalam-cover-choice:hover {
+    border-color: @kalam_accent;
+}
+
 /* Slide-out Open Library panel; separated from the form by its own edge. */
 .kalam-search-panel {
     background: @kalam_surface;
@@ -1008,36 +1037,45 @@ popover.kalam-reader-popover > contents {
     color: @kalam_text_dim;
 }
 
-.kalam-star-picker button {
+.kalam-star-btn {
+    background: transparent;
+    background-image: none;
+    border: none;
+    box-shadow: none;
+    padding: 0 1px;
+    min-width: 0;
+    min-height: 0;
+}
+
+/* Glyphs are always drawn, so the control reads at a glance rather than
+   only revealing itself on hover. */
+.kalam-star-glyph {
+    font-size: 1.25rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-star-on {
+    color: #fbbf24;
+}
+
+.kalam-star-btn:hover .kalam-star-glyph {
+    color: #fcd34d;
+}
+
+.kalam-star-clear {
     background: transparent;
     border: none;
-    min-width: 11px;
-    min-height: 24px;
-    padding: 0;
-    color: @kalam_border;
-    font-size: 1.2rem;
-}
-
-.kalam-star-half {
-    background-image: none;
     box-shadow: none;
+    color: @kalam_text_dim;
+    font-size: 0.8rem;
+    min-width: 0;
+    min-height: 0;
+    padding: 0 4px;
+    margin-left: 4px;
 }
 
-.kalam-star-left {
-    border-radius: 6px 0 0 6px;
-}
-
-.kalam-star-right {
-    border-radius: 0 6px 6px 0;
-}
-
-/* Filled halves use the same amber as the read-only display. */
-.kalam-star-filled {
-    background: #fbbf24;
-}
-
-.kalam-star-picker button:hover {
-    background: alpha(#fbbf24, 0.45);
+.kalam-star-clear:hover {
+    color: #fca5a5;
 }
 
 /* ── streak strip ───────────────────────────────────── */
