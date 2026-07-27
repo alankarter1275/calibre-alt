@@ -92,6 +92,10 @@ pub struct ReaderModel {
     session_id: Option<i64>,
     session_start: std::time::Instant,
     session_start_pct: i64,
+    /// Typography popover widgets we need to update as state changes.
+    /// Held directly because they are built outside the `view!` tree.
+    font_size_label: Option<gtk::Label>,
+    theme_ticks: Vec<(ReadingTheme, gtk::Label)>,
 }
 
 #[relm4::component(pub)]
@@ -289,6 +293,8 @@ color:#3e3226;font-family:Georgia,serif'>\
             session_id: None,
             session_start: std::time::Instant::now(),
             session_start_pct: 0,
+            font_size_label: None,
+            theme_ticks: Vec::new(),
         };
 
         let mut model = model;
@@ -307,8 +313,6 @@ color:#3e3226;font-family:Georgia,serif'>\
             model.session_start = std::time::Instant::now();
             model.session_id = model.catalog.start_reading_session(book_id, start_pct).ok();
         }
-        let model = model;
-
         let widgets = view_output!();
         widgets.web_host.append(&webview);
         update_chrome_labels(&widgets, &model);
@@ -496,14 +500,13 @@ color:#3e3226;font-family:Georgia,serif'>\
         unsafe {
             aa_pop.set_data("kalam-dict-list", dict_list.clone());
             aa_pop.set_data("kalam-dict-res", dict_res_label.clone());
-            aa_pop.set_data("kalam-font-size", font_size_label.clone());
-            for (theme, tick) in &theme_buttons {
-                aa_pop.set_data(theme_tick_key(*theme), tick.clone());
-            }
         }
         widgets.dict_btn.set_popover(Some(&aa_pop));
-        // Reflect the restored theme on first open.
-        refresh_theme_buttons(&widgets, model.theme);
+
+        // Keep handles to the state-reflecting widgets, then paint initial state.
+        model.font_size_label = Some(font_size_label.clone());
+        model.theme_ticks = theme_buttons.clone();
+        model.refresh_theme_ticks();
 
         // Title notify fallback
         let s = sender.clone();
@@ -641,7 +644,7 @@ color:#3e3226;font-family:Georgia,serif'>\
             ReaderMsg::Theme(t) => {
                 self.theme = t;
                 self.catalog.set_pref("reader.theme", t.as_str());
-                refresh_theme_buttons(widgets, t);
+                self.refresh_theme_ticks();
                 widgets.dict_btn.popdown();
                 self.loading = true;
                 load_chapter(self);
@@ -651,8 +654,9 @@ color:#3e3226;font-family:Georgia,serif'>\
                 let next = (self.font_px as i32 + d).clamp(14, 36) as u32;
                 if next != self.font_px {
                     self.font_px = next;
-                    self.catalog.set_pref("reader.font_px", &next.to_string());
-                    set_font_size_label(widgets, next);
+                    self.catalog
+                        .set_pref("reader.font_px", &next.to_string());
+                    self.refresh_font_label();
                     self.loading = true;
                     load_chapter(self);
                     self.loading = false;
@@ -890,6 +894,19 @@ impl ReaderModel {
         }
         let overall = ((self.chapter as f64) + self.fraction) / (count as f64) * 100.0;
         overall.round().clamp(0.0, 100.0) as i64
+    }
+
+    /// Show the tick only on the active theme's button.
+    fn refresh_theme_ticks(&self) {
+        for (theme, tick) in &self.theme_ticks {
+            tick.set_opacity(if *theme == self.theme { 1.0 } else { 0.0 });
+        }
+    }
+
+    fn refresh_font_label(&self) {
+        if let Some(label) = &self.font_size_label {
+            label.set_label(&format!("{}px", self.font_px));
+        }
     }
 
     /// Close the open reading-session row. Idempotent: called from shutdown,
@@ -1180,47 +1197,6 @@ fn append_toc_btn(list: &gtk::Box, label: &str, idx: usize, sender: &ComponentSe
     let s = sender.clone();
     btn.connect_clicked(move |_| s.input(ReaderMsg::TocSelect(idx)));
     list.append(&btn);
-}
-
-/// Stable `set_data` key per theme — `set_data` needs a `&'static str`.
-fn theme_tick_key(theme: ReadingTheme) -> &'static str {
-    match theme {
-        ReadingTheme::Light => "kalam-tick-light",
-        ReadingTheme::Sepia => "kalam-tick-sepia",
-        ReadingTheme::Dark => "kalam-tick-dark",
-    }
-}
-
-/// Show the tick only on the active theme's button.
-fn refresh_theme_buttons(widgets: &ReaderModelWidgets, active: ReadingTheme) {
-    let Some(pop) = widgets.dict_btn.popover() else {
-        return;
-    };
-    let Some(pop) = pop.downcast_ref::<gtk::Popover>() else {
-        return;
-    };
-    for theme in [ReadingTheme::Light, ReadingTheme::Sepia, ReadingTheme::Dark] {
-        unsafe {
-            if let Some(tick) = pop.data::<gtk::Label>(theme_tick_key(theme)) {
-                tick.as_ref()
-                    .set_opacity(if theme == active { 1.0 } else { 0.0 });
-            }
-        }
-    }
-}
-
-fn set_font_size_label(widgets: &ReaderModelWidgets, px: u32) {
-    let Some(pop) = widgets.dict_btn.popover() else {
-        return;
-    };
-    let Some(pop) = pop.downcast_ref::<gtk::Popover>() else {
-        return;
-    };
-    unsafe {
-        if let Some(label) = pop.data::<gtk::Label>("kalam-font-size") {
-            label.as_ref().set_label(&format!("{px}px"));
-        }
-    }
 }
 
 fn rebuild_anno_list(list: &gtk::Box, annos: &[Annotation], sender: &ComponentSender<ReaderModel>) {

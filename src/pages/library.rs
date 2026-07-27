@@ -170,11 +170,7 @@ fn build_dashboard(
             card.append(&count);
             row.append(&card);
         }
-        body.append(&plain_section(
-            "SHELVES",
-            Some("Smart & manual"),
-            row.upcast(),
-        ));
+        body.append(&plain_section("SHELVES", Some("Smart & manual"), row.upcast()));
     }
 
     // ── saved quotes ────────────────────────────────────────────────────
