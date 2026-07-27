@@ -20,12 +20,8 @@ use std::rc::Rc;
 
 /// Width of the slide-out search panel, and how much the window grows to
 /// accommodate it so the form itself never gets squeezed.
-/// Each half of the dialog. The form, the publication/cover column and the
-/// search panel are all exactly this wide, so revealing the panel swaps one
-/// right-hand column for another and the split stays even.
-const PANEL_WIDTH: i32 = 470;
-/// The left-hand form column — same width, so the dialog reads as two halves.
-const BASE_WIDTH: i32 = PANEL_WIDTH;
+const PANEL_WIDTH: i32 = 330;
+const BASE_WIDTH: i32 = 780;
 /// Total dialog width: form plus room for the search panel. Fixed for the
 /// lifetime of the dialog so revealing the panel cannot push it off-screen or
 /// leave it visually off-centre.
@@ -98,9 +94,6 @@ fn open_editor_inner(
 
     let fields = gtk::Box::new(gtk::Orientation::Vertical, 8);
     fields.set_hexpand(true);
-    // Entries report their content as natural width, so a long tag list would
-    // otherwise widen the whole column.
-    fields.set_size_request(0, -1);
 
     // Search icons live on the field they act on, Calibre-style.
     let (title_entry, title_search) = labelled_entry_with_search(
@@ -119,8 +112,6 @@ fn open_editor_inner(
     let series_entry = gtk::Entry::new();
     series_entry.set_text(book.series.as_deref().unwrap_or_default());
     series_entry.set_hexpand(true);
-    series_entry.set_width_chars(1);
-    series_entry.set_max_width_chars(1);
     series_row.append(&series_entry);
 
     // Fractional steps because novellas are routinely "#2.5".
@@ -215,7 +206,7 @@ fn open_editor_inner(
 
     let side = gtk::Box::new(gtk::Orientation::Vertical, 8);
     side.set_valign(gtk::Align::Start);
-    side.set_size_request(PANEL_WIDTH, -1);
+    side.set_size_request(230, -1);
     side.add_css_class("kalam-metadata-side");
     side.append(&pub_block);
     side.append(&cover_block);
@@ -226,8 +217,6 @@ fn open_editor_inner(
     // Built here but revealed only on demand, so the form stays uncluttered.
     let search_entry = gtk::Entry::new();
     search_entry.set_hexpand(true);
-    search_entry.set_width_chars(1);
-    search_entry.set_max_width_chars(1);
     search_entry.set_placeholder_text(Some("Title and author…"));
     // Seed with what we already know so one click usually suffices.
     search_entry.set_text(
@@ -246,23 +235,17 @@ fn open_editor_inner(
     search_status.set_halign(gtk::Align::Start);
     search_status.set_wrap(true);
     search_status.set_xalign(0.0);
-    // Without a cap a long error message widens the whole panel.
-    search_status.set_width_chars(1);
-    search_status.set_max_width_chars(42);
 
     let results = gtk::Box::new(gtk::Orientation::Vertical, 6);
     let results_scroll = gtk::ScrolledWindow::builder()
         .vexpand(true)
         .hscrollbar_policy(gtk::PolicyType::Never)
-        .propagate_natural_width(false)
         .child(&results)
         .build();
 
     let panel = gtk::Box::new(gtk::Orientation::Vertical, 10);
     panel.add_css_class("kalam-search-panel");
     panel.set_size_request(PANEL_WIDTH, -1);
-    // The form owns the leftover space; the panel keeps exactly its width.
-    panel.set_hexpand(false);
 
     let panel_head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let panel_title = gtk::Label::new(Some("FIND METADATA"));
@@ -289,8 +272,6 @@ fn open_editor_inner(
     hint.add_css_class("kalam-muted");
     hint.set_wrap(true);
     hint.set_xalign(0.0);
-    hint.set_width_chars(1);
-    hint.set_max_width_chars(42);
     panel.append(&hint);
 
     // Revealer gives the slide-out; the window widens to match.
@@ -302,17 +283,12 @@ fn open_editor_inner(
     revealer.set_hexpand(false);
 
     // ── actions: pinned outside the scroller so Save is always reachable ─
-    // Fixed rather than hexpand: letting the form absorb all leftover width is
-    // what made the left half visibly larger than the right.
     let content_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vexpand(true)
-        // Deliberately not hexpand: absorbing the leftover width is exactly
-        // what made the left half larger than the right.
-        .hexpand(false)
+        .hexpand(true)
         .child(&root)
         .build();
-    content_scroll.set_size_request(BASE_WIDTH, -1);
 
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     body.set_vexpand(true);
@@ -910,22 +886,13 @@ fn rebuild_results(
         title.set_halign(gtk::Align::Start);
         title.set_xalign(0.0);
         title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        // width_chars(1) makes the natural request tiny, so a long title
-        // ellipsizes instead of widening the panel.
-        title.set_width_chars(1);
-        title.set_max_width_chars(34);
-        title.set_tooltip_text(Some(&candidate.title));
         text.append(&title);
 
-        let summary = candidate.summary();
-        let meta = gtk::Label::new(Some(&summary));
+        let meta = gtk::Label::new(Some(&candidate.summary()));
         meta.add_css_class("kalam-card-meta");
         meta.set_halign(gtk::Align::Start);
         meta.set_xalign(0.0);
         meta.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        meta.set_width_chars(1);
-        meta.set_max_width_chars(38);
-        meta.set_tooltip_text(Some(&summary));
         text.append(&meta);
         row.append(&text);
 
@@ -1046,8 +1013,6 @@ fn labelled_entry_with_search(
     let entry = gtk::Entry::new();
     entry.set_text(value);
     entry.set_hexpand(true);
-    entry.set_width_chars(1);
-    entry.set_max_width_chars(1);
     row.append(&entry);
     // U+F002 is the Nerd Font / Font Awesome magnifying glass.
     let btn = icon_button("\u{f002}", tooltip);
@@ -1061,10 +1026,6 @@ fn labelled_entry(parent: &gtk::Box, label: &str, value: &str) -> gtk::Entry {
     let entry = gtk::Entry::new();
     entry.set_text(value);
     entry.set_hexpand(true);
-    // An Entry asks for its whole content by default, so a long tag list would
-    // widen the column past its half of the dialog.
-    entry.set_width_chars(1);
-    entry.set_max_width_chars(1);
     parent.append(&entry);
     entry
 }
