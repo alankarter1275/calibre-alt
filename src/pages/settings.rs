@@ -348,9 +348,7 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
                 .modal(true)
                 .initial_name(format!("kalam-backup-{}.db", today_stamp()))
                 .build();
-            let window = btn
-                .root()
-                .and_then(|r| r.downcast::<gtk::Window>().ok());
+            let window = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
             let catalog = catalog.clone();
             dialog.save(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
                 let Ok(file) = res else { return };
@@ -358,7 +356,11 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
                 match catalog.backup_to(&path) {
                     Ok(size) => crate::notify::success(
                         "Library backed up",
-                        &format!("{} · {}", crate::epub_write::human_size(size), path.display()),
+                        &format!(
+                            "{} · {}",
+                            crate::epub_write::human_size(size),
+                            path.display()
+                        ),
                     ),
                     Err(err) => {
                         crate::notify::error("Backup failed", &err.to_string());
