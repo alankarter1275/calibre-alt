@@ -45,6 +45,9 @@ pub struct Candidate {
     pub description: String,
     pub tags: Vec<String>,
     pub first_year: Option<i64>,
+    pub publisher: String,
+    /// Full publication date when Open Library has one, else the year.
+    pub published: String,
     pub cover_id: Option<i64>,
     /// `/works/OL…W`, used to fetch the description lazily.
     pub work_key: Option<String>,
@@ -57,8 +60,13 @@ impl Candidate {
         if !self.authors.is_empty() {
             parts.push(self.authors.clone());
         }
-        if let Some(year) = self.first_year {
+        if !self.published.is_empty() {
+            parts.push(self.published.clone());
+        } else if let Some(year) = self.first_year {
             parts.push(year.to_string());
+        }
+        if !self.publisher.is_empty() {
+            parts.push(self.publisher.clone());
         }
         if self.cover_id.is_some() {
             parts.push("has cover".into());
@@ -98,6 +106,10 @@ struct SearchDoc {
     subject: Option<Vec<String>>,
     #[serde(default)]
     series: Option<Vec<String>>,
+    #[serde(default)]
+    publisher: Option<Vec<String>>,
+    #[serde(default)]
+    publish_date: Option<Vec<String>>,
 }
 
 /// `description` is maddeningly polymorphic: sometimes a string, sometimes
@@ -141,7 +153,10 @@ pub fn search(query: &str, limit: usize) -> Result<Vec<Candidate>, FetchError> {
         // Ask only for the fields we use — the default payload is enormous.
         .query(
             "fields",
-            "title,author_name,first_publish_year,cover_i,key,subject,series",
+            concat!(
+                "title,author_name,first_publish_year,cover_i,key,subject,",
+                "series,publisher,publish_date"
+            ),
         )
         .call()
         .map_err(|e| FetchError::Network(e.to_string()))?
@@ -169,6 +184,23 @@ fn doc_to_candidate(doc: SearchDoc) -> Candidate {
             .take(8)
             .collect(),
         first_year: doc.first_publish_year,
+        publisher: doc
+            .publisher
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+            .unwrap_or_default(),
+        // Prefer a printed date; fall back to the first-publication year.
+        published: doc
+            .publish_date
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| {
+                doc.first_publish_year
+                    .map(|y| y.to_string())
+                    .unwrap_or_default()
+            }),
         cover_id: doc.cover_i,
         work_key: doc.key,
     }

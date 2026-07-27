@@ -974,6 +974,11 @@ popover.kalam-reader-popover > contents {
     background: @kalam_surface;
 }
 
+.kalam-metadata-side {
+    border-left: 1px solid @kalam_border;
+    padding-left: 16px;
+}
+
 .kalam-desc-view {
     background: transparent;
     padding: 8px;

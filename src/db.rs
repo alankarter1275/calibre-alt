@@ -21,8 +21,8 @@ pub type Result<T> = std::result::Result<T, DbError>;
 
 /// Bumped whenever `migrate()` learns new tables/columns.
 /// v3 = P3 annotations & dictionary · v4 = P4 shelves, lists, history, sessions
-/// · v5 = ratings + reading goals.
-pub const SCHEMA_VERSION: i64 = 5;
+/// · v5 = ratings + reading goals · v6 = publisher/published/series index.
+pub const SCHEMA_VERSION: i64 = 6;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -487,6 +487,11 @@ impl Catalog {
         // v5: half-star ratings stored as 0..=10 (i.e. tenths of the 5-star
         // scale x2) so "3.5 stars" is an integer 7 and needs no float compare.
         add_column_if_missing(&conn, "books", "rating", "INTEGER NOT NULL DEFAULT 0")?;
+        // v6: publication details. `series_index` is REAL because half-numbers
+        // ("book 2.5") are common in series, and 0 means "not set".
+        add_column_if_missing(&conn, "books", "publisher", "TEXT NOT NULL DEFAULT ''")?;
+        add_column_if_missing(&conn, "books", "published", "TEXT NOT NULL DEFAULT ''")?;
+        add_column_if_missing(&conn, "books", "series_index", "REAL NOT NULL DEFAULT 0")?;
 
         // Indexed *after* the ALTERs above, since these columns do not exist in
         // the CREATE TABLE that older databases were built from.
@@ -1107,6 +1112,9 @@ impl Catalog {
         title: &str,
         authors: &str,
         series: Option<&str>,
+        series_index: f32,
+        publisher: &str,
+        published: &str,
         description: &str,
         tags: &[String],
     ) -> Result<()> {
@@ -1115,7 +1123,8 @@ impl Catalog {
         // sort_title mirrors insert_book so ordering stays consistent.
         conn.execute(
             "UPDATE books
-             SET title = ?2, sort_title = ?3, authors = ?4, series = ?5, description = ?6
+             SET title = ?2, sort_title = ?3, authors = ?4, series = ?5,
+                 series_index = ?6, publisher = ?7, published = ?8, description = ?9
              WHERE id = ?1",
             params![
                 book_id,
@@ -1123,6 +1132,9 @@ impl Catalog {
                 title.to_lowercase(),
                 authors.trim(),
                 series.map(|s| s.trim()).filter(|s| !s.is_empty()),
+                series_index.max(0.0) as f64,
+                publisher.trim(),
+                published.trim(),
                 description,
             ],
         )?;
@@ -2076,7 +2088,8 @@ impl Catalog {
 /// Shared projection so every book query returns the same column order.
 const BOOK_COLUMNS: &str = "books.id, books.uuid, books.title, books.authors, books.series, \
      books.description, books.format, books.file_name, books.file_hash, books.cover_name, \
-     books.added_at, books.progress, books.rating";
+     books.added_at, books.progress, books.rating, books.publisher, books.published, \
+     books.series_index";
 
 /// Sessions longer than this are almost certainly an idle window.
 const MAX_SESSION_SECONDS: i64 = 6 * 60 * 60;
@@ -2240,6 +2253,9 @@ fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<Book> {
         progress: row.get::<_, i64>(11)? as u8,
         // Older rows predate the column; treat a read failure as unrated.
         rating: row.get::<_, i64>(12).unwrap_or(0) as u8,
+        publisher: row.get::<_, String>(13).unwrap_or_default(),
+        published: row.get::<_, String>(14).unwrap_or_default(),
+        series_index: row.get::<_, f64>(15).unwrap_or(0.0) as f32,
         tags: Vec::new(),
         cover_path: None,
         file_path: PathBuf::new(),
@@ -2569,6 +2585,56 @@ mod tests {
         assert_eq!(stats.reading, 1);
         assert_eq!(stats.unread, 1);
         assert_eq!(stats.minutes_by_day.len(), 14);
+    }
+
+    #[test]
+    fn metadata_edit_round_trips_new_fields() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "Dune", "Frank Herbert", &["scifi"]);
+
+        cat.update_book_metadata(
+            id,
+            "Dune Messiah",
+            "Frank Herbert",
+            Some("Dune"),
+            2.5,
+            "Ace",
+            "1969",
+            "Sequel.",
+            &["scifi".into(), "classic".into()],
+        )
+        .unwrap();
+
+        let b = cat.get_book(id).unwrap().unwrap();
+        assert_eq!(b.title, "Dune Messiah");
+        assert_eq!(b.series.as_deref(), Some("Dune"));
+        assert_eq!(b.series_index, 2.5);
+        assert_eq!(b.publisher, "Ace");
+        assert_eq!(b.published, "1969");
+        assert_eq!(b.tags.len(), 2);
+        // Fractional indexes must not render as "2.5.0".
+        assert_eq!(b.series_display().as_deref(), Some("Dune #2.5"));
+    }
+
+    #[test]
+    fn whole_series_numbers_drop_the_decimal() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "A", "x", &[]);
+        cat.update_book_metadata(id, "A", "x", Some("Trilogy"), 3.0, "", "", "", &[])
+            .unwrap();
+        let b = cat.get_book(id).unwrap().unwrap();
+        assert_eq!(b.series_display().as_deref(), Some("Trilogy #3"));
+    }
+
+    #[test]
+    fn editing_tags_prunes_orphans() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "A", "x", &["temporary"]);
+        cat.update_book_metadata(id, "A", "x", None, 0.0, "", "", "", &["kept".into()])
+            .unwrap();
+        let tags = cat.list_tags_with_counts().unwrap();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].0, "kept");
     }
 
     #[test]

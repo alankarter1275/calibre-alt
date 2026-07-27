@@ -233,6 +233,11 @@ pub struct Book {
     pub progress: u8,
     /// 0..=10 half-stars; 0 means unrated.
     pub rating: u8,
+    pub publisher: String,
+    /// Free text as printed on the book, e.g. "February 15, 2012".
+    pub published: String,
+    /// Position within `series`; 0 means unset. Fractional for novellas.
+    pub series_index: f32,
     pub tags: Vec<String>,
     pub cover_path: Option<PathBuf>,
     pub file_path: PathBuf,
@@ -245,6 +250,23 @@ impl Book {
             None
         } else {
             Some(self.rating as f32 / 2.0)
+        }
+    }
+
+    /// "Lord of the Rings #3", or just the series when no index is set.
+    pub fn series_display(&self) -> Option<String> {
+        let series = self.series.as_deref()?.trim();
+        if series.is_empty() {
+            return None;
+        }
+        if self.series_index <= 0.0 {
+            return Some(series.to_string());
+        }
+        // Whole numbers should not render as "3.0".
+        if (self.series_index.fract()).abs() < f32::EPSILON {
+            Some(format!("{series} #{}", self.series_index as i64))
+        } else {
+            Some(format!("{series} #{}", self.series_index))
         }
     }
 

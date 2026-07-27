@@ -550,17 +550,22 @@ fn fill(
 
         title.set_label(&book.title);
         author.set_label(book.authors_display());
-        if let Some(s) = &book.series {
-            series.set_label(s);
+        // series_display() folds in the index, e.g. "Lord of the Rings #3".
+        if let Some(text) = book.series_display() {
+            series.set_label(&text);
             series.set_visible(true);
         } else {
             series.set_visible(false);
         }
-        format.set_label(&format!(
-            "{} · added {}",
-            book.format.as_str(),
-            book.added_at
-        ));
+        let mut bits = vec![book.format.as_str().to_string()];
+        if !book.published.trim().is_empty() {
+            bits.push(book.published.clone());
+        }
+        if !book.publisher.trim().is_empty() {
+            bits.push(book.publisher.clone());
+        }
+        bits.push(format!("added {}", book.added_at));
+        format.set_label(&bits.join(" · "));
         progress.set_label(&format!("{}% complete", book.progress));
         path.set_label(&book.file_path.to_string_lossy());
         let desc = crate::epub::strip_html(&book.description);
