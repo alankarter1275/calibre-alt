@@ -1137,18 +1137,19 @@ impl Catalog {
         conn.execute(
             "INSERT INTO shelves (name, kind, description, rules, position, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
-            params![name.trim(), kind.as_str(), description, rules, next_pos, now],
+            params![
+                name.trim(),
+                kind.as_str(),
+                description,
+                rules,
+                next_pos,
+                now
+            ],
         )?;
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn update_shelf(
-        &self,
-        id: i64,
-        name: &str,
-        description: &str,
-        rules: &str,
-    ) -> Result<()> {
+    pub fn update_shelf(&self, id: i64, name: &str, description: &str, rules: &str) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "UPDATE shelves SET name = ?2, description = ?3, rules = ?4, updated_at = ?5
@@ -1190,7 +1191,9 @@ impl Catalog {
         // Manual shelves keep hand-sorted order unless the user picks a sort.
         let order = match sort {
             SortKey::Title => "books.sort_title COLLATE NOCASE ASC",
-            SortKey::Author => "books.authors COLLATE NOCASE ASC, books.sort_title COLLATE NOCASE ASC",
+            SortKey::Author => {
+                "books.authors COLLATE NOCASE ASC, books.sort_title COLLATE NOCASE ASC"
+            }
             SortKey::Added => "sb.position ASC, sb.added_at ASC",
         };
         let q = query.trim();
@@ -1216,7 +1219,9 @@ impl Catalog {
         let conn = self.conn.lock().expect("db lock");
         let order = match sort {
             SortKey::Title => "books.sort_title COLLATE NOCASE ASC",
-            SortKey::Author => "books.authors COLLATE NOCASE ASC, books.sort_title COLLATE NOCASE ASC",
+            SortKey::Author => {
+                "books.authors COLLATE NOCASE ASC, books.sort_title COLLATE NOCASE ASC"
+            }
             SortKey::Added => "books.added_at DESC",
         };
         let q = query.trim();
@@ -1259,8 +1264,10 @@ impl Catalog {
             ShelfKind::Smart => {
                 let (where_sql, rule_params) = shelf.rule_set().to_sql();
                 let sql = format!("SELECT COUNT(*) FROM books WHERE {where_sql}");
-                let bound: Vec<&dyn rusqlite::ToSql> =
-                    rule_params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+                let bound: Vec<&dyn rusqlite::ToSql> = rule_params
+                    .iter()
+                    .map(|p| p as &dyn rusqlite::ToSql)
+                    .collect();
                 conn.query_row(&sql, bound.as_slice(), |r| r.get(0))?
             }
         };
@@ -1272,8 +1279,10 @@ impl Catalog {
         let (where_sql, rule_params) = rules.to_sql();
         let conn = self.conn.lock().expect("db lock");
         let sql = format!("SELECT COUNT(*) FROM books WHERE {where_sql}");
-        let bound: Vec<&dyn rusqlite::ToSql> =
-            rule_params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        let bound: Vec<&dyn rusqlite::ToSql> = rule_params
+            .iter()
+            .map(|p| p as &dyn rusqlite::ToSql)
+            .collect();
         let n: i64 = conn.query_row(&sql, bound.as_slice(), |r| r.get(0))?;
         Ok(n as usize)
     }
@@ -1417,9 +1426,8 @@ impl Catalog {
     pub fn move_reading_list_entry(&self, book_id: i64, delta: i64) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         let ids: Vec<i64> = {
-            let mut stmt = conn.prepare(
-                "SELECT book_id FROM reading_list ORDER BY position ASC, added_at ASC",
-            )?;
+            let mut stmt = conn
+                .prepare("SELECT book_id FROM reading_list ORDER BY position ASC, added_at ASC")?;
             let rows = stmt.query_map([], |r| r.get(0))?;
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         };
@@ -1724,18 +1732,12 @@ impl Catalog {
 
         let mut s = LibraryStats {
             total_books: one("SELECT COUNT(*) FROM books"),
-            finished: one(
-                "SELECT COUNT(*) FROM books
-                 WHERE IFNULL(finished_at,'') <> '' OR progress >= 100",
-            ),
-            reading: one(
-                "SELECT COUNT(*) FROM books
-                 WHERE progress > 0 AND progress < 100 AND IFNULL(finished_at,'') = ''",
-            ),
-            unread: one(
-                "SELECT COUNT(*) FROM books
-                 WHERE progress <= 0 AND IFNULL(finished_at,'') = ''",
-            ),
+            finished: one("SELECT COUNT(*) FROM books
+                 WHERE IFNULL(finished_at,'') <> '' OR progress >= 100"),
+            reading: one("SELECT COUNT(*) FROM books
+                 WHERE progress > 0 AND progress < 100 AND IFNULL(finished_at,'') = ''"),
+            unread: one("SELECT COUNT(*) FROM books
+                 WHERE progress <= 0 AND IFNULL(finished_at,'') = ''"),
             highlights: one("SELECT COUNT(*) FROM annotations WHERE kind = 'highlight'"),
             quotes: one("SELECT COUNT(*) FROM annotations WHERE kind = 'quote'"),
             saved_words: one("SELECT COUNT(*) FROM saved_words"),
@@ -1801,10 +1803,9 @@ impl Catalog {
                  GROUP BY d",
             )?;
             let cutoff_14 = iso_days_ago(13);
-            let rows =
-                stmt.query_map(params![cutoff_14], |r| {
-                    Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-                })?;
+            let rows = stmt.query_map(params![cutoff_14], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+            })?;
             let found = rows.collect::<std::result::Result<Vec<_>, _>>()?;
             let mut series = Vec::with_capacity(14);
             for back in (0..14).rev() {
@@ -2337,7 +2338,10 @@ mod tests {
 
         let tags = cat.list_tags_with_counts().unwrap();
         assert_eq!(tags[0], ("classic".to_string(), 2));
-        assert_eq!(cat.books_with_tag("scifi", SortKey::Title).unwrap().len(), 1);
+        assert_eq!(
+            cat.books_with_tag("scifi", SortKey::Title).unwrap().len(),
+            1
+        );
     }
 
     #[test]
@@ -2357,7 +2361,9 @@ mod tests {
     #[test]
     fn shelf_name_collisions_are_detected() {
         let cat = Catalog::open_in_memory().unwrap();
-        let id = cat.create_shelf("Favourites", ShelfKind::Manual, "", "").unwrap();
+        let id = cat
+            .create_shelf("Favourites", ShelfKind::Manual, "", "")
+            .unwrap();
         assert!(cat.shelf_name_taken("favourites", None).unwrap());
         // The shelf being edited doesn't collide with itself.
         assert!(!cat.shelf_name_taken("Favourites", Some(id)).unwrap());
