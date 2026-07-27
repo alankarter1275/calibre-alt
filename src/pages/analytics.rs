@@ -160,10 +160,7 @@ fn rebuild(body: &gtk::Box, stats: &LibraryStats) {
         card.add_css_class("kalam-chart-card");
 
         let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let title = gtk::Label::new(Some(&format!(
-            "{} min",
-            daily.iter().sum::<i64>()
-        )));
+        let title = gtk::Label::new(Some(&format!("{} min", daily.iter().sum::<i64>())));
         title.add_css_class("kalam-chart-title");
         title.set_halign(gtk::Align::Start);
         head.append(&title);
