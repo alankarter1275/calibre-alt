@@ -33,6 +33,13 @@ pub struct Catalog {
     /// SQLite's total_changes() counter: any write anywhere bumps it, so the
     /// cache cannot go stale and no write path has to remember to clear it.
     stats_cache: Mutex<Option<(i64, LibraryStats)>>,
+    /// Set while restoring remembered metadata.
+    ///
+    /// restore_overrides applies the saved values through the normal edit
+    /// path, which re-stashes as it goes — and at that moment the book still
+    /// has its freshly-imported cover, so the stash was being overwritten with
+    /// the EPUB default before the real cover could be copied back.
+    restoring: std::sync::atomic::AtomicBool,
 }
 
 // ---------------------------------------------------------------------------
@@ -317,6 +324,7 @@ impl Catalog {
         let cat = Self {
             conn: Mutex::new(conn),
             stats_cache: Mutex::new(None),
+            restoring: std::sync::atomic::AtomicBool::new(false),
         };
         cat.migrate()?;
         Ok(cat)
@@ -330,6 +338,7 @@ impl Catalog {
         let cat = Self {
             conn: Mutex::new(conn),
             stats_cache: Mutex::new(None),
+            restoring: std::sync::atomic::AtomicBool::new(false),
         };
         cat.migrate()?;
         Ok(cat)
@@ -1250,6 +1259,11 @@ impl Catalog {
     /// Remember the current metadata against the file's hash, so it can be
     /// restored if the book is removed and imported again.
     fn remember_overrides(&self, book_id: i64) -> Result<()> {
+        // A restore is not an edit: writing the freshly-imported state back
+        // over the saved copy is exactly what we are trying to avoid.
+        if self.restoring.load(std::sync::atomic::Ordering::Relaxed) {
+            return Ok(());
+        }
         let Some(book) = self.get_book(book_id)? else {
             return Ok(());
         };
@@ -1363,6 +1377,18 @@ impl Catalog {
         let Some(saved) = saved else {
             return Ok(false);
         };
+
+        // Suppress re-stashing for the duration; the Drop impl clears the flag
+        // even if a step below fails.
+        struct RestoreGuard<'a>(&'a std::sync::atomic::AtomicBool);
+        impl Drop for RestoreGuard<'_> {
+            fn drop(&mut self) {
+                self.0.store(false, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        self.restoring
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let _guard = RestoreGuard(&self.restoring);
 
         let tags: Vec<String> = saved
             .tags
@@ -3086,6 +3112,58 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(crate::paths::book_dir(&restored.uuid));
         let _ = std::fs::remove_dir_all(dir);
+        let _ = cat.forget_overrides(&hash);
+    }
+
+    #[test]
+    fn restoring_does_not_clobber_the_stashed_cover() {
+        // Regression: restore_overrides applies metadata through the normal
+        // edit path, which re-stashes. At that moment the book still has the
+        // freshly-imported cover, so the saved image was overwritten with the
+        // EPUB default a moment before it was due to be copied back.
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "A", "x", &[]);
+        let book = cat.get_book(id).unwrap().unwrap();
+        let hash = book.file_hash.clone();
+        let dir = crate::paths::book_dir(&book.uuid);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // A distinctive custom cover.
+        std::fs::write(dir.join("custom.png"), vec![b'C'; 800]).unwrap();
+        cat.set_cover_name(id, Some("custom.png")).unwrap();
+        cat.delete_book(id).unwrap();
+
+        // Re-import: the new book arrives with a *different* cover on disk,
+        // standing in for whatever the EPUB supplies.
+        let new_id = cat
+            .insert_book(
+                "uuid-clobber",
+                "A",
+                "x",
+                None,
+                "",
+                BookFormat::Epub,
+                "book.epub",
+                &hash,
+                Some("epub-default.png"),
+                &[],
+            )
+            .unwrap();
+        let fresh_dir = crate::paths::book_dir("uuid-clobber");
+        std::fs::create_dir_all(&fresh_dir).unwrap();
+        std::fs::write(fresh_dir.join("epub-default.png"), vec![b'E'; 800]).unwrap();
+
+        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+
+        let restored = cat.get_book(new_id).unwrap().unwrap();
+        let bytes = std::fs::read(restored.cover_path.as_ref().unwrap()).unwrap();
+        assert_eq!(
+            bytes[0], b'C',
+            "restored the EPUB default instead of the saved cover"
+        );
+
+        let _ = std::fs::remove_dir_all(&fresh_dir);
+        let _ = std::fs::remove_dir_all(&dir);
         let _ = cat.forget_overrides(&hash);
     }
 

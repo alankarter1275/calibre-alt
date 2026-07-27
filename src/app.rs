@@ -37,6 +37,8 @@ pub enum AppMsg {
         book_id: i64,
     },
     CloseBookDialog,
+    /// Rebuild the page on screen if the catalog changed under it.
+    RefreshCurrentPage,
     /// Open immersive reader for book_id.
     OpenReader {
         book_id: i64,
@@ -767,7 +769,16 @@ impl Component for AppModel {
                     f.window.destroy();
                 }
                 // The float can delete a book, so the page underneath may now
-                // be showing something that no longer exists.
+                // be showing something that no longer exists. Deferred to the
+                // next main-loop turn: rebuilding here would dispose widgets
+                // while GTK is still unwinding the float's close signal, which
+                // is what produced the gtk_widget_is_ancestor criticals.
+                let s = sender.clone();
+                gtk::glib::idle_add_local_once(move || {
+                    s.input(AppMsg::RefreshCurrentPage);
+                });
+            }
+            AppMsg::RefreshCurrentPage => {
                 self.refresh_if_stale(&widgets.content_host, &sender);
             }
             AppMsg::OpenReader { book_id } => {
