@@ -333,6 +333,74 @@ fn open_editor_inner(
     // Cover bytes fetched from Open Library, written only on Save.
     let pending_cover: Rc<RefCell<Option<Vec<u8>>>> = Rc::new(RefCell::new(None));
 
+    // ── open/close the panel, reflowing the form as it goes ─────────────
+    // Opening moves the publication block under SERIES and the cover below the
+    // description, so the form becomes one column and the window can widen
+    // without anything being clipped.
+    let panel_open = Rc::new(std::cell::Cell::new(false));
+    let set_panel: Rc<dyn Fn(bool)> = {
+        let window = window.clone();
+        let revealer = revealer.clone();
+        let search_entry = search_entry.clone();
+        let top = top.clone();
+        let fields = fields.clone();
+        let side = side.clone();
+        let pub_block = pub_block.clone();
+        let cover_block = cover_block.clone();
+        let desc_block = desc_block.clone();
+        let panel_open = panel_open.clone();
+
+        Rc::new(move |open: bool| {
+            if panel_open.get() == open {
+                return;
+            }
+            panel_open.set(open);
+
+            if open {
+                // Single column: publication under series, cover last.
+                side.remove(&pub_block);
+                side.remove(&cover_block);
+                top.remove(&side);
+                fields.remove(&desc_block);
+                fields.append(&pub_block);
+                fields.append(&desc_block);
+                fields.append(&cover_block);
+            } else {
+                fields.remove(&pub_block);
+                fields.remove(&cover_block);
+                side.append(&pub_block);
+                side.append(&cover_block);
+                top.append(&side);
+            }
+
+            revealer.set_reveal_child(open);
+
+            // Resize *and* recentre, so the dialog does not run off-screen.
+            let height = window.height().max(1);
+            let target = if open {
+                BASE_WIDTH + PANEL_WIDTH
+            } else {
+                BASE_WIDTH
+            };
+            window.set_default_size(target, height);
+            if let Some(surface) = window.surface() {
+                // Clamp to the monitor: 1110px must not overflow a 1366px screen.
+                if let Some(monitor) =
+                    gtk::gdk::Display::default().and_then(|d| d.monitor_at_surface(&surface))
+                {
+                    let available = monitor.geometry().width();
+                    if target > available - 40 {
+                        window.set_default_size(available - 40, height);
+                    }
+                }
+            }
+
+            if open {
+                search_entry.grab_focus();
+            }
+        })
+    };
+
     // ── worker channel ──────────────────────────────────────────────────
     let (tx, rx) = async_channel::unbounded::<FetchMsg>();
 
@@ -646,74 +714,6 @@ fn open_editor_inner(
 
             on_saved();
             true
-        })
-    };
-
-    // ── open/close the panel, reflowing the form as it goes ─────────────
-    // Opening moves the publication block under SERIES and the cover below the
-    // description, so the form becomes one column and the window can widen
-    // without anything being clipped.
-    let panel_open = Rc::new(std::cell::Cell::new(false));
-    let set_panel: Rc<dyn Fn(bool)> = {
-        let window = window.clone();
-        let revealer = revealer.clone();
-        let search_entry = search_entry.clone();
-        let top = top.clone();
-        let fields = fields.clone();
-        let side = side.clone();
-        let pub_block = pub_block.clone();
-        let cover_block = cover_block.clone();
-        let desc_block = desc_block.clone();
-        let panel_open = panel_open.clone();
-
-        Rc::new(move |open: bool| {
-            if panel_open.get() == open {
-                return;
-            }
-            panel_open.set(open);
-
-            if open {
-                // Single column: publication under series, cover last.
-                side.remove(&pub_block);
-                side.remove(&cover_block);
-                top.remove(&side);
-                fields.remove(&desc_block);
-                fields.append(&pub_block);
-                fields.append(&desc_block);
-                fields.append(&cover_block);
-            } else {
-                fields.remove(&pub_block);
-                fields.remove(&cover_block);
-                side.append(&pub_block);
-                side.append(&cover_block);
-                top.append(&side);
-            }
-
-            revealer.set_reveal_child(open);
-
-            // Resize *and* recentre, so the dialog does not run off-screen.
-            let height = window.height().max(1);
-            let target = if open {
-                BASE_WIDTH + PANEL_WIDTH
-            } else {
-                BASE_WIDTH
-            };
-            window.set_default_size(target, height);
-            if let Some(surface) = window.surface() {
-                // Clamp to the monitor: 1110px must not overflow a 1366px screen.
-                if let Some(monitor) =
-                    gtk::gdk::Display::default().and_then(|d| d.monitor_at_surface(&surface))
-                {
-                    let available = monitor.geometry().width();
-                    if target > available - 40 {
-                        window.set_default_size(available - 40, height);
-                    }
-                }
-            }
-
-            if open {
-                search_entry.grab_focus();
-            }
         })
     };
 
