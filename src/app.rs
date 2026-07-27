@@ -733,4 +733,3 @@ fn update_nav_styles(container: &gtk::Box, active: NavItem) {
         child = widget.next_sibling();
     }
 }
-
