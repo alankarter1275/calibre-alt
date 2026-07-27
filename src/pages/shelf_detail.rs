@@ -509,9 +509,9 @@ fn open_book_picker(
                         let _ = catalog.add_book_to_shelf(shelf_id, book_id);
                     } else {
                         crate::notify::report(
-                    catalog.remove_book_from_shelf(shelf_id, book_id),
-                    "Could not remove from the shelf",
-                );
+                            catalog.remove_book_from_shelf(shelf_id, book_id),
+                            "Could not remove from the shelf",
+                        );
                     }
                     on_changed();
                 });
