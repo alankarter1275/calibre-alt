@@ -91,7 +91,11 @@ fn open_editor_inner(
     series_row.append(&series_index);
     fields.append(&series_row);
 
-    let tags_entry = labelled_entry(&fields, "TAGS / GENRE (COMMA SEPARATED)", &book.tags.join(", "));
+    let tags_entry = labelled_entry(
+        &fields,
+        "TAGS / GENRE (COMMA SEPARATED)",
+        &book.tags.join(", "),
+    );
 
     fields.append(&section_label("DESCRIPTION"));
     let desc_view = gtk::TextView::new();
@@ -541,13 +545,11 @@ fn open_editor_inner(
                 return;
             }
             let next_id = neighbours[target as usize];
-            let parent = window
-                .transient_for()
-                .or_else(|| {
-                    relm4::main_application()
-                        .active_window()
-                        .and_then(|w| w.downcast::<gtk::Window>().ok())
-                });
+            let parent = window.transient_for().or_else(|| {
+                relm4::main_application()
+                    .active_window()
+                    .and_then(|w| w.downcast::<gtk::Window>().ok())
+            });
             window.close();
             open_editor_inner(parent.as_ref(), catalog.clone(), next_id, on_saved.clone());
         });
