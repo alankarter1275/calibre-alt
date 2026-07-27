@@ -641,7 +641,8 @@ impl Component for AppModel {
         // Extracted-book caches are rebuilt on demand, so anything orphaned or
         // untouched for a fortnight is pure waste on a small disk.
         {
-            let uuids = catalog.all_uuids().unwrap_or_default();
+            // `catalog` was moved into the model above; use the model's handle.
+            let uuids = model.catalog.all_uuids().unwrap_or_default();
             let freed = crate::paths::prune_reader_cache(&uuids, 14);
             if freed > 1024 * 1024 {
                 crate::notify::info(
