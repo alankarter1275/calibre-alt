@@ -1347,9 +1347,8 @@ impl Catalog {
         // shelves need their rules compiled and counted individually.
         let manual_counts: std::collections::HashMap<i64, usize> = {
             let conn = self.conn.lock().expect("db lock");
-            let mut stmt = conn.prepare_cached(
-                "SELECT shelf_id, COUNT(*) FROM shelf_books GROUP BY shelf_id",
-            )?;
+            let mut stmt = conn
+                .prepare_cached("SELECT shelf_id, COUNT(*) FROM shelf_books GROUP BY shelf_id")?;
             let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
             rows.filter_map(|r| r.ok())
                 .map(|(id, n)| (id, n as usize))
@@ -2203,8 +2202,7 @@ fn hydrate_books(conn: &Connection, books: &mut [Book]) -> Result<()> {
         ids.join(",")
     );
 
-    let mut by_book: std::collections::HashMap<i64, Vec<String>> =
-        std::collections::HashMap::new();
+    let mut by_book: std::collections::HashMap<i64, Vec<String>> = std::collections::HashMap::new();
     {
         // Plain prepare: the id list makes this SQL unique per call, so caching
         // it would grow the statement cache without bound.
@@ -2752,8 +2750,19 @@ mod tests {
     fn recent_quotes_carries_its_book_title() {
         let cat = Catalog::open_in_memory().unwrap();
         let id = seed(&cat, "Dune", "Herbert", &[]);
-        cat.insert_annotation(id, "quote", 0, "p", 0, "p", 9, "yellow", "Fear is the mind-killer", "")
-            .unwrap();
+        cat.insert_annotation(
+            id,
+            "quote",
+            0,
+            "p",
+            0,
+            "p",
+            9,
+            "yellow",
+            "Fear is the mind-killer",
+            "",
+        )
+        .unwrap();
 
         let quotes = cat.recent_quotes(5).unwrap();
         assert_eq!(quotes.len(), 1);
