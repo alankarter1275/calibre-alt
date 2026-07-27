@@ -74,12 +74,13 @@ impl Component for AnalyticsModel {
     fn init(
         catalog: Self::Init,
         _root: Self::Root,
-        _sender: ComponentSender<Self>,
+        sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let stats = catalog.library_stats().unwrap_or_default();
         let model = AnalyticsModel { catalog, stats };
         let widgets = view_output!();
         rebuild(&widgets.body, &model.stats);
+        let _ = sender;
         ComponentParts { model, widgets }
     }
 

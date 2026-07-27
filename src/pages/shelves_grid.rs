@@ -111,10 +111,9 @@ impl Component for ShelvesGridModel {
     ) {
         match msg {
             ShelvesMsg::NewManual | ShelvesMsg::NewSmart => {
-                let kind = if matches!(msg, ShelvesMsg::NewSmart) {
-                    ShelfKind::Smart
-                } else {
-                    ShelfKind::Manual
+                let kind = match msg {
+                    ShelvesMsg::NewSmart => ShelfKind::Smart,
+                    _ => ShelfKind::Manual,
                 };
                 let s = sender.clone();
                 open_shelf_editor(

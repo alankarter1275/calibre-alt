@@ -63,6 +63,13 @@ impl Component for HistoryModel {
                 },
 
                 gtk::Button {
+                    set_label: "↻",
+                    add_css_class: "kalam-secondary-btn",
+                    set_valign: gtk::Align::Center,
+                    set_tooltip_text: Some("Reload history"),
+                    connect_clicked => HistoryMsg::Refresh,
+                },
+                gtk::Button {
                     set_label: "Clear history",
                     add_css_class: "kalam-secondary-btn",
                     set_valign: gtk::Align::Center,

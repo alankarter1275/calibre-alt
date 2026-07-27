@@ -60,7 +60,6 @@ enum PageSlot {
     Reader(Controller<ReaderModel>),
     Settings(Controller<SettingsPageModel>),
     Placeholder(Controller<PlaceholderPageModel>),
-    Widget(gtk::Box),
 }
 
 impl PageSlot {
@@ -82,7 +81,6 @@ impl PageSlot {
             PageSlot::Reader(c) => c.widget().clone().upcast(),
             PageSlot::Settings(c) => c.widget().clone().upcast(),
             PageSlot::Placeholder(c) => c.widget().clone().upcast(),
-            PageSlot::Widget(b) => b.clone().upcast(),
         }
     }
 }
@@ -223,7 +221,6 @@ impl AppModel {
                 let ctrl = AnalyticsModel::builder().launch(catalog.clone()).detach();
                 PageSlot::Analytics(ctrl)
             }
-            Route::LibrarySection(section) => PageSlot::Widget(placeholder_section(*section)),
             Route::Module(NavItem::Shelves) | Route::ShelvesGrid => {
                 let ctrl = ShelvesGridModel::builder().launch(catalog.clone()).forward(
                     sender.input_sender(),
@@ -737,21 +734,3 @@ fn update_nav_styles(container: &gtk::Box, active: NavItem) {
     }
 }
 
-fn placeholder_section(section: LibrarySection) -> gtk::Box {
-    let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    let title = gtk::Label::new(Some(section.label()));
-    title.add_css_class("kalam-page-title");
-    title.set_halign(gtk::Align::Start);
-    page.append(&title);
-
-    let sub = gtk::Label::new(Some(section.blurb()));
-    sub.add_css_class("kalam-page-sub");
-    sub.set_halign(gtk::Align::Start);
-    page.append(&sub);
-
-    let ph = gtk::Label::new(Some(&format!("{} — coming soon.", section.label())));
-    ph.add_css_class("kalam-placeholder");
-    ph.set_wrap(true);
-    page.append(&ph);
-    page
-}
