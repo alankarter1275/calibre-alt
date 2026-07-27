@@ -1,0 +1,229 @@
+//! History queries.
+//!
+//! Split out of a 3,400-line `db.rs` purely to make it navigable; these are
+//! the same methods on the same `Catalog`, moved verbatim.
+
+use super::*;
+
+impl Catalog {
+    // -----------------------------------------------------------------------
+    // P4: History (append-only event log)
+    // -----------------------------------------------------------------------
+
+    pub fn log_event(&self, book_id: i64, kind: EventKind, detail: &str) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO reading_events (book_id, kind, at, detail) VALUES (?1, ?2, ?3, ?4)",
+            params![book_id, kind.as_str(), chrono_like_now(), detail],
+        )?;
+        Ok(())
+    }
+
+    /// Stamp `books.last_opened_at` and log an `opened` event — but collapse
+    /// repeat opens within the same hour so flipping in and out of the reader
+    /// doesn't flood History.
+    pub fn mark_book_opened(&self, book_id: i64) -> Result<()> {
+        let conn = self.conn();
+        let now = chrono_like_now();
+        conn.execute(
+            "UPDATE books SET last_opened_at = ?2 WHERE id = ?1",
+            params![book_id, now],
+        )?;
+
+        let recent: Option<String> = conn
+            .query_row(
+                "SELECT at FROM reading_events
+                 WHERE book_id = ?1 AND kind = 'opened'
+                 ORDER BY at DESC LIMIT 1",
+                params![book_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        // Timestamps are ISO-8601 UTC, so a 13-char prefix is the same hour.
+        let same_hour = recent
+            .as_deref()
+            .map(|prev| prev.len() >= 13 && now.len() >= 13 && prev[..13] == now[..13])
+            .unwrap_or(false);
+
+        if !same_hour {
+            conn.execute(
+                "INSERT INTO reading_events (book_id, kind, at, detail) VALUES (?1, 'opened', ?2, '')",
+                params![book_id, now],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Mark finished/unfinished by hand. Finishing also pins progress to 100%
+    /// and drops the book off the reading list.
+    pub fn set_book_finished(&self, book_id: i64, finished: bool) -> Result<()> {
+        {
+            let conn = self.conn();
+            let now = chrono_like_now();
+            if finished {
+                conn.execute(
+                    "UPDATE books SET finished_at = ?2, progress = 100 WHERE id = ?1",
+                    params![book_id, now],
+                )?;
+            } else {
+                conn.execute(
+                    "UPDATE books SET finished_at = NULL WHERE id = ?1",
+                    params![book_id],
+                )?;
+            }
+        }
+        if finished {
+            self.remove_from_reading_list(book_id)?;
+        }
+        self.log_event(
+            book_id,
+            if finished {
+                EventKind::Finished
+            } else {
+                EventKind::Unfinished
+            },
+            "",
+        )
+    }
+
+    /// Auto-finish when progress crosses the threshold, once per book.
+    /// Returns true if this call flipped the book to finished.
+    pub fn auto_finish_if_complete(&self, book_id: i64, progress_pct: i64) -> Result<bool> {
+        if progress_pct < 99 {
+            return Ok(false);
+        }
+        let already: Option<String> = {
+            let conn = self.conn();
+            conn.query_row(
+                "SELECT finished_at FROM books WHERE id = ?1",
+                params![book_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten()
+        };
+        if already.is_some() {
+            return Ok(false);
+        }
+        {
+            let conn = self.conn();
+            conn.execute(
+                "UPDATE books SET finished_at = ?2 WHERE id = ?1",
+                params![book_id, chrono_like_now()],
+            )?;
+        }
+        self.remove_from_reading_list(book_id)?;
+        self.log_event(book_id, EventKind::Finished, "auto")?;
+        Ok(true)
+    }
+
+    pub fn book_finished_at(&self, book_id: i64) -> Result<Option<String>> {
+        let conn = self.conn();
+        let v: Option<Option<String>> = conn
+            .query_row(
+                "SELECT finished_at FROM books WHERE id = ?1",
+                params![book_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(v.flatten())
+    }
+
+    /// Newest-first history, optionally filtered by kind and free text.
+    pub fn list_events(
+        &self,
+        kind: Option<EventKind>,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<ReadingEvent>> {
+        let conn = self.conn();
+        let q = query.trim();
+        let like = format!("%{}%", escape_like(q));
+        let kind_str = kind.map(|k| k.as_str().to_string());
+        let mut stmt = conn.prepare_cached(
+            "SELECT e.id, e.book_id, e.kind, e.at, e.detail, books.title, books.authors
+             FROM reading_events e
+             JOIN books ON books.id = e.book_id
+             WHERE (?1 IS NULL OR e.kind = ?1)
+               AND (?2 = '' OR books.title LIKE ?3 ESCAPE '\\'
+                            OR books.authors LIKE ?3 ESCAPE '\\')
+             ORDER BY e.at DESC, e.id DESC
+             LIMIT ?4",
+        )?;
+        let rows = stmt.query_map(params![kind_str, q, like, limit as i64], |r| {
+            let kind: String = r.get(2)?;
+            Ok(ReadingEvent {
+                id: r.get(0)?,
+                book_id: r.get(1)?,
+                kind: EventKind::from_str_lossy(&kind),
+                at: r.get(3)?,
+                detail: r.get(4)?,
+                book_title: r.get(5)?,
+                book_authors: r.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn clear_history(&self) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("DELETE FROM reading_events", [])?;
+        Ok(())
+    }
+
+    /// Books ordered by most recently opened — powers Home → Continue.
+    pub fn recently_opened(&self, limit: usize) -> Result<Vec<Book>> {
+        let conn = self.conn();
+        let sql = format!(
+            "SELECT {BOOK_COLUMNS}
+             FROM books
+             WHERE books.last_opened_at IS NOT NULL
+               AND IFNULL(books.finished_at, '') = ''
+             ORDER BY books.last_opened_at DESC
+             LIMIT ?1"
+        );
+        let mut stmt = conn.prepare_cached(&sql)?;
+        let rows = stmt.query_map(params![limit as i64], row_to_book)?;
+        let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        hydrate_books(&conn, &mut books)?;
+        Ok(books)
+    }
+
+    // -----------------------------------------------------------------------
+    // P4: Reading sessions (time tracking)
+    // -----------------------------------------------------------------------
+
+    /// Open a session row when the reader mounts; returns its id.
+    pub fn start_reading_session(&self, book_id: i64, start_pct: i64) -> Result<i64> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO reading_sessions (book_id, started_at, ended_at, seconds, start_pct, end_pct)
+             VALUES (?1, ?2, NULL, 0, ?3, ?3)",
+            params![book_id, chrono_like_now(), start_pct],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Close a session. Absurd durations (laptop suspended with the reader
+    /// open) are clamped so one forgotten window can't claim 14 hours read.
+    pub fn end_reading_session(&self, session_id: i64, seconds: i64, end_pct: i64) -> Result<()> {
+        let conn = self.conn();
+        let clamped = seconds.clamp(0, MAX_SESSION_SECONDS);
+        conn.execute(
+            "UPDATE reading_sessions SET ended_at = ?2, seconds = ?3, end_pct = ?4 WHERE id = ?1",
+            params![session_id, chrono_like_now(), clamped, end_pct],
+        )?;
+        Ok(())
+    }
+
+    pub fn total_reading_seconds(&self, book_id: i64) -> Result<i64> {
+        let conn = self.conn();
+        let n: i64 = conn.query_row(
+            "SELECT IFNULL(SUM(seconds), 0) FROM reading_sessions WHERE book_id = ?1",
+            params![book_id],
+            |r| r.get(0),
+        )?;
+        Ok(n)
+    }
+}

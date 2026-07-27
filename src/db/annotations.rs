@@ -1,0 +1,238 @@
+//! Annotations queries.
+//!
+//! Split out of a 3,400-line `db.rs` purely to make it navigable; these are
+//! the same methods on the same `Catalog`, moved verbatim.
+
+use super::*;
+
+impl Catalog {
+    // -----------------------------------------------------------------------
+    // P3: Annotations
+    // -----------------------------------------------------------------------
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_annotation(
+        &self,
+        book_id: i64,
+        kind: &str,
+        chapter_index: i64,
+        start_path: &str,
+        start_offset: i64,
+        end_path: &str,
+        end_offset: i64,
+        color: &str,
+        text_excerpt: &str,
+        note: &str,
+    ) -> Result<i64> {
+        let conn = self.conn();
+        let now = chrono_like_now();
+        conn.execute(
+            "INSERT INTO annotations
+                (book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
+                 color, text_excerpt, note, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+            params![
+                book_id,
+                kind,
+                chapter_index,
+                start_path,
+                start_offset,
+                end_path,
+                end_offset,
+                color,
+                text_excerpt,
+                note,
+                now
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_annotations_for_book(&self, book_id: i64) -> Result<Vec<Annotation>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
+                    color, text_excerpt, note, cfi, created_at, updated_at
+             FROM annotations WHERE book_id = ?1 ORDER BY chapter_index ASC, created_at ASC",
+        )?;
+        let rows = stmt.query_map(params![book_id], row_to_annotation)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn get_annotations_for_chapter(
+        &self,
+        book_id: i64,
+        chapter_index: i64,
+    ) -> Result<Vec<Annotation>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
+                    color, text_excerpt, note, cfi, created_at, updated_at
+             FROM annotations
+             WHERE book_id = ?1 AND chapter_index = ?2
+             ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map(params![book_id, chapter_index], row_to_annotation)?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    /// A few recent quotes with their book titles, in one query.
+    /// The dashboard previously fetched 500 rows and then a book per card.
+    pub fn recent_quotes(&self, limit: usize) -> Result<Vec<(Annotation, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT a.id, a.book_id, a.kind, a.chapter_index, a.start_path, a.start_offset,
+                    a.end_path, a.end_offset, a.color, a.text_excerpt, a.note, a.cfi,
+                    a.created_at, a.updated_at, books.title
+             FROM annotations a
+             JOIN books ON books.id = a.book_id
+             WHERE a.kind IN ('quote','highlight') AND TRIM(a.text_excerpt) <> ''
+             ORDER BY a.created_at DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |r| {
+            Ok((row_to_annotation(r)?, r.get::<_, String>(14)?))
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Total saved quotes, for counts that do not need the rows themselves.
+    pub fn count_quotes(&self) -> Result<i64> {
+        let conn = self.conn();
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM annotations WHERE kind IN ('quote','highlight')",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(n)
+    }
+
+    pub fn list_all_quotes(&self, query: &str) -> Result<Vec<Annotation>> {
+        let conn = self.conn();
+        let q = query.trim();
+        let mut stmt = if q.is_empty() {
+            conn.prepare_cached(
+                "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
+                        color, text_excerpt, note, cfi, created_at, updated_at
+                 FROM annotations WHERE kind IN ('quote','highlight')
+                 ORDER BY created_at DESC LIMIT 500",
+            )?
+        } else {
+            conn.prepare_cached(
+                "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
+                        color, text_excerpt, note, cfi, created_at, updated_at
+                 FROM annotations
+                 WHERE kind IN ('quote','highlight')
+                   AND (text_excerpt LIKE ?1 ESCAPE '\\' OR note LIKE ?1 ESCAPE '\\')
+                 ORDER BY created_at DESC LIMIT 500",
+            )?
+        };
+        let like = format!("%{}%", escape_like(q));
+        let rows = if q.is_empty() {
+            stmt.query_map([], row_to_annotation)?
+        } else {
+            stmt.query_map(params![like], row_to_annotation)?
+        };
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn delete_annotation(&self, id: i64) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("DELETE FROM annotations WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn update_annotation_note(&self, id: i64, note: &str) -> Result<()> {
+        let conn = self.conn();
+        let now = chrono_like_now();
+        conn.execute(
+            "UPDATE annotations SET note = ?1, updated_at = ?2 WHERE id = ?3",
+            params![note, now, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_annotation_color(&self, id: i64, color: &str) -> Result<()> {
+        let conn = self.conn();
+        let now = chrono_like_now();
+        conn.execute(
+            "UPDATE annotations SET color = ?1, updated_at = ?2 WHERE id = ?3",
+            params![color, now, id],
+        )?;
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // P3: Saved words
+    // -----------------------------------------------------------------------
+
+    pub fn insert_saved_word(
+        &self,
+        word: &str,
+        definition: &str,
+        dict_name: Option<&str>,
+        book_id: Option<i64>,
+        chapter_index: Option<i64>,
+        context_text: Option<&str>,
+    ) -> Result<i64> {
+        let conn = self.conn();
+        let now = chrono_like_now();
+        conn.execute(
+            "INSERT INTO saved_words (word, definition, dict_name, book_id, chapter_index, context_text, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                word,
+                definition,
+                dict_name,
+                book_id,
+                chapter_index,
+                context_text,
+                now
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn list_saved_words(&self, query: &str) -> Result<Vec<SavedWord>> {
+        let conn = self.conn();
+        let q = query.trim();
+        if q.is_empty() {
+            let mut stmt = conn.prepare_cached(
+                "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at
+                 FROM saved_words ORDER BY created_at DESC LIMIT 500",
+            )?;
+            let rows = stmt.query_map([], row_to_saved_word)?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
+        } else {
+            let like = format!("%{}%", escape_like(q));
+            let mut stmt = conn.prepare_cached(
+                "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at
+                 FROM saved_words
+                 WHERE word LIKE ?1 ESCAPE '\\' OR definition LIKE ?1 ESCAPE '\\'
+                 ORDER BY created_at DESC LIMIT 500",
+            )?;
+            let rows = stmt.query_map(params![like], row_to_saved_word)?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()
+                .map_err(Into::into)
+        }
+    }
+
+    pub fn delete_saved_word(&self, id: i64) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("DELETE FROM saved_words WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+}
