@@ -19,6 +19,10 @@ pub enum DbError {
 
 pub type Result<T> = std::result::Result<T, DbError>;
 
+/// Bumped whenever `migrate()` learns new tables/columns.
+/// v3 = P3 annotations & dictionary · v4 = P4 shelves, lists, history, sessions.
+pub const SCHEMA_VERSION: i64 = 4;
+
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
     conn: Mutex<Connection>,
@@ -79,6 +83,170 @@ pub struct DictEntry {
     pub definition: String,
 }
 
+// ---------------------------------------------------------------------------
+// Domain structs for P4
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShelfKind {
+    Manual,
+    Smart,
+}
+
+impl ShelfKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ShelfKind::Manual => "manual",
+            ShelfKind::Smart => "smart",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ShelfKind::Manual => "Manual",
+            ShelfKind::Smart => "Smart",
+        }
+    }
+
+    pub fn from_str_lossy(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "smart" => ShelfKind::Smart,
+            _ => ShelfKind::Manual,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Shelf {
+    pub id: i64,
+    pub name: String,
+    pub kind: ShelfKind,
+    pub description: String,
+    /// JSON rule document; empty for manual shelves.
+    pub rules: String,
+    pub position: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    /// Live count, filled in by `list_shelves`.
+    pub book_count: usize,
+}
+
+impl Shelf {
+    pub fn rule_set(&self) -> crate::shelf_rules::RuleSet {
+        crate::shelf_rules::RuleSet::parse(&self.rules)
+    }
+
+    /// Card subtitle: rule summary for smart shelves, description otherwise.
+    pub fn summary(&self) -> String {
+        match self.kind {
+            ShelfKind::Smart => self.rule_set().describe(),
+            ShelfKind::Manual => {
+                if self.description.trim().is_empty() {
+                    "Hand-picked books".to_string()
+                } else {
+                    self.description.clone()
+                }
+            }
+        }
+    }
+}
+
+/// A row in the ordered to-be-read list.
+#[derive(Debug, Clone)]
+pub struct ReadingListEntry {
+    pub book: Book,
+    pub position: i64,
+    pub note: String,
+    pub added_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventKind {
+    Opened,
+    Finished,
+    Unfinished,
+    Imported,
+}
+
+impl EventKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EventKind::Opened => "opened",
+            EventKind::Finished => "finished",
+            EventKind::Unfinished => "unfinished",
+            EventKind::Imported => "imported",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            EventKind::Opened => "Opened",
+            EventKind::Finished => "Finished",
+            EventKind::Unfinished => "Marked unread",
+            EventKind::Imported => "Imported",
+        }
+    }
+
+    pub fn icon(self) -> &'static str {
+        match self {
+            EventKind::Opened => "◷",
+            EventKind::Finished => "✓",
+            EventKind::Unfinished => "↺",
+            EventKind::Imported => "+",
+        }
+    }
+
+    pub fn from_str_lossy(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "finished" => EventKind::Finished,
+            "unfinished" => EventKind::Unfinished,
+            "imported" => EventKind::Imported,
+            _ => EventKind::Opened,
+        }
+    }
+}
+
+/// A history row joined with its book title for display.
+#[derive(Debug, Clone)]
+pub struct ReadingEvent {
+    pub id: i64,
+    pub book_id: i64,
+    pub kind: EventKind,
+    pub at: String,
+    pub detail: String,
+    pub book_title: String,
+    pub book_authors: String,
+}
+
+/// Aggregated numbers for the Analytics page.
+#[derive(Debug, Clone, Default)]
+pub struct LibraryStats {
+    pub total_books: i64,
+    pub finished: i64,
+    pub reading: i64,
+    pub unread: i64,
+    pub highlights: i64,
+    pub quotes: i64,
+    pub saved_words: i64,
+    pub shelves: i64,
+    pub reading_list: i64,
+    pub total_seconds: i64,
+    pub seconds_last_7: i64,
+    pub seconds_last_30: i64,
+    pub sessions: i64,
+    pub finished_last_30: i64,
+    pub added_last_30: i64,
+    pub current_streak_days: i64,
+    pub longest_streak_days: i64,
+    /// (label, count) — newest month last.
+    pub added_by_month: Vec<(String, i64)>,
+    /// (label, seconds) — last 14 days, oldest first.
+    pub minutes_by_day: Vec<(String, i64)>,
+    pub top_tags: Vec<(String, i64)>,
+    pub top_authors: Vec<(String, i64)>,
+    pub most_read: Vec<(String, i64)>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HighlightColor {
     Yellow,
@@ -129,6 +297,18 @@ impl Catalog {
             PRAGMA journal_mode = WAL;
             ",
         )?;
+        let cat = Self {
+            conn: Mutex::new(conn),
+        };
+        cat.migrate()?;
+        Ok(cat)
+    }
+
+    /// In-memory catalog with the full schema applied — tests only.
+    #[cfg(test)]
+    pub fn open_in_memory() -> Result<Self> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let cat = Self {
             conn: Mutex::new(conn),
         };
@@ -231,8 +411,69 @@ impl Catalog {
             );
             CREATE INDEX IF NOT EXISTS idx_dict_entries_word ON dict_entries(word COLLATE NOCASE);
             CREATE INDEX IF NOT EXISTS idx_dict_entries_dict ON dict_entries(dict_id);
+
+            -- P4 tables
+            CREATE TABLE IF NOT EXISTS shelves (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+                kind        TEXT    NOT NULL DEFAULT 'manual',  -- manual | smart
+                description TEXT    NOT NULL DEFAULT '',
+                rules       TEXT    NOT NULL DEFAULT '',        -- JSON for smart shelves
+                position    INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT    NOT NULL,
+                updated_at  TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_shelves_position ON shelves(position);
+
+            CREATE TABLE IF NOT EXISTS shelf_books (
+                shelf_id INTEGER NOT NULL REFERENCES shelves(id) ON DELETE CASCADE,
+                book_id  INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                position INTEGER NOT NULL DEFAULT 0,
+                added_at TEXT    NOT NULL,
+                PRIMARY KEY (shelf_id, book_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_shelf_books_shelf ON shelf_books(shelf_id, position);
+            CREATE INDEX IF NOT EXISTS idx_shelf_books_book ON shelf_books(book_id);
+
+            CREATE TABLE IF NOT EXISTS reading_list (
+                book_id  INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+                position INTEGER NOT NULL DEFAULT 0,
+                note     TEXT    NOT NULL DEFAULT '',
+                added_at TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_reading_list_position ON reading_list(position);
+
+            -- Append-only history log: opened | finished | unfinished | imported
+            CREATE TABLE IF NOT EXISTS reading_events (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id    INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                kind       TEXT    NOT NULL,
+                at         TEXT    NOT NULL,
+                detail     TEXT    NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_reading_events_book ON reading_events(book_id);
+            CREATE INDEX IF NOT EXISTS idx_reading_events_at ON reading_events(at DESC);
+            CREATE INDEX IF NOT EXISTS idx_reading_events_kind ON reading_events(kind);
+
+            -- One row per reader visit; closed out when the reader shuts down.
+            CREATE TABLE IF NOT EXISTS reading_sessions (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id     INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                started_at  TEXT    NOT NULL,
+                ended_at    TEXT,
+                seconds     INTEGER NOT NULL DEFAULT 0,
+                start_pct   INTEGER NOT NULL DEFAULT 0,
+                end_pct     INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_reading_sessions_book ON reading_sessions(book_id);
+            CREATE INDEX IF NOT EXISTS idx_reading_sessions_started ON reading_sessions(started_at DESC);
             "#,
         )?;
+
+        // books.last_opened_at / finished_at were added in v4; ALTER is the only
+        // way to extend an existing table created by v1–v3.
+        add_column_if_missing(&conn, "books", "last_opened_at", "TEXT")?;
+        add_column_if_missing(&conn, "books", "finished_at", "TEXT")?;
 
         let version: Option<i64> = conn
             .query_row("SELECT version FROM schema_version LIMIT 1", [], |r| {
@@ -240,10 +481,16 @@ impl Catalog {
             })
             .optional()?;
         if version.is_none() {
-            conn.execute("INSERT INTO schema_version (version) VALUES (3)", [])?;
+            conn.execute(
+                "INSERT INTO schema_version (version) VALUES (?1)",
+                params![SCHEMA_VERSION],
+            )?;
         } else if let Some(v) = version {
-            if v < 3 {
-                conn.execute("UPDATE schema_version SET version = 3", [])?;
+            if v < SCHEMA_VERSION {
+                conn.execute(
+                    "UPDATE schema_version SET version = ?1",
+                    params![SCHEMA_VERSION],
+                )?;
             }
         }
         Ok(())
@@ -829,6 +1076,920 @@ impl Catalog {
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM dict_entries", [], |r| r.get(0))?;
         Ok(n)
     }
+
+    // -----------------------------------------------------------------------
+    // P4: Shelves
+    // -----------------------------------------------------------------------
+
+    /// All shelves ordered by position, each with a live book count.
+    pub fn list_shelves(&self) -> Result<Vec<Shelf>> {
+        let mut shelves = {
+            let conn = self.conn.lock().expect("db lock");
+            let mut stmt = conn.prepare(
+                "SELECT id, name, kind, description, rules, position, created_at, updated_at
+                 FROM shelves
+                 ORDER BY position ASC, name COLLATE NOCASE ASC",
+            )?;
+            let rows = stmt.query_map([], row_to_shelf)?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+
+        for shelf in &mut shelves {
+            shelf.book_count = self.shelf_book_count(shelf).unwrap_or(0);
+        }
+        Ok(shelves)
+    }
+
+    pub fn get_shelf(&self, id: i64) -> Result<Option<Shelf>> {
+        let shelf = {
+            let conn = self.conn.lock().expect("db lock");
+            conn.query_row(
+                "SELECT id, name, kind, description, rules, position, created_at, updated_at
+                 FROM shelves WHERE id = ?1",
+                params![id],
+                row_to_shelf,
+            )
+            .optional()?
+        };
+        let Some(mut shelf) = shelf else {
+            return Ok(None);
+        };
+        shelf.book_count = self.shelf_book_count(&shelf).unwrap_or(0);
+        Ok(Some(shelf))
+    }
+
+    pub fn create_shelf(
+        &self,
+        name: &str,
+        kind: ShelfKind,
+        description: &str,
+        rules: &str,
+    ) -> Result<i64> {
+        let conn = self.conn.lock().expect("db lock");
+        let now = chrono_like_now();
+        let next_pos: i64 = conn
+            .query_row(
+                "SELECT IFNULL(MAX(position), -1) + 1 FROM shelves",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        conn.execute(
+            "INSERT INTO shelves (name, kind, description, rules, position, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+            params![name.trim(), kind.as_str(), description, rules, next_pos, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn update_shelf(
+        &self,
+        id: i64,
+        name: &str,
+        description: &str,
+        rules: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE shelves SET name = ?2, description = ?3, rules = ?4, updated_at = ?5
+             WHERE id = ?1",
+            params![id, name.trim(), description, rules, chrono_like_now()],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_shelf(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute("DELETE FROM shelves WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// True when a shelf with this name already exists (case-insensitive).
+    /// `except_id` lets the edit dialog ignore the shelf being renamed.
+    pub fn shelf_name_taken(&self, name: &str, except_id: Option<i64>) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM shelves
+             WHERE name = ?1 COLLATE NOCASE AND id <> IFNULL(?2, -1)",
+            params![name.trim(), except_id],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Books on a shelf: membership rows for manual, compiled rules for smart.
+    pub fn shelf_books(&self, shelf: &Shelf, sort: SortKey, query: &str) -> Result<Vec<Book>> {
+        match shelf.kind {
+            ShelfKind::Manual => self.manual_shelf_books(shelf.id, sort, query),
+            ShelfKind::Smart => self.smart_shelf_books(shelf, sort, query),
+        }
+    }
+
+    fn manual_shelf_books(&self, shelf_id: i64, sort: SortKey, query: &str) -> Result<Vec<Book>> {
+        let conn = self.conn.lock().expect("db lock");
+        // Manual shelves keep hand-sorted order unless the user picks a sort.
+        let order = match sort {
+            SortKey::Title => "books.sort_title COLLATE NOCASE ASC",
+            SortKey::Author => "books.authors COLLATE NOCASE ASC, books.sort_title COLLATE NOCASE ASC",
+            SortKey::Added => "sb.position ASC, sb.added_at ASC",
+        };
+        let q = query.trim();
+        let sql = format!(
+            "SELECT {BOOK_COLUMNS}
+             FROM books
+             JOIN shelf_books sb ON sb.book_id = books.id
+             WHERE sb.shelf_id = ?1
+               AND (?2 = '' OR books.title LIKE ?3 ESCAPE '\\'
+                            OR books.authors LIKE ?3 ESCAPE '\\')
+             ORDER BY {order}"
+        );
+        let like = format!("%{}%", escape_like(q));
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![shelf_id, q, like], row_to_book)?;
+        let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        hydrate_books(&conn, &mut books)?;
+        Ok(books)
+    }
+
+    fn smart_shelf_books(&self, shelf: &Shelf, sort: SortKey, query: &str) -> Result<Vec<Book>> {
+        let (where_sql, rule_params) = shelf.rule_set().to_sql();
+        let conn = self.conn.lock().expect("db lock");
+        let order = match sort {
+            SortKey::Title => "books.sort_title COLLATE NOCASE ASC",
+            SortKey::Author => "books.authors COLLATE NOCASE ASC, books.sort_title COLLATE NOCASE ASC",
+            SortKey::Added => "books.added_at DESC",
+        };
+        let q = query.trim();
+        // Compiled rules use anonymous `?` placeholders, so the whole statement
+        // must stay positional — mixing `?N` here would collide with them.
+        let sql = format!(
+            "SELECT {BOOK_COLUMNS}
+             FROM books
+             WHERE ({where_sql})
+               AND (? = '' OR books.title LIKE ? ESCAPE '\\'
+                           OR books.authors LIKE ? ESCAPE '\\')
+             ORDER BY {order}"
+        );
+
+        let like = format!("%{}%", escape_like(q));
+        // Bind order follows placeholder order in the SQL text: rules first.
+        let mut bound: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(rule_params.len() + 3);
+        for p in &rule_params {
+            bound.push(p);
+        }
+        bound.push(&q);
+        bound.push(&like);
+        bound.push(&like);
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(bound.as_slice(), row_to_book)?;
+        let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        hydrate_books(&conn, &mut books)?;
+        Ok(books)
+    }
+
+    fn shelf_book_count(&self, shelf: &Shelf) -> Result<usize> {
+        let conn = self.conn.lock().expect("db lock");
+        let n: i64 = match shelf.kind {
+            ShelfKind::Manual => conn.query_row(
+                "SELECT COUNT(*) FROM shelf_books WHERE shelf_id = ?1",
+                params![shelf.id],
+                |r| r.get(0),
+            )?,
+            ShelfKind::Smart => {
+                let (where_sql, rule_params) = shelf.rule_set().to_sql();
+                let sql = format!("SELECT COUNT(*) FROM books WHERE {where_sql}");
+                let bound: Vec<&dyn rusqlite::ToSql> =
+                    rule_params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+                conn.query_row(&sql, bound.as_slice(), |r| r.get(0))?
+            }
+        };
+        Ok(n as usize)
+    }
+
+    /// Count matches for an unsaved rule set — powers the live count in the editor.
+    pub fn count_matching_rules(&self, rules: &crate::shelf_rules::RuleSet) -> Result<usize> {
+        let (where_sql, rule_params) = rules.to_sql();
+        let conn = self.conn.lock().expect("db lock");
+        let sql = format!("SELECT COUNT(*) FROM books WHERE {where_sql}");
+        let bound: Vec<&dyn rusqlite::ToSql> =
+            rule_params.iter().map(|p| p as &dyn rusqlite::ToSql).collect();
+        let n: i64 = conn.query_row(&sql, bound.as_slice(), |r| r.get(0))?;
+        Ok(n as usize)
+    }
+
+    pub fn add_book_to_shelf(&self, shelf_id: i64, book_id: i64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let next_pos: i64 = conn
+            .query_row(
+                "SELECT IFNULL(MAX(position), -1) + 1 FROM shelf_books WHERE shelf_id = ?1",
+                params![shelf_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        conn.execute(
+            "INSERT OR IGNORE INTO shelf_books (shelf_id, book_id, position, added_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![shelf_id, book_id, next_pos, chrono_like_now()],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_book_from_shelf(&self, shelf_id: i64, book_id: i64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "DELETE FROM shelf_books WHERE shelf_id = ?1 AND book_id = ?2",
+            params![shelf_id, book_id],
+        )?;
+        Ok(())
+    }
+
+    /// Manual shelves this book belongs to (id, name) — for the book page chips.
+    pub fn shelves_for_book(&self, book_id: i64) -> Result<Vec<(i64, String)>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "SELECT s.id, s.name FROM shelves s
+             JOIN shelf_books sb ON sb.shelf_id = s.id
+             WHERE sb.book_id = ?1
+             ORDER BY s.name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map(params![book_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Move a manual shelf entry up/down by swapping positions with its neighbour.
+    pub fn move_shelf_book(&self, shelf_id: i64, book_id: i64, delta: i64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let ids: Vec<i64> = {
+            let mut stmt = conn.prepare(
+                "SELECT book_id FROM shelf_books WHERE shelf_id = ?1
+                 ORDER BY position ASC, added_at ASC",
+            )?;
+            let rows = stmt.query_map(params![shelf_id], |r| r.get(0))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        let Some(idx) = ids.iter().position(|id| *id == book_id) else {
+            return Ok(());
+        };
+        let target = idx as i64 + delta;
+        if target < 0 || target as usize >= ids.len() {
+            return Ok(());
+        }
+        let mut reordered = ids.clone();
+        reordered.swap(idx, target as usize);
+        for (pos, id) in reordered.iter().enumerate() {
+            conn.execute(
+                "UPDATE shelf_books SET position = ?3 WHERE shelf_id = ?1 AND book_id = ?2",
+                params![shelf_id, id, pos as i64],
+            )?;
+        }
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // P4: Reading list
+    // -----------------------------------------------------------------------
+
+    pub fn list_reading_list(&self) -> Result<Vec<ReadingListEntry>> {
+        let conn = self.conn.lock().expect("db lock");
+        let sql = format!(
+            "SELECT {BOOK_COLUMNS}, rl.position, rl.note, rl.added_at
+             FROM books
+             JOIN reading_list rl ON rl.book_id = books.id
+             ORDER BY rl.position ASC, rl.added_at ASC"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |row| {
+            let book = row_to_book(row)?;
+            Ok(ReadingListEntry {
+                book,
+                position: row.get(12)?,
+                note: row.get(13)?,
+                added_at: row.get(14)?,
+            })
+        })?;
+        let mut entries = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut books: Vec<Book> = entries.iter().map(|e| e.book.clone()).collect();
+        hydrate_books(&conn, &mut books)?;
+        for (entry, book) in entries.iter_mut().zip(books) {
+            entry.book = book;
+        }
+        Ok(entries)
+    }
+
+    pub fn is_in_reading_list(&self, book_id: i64) -> Result<bool> {
+        let conn = self.conn.lock().expect("db lock");
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM reading_list WHERE book_id = ?1",
+            params![book_id],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
+    pub fn add_to_reading_list(&self, book_id: i64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let next_pos: i64 = conn
+            .query_row(
+                "SELECT IFNULL(MAX(position), -1) + 1 FROM reading_list",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        conn.execute(
+            "INSERT OR IGNORE INTO reading_list (book_id, position, note, added_at)
+             VALUES (?1, ?2, '', ?3)",
+            params![book_id, next_pos, chrono_like_now()],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_from_reading_list(&self, book_id: i64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "DELETE FROM reading_list WHERE book_id = ?1",
+            params![book_id],
+        )?;
+        Ok(())
+    }
+
+    /// Move an entry up (`delta = -1`) or down (`delta = 1`).
+    pub fn move_reading_list_entry(&self, book_id: i64, delta: i64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let ids: Vec<i64> = {
+            let mut stmt = conn.prepare(
+                "SELECT book_id FROM reading_list ORDER BY position ASC, added_at ASC",
+            )?;
+            let rows = stmt.query_map([], |r| r.get(0))?;
+            rows.collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        let Some(idx) = ids.iter().position(|id| *id == book_id) else {
+            return Ok(());
+        };
+        let target = idx as i64 + delta;
+        if target < 0 || target as usize >= ids.len() {
+            return Ok(());
+        }
+        let mut reordered = ids.clone();
+        reordered.swap(idx, target as usize);
+        for (pos, id) in reordered.iter().enumerate() {
+            conn.execute(
+                "UPDATE reading_list SET position = ?2 WHERE book_id = ?1",
+                params![id, pos as i64],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn set_reading_list_note(&self, book_id: i64, note: &str) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE reading_list SET note = ?2 WHERE book_id = ?1",
+            params![book_id, note],
+        )?;
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
+    // P4: History (append-only event log)
+    // -----------------------------------------------------------------------
+
+    pub fn log_event(&self, book_id: i64, kind: EventKind, detail: &str) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT INTO reading_events (book_id, kind, at, detail) VALUES (?1, ?2, ?3, ?4)",
+            params![book_id, kind.as_str(), chrono_like_now(), detail],
+        )?;
+        Ok(())
+    }
+
+    /// Stamp `books.last_opened_at` and log an `opened` event — but collapse
+    /// repeat opens within the same hour so flipping in and out of the reader
+    /// doesn't flood History.
+    pub fn mark_book_opened(&self, book_id: i64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let now = chrono_like_now();
+        conn.execute(
+            "UPDATE books SET last_opened_at = ?2 WHERE id = ?1",
+            params![book_id, now],
+        )?;
+
+        let recent: Option<String> = conn
+            .query_row(
+                "SELECT at FROM reading_events
+                 WHERE book_id = ?1 AND kind = 'opened'
+                 ORDER BY at DESC LIMIT 1",
+                params![book_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        // Timestamps are ISO-8601 UTC, so a 13-char prefix is the same hour.
+        let same_hour = recent
+            .as_deref()
+            .map(|prev| prev.len() >= 13 && now.len() >= 13 && prev[..13] == now[..13])
+            .unwrap_or(false);
+
+        if !same_hour {
+            conn.execute(
+                "INSERT INTO reading_events (book_id, kind, at, detail) VALUES (?1, 'opened', ?2, '')",
+                params![book_id, now],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Mark finished/unfinished by hand. Finishing also pins progress to 100%
+    /// and drops the book off the reading list.
+    pub fn set_book_finished(&self, book_id: i64, finished: bool) -> Result<()> {
+        {
+            let conn = self.conn.lock().expect("db lock");
+            let now = chrono_like_now();
+            if finished {
+                conn.execute(
+                    "UPDATE books SET finished_at = ?2, progress = 100 WHERE id = ?1",
+                    params![book_id, now],
+                )?;
+            } else {
+                conn.execute(
+                    "UPDATE books SET finished_at = NULL WHERE id = ?1",
+                    params![book_id],
+                )?;
+            }
+        }
+        if finished {
+            self.remove_from_reading_list(book_id)?;
+        }
+        self.log_event(
+            book_id,
+            if finished {
+                EventKind::Finished
+            } else {
+                EventKind::Unfinished
+            },
+            "",
+        )
+    }
+
+    /// Auto-finish when progress crosses the threshold, once per book.
+    /// Returns true if this call flipped the book to finished.
+    pub fn auto_finish_if_complete(&self, book_id: i64, progress_pct: i64) -> Result<bool> {
+        if progress_pct < 99 {
+            return Ok(false);
+        }
+        let already: Option<String> = {
+            let conn = self.conn.lock().expect("db lock");
+            conn.query_row(
+                "SELECT finished_at FROM books WHERE id = ?1",
+                params![book_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten()
+        };
+        if already.is_some() {
+            return Ok(false);
+        }
+        {
+            let conn = self.conn.lock().expect("db lock");
+            conn.execute(
+                "UPDATE books SET finished_at = ?2 WHERE id = ?1",
+                params![book_id, chrono_like_now()],
+            )?;
+        }
+        self.remove_from_reading_list(book_id)?;
+        self.log_event(book_id, EventKind::Finished, "auto")?;
+        Ok(true)
+    }
+
+    pub fn book_finished_at(&self, book_id: i64) -> Result<Option<String>> {
+        let conn = self.conn.lock().expect("db lock");
+        let v: Option<Option<String>> = conn
+            .query_row(
+                "SELECT finished_at FROM books WHERE id = ?1",
+                params![book_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(v.flatten())
+    }
+
+    /// Newest-first history, optionally filtered by kind and free text.
+    pub fn list_events(
+        &self,
+        kind: Option<EventKind>,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<ReadingEvent>> {
+        let conn = self.conn.lock().expect("db lock");
+        let q = query.trim();
+        let like = format!("%{}%", escape_like(q));
+        let kind_str = kind.map(|k| k.as_str().to_string());
+        let mut stmt = conn.prepare(
+            "SELECT e.id, e.book_id, e.kind, e.at, e.detail, books.title, books.authors
+             FROM reading_events e
+             JOIN books ON books.id = e.book_id
+             WHERE (?1 IS NULL OR e.kind = ?1)
+               AND (?2 = '' OR books.title LIKE ?3 ESCAPE '\\'
+                            OR books.authors LIKE ?3 ESCAPE '\\')
+             ORDER BY e.at DESC, e.id DESC
+             LIMIT ?4",
+        )?;
+        let rows = stmt.query_map(params![kind_str, q, like, limit as i64], |r| {
+            let kind: String = r.get(2)?;
+            Ok(ReadingEvent {
+                id: r.get(0)?,
+                book_id: r.get(1)?,
+                kind: EventKind::from_str_lossy(&kind),
+                at: r.get(3)?,
+                detail: r.get(4)?,
+                book_title: r.get(5)?,
+                book_authors: r.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn clear_history(&self) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute("DELETE FROM reading_events", [])?;
+        Ok(())
+    }
+
+    /// Books ordered by most recently opened — powers Home → Continue.
+    pub fn recently_opened(&self, limit: usize) -> Result<Vec<Book>> {
+        let conn = self.conn.lock().expect("db lock");
+        let sql = format!(
+            "SELECT {BOOK_COLUMNS}
+             FROM books
+             WHERE books.last_opened_at IS NOT NULL
+               AND IFNULL(books.finished_at, '') = ''
+             ORDER BY books.last_opened_at DESC
+             LIMIT ?1"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![limit as i64], row_to_book)?;
+        let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        hydrate_books(&conn, &mut books)?;
+        Ok(books)
+    }
+
+    // -----------------------------------------------------------------------
+    // P4: Reading sessions (time tracking)
+    // -----------------------------------------------------------------------
+
+    /// Open a session row when the reader mounts; returns its id.
+    pub fn start_reading_session(&self, book_id: i64, start_pct: i64) -> Result<i64> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT INTO reading_sessions (book_id, started_at, ended_at, seconds, start_pct, end_pct)
+             VALUES (?1, ?2, NULL, 0, ?3, ?3)",
+            params![book_id, chrono_like_now(), start_pct],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Close a session. Absurd durations (laptop suspended with the reader
+    /// open) are clamped so one forgotten window can't claim 14 hours read.
+    pub fn end_reading_session(&self, session_id: i64, seconds: i64, end_pct: i64) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let clamped = seconds.clamp(0, MAX_SESSION_SECONDS);
+        conn.execute(
+            "UPDATE reading_sessions SET ended_at = ?2, seconds = ?3, end_pct = ?4 WHERE id = ?1",
+            params![session_id, chrono_like_now(), clamped, end_pct],
+        )?;
+        Ok(())
+    }
+
+    pub fn total_reading_seconds(&self, book_id: i64) -> Result<i64> {
+        let conn = self.conn.lock().expect("db lock");
+        let n: i64 = conn.query_row(
+            "SELECT IFNULL(SUM(seconds), 0) FROM reading_sessions WHERE book_id = ?1",
+            params![book_id],
+            |r| r.get(0),
+        )?;
+        Ok(n)
+    }
+
+    // -----------------------------------------------------------------------
+    // P4: Tags browse
+    // -----------------------------------------------------------------------
+
+    /// (tag name, book count), most used first.
+    pub fn list_tags_with_counts(&self) -> Result<Vec<(String, i64)>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "SELECT t.name, COUNT(bt.book_id) AS n
+             FROM tags t
+             LEFT JOIN book_tags bt ON bt.tag_id = t.id
+             GROUP BY t.id
+             HAVING n > 0
+             ORDER BY n DESC, t.name COLLATE NOCASE ASC",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn books_with_tag(&self, tag: &str, sort: SortKey) -> Result<Vec<Book>> {
+        let conn = self.conn.lock().expect("db lock");
+        let order = match sort {
+            SortKey::Title => "books.sort_title COLLATE NOCASE ASC",
+            SortKey::Author => "books.authors COLLATE NOCASE ASC",
+            SortKey::Added => "books.added_at DESC",
+        };
+        let sql = format!(
+            "SELECT {BOOK_COLUMNS}
+             FROM books
+             JOIN book_tags bt ON bt.book_id = books.id
+             JOIN tags t ON t.id = bt.tag_id
+             WHERE t.name = ?1 COLLATE NOCASE
+             ORDER BY {order}"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![tag], row_to_book)?;
+        let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        hydrate_books(&conn, &mut books)?;
+        Ok(books)
+    }
+
+    // -----------------------------------------------------------------------
+    // P4: Analytics
+    // -----------------------------------------------------------------------
+
+    pub fn library_stats(&self) -> Result<LibraryStats> {
+        let conn = self.conn.lock().expect("db lock");
+
+        let one =
+            |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap_or(0) };
+
+        let mut s = LibraryStats {
+            total_books: one("SELECT COUNT(*) FROM books"),
+            finished: one(
+                "SELECT COUNT(*) FROM books
+                 WHERE IFNULL(finished_at,'') <> '' OR progress >= 100",
+            ),
+            reading: one(
+                "SELECT COUNT(*) FROM books
+                 WHERE progress > 0 AND progress < 100 AND IFNULL(finished_at,'') = ''",
+            ),
+            unread: one(
+                "SELECT COUNT(*) FROM books
+                 WHERE progress <= 0 AND IFNULL(finished_at,'') = ''",
+            ),
+            highlights: one("SELECT COUNT(*) FROM annotations WHERE kind = 'highlight'"),
+            quotes: one("SELECT COUNT(*) FROM annotations WHERE kind = 'quote'"),
+            saved_words: one("SELECT COUNT(*) FROM saved_words"),
+            shelves: one("SELECT COUNT(*) FROM shelves"),
+            reading_list: one("SELECT COUNT(*) FROM reading_list"),
+            total_seconds: one("SELECT IFNULL(SUM(seconds), 0) FROM reading_sessions"),
+            sessions: one("SELECT COUNT(*) FROM reading_sessions WHERE seconds > 0"),
+            ..LibraryStats::default()
+        };
+
+        let cutoff_7 = iso_days_ago(7);
+        let cutoff_30 = iso_days_ago(30);
+        s.seconds_last_7 = conn
+            .query_row(
+                "SELECT IFNULL(SUM(seconds), 0) FROM reading_sessions WHERE started_at >= ?1",
+                params![cutoff_7],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        s.seconds_last_30 = conn
+            .query_row(
+                "SELECT IFNULL(SUM(seconds), 0) FROM reading_sessions WHERE started_at >= ?1",
+                params![cutoff_30],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        s.finished_last_30 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM reading_events WHERE kind = 'finished' AND at >= ?1",
+                params![cutoff_30],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        s.added_last_30 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM books WHERE added_at >= ?1",
+                params![cutoff_30],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        // Books added per month, last 6 calendar months present in the data.
+        {
+            let mut stmt = conn.prepare(
+                "SELECT substr(added_at, 1, 7) AS ym, COUNT(*)
+                 FROM books
+                 GROUP BY ym
+                 ORDER BY ym DESC
+                 LIMIT 6",
+            )?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+            let mut months = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+            months.reverse();
+            s.added_by_month = months;
+        }
+
+        // Reading minutes per day for the last 14 days (zero-filled).
+        {
+            let mut stmt = conn.prepare(
+                "SELECT substr(started_at, 1, 10) AS d, IFNULL(SUM(seconds), 0)
+                 FROM reading_sessions
+                 WHERE started_at >= ?1
+                 GROUP BY d",
+            )?;
+            let cutoff_14 = iso_days_ago(13);
+            let rows =
+                stmt.query_map(params![cutoff_14], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+                })?;
+            let found = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+            let mut series = Vec::with_capacity(14);
+            for back in (0..14).rev() {
+                let day = iso_days_ago(back);
+                let key = day[..10].to_string();
+                let secs = found
+                    .iter()
+                    .find(|(d, _)| *d == key)
+                    .map(|(_, v)| *v)
+                    .unwrap_or(0);
+                series.push((key, secs));
+            }
+            s.minutes_by_day = series;
+        }
+
+        {
+            let mut stmt = conn.prepare(
+                "SELECT t.name, COUNT(bt.book_id) AS n
+                 FROM tags t JOIN book_tags bt ON bt.tag_id = t.id
+                 GROUP BY t.id ORDER BY n DESC, t.name COLLATE NOCASE LIMIT 8",
+            )?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            s.top_tags = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        }
+
+        {
+            let mut stmt = conn.prepare(
+                "SELECT authors, COUNT(*) AS n FROM books
+                 WHERE TRIM(authors) <> ''
+                 GROUP BY authors COLLATE NOCASE
+                 ORDER BY n DESC, authors COLLATE NOCASE LIMIT 8",
+            )?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            s.top_authors = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        }
+
+        {
+            let mut stmt = conn.prepare(
+                "SELECT books.title, SUM(rs.seconds) AS n
+                 FROM reading_sessions rs JOIN books ON books.id = rs.book_id
+                 GROUP BY rs.book_id
+                 HAVING n > 0
+                 ORDER BY n DESC LIMIT 5",
+            )?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            s.most_read = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        }
+
+        // Streaks over distinct days that have any reading session.
+        {
+            let mut stmt = conn.prepare(
+                "SELECT DISTINCT substr(started_at, 1, 10) FROM reading_sessions
+                 WHERE seconds > 0 ORDER BY 1 DESC",
+            )?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            let days = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+            let (current, longest) = streaks(&days);
+            s.current_streak_days = current;
+            s.longest_streak_days = longest;
+        }
+
+        Ok(s)
+    }
+}
+
+/// Shared projection so every book query returns the same column order.
+const BOOK_COLUMNS: &str = "books.id, books.uuid, books.title, books.authors, books.series, \
+     books.description, books.format, books.file_name, books.file_hash, books.cover_name, \
+     books.added_at, books.progress";
+
+/// Sessions longer than this are almost certainly an idle window.
+const MAX_SESSION_SECONDS: i64 = 6 * 60 * 60;
+
+/// Fill tags + resolved paths for a freshly queried batch of books.
+fn hydrate_books(conn: &Connection, books: &mut [Book]) -> Result<()> {
+    for book in books.iter_mut() {
+        book.tags = tags_for_book(conn, book.id)?;
+        book.cover_path = book
+            .cover_name
+            .as_ref()
+            .map(|name| book_dir(&book.uuid).join(name));
+        book.file_path = book_dir(&book.uuid).join(&book.file_name);
+    }
+    Ok(())
+}
+
+fn row_to_shelf(row: &rusqlite::Row<'_>) -> rusqlite::Result<Shelf> {
+    let kind: String = row.get(2)?;
+    Ok(Shelf {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        kind: ShelfKind::from_str_lossy(&kind),
+        description: row.get(3)?,
+        rules: row.get(4)?,
+        position: row.get(5)?,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
+        book_count: 0,
+    })
+}
+
+/// `ALTER TABLE ... ADD COLUMN` guarded by a PRAGMA lookup, so migrations stay
+/// idempotent on databases created by older versions.
+fn add_column_if_missing(conn: &Connection, table: &str, column: &str, ty: &str) -> Result<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let existing: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(1))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    if !existing.iter().any(|c| c.eq_ignore_ascii_case(column)) {
+        conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {ty}"))?;
+    }
+    Ok(())
+}
+
+/// Longest and current run of consecutive days, given day keys (`YYYY-MM-DD`)
+/// sorted newest first.
+fn streaks(days_desc: &[String]) -> (i64, i64) {
+    if days_desc.is_empty() {
+        return (0, 0);
+    }
+    let nums: Vec<i64> = days_desc.iter().filter_map(|d| days_from_iso(d)).collect();
+    if nums.is_empty() {
+        return (0, 0);
+    }
+
+    let today = days_from_iso(&chrono_like_now()[..10]).unwrap_or(nums[0]);
+    // A streak is "current" if the newest day is today or yesterday.
+    let mut current = 0;
+    if today - nums[0] <= 1 {
+        current = 1;
+        for pair in nums.windows(2) {
+            if pair[0] - pair[1] == 1 {
+                current += 1;
+            } else {
+                break;
+            }
+        }
+    }
+
+    let mut longest = 1;
+    let mut run = 1;
+    for pair in nums.windows(2) {
+        if pair[0] - pair[1] == 1 {
+            run += 1;
+            longest = longest.max(run);
+        } else {
+            run = 1;
+        }
+    }
+    (current, longest)
+}
+
+fn days_from_iso(s: &str) -> Option<i64> {
+    let bytes = s.as_bytes();
+    if bytes.len() < 10 {
+        return None;
+    }
+    let y: i64 = s[0..4].parse().ok()?;
+    let m: i64 = s[5..7].parse().ok()?;
+    let d: i64 = s[8..10].parse().ok()?;
+    Some(days_from_civil(y, m, d))
+}
+
+/// Howard Hinnant's `days_from_civil` — inverse of `civil_from_days` below.
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146097 + doe - 719468
+}
+
+/// ISO-8601 UTC timestamp for midnight `days` ago — used by date-window rules.
+pub fn iso_days_ago(days: i64) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let then = (now - days.max(0) * 86400).max(0);
+    // Snap to midnight so "last 7 days" means 7 whole days.
+    let midnight = then - (then % 86400);
+    format_unix_utc(midnight as u64)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -971,4 +2132,254 @@ pub fn hash_file(path: &Path) -> Result<String> {
         hasher.update(&buf[..n]);
     }
     Ok(hex::encode(hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shelf_rules::{MatchMode, Rule, RuleField, RuleOp, RuleSet};
+
+    fn seed(cat: &Catalog, title: &str, authors: &str, tags: &[&str]) -> i64 {
+        let uuid = format!("uuid-{title}");
+        let tags: Vec<String> = tags.iter().map(|t| t.to_string()).collect();
+        cat.insert_book(
+            &uuid,
+            title,
+            authors,
+            None,
+            "",
+            BookFormat::Epub,
+            "book.epub",
+            &format!("hash-{title}"),
+            None,
+            &tags,
+        )
+        .expect("insert")
+    }
+
+    #[test]
+    fn migrations_land_on_current_version() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let conn = cat.conn.lock().unwrap();
+        let v: i64 = conn
+            .query_row("SELECT version FROM schema_version LIMIT 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(v, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn manual_shelf_membership_round_trips() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = seed(&cat, "Dune", "Frank Herbert", &["scifi"]);
+        let b = seed(&cat, "Emma", "Jane Austen", &["classic"]);
+        let shelf_id = cat
+            .create_shelf("Favourites", ShelfKind::Manual, "", "")
+            .unwrap();
+
+        cat.add_book_to_shelf(shelf_id, a).unwrap();
+        cat.add_book_to_shelf(shelf_id, b).unwrap();
+        // Duplicate add must not create a second row.
+        cat.add_book_to_shelf(shelf_id, a).unwrap();
+
+        let shelf = cat.get_shelf(shelf_id).unwrap().unwrap();
+        assert_eq!(shelf.book_count, 2);
+
+        cat.remove_book_from_shelf(shelf_id, b).unwrap();
+        let shelf = cat.get_shelf(shelf_id).unwrap().unwrap();
+        assert_eq!(shelf.book_count, 1);
+        assert_eq!(cat.shelves_for_book(a).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn smart_shelf_filters_by_tag_and_progress() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let dune = seed(&cat, "Dune", "Frank Herbert", &["scifi", "classic"]);
+        seed(&cat, "Emma", "Jane Austen", &["classic"]);
+        seed(&cat, "Neuromancer", "William Gibson", &["scifi"]);
+
+        // Dune is half read; the others are untouched.
+        cat.set_reading_progress(dune, 5, 0.5, 10).unwrap();
+
+        let mut rules = RuleSet::default();
+        rules
+            .rules
+            .push(Rule::new(RuleField::Tag, RuleOp::Is, "scifi"));
+        rules
+            .rules
+            .push(Rule::new(RuleField::Progress, RuleOp::Is, "unread"));
+
+        let id = cat
+            .create_shelf("Unread scifi", ShelfKind::Smart, "", &rules.to_json())
+            .unwrap();
+        let shelf = cat.get_shelf(id).unwrap().unwrap();
+        let books = cat.shelf_books(&shelf, SortKey::Title, "").unwrap();
+        assert_eq!(books.len(), 1);
+        assert_eq!(books[0].title, "Neuromancer");
+
+        // Same rules with ANY should widen the result.
+        let mut any = rules.clone();
+        any.set_mode(MatchMode::Any);
+        assert_eq!(cat.count_matching_rules(&any).unwrap(), 3);
+    }
+
+    #[test]
+    fn smart_shelf_search_binds_alongside_rules() {
+        let cat = Catalog::open_in_memory().unwrap();
+        seed(&cat, "Dune", "Frank Herbert", &["scifi"]);
+        seed(&cat, "Neuromancer", "William Gibson", &["scifi"]);
+
+        let mut rules = RuleSet::default();
+        rules
+            .rules
+            .push(Rule::new(RuleField::Tag, RuleOp::Is, "scifi"));
+        let id = cat
+            .create_shelf("Scifi", ShelfKind::Smart, "", &rules.to_json())
+            .unwrap();
+        let shelf = cat.get_shelf(id).unwrap().unwrap();
+
+        // Regression: rule params and the search term share one statement.
+        let hits = cat.shelf_books(&shelf, SortKey::Title, "neuro").unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].title, "Neuromancer");
+    }
+
+    #[test]
+    fn empty_smart_shelf_matches_nothing() {
+        let cat = Catalog::open_in_memory().unwrap();
+        seed(&cat, "Dune", "Frank Herbert", &["scifi"]);
+        let id = cat.create_shelf("Empty", ShelfKind::Smart, "", "").unwrap();
+        let shelf = cat.get_shelf(id).unwrap().unwrap();
+        assert_eq!(shelf.book_count, 0);
+    }
+
+    #[test]
+    fn reading_list_reorders() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = seed(&cat, "A", "x", &[]);
+        let b = seed(&cat, "B", "x", &[]);
+        let c = seed(&cat, "C", "x", &[]);
+        for id in [a, b, c] {
+            cat.add_to_reading_list(id).unwrap();
+        }
+
+        let titles: Vec<String> = cat
+            .list_reading_list()
+            .unwrap()
+            .iter()
+            .map(|e| e.book.title.clone())
+            .collect();
+        assert_eq!(titles, vec!["A", "B", "C"]);
+
+        cat.move_reading_list_entry(c, -1).unwrap();
+        let titles: Vec<String> = cat
+            .list_reading_list()
+            .unwrap()
+            .iter()
+            .map(|e| e.book.title.clone())
+            .collect();
+        assert_eq!(titles, vec!["A", "C", "B"]);
+
+        // Moving past the edge is a no-op, not an error.
+        cat.move_reading_list_entry(a, -1).unwrap();
+        assert_eq!(cat.list_reading_list().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn finishing_a_book_clears_it_from_the_reading_list() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = seed(&cat, "A", "x", &[]);
+        cat.add_to_reading_list(a).unwrap();
+        assert!(cat.is_in_reading_list(a).unwrap());
+
+        cat.set_book_finished(a, true).unwrap();
+        assert!(!cat.is_in_reading_list(a).unwrap());
+        assert!(cat.book_finished_at(a).unwrap().is_some());
+
+        cat.set_book_finished(a, false).unwrap();
+        assert!(cat.book_finished_at(a).unwrap().is_none());
+    }
+
+    #[test]
+    fn auto_finish_fires_once() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = seed(&cat, "A", "x", &[]);
+        assert!(!cat.auto_finish_if_complete(a, 50).unwrap());
+        assert!(cat.auto_finish_if_complete(a, 100).unwrap());
+        assert!(!cat.auto_finish_if_complete(a, 100).unwrap());
+    }
+
+    #[test]
+    fn opening_twice_in_an_hour_logs_one_event() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = seed(&cat, "A", "x", &[]);
+        cat.mark_book_opened(a).unwrap();
+        cat.mark_book_opened(a).unwrap();
+        let events = cat.list_events(Some(EventKind::Opened), "", 50).unwrap();
+        assert_eq!(events.len(), 1);
+    }
+
+    #[test]
+    fn sessions_clamp_absurd_durations() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = seed(&cat, "A", "x", &[]);
+        let sid = cat.start_reading_session(a, 0).unwrap();
+        cat.end_reading_session(sid, 99_999_999, 10).unwrap();
+        assert_eq!(cat.total_reading_seconds(a).unwrap(), MAX_SESSION_SECONDS);
+    }
+
+    #[test]
+    fn tags_browse_counts_books() {
+        let cat = Catalog::open_in_memory().unwrap();
+        seed(&cat, "Dune", "Frank Herbert", &["scifi", "classic"]);
+        seed(&cat, "Emma", "Jane Austen", &["classic"]);
+
+        let tags = cat.list_tags_with_counts().unwrap();
+        assert_eq!(tags[0], ("classic".to_string(), 2));
+        assert_eq!(cat.books_with_tag("scifi", SortKey::Title).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn stats_reflect_library_state() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = seed(&cat, "A", "x", &["t"]);
+        seed(&cat, "B", "y", &[]);
+        cat.set_reading_progress(a, 1, 0.5, 10).unwrap();
+
+        let stats = cat.library_stats().unwrap();
+        assert_eq!(stats.total_books, 2);
+        assert_eq!(stats.reading, 1);
+        assert_eq!(stats.unread, 1);
+        assert_eq!(stats.minutes_by_day.len(), 14);
+    }
+
+    #[test]
+    fn shelf_name_collisions_are_detected() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = cat.create_shelf("Favourites", ShelfKind::Manual, "", "").unwrap();
+        assert!(cat.shelf_name_taken("favourites", None).unwrap());
+        // The shelf being edited doesn't collide with itself.
+        assert!(!cat.shelf_name_taken("Favourites", Some(id)).unwrap());
+        assert!(!cat.shelf_name_taken("Other", None).unwrap());
+    }
+
+    #[test]
+    fn streak_helpers_handle_gaps() {
+        assert_eq!(streaks(&[]), (0, 0));
+        let days = vec![
+            "2026-01-10".to_string(),
+            "2026-01-09".to_string(),
+            "2026-01-05".to_string(),
+        ];
+        // Not adjacent to today, so current is 0 but the run of 2 is longest.
+        let (_, longest) = streaks(&days);
+        assert_eq!(longest, 2);
+    }
+
+    #[test]
+    fn iso_days_ago_is_midnight_aligned() {
+        let s = iso_days_ago(3);
+        assert!(s.ends_with("T00:00:00Z"), "{s}");
+    }
 }

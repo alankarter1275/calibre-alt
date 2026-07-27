@@ -1,6 +1,7 @@
 //! Kalam — personal ebook manager & reader (Linux).
 //!
-//! Phase 1: persistent library + EPUB import on top of the P0 shell.
+//! Phase 4: library depth — shelves engine, reading list, history, tags,
+//! analytics — on top of the P1 catalog, P2 reader and P3 annotations.
 
 mod app;
 mod db;
@@ -10,6 +11,7 @@ mod epub_book;
 mod models;
 mod pages;
 mod paths;
+mod shelf_rules;
 mod style;
 mod widgets;
 
