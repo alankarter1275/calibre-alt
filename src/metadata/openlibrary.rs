@@ -1,76 +1,27 @@
-//! P5 — Open Library metadata lookup.
+//! Open Library — the default metadata source.
 //!
-//! Deliberately small and synchronous: callers run it off the UI thread via
-//! Relm4's `oneshot_command`. No API key is needed and Open Library asks only
-//! that clients identify themselves, which we do with a User-Agent.
-//!
-//! Nothing here touches the catalog. A lookup returns candidates; applying one
-//! is a separate, explicit step so a fetch can never silently overwrite the
-//! metadata you already have.
+//! Non-profit (Internet Archive), no API key, no registration. Coverage of
+//! older and public-domain titles is excellent; recent commercial releases are
+//! patchier, which is why Google Books sits alongside it.
 
+use super::{agent, Candidate, CoverRef, FetchError, MetadataSource, SourceId};
 use serde::Deserialize;
-use std::io::Read;
-use std::time::Duration;
 
 const SEARCH_URL: &str = "https://openlibrary.org/search.json";
-const COVER_URL: &str = "https://covers.openlibrary.org/b/id";
-const USER_AGENT: &str = concat!(
-    "Kalam/",
-    env!("CARGO_PKG_VERSION"),
-    " (personal ebook manager; +https://github.com/alankarter1275/calibre-alt)"
-);
 
-/// Network calls are best-effort; the UI shows the message and moves on.
-#[derive(Debug)]
-pub enum FetchError {
-    Network(String),
-    Parse(String),
-}
+pub struct OpenLibrary;
 
-impl std::fmt::Display for FetchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FetchError::Network(m) => write!(f, "Network error: {m}"),
-            FetchError::Parse(m) => write!(f, "Could not read the response: {m}"),
-        }
+impl MetadataSource for OpenLibrary {
+    fn id(&self) -> SourceId {
+        SourceId::OpenLibrary
     }
-}
 
-/// One candidate result, flattened into just what the edit dialog needs.
-#[derive(Debug, Clone, Default)]
-pub struct Candidate {
-    pub title: String,
-    pub authors: String,
-    pub series: Option<String>,
-    pub tags: Vec<String>,
-    pub first_year: Option<i64>,
-    pub publisher: String,
-    /// Full publication date when Open Library has one, else the year.
-    pub published: String,
-    pub cover_id: Option<i64>,
-    /// `/works/OL…W`, used to fetch the description lazily.
-    pub work_key: Option<String>,
-}
+    fn search(&self, query: &str, limit: usize) -> Result<Vec<Candidate>, FetchError> {
+        search(query, limit)
+    }
 
-impl Candidate {
-    /// One-line summary for the results list.
-    pub fn summary(&self) -> String {
-        let mut parts = Vec::new();
-        if !self.authors.is_empty() {
-            parts.push(self.authors.clone());
-        }
-        if !self.published.is_empty() {
-            parts.push(self.published.clone());
-        } else if let Some(year) = self.first_year {
-            parts.push(year.to_string());
-        }
-        if !self.publisher.is_empty() {
-            parts.push(self.publisher.clone());
-        }
-        if self.cover_id.is_some() {
-            parts.push("has cover".into());
-        }
-        parts.join(" · ")
+    fn fetch_description(&self, detail_key: &str) -> Result<String, FetchError> {
+        fetch_description(detail_key)
     }
 }
 
@@ -124,14 +75,6 @@ struct WorkResponse {
 // ---------------------------------------------------------------------------
 // Requests
 // ---------------------------------------------------------------------------
-
-fn agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_secs(10))
-        .timeout_read(Duration::from_secs(20))
-        .user_agent(USER_AGENT)
-        .build()
-}
 
 /// Search by free text, or by title/author when both are known.
 pub fn search(query: &str, limit: usize) -> Result<Vec<Candidate>, FetchError> {
@@ -194,8 +137,12 @@ fn doc_to_candidate(doc: SearchDoc) -> Candidate {
                     .map(|y| y.to_string())
                     .unwrap_or_default()
             }),
-        cover_id: doc.cover_i,
-        work_key: doc.key,
+        cover: doc.cover_i.map(CoverRef::OpenLibraryId),
+        // Open Library keeps descriptions on the work record, not the search
+        // result, so they need a second request.
+        description: String::new(),
+        detail_key: doc.key,
+        source: Some(SourceId::OpenLibrary),
     }
 }
 
@@ -221,27 +168,6 @@ pub fn fetch_description(work_key: &str) -> Result<String, FetchError> {
     })
 }
 
-/// Download cover bytes. `size` is 'S', 'M' or 'L'.
-pub fn fetch_cover(cover_id: i64, size: char) -> Result<Vec<u8>, FetchError> {
-    let url = format!("{COVER_URL}/{cover_id}-{size}.jpg");
-    let resp = agent()
-        .get(&url)
-        .call()
-        .map_err(|e| FetchError::Network(e.to_string()))?;
-
-    let mut bytes = Vec::new();
-    resp.into_reader()
-        .take(8 * 1024 * 1024)
-        .read_to_end(&mut bytes)
-        .map_err(|e| FetchError::Network(e.to_string()))?;
-
-    if bytes.len() < 512 {
-        // Open Library serves a tiny 1x1 placeholder when a cover is missing.
-        return Err(FetchError::Network("no cover available".into()));
-    }
-    Ok(bytes)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,8 +189,9 @@ mod tests {
         assert_eq!(c.title, "Dune");
         assert_eq!(c.authors, "Frank Herbert");
         assert_eq!(c.first_year, Some(1965));
-        assert_eq!(c.cover_id, Some(123));
+        assert_eq!(c.cover, Some(CoverRef::OpenLibraryId(123)));
         assert_eq!(c.tags.len(), 2);
+        assert_eq!(c.source, Some(SourceId::OpenLibrary));
     }
 
     #[test]
@@ -273,7 +200,7 @@ mod tests {
         let c = doc_to_candidate(parsed.docs.into_iter().next().unwrap());
         assert!(c.title.is_empty());
         assert!(c.authors.is_empty());
-        assert!(c.cover_id.is_none());
+        assert!(c.cover.is_none());
     }
 
     #[test]

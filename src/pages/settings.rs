@@ -122,6 +122,28 @@ impl Component for SettingsPageModel {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 8,
             },
+
+            gtk::Label {
+                set_label: "Metadata sources",
+                add_css_class: "kalam-page-title",
+                set_halign: gtk::Align::Start,
+                set_margin_top: 24,
+            },
+            gtk::Label {
+                set_label: concat!(
+                    "Used by Edit metadata. Results from every enabled source are ",
+                    "merged and badged with their origin."
+                ),
+                add_css_class: "kalam-page-sub",
+                set_halign: gtk::Align::Start,
+                set_wrap: true,
+            },
+
+            #[name = "source_list"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 8,
+            },
         }
     }
 
@@ -148,6 +170,7 @@ impl Component for SettingsPageModel {
         let widgets = view_output!();
         widgets.dict_status.set_label(&model.status);
         rebuild_dicts(&widgets.dict_list, &model.dicts, &sender);
+        build_sources(&widgets.source_list, &model.catalog);
         ComponentParts { model, widgets }
     }
 
@@ -263,5 +286,87 @@ fn rebuild_dicts(
         row.append(&del);
 
         list.append(&row);
+    }
+}
+
+/// Toggle each metadata provider, plus the optional Google Books key.
+fn build_sources(host: &gtk::Box, catalog: &Rc<Catalog>) {
+    use crate::metadata::{set_source_enabled, source_enabled, SourceId};
+
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+
+    for id in SourceId::ALL {
+        let row = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        row.add_css_class("kalam-list-row");
+
+        let head = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        let check = gtk::CheckButton::with_label(id.label());
+        check.set_active(source_enabled(catalog, *id));
+        check.set_hexpand(true);
+        {
+            let catalog = catalog.clone();
+            let id = *id;
+            check.connect_toggled(move |c| set_source_enabled(&catalog, id, c.is_active()));
+        }
+        head.append(&check);
+
+        let badge = gtk::Label::new(Some(id.badge()));
+        badge.add_css_class("kalam-card-badge");
+        badge.add_css_class(id.css_class());
+        badge.set_valign(gtk::Align::Center);
+        head.append(&badge);
+        row.append(&head);
+
+        let note = gtk::Label::new(Some(match id {
+            SourceId::OpenLibrary => {
+                "Internet Archive. No key needed. Strong on older and public-domain titles."
+            }
+            SourceId::GoogleBooks => {
+                "Broad coverage, good for recent and non-English books. Works without a key, \
+                 but anonymous requests share a global quota and can be rate limited."
+            }
+        }));
+        note.add_css_class("kalam-card-meta");
+        note.set_halign(gtk::Align::Start);
+        note.set_xalign(0.0);
+        note.set_wrap(true);
+        row.append(&note);
+
+        // Google Books is the only source with a key, so the field is local
+        // to it rather than a generic per-source setting.
+        if *id == SourceId::GoogleBooks {
+            let key_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            let entry = gtk::Entry::new();
+            entry.set_placeholder_text(Some("Optional API key — lifts the shared rate limit"));
+            entry.set_text(&catalog.get_pref("meta.googlebooks.key").unwrap_or_default());
+            entry.set_hexpand(true);
+            key_row.append(&entry);
+
+            let save = gtk::Button::with_label("Save key");
+            save.add_css_class("kalam-mini-btn");
+            {
+                let catalog = catalog.clone();
+                let entry = entry.clone();
+                save.connect_clicked(move |_| {
+                    catalog.set_pref("meta.googlebooks.key", entry.text().trim());
+                });
+            }
+            key_row.append(&save);
+            row.append(&key_row);
+
+            let hint = gtk::Label::new(Some(
+                "Free from console.cloud.google.com — create a project, enable the Books API, \
+                 then make an API key. No card required.",
+            ));
+            hint.add_css_class("kalam-muted");
+            hint.set_halign(gtk::Align::Start);
+            hint.set_xalign(0.0);
+            hint.set_wrap(true);
+            row.append(&hint);
+        }
+
+        host.append(&row);
     }
 }

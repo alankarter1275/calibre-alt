@@ -10,7 +10,7 @@
 //! you press Save.
 
 use crate::db::Catalog;
-use crate::openlibrary::{self, Candidate};
+use crate::metadata::{self, Candidate, CoverRef};
 use crate::widgets::book_row::cover_widget;
 use crate::widgets::charts::star_picker;
 use gtk::prelude::*;
@@ -32,10 +32,11 @@ const THUMB_H: i32 = (THUMB_W as f32 * 1.6) as i32;
 
 /// What the worker thread sends back to the UI.
 enum FetchMsg {
-    Results(Vec<Candidate>),
+    /// Merged candidates, plus any per-source failures worth mentioning.
+    Results(Vec<Candidate>, Vec<(metadata::SourceId, String)>),
     Failed(String),
     /// Thumbnails to choose between: (cover id, JPEG bytes).
-    CoverChoices(Vec<(i64, Vec<u8>)>),
+    CoverChoices(Vec<(CoverRef, Vec<u8>)>),
     CoverReady(Vec<u8>),
     CoverFailed(String),
 }
@@ -417,7 +418,7 @@ fn open_editor_inner(
         gtk::glib::spawn_future_local(async move {
             while let Ok(msg) = rx.recv().await {
                 match msg {
-                    FetchMsg::Results(list) => {
+                    FetchMsg::Results(list, errors) => {
                         rebuild_results(
                             &results,
                             &list,
@@ -431,11 +432,25 @@ fn open_editor_inner(
                             &desc_view,
                             &tx_inner,
                         );
-                        search_status.set_label(&if list.is_empty() {
-                            "No matches. Try a different title or author.".to_string()
+                        // Partial failures are worth naming: results that look
+                        // thin may just be one provider being unavailable.
+                        let note = if errors.is_empty() {
+                            String::new()
                         } else {
                             format!(
-                                "{} match{} — “Use this” fills the form for review.",
+                                "  ({})",
+                                errors
+                                    .iter()
+                                    .map(|(id, _)| format!("{} unavailable", id.label()))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            )
+                        };
+                        search_status.set_label(&if list.is_empty() {
+                            format!("No matches. Try a different title or author.{note}")
+                        } else {
+                            format!(
+                                "{} match{} — “Use this” fills the form for review.{note}",
                                 list.len(),
                                 if list.len() == 1 { "" } else { "es" }
                             )
@@ -459,7 +474,7 @@ fn open_editor_inner(
                             .row_spacing(10)
                             .halign(gtk::Align::Start)
                             .build();
-                        for (id, bytes) in choices {
+                        for (cover_ref, bytes) in choices {
                             let Some(texture) = texture_from_bytes(&bytes) else {
                                 continue;
                             };
@@ -489,8 +504,9 @@ fn open_editor_inner(
                             btn.connect_clicked(move |_| {
                                 ss.set_label("Fetching full-size cover…");
                                 let tx2 = tx2.clone();
+                                let cover_ref = cover_ref.clone();
                                 std::thread::spawn(move || {
-                                    let msg = match openlibrary::fetch_cover(id, 'L') {
+                                    let msg = match metadata::fetch_cover(&cover_ref) {
                                         Ok(b) => FetchMsg::CoverReady(b),
                                         Err(e) => FetchMsg::CoverFailed(e.to_string()),
                                     };
@@ -529,6 +545,7 @@ fn open_editor_inner(
         let entry = search_entry.clone();
         let search_status = search_status.clone();
         let tx = tx.clone();
+        let catalog = catalog.clone();
         // Rc so both the button and Enter can trigger the same logic; a plain
         // move closure capturing widgets is not Clone.
         let run: Rc<dyn Fn()> = Rc::new(move || {
@@ -537,13 +554,29 @@ fn open_editor_inner(
                 search_status.set_label("Type something to search for.");
                 return;
             }
-            search_status.set_label("Searching Open Library…");
+            // Rebuilt per search so toggling a source in Settings takes effect
+            // immediately.
+            let sources = metadata::enabled_sources(&catalog);
+            if sources.is_empty() {
+                search_status.set_label("No metadata sources are enabled — see Settings.");
+                return;
+            }
+            search_status.set_label("Searching…");
             let tx = tx.clone();
             // Blocking HTTP on a worker thread keeps the dialog responsive.
             std::thread::spawn(move || {
-                let msg = match openlibrary::search(&query, 10) {
-                    Ok(list) => FetchMsg::Results(list),
-                    Err(err) => FetchMsg::Failed(err.to_string()),
+                let (list, errors) = metadata::search_all(sources, &query, 10);
+                let msg = if list.is_empty() && !errors.is_empty() {
+                    // Every source failed — surface why.
+                    FetchMsg::Failed(
+                        errors
+                            .iter()
+                            .map(|(id, e)| format!("{}: {e}", id.label()))
+                            .collect::<Vec<_>>()
+                            .join("  ·  "),
+                    )
+                } else {
+                    FetchMsg::Results(list, errors)
                 };
                 let _ = tx.send_blocking(msg);
             });
@@ -561,6 +594,7 @@ fn open_editor_inner(
         let search_entry_c = search_entry.clone();
         let set_panel = set_panel.clone();
         let tx = tx.clone();
+        let catalog_c = catalog.clone();
         cover_search.connect_clicked(move |_| {
             let query = format!(
                 "{} {}",
@@ -577,24 +611,29 @@ fn open_editor_inner(
             search_status.set_label("Looking for covers…");
 
             let tx = tx.clone();
+            let sources = metadata::enabled_sources(&catalog_c);
             std::thread::spawn(move || {
-                let msg = match openlibrary::search(&query, 12) {
-                    Ok(list) => {
-                        // Fetch small thumbnails so the grid appears quickly;
-                        // the full-size image is only pulled once picked.
-                        let mut found = Vec::new();
-                        for c in list.iter().filter_map(|c| c.cover_id).take(6) {
-                            if let Ok(bytes) = openlibrary::fetch_cover(c, 'M') {
-                                found.push((c, bytes));
-                            }
-                        }
-                        if found.is_empty() {
-                            FetchMsg::CoverFailed("no covers found for that title".into())
-                        } else {
-                            FetchMsg::CoverChoices(found)
-                        }
+                let (list, errors) = metadata::search_all(sources, &query, 12);
+                // Fetch small thumbnails so the grid appears quickly; the
+                // full-size image is only pulled once one is picked.
+                let mut found = Vec::new();
+                for cover in list.iter().filter_map(|c| c.cover.clone()).take(6) {
+                    if let Ok(bytes) = metadata::fetch_thumbnail(&cover) {
+                        found.push((cover, bytes));
                     }
-                    Err(err) => FetchMsg::CoverFailed(err.to_string()),
+                }
+                let msg = if !found.is_empty() {
+                    FetchMsg::CoverChoices(found)
+                } else if !errors.is_empty() {
+                    FetchMsg::CoverFailed(
+                        errors
+                            .iter()
+                            .map(|(id, e)| format!("{}: {e}", id.label()))
+                            .collect::<Vec<_>>()
+                            .join("  ·  "),
+                    )
+                } else {
+                    FetchMsg::CoverFailed("no covers found for that title".into())
                 };
                 let _ = tx.send_blocking(msg);
             });
@@ -827,6 +866,16 @@ fn rebuild_results(
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         row.add_css_class("kalam-list-row");
 
+        // Origin badge, so you can tell which provider is claiming what.
+        if let Some(source) = candidate.source {
+            let badge = gtk::Label::new(Some(source.badge()));
+            badge.add_css_class("kalam-card-badge");
+            badge.add_css_class(source.css_class());
+            badge.set_valign(gtk::Align::Center);
+            badge.set_tooltip_text(Some(source.label()));
+            row.append(&badge);
+        }
+
         let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
         text.set_hexpand(true);
 
@@ -880,15 +929,32 @@ fn rebuild_results(
                 if !c.published.is_empty() {
                     published_entry.set_text(&c.published);
                 }
-                status.set_label("Filled from Open Library — review, then Save.");
+                let origin = c
+                    .source
+                    .map(|s| s.label())
+                    .unwrap_or("the source");
+                status.set_label(&format!("Filled from {origin} — review, then Save."));
 
-                // Descriptions need a second request.
-                if let Some(key) = c.work_key.clone() {
+                // Google Books returns descriptions inline; Open Library needs
+                // a second request keyed by the work id.
+                if !c.description.trim().is_empty() {
+                    desc_view.buffer().set_text(&c.description);
+                } else if let (Some(key), Some(id)) = (c.detail_key.clone(), c.source) {
                     let desc_view = desc_view.clone();
                     let status2 = status.clone();
                     let (dtx, drx) = async_channel::bounded::<String>(1);
                     std::thread::spawn(move || {
-                        if let Ok(text) = openlibrary::fetch_description(&key) {
+                        let source: Box<dyn metadata::MetadataSource> = match id {
+                            metadata::SourceId::OpenLibrary => {
+                                Box::new(metadata::openlibrary::OpenLibrary)
+                            }
+                            metadata::SourceId::GoogleBooks => {
+                                Box::new(metadata::google_books::GoogleBooks {
+                                    api_key: String::new(),
+                                })
+                            }
+                        };
+                        if let Ok(text) = source.fetch_description(&key) {
                             let _ = dtx.send_blocking(text);
                         }
                     });
@@ -902,10 +968,10 @@ fn rebuild_results(
                     });
                 }
 
-                if let Some(id) = c.cover_id {
+                if let Some(cover_ref) = c.cover.clone() {
                     let tx = tx.clone();
                     std::thread::spawn(move || {
-                        let msg = match openlibrary::fetch_cover(id, 'L') {
+                        let msg = match metadata::fetch_cover(&cover_ref) {
                             Ok(bytes) => FetchMsg::CoverReady(bytes),
                             Err(err) => FetchMsg::CoverFailed(err.to_string()),
                         };

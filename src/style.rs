@@ -992,6 +992,17 @@ popover.kalam-reader-popover > contents {
     color: @kalam_accent;
 }
 
+/* Metadata source badges. */
+.kalam-badge-ol {
+    background: alpha(#6ee7b7, 0.18);
+    color: #6ee7b7;
+}
+
+.kalam-badge-gb {
+    background: alpha(#7c9cff, 0.18);
+    color: #7c9cff;
+}
+
 .kalam-cover-choice {
     padding: 4px;
     border-radius: 8px;
