@@ -100,7 +100,7 @@ fn build_dashboard(
             None,
             LibrarySection::AllBooks,
             sender,
-            gtk::Label::new(Some("Import your first book here.")).upcast(),
+            gtk::Label::new(Some("Import your first book here.")).upcast::<gtk::Widget>(),
         ));
         return;
     }
@@ -173,7 +173,7 @@ fn build_dashboard(
         body.append(&plain_section(
             "SHELVES",
             Some("Smart & manual"),
-            row.upcast(),
+            row.upcast::<gtk::Widget>(),
         ));
     }
 
@@ -215,7 +215,7 @@ fn build_dashboard(
             Some(&format!("{} saved", quotes.len())),
             LibrarySection::SavedQuotes,
             sender,
-            row.upcast(),
+            row.upcast::<gtk::Widget>(),
         ));
     }
 
@@ -251,7 +251,7 @@ fn build_dashboard(
             Some(&format!("{} in use", tags.len())),
             LibrarySection::Tags,
             sender,
-            flow.upcast(),
+            flow.upcast::<gtk::Widget>(),
         ));
     }
 
@@ -367,7 +367,7 @@ fn cover_strip(books: &[Book], sender: &ComponentSender<LibraryPageModel>) -> gt
         cell.append(&card);
         row.append(&cell);
     }
-    row.upcast()
+    row.upcast::<gtk::Widget>()
 }
 
 /// Covers with a progress bar and percentage underneath, like the reference.
@@ -414,7 +414,7 @@ fn progress_strip(books: &[Book], sender: &ComponentSender<LibraryPageModel>) ->
 
         row.append(&cell);
     }
-    row.upcast()
+    row.upcast::<gtk::Widget>()
 }
 
 /// Closing strip: vocabulary and analytics, each routing to its page.
