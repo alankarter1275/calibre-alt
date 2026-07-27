@@ -212,6 +212,9 @@ fn build_card(entry: &Entry) -> gtk::Box {
     card.add_css_class("kalam-toast");
     card.add_css_class(entry.kind.css());
     card.set_halign(gtk::Align::End);
+    // GTK CSS has no `overflow`; clip here so the accent stripe follows the
+    // rounded corners.
+    card.set_overflow(gtk::Overflow::Hidden);
 
     // The coloured stripe down the left edge.
     let accent = gtk::Box::new(gtk::Orientation::Vertical, 0);

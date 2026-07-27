@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum SettingsMsg {
+    ClearNotifications,
     ImportDict,
     DeleteDict(i64),
     Refresh,
@@ -123,6 +124,31 @@ impl Component for SettingsPageModel {
                 set_spacing: 8,
             },
 
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 10,
+                set_margin_top: 24,
+
+                gtk::Label {
+                    set_label: "Notifications",
+                    add_css_class: "kalam-page-title",
+                    set_halign: gtk::Align::Start,
+                    set_hexpand: true,
+                },
+                gtk::Button {
+                    set_label: "Clear",
+                    add_css_class: "kalam-mini-btn",
+                    set_valign: gtk::Align::Center,
+                    connect_clicked => SettingsMsg::ClearNotifications,
+                },
+            },
+
+            #[name = "notify_list"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 6,
+            },
+
             gtk::Label {
                 set_label: "Library backup",
                 add_css_class: "kalam-page-title",
@@ -199,6 +225,7 @@ impl Component for SettingsPageModel {
         build_sources(&widgets.source_list, &model.catalog);
         build_file_write(&widgets.file_write_row, &model.catalog);
         build_backup(&widgets.backup_row, &model.catalog);
+        build_notifications(&widgets.notify_list);
         ComponentParts { model, widgets }
     }
 
@@ -210,10 +237,16 @@ impl Component for SettingsPageModel {
         _root: &Self::Root,
     ) {
         match msg {
+            SettingsMsg::ClearNotifications => {
+                crate::notify::clear_history();
+                build_notifications(&widgets.notify_list);
+            }
             SettingsMsg::Refresh => {
                 self.refresh();
                 widgets.dict_status.set_label(&self.status);
                 rebuild_dicts(&widgets.dict_list, &self.dicts, &sender);
+                // An import may have added notifications while we were away.
+                build_notifications(&widgets.notify_list);
             }
             SettingsMsg::ImportDict => {
                 // GTK file chooser dialog (native)
@@ -228,14 +261,27 @@ impl Component for SettingsPageModel {
                     move |res| {
                         if let Ok(file) = res {
                             if let Some(path) = file.path() {
+                                // Dictionary packs can be hundreds of
+                                // thousands of entries; this was reporting
+                                // only to stderr either way.
+                                crate::notify::activity(
+                                    "Importing dictionary…",
+                                    &path
+                                        .file_name()
+                                        .map(|n| n.to_string_lossy().into_owned())
+                                        .unwrap_or_default(),
+                                );
                                 match dict::import_dictionary(&catalog_clone, &path) {
                                     Ok((name, count)) => {
-                                        eprintln!("kalam: dict imported {name} {count} entries");
+                                        crate::notify::success(
+                                            "Dictionary imported",
+                                            &format!("{name} · {count} entries"),
+                                        );
                                     }
                                     Err(e) => {
-                                        eprintln!(
-                                            "kalam: dict import failed {}: {e:#}",
-                                            path.display()
+                                        crate::notify::error(
+                                            "Dictionary import failed",
+                                            &format!("{e:#}"),
                                         );
                                     }
                                 }
@@ -246,7 +292,10 @@ impl Component for SettingsPageModel {
                 );
             }
             SettingsMsg::DeleteDict(id) => {
-                let _ = self.catalog.delete_dictionary(id);
+                crate::notify::report(
+                    self.catalog.delete_dictionary(id),
+                    "Could not remove the dictionary",
+                );
                 self.refresh();
                 widgets.dict_status.set_label(&self.status);
                 rebuild_dicts(&widgets.dict_list, &self.dicts, &sender);
@@ -314,6 +363,65 @@ fn rebuild_dicts(
         row.append(&del);
 
         list.append(&row);
+    }
+}
+
+/// Recent notifications, so a toast that faded can still be read.
+fn build_notifications(host: &gtk::Box) {
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+
+    let entries = crate::notify::history();
+    if entries.is_empty() {
+        let empty = gtk::Label::new(Some("Nothing yet this session."));
+        empty.add_css_class("kalam-muted");
+        empty.set_halign(gtk::Align::Start);
+        host.append(&empty);
+        return;
+    }
+
+    // Only the recent ones; the full log would dominate the page.
+    for entry in entries.iter().take(25) {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        row.add_css_class("kalam-list-row");
+
+        let badge = gtk::Label::new(Some(entry.kind.label()));
+        badge.add_css_class("kalam-card-badge");
+        badge.add_css_class(match entry.kind {
+            crate::notify::Kind::Error => "kalam-badge-ol",
+            _ => "kalam-badge-manual",
+        });
+        badge.set_valign(gtk::Align::Center);
+        row.append(&badge);
+
+        let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        text.set_hexpand(true);
+
+        let title = gtk::Label::new(Some(&entry.title));
+        title.add_css_class("kalam-card-title");
+        title.set_halign(gtk::Align::Start);
+        title.set_xalign(0.0);
+        title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        text.append(&title);
+
+        if !entry.detail.trim().is_empty() {
+            let detail = gtk::Label::new(Some(entry.detail.trim()));
+            detail.add_css_class("kalam-card-meta");
+            detail.set_halign(gtk::Align::Start);
+            detail.set_xalign(0.0);
+            detail.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            detail.set_tooltip_text(Some(&entry.detail));
+            text.append(&detail);
+        }
+        row.append(&text);
+
+        let at = gtk::Label::new(Some(&entry.at));
+        at.add_css_class("kalam-muted");
+        at.set_valign(gtk::Align::Center);
+        row.append(&at);
+
+        host.append(&row);
     }
 }
 

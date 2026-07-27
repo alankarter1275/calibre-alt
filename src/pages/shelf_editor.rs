@@ -251,6 +251,11 @@ pub fn open_shelf_editor(
 
             match result {
                 Ok(()) => {
+                    if shelf_id.is_some() {
+                        crate::notify::success("Shelf updated", &name);
+                    } else {
+                        crate::notify::success("Shelf created", &name);
+                    }
                     on_saved();
                     window.close();
                 }

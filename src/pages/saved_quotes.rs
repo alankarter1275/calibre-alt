@@ -131,7 +131,10 @@ impl Component for SavedQuotesModel {
                 widgets.status_label.set_label(&self.status);
             }
             SavedQuotesMsg::Delete(id) => {
-                let _ = self.catalog.delete_annotation(id);
+                crate::notify::report(
+                    self.catalog.delete_annotation(id),
+                    "Could not delete the quote",
+                );
                 self.reload();
                 rebuild(&widgets.list_box, &self.quotes, &sender);
                 widgets.status_label.set_label(&self.status);
@@ -150,7 +153,12 @@ impl Component for SavedQuotesModel {
                 widgets.status_label.set_label(&self.status);
             }
             SavedQuotesMsg::SaveNote { id, note } => {
-                let _ = self.catalog.update_annotation_note(id, note.trim());
+                if crate::notify::report(
+                    self.catalog.update_annotation_note(id, note.trim()),
+                    "Could not save your note",
+                ) {
+                    crate::notify::success("Note saved", "");
+                }
                 self.reload();
             }
             SavedQuotesMsg::Refresh => {

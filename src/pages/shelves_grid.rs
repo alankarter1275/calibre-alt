@@ -137,7 +137,10 @@ impl Component for ShelvesGridModel {
                     let catalog = self.catalog.clone();
                     let s = sender.clone();
                     move || {
-                        let _ = catalog.delete_shelf(shelf_id);
+                        crate::notify::report(
+                            catalog.delete_shelf(shelf_id),
+                            "Could not delete the shelf",
+                        );
                         s.input(ShelvesMsg::Refresh);
                     }
                 });

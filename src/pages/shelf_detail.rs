@@ -384,7 +384,10 @@ impl ShelfDetailModel {
             let catalog = self.catalog.clone();
             let s = sender.clone();
             remove.connect_clicked(move |_| {
-                let _ = catalog.remove_book_from_shelf(shelf_id, book_id);
+                crate::notify::report(
+                    catalog.remove_book_from_shelf(shelf_id, book_id),
+                    "Could not remove from the shelf",
+                );
                 s.input(ShelfDetailMsg::Refresh);
             });
         }
@@ -505,7 +508,10 @@ fn open_book_picker(
                     if c.is_active() {
                         let _ = catalog.add_book_to_shelf(shelf_id, book_id);
                     } else {
-                        let _ = catalog.remove_book_from_shelf(shelf_id, book_id);
+                        crate::notify::report(
+                    catalog.remove_book_from_shelf(shelf_id, book_id),
+                    "Could not remove from the shelf",
+                );
                     }
                     on_changed();
                 });

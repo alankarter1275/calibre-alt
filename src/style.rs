@@ -970,7 +970,6 @@ popover.kalam-reader-popover > contents {
     border: 1px solid alpha(#ffffff, 0.07);
     border-radius: 12px;
     box-shadow: 0 12px 32px alpha(#000, 0.55);
-    overflow: hidden;
     min-width: 340px;
 }
 

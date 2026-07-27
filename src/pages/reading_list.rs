@@ -108,7 +108,10 @@ impl Component for ReadingListModel {
                 self.reload();
             }
             ReadingListMsg::Remove(book_id) => {
-                let _ = self.catalog.remove_from_reading_list(book_id);
+                crate::notify::report(
+                    self.catalog.remove_from_reading_list(book_id),
+                    "Could not update the reading list",
+                );
                 self.reload();
             }
             ReadingListMsg::AddBooks => {
@@ -346,9 +349,15 @@ fn open_picker(
                 let book_id = book.id;
                 check.connect_toggled(move |c| {
                     if c.is_active() {
-                        let _ = catalog.add_to_reading_list(book_id);
+                        crate::notify::report(
+                            catalog.add_to_reading_list(book_id),
+                            "Could not update the reading list",
+                        );
                     } else {
-                        let _ = catalog.remove_from_reading_list(book_id);
+                        crate::notify::report(
+                            catalog.remove_from_reading_list(book_id),
+                            "Could not update the reading list",
+                        );
                     }
                     on_changed();
                 });

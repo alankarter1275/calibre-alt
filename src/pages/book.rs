@@ -285,10 +285,19 @@ impl Component for BookPageModel {
             BookPageMsg::ToggleReadingList => {
                 if let Some(book) = &self.book {
                     let id = book.id;
+                    let title = book.title.clone();
                     if self.in_reading_list {
-                        let _ = self.catalog.remove_from_reading_list(id);
-                    } else {
-                        let _ = self.catalog.add_to_reading_list(id);
+                        if crate::notify::report(
+                            self.catalog.remove_from_reading_list(id),
+                            "Could not update the reading list",
+                        ) {
+                            crate::notify::info("Removed from reading list", &title);
+                        }
+                    } else if crate::notify::report(
+                        self.catalog.add_to_reading_list(id),
+                        "Could not update the reading list",
+                    ) {
+                        crate::notify::success("Added to reading list", &title);
                     }
                     self.reload_p4(id);
                 }
@@ -296,14 +305,28 @@ impl Component for BookPageModel {
             BookPageMsg::SetRating(half_stars) => {
                 if let Some(book) = &self.book {
                     let id = book.id;
-                    let _ = self.catalog.set_book_rating(id, half_stars);
+                    crate::notify::report(
+                        self.catalog.set_book_rating(id, half_stars),
+                        "Could not save the rating",
+                    );
                     self.book = self.catalog.get_book(id).ok().flatten();
                 }
             }
             BookPageMsg::ToggleFinished => {
                 if let Some(book) = &self.book {
                     let id = book.id;
-                    let _ = self.catalog.set_book_finished(id, !self.finished);
+                    let becoming = !self.finished;
+                    let title = book.title.clone();
+                    if crate::notify::report(
+                        self.catalog.set_book_finished(id, becoming),
+                        "Could not update the book",
+                    ) {
+                        if becoming {
+                            crate::notify::success("Marked as finished", &title);
+                        } else {
+                            crate::notify::info("Marked as unread", &title);
+                        }
+                    }
                     self.book = self.catalog.get_book(id).ok().flatten();
                     self.reload_p4(id);
                 }
@@ -501,9 +524,15 @@ fn open_shelf_menu(
             let shelf_id = shelf.id;
             check.connect_toggled(move |c| {
                 if c.is_active() {
-                    let _ = catalog.add_book_to_shelf(shelf_id, book_id);
+                    crate::notify::report(
+                        catalog.add_book_to_shelf(shelf_id, book_id),
+                        "Could not add to the shelf",
+                    );
                 } else {
-                    let _ = catalog.remove_book_from_shelf(shelf_id, book_id);
+                    crate::notify::report(
+                        catalog.remove_book_from_shelf(shelf_id, book_id),
+                        "Could not remove from the shelf",
+                    );
                 }
                 on_changed();
             });

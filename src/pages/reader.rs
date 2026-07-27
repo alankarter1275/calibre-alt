@@ -716,7 +716,10 @@ color:#3e3226;font-family:Georgia,serif'>\
                 }
             }
             ReaderMsg::DeleteAnnotation(id) => {
-                let _ = self.catalog.delete_annotation(id);
+                crate::notify::report(
+                    self.catalog.delete_annotation(id),
+                    "Could not delete the highlight",
+                );
                 self.chapter_annotations = self
                     .catalog
                     .get_annotations_for_chapter(self.book_id, self.chapter as i64)
