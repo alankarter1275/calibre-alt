@@ -292,8 +292,16 @@ impl Component for SettingsPageModel {
                 );
             }
             SettingsMsg::DeleteDict(id) => {
-                crate::notify::report(
+                let name = self
+                    .dicts
+                    .iter()
+                    .find(|d| d.id == id)
+                    .map(|d| d.name.clone())
+                    .unwrap_or_default();
+                crate::notify::outcome_info(
                     self.catalog.delete_dictionary(id),
+                    "Dictionary removed",
+                    &name,
                     "Could not remove the dictionary",
                 );
                 self.refresh();
@@ -693,7 +701,15 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
                 let catalog = catalog.clone();
                 let entry = entry.clone();
                 save.connect_clicked(move |_| {
-                    catalog.set_pref("meta.googlebooks.key", entry.text().trim());
+                    let key = entry.text().trim().to_string();
+                    catalog.set_pref("meta.googlebooks.key", &key);
+                    // Never echo the key itself into a toast: the history
+                    // panel keeps it around and screenshots leak it.
+                    if key.is_empty() {
+                        crate::notify::info("Google Books key cleared", "Using the shared quota");
+                    } else {
+                        crate::notify::success("Google Books key saved", "Your own quota is in use");
+                    }
                 });
             }
             key_row.append(&save);
@@ -733,10 +749,9 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
                 let catalog = catalog.clone();
                 let country = country.clone();
                 save_country.connect_clicked(move |_| {
-                    catalog.set_pref(
-                        "meta.googlebooks.country",
-                        &country.text().trim().to_uppercase(),
-                    );
+                    let code = country.text().trim().to_uppercase();
+                    catalog.set_pref("meta.googlebooks.country", &code);
+                    crate::notify::success("Country saved", &code);
                 });
             }
             country_row.append(&save_country);

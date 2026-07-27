@@ -132,6 +132,59 @@ pub fn report<T, E: std::fmt::Display>(result: Result<T, E>, title: &str) -> boo
     }
 }
 
+/// Speak on **both** outcomes.
+///
+/// `report` alone was a trap: it only raised a toast when something went
+/// wrong, so every action that quietly succeeded — removing a book, editing a
+/// shelf — looked to the user as if notifications were broken. Anything the
+/// user deliberately triggered should confirm itself.
+///
+/// ```ignore
+/// notify::outcome(
+///     catalog.delete_shelf(id),
+///     "Shelf deleted", &name,
+///     "Could not delete the shelf",
+/// );
+/// ```
+pub fn outcome<T, E: std::fmt::Display>(
+    result: Result<T, E>,
+    ok_title: &str,
+    ok_detail: &str,
+    err_title: &str,
+) -> bool {
+    match result {
+        Ok(_) => {
+            success(ok_title, ok_detail);
+            true
+        }
+        Err(err) => {
+            error(err_title, &err.to_string());
+            false
+        }
+    }
+}
+
+/// Like [`outcome`], but the confirmation is neutral rather than a green tick.
+/// Used for reversals — unread, removed from a list — where "Success" reads
+/// oddly.
+pub fn outcome_info<T, E: std::fmt::Display>(
+    result: Result<T, E>,
+    ok_title: &str,
+    ok_detail: &str,
+    err_title: &str,
+) -> bool {
+    match result {
+        Ok(_) => {
+            info(ok_title, ok_detail);
+            true
+        }
+        Err(err) => {
+            error(err_title, &err.to_string());
+            false
+        }
+    }
+}
+
 fn push(kind: Kind, title: &str, detail: &str) {
     let entry = Entry {
         kind,

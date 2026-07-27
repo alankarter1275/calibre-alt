@@ -305,7 +305,15 @@ impl Component for BookFloatModel {
             BookFloatMsg::Remove => {
                 if let Some(b) = &self.book {
                     let id = b.id;
-                    if self.catalog.delete_book(id).is_ok() {
+                    let title = b.title.clone();
+                    // This panel used to delete in total silence — the card
+                    // simply vanished with no confirmation either way.
+                    if crate::notify::outcome(
+                        self.catalog.delete_book(id),
+                        "Book removed",
+                        &title,
+                        "Could not remove the book",
+                    ) {
                         self.book = None;
                         sender.output(BookFloatOut::Deleted { book_id: id }).ok();
                     }

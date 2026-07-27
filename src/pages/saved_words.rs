@@ -118,8 +118,16 @@ impl Component for SavedWordsModel {
                 widgets.status_label.set_label(&self.status);
             }
             SavedWordsMsg::Delete(id) => {
-                crate::notify::report(
+                let word = self
+                    .words
+                    .iter()
+                    .find(|w| w.id == id)
+                    .map(|w| w.word.clone())
+                    .unwrap_or_default();
+                crate::notify::outcome_info(
                     self.catalog.delete_saved_word(id),
+                    "Word deleted",
+                    &word,
                     "Could not delete the word",
                 );
                 self.reload();

@@ -357,7 +357,12 @@ impl ShelfDetailModel {
             let catalog = self.catalog.clone();
             let s = sender.clone();
             up.connect_clicked(move |_| {
-                let _ = catalog.move_shelf_book(shelf_id, book_id, -1);
+                // Reordering is visible in the list itself, so only a failure
+                // needs saying — a toast per arrow click would be noise.
+                crate::notify::report(
+                    catalog.move_shelf_book(shelf_id, book_id, -1),
+                    "Could not reorder the shelf",
+                );
                 s.input(ShelfDetailMsg::Refresh);
             });
         }
@@ -371,7 +376,10 @@ impl ShelfDetailModel {
             let catalog = self.catalog.clone();
             let s = sender.clone();
             down.connect_clicked(move |_| {
-                let _ = catalog.move_shelf_book(shelf_id, book_id, 1);
+                crate::notify::report(
+                    catalog.move_shelf_book(shelf_id, book_id, 1),
+                    "Could not reorder the shelf",
+                );
                 s.input(ShelfDetailMsg::Refresh);
             });
         }
@@ -383,9 +391,12 @@ impl ShelfDetailModel {
         {
             let catalog = self.catalog.clone();
             let s = sender.clone();
+            let book_title = book.title.clone();
             remove.connect_clicked(move |_| {
-                crate::notify::report(
+                crate::notify::outcome_info(
                     catalog.remove_book_from_shelf(shelf_id, book_id),
+                    "Removed from shelf",
+                    &book_title,
                     "Could not remove from the shelf",
                 );
                 s.input(ShelfDetailMsg::Refresh);
@@ -504,12 +515,20 @@ fn open_book_picker(
                 let catalog = catalog.clone();
                 let on_changed = on_changed.clone();
                 let book_id = book.id;
+                let book_title = book.title.clone();
                 check.connect_toggled(move |c| {
                     if c.is_active() {
-                        let _ = catalog.add_book_to_shelf(shelf_id, book_id);
+                        crate::notify::outcome(
+                            catalog.add_book_to_shelf(shelf_id, book_id),
+                            "Added to shelf",
+                            &book_title,
+                            "Could not add to the shelf",
+                        );
                     } else {
-                        crate::notify::report(
+                        crate::notify::outcome_info(
                             catalog.remove_book_from_shelf(shelf_id, book_id),
+                            "Removed from shelf",
+                            &book_title,
                             "Could not remove from the shelf",
                         );
                     }

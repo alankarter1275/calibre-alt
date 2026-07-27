@@ -131,8 +131,10 @@ impl Component for SavedQuotesModel {
                 widgets.status_label.set_label(&self.status);
             }
             SavedQuotesMsg::Delete(id) => {
-                crate::notify::report(
+                crate::notify::outcome_info(
                     self.catalog.delete_annotation(id),
+                    "Quote deleted",
+                    "",
                     "Could not delete the quote",
                 );
                 self.reload();
@@ -144,21 +146,29 @@ impl Component for SavedQuotesModel {
                 let out_path = dirs::home_dir()
                     .unwrap_or_else(|| std::path::PathBuf::from("."))
                     .join("Quotes.md");
-                let res = std::fs::write(&out_path, exported);
-                if res.is_ok() {
-                    self.status = format!("Exported to {}", out_path.display());
-                } else {
-                    self.status = format!("Export failed: {:?}", res.err());
+                let count = self.quotes.len();
+                match std::fs::write(&out_path, exported) {
+                    Ok(()) => {
+                        self.status = format!("Exported to {}", out_path.display());
+                        crate::notify::success(
+                            &format!("{count} quote{} exported", if count == 1 { "" } else { "s" }),
+                            &out_path.display().to_string(),
+                        );
+                    }
+                    Err(err) => {
+                        self.status = format!("Export failed: {err}");
+                        crate::notify::error("Could not export quotes", &err.to_string());
+                    }
                 }
                 widgets.status_label.set_label(&self.status);
             }
             SavedQuotesMsg::SaveNote { id, note } => {
-                if crate::notify::report(
+                crate::notify::outcome(
                     self.catalog.update_annotation_note(id, note.trim()),
+                    "Note saved",
+                    "",
                     "Could not save your note",
-                ) {
-                    crate::notify::success("Note saved", "");
-                }
+                );
                 self.reload();
             }
             SavedQuotesMsg::Refresh => {

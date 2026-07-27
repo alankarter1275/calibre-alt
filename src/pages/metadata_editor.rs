@@ -760,7 +760,10 @@ fn open_editor_inner(
                 return false;
             }
 
-            let _ = catalog.set_book_rating(book_id, rating_value.get());
+            crate::notify::report(
+                catalog.set_book_rating(book_id, rating_value.get()),
+                "Could not save the rating",
+            );
 
             // Re-read so the cover swap sees the current row.
             if let Some(bytes) = pending_cover.borrow_mut().take() {
@@ -797,6 +800,10 @@ fn open_editor_inner(
                     }
                 }
             }
+
+            // Saving from this dialog was silent whenever everything worked,
+            // which made a successful edit indistinguishable from a no-op.
+            crate::notify::success("Metadata saved", &title);
 
             on_saved();
             true

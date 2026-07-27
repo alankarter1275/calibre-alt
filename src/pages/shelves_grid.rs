@@ -133,12 +133,22 @@ impl Component for ShelvesGridModel {
                 );
             }
             ShelvesMsg::Delete(shelf_id) => {
+                // Grab the name before the row goes, so the toast can say
+                // which shelf was deleted rather than just "a shelf".
+                let name = self
+                    .shelves
+                    .iter()
+                    .find(|s| s.id == shelf_id)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_default();
                 confirm_delete(window_of(root).as_ref(), {
                     let catalog = self.catalog.clone();
                     let s = sender.clone();
                     move || {
-                        crate::notify::report(
+                        crate::notify::outcome(
                             catalog.delete_shelf(shelf_id),
+                            "Shelf deleted",
+                            &name,
                             "Could not delete the shelf",
                         );
                         s.input(ShelvesMsg::Refresh);

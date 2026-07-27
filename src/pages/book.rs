@@ -305,8 +305,16 @@ impl Component for BookPageModel {
             BookPageMsg::SetRating(half_stars) => {
                 if let Some(book) = &self.book {
                     let id = book.id;
-                    crate::notify::report(
+                    let stars = half_stars as f32 / 2.0;
+                    let detail = if half_stars == 0 {
+                        "Rating cleared".to_string()
+                    } else {
+                        format!("{stars} of 5 \u{2605}")
+                    };
+                    crate::notify::outcome(
                         self.catalog.set_book_rating(id, half_stars),
+                        "Rating saved",
+                        &detail,
                         "Could not save the rating",
                     );
                     self.book = self.catalog.get_book(id).ok().flatten();
@@ -522,15 +530,20 @@ fn open_shelf_menu(
             let catalog = catalog.clone();
             let on_changed = on_changed.clone();
             let shelf_id = shelf.id;
+            let shelf_name = shelf.name.clone();
             check.connect_toggled(move |c| {
                 if c.is_active() {
-                    crate::notify::report(
+                    crate::notify::outcome(
                         catalog.add_book_to_shelf(shelf_id, book_id),
+                        "Added to shelf",
+                        &shelf_name,
                         "Could not add to the shelf",
                     );
                 } else {
-                    crate::notify::report(
+                    crate::notify::outcome_info(
                         catalog.remove_book_from_shelf(shelf_id, book_id),
+                        "Removed from shelf",
+                        &shelf_name,
                         "Could not remove from the shelf",
                     );
                 }

@@ -169,7 +169,14 @@ impl Component for HistoryModel {
                 self.reload();
             }
             HistoryMsg::Clear => {
-                let _ = self.catalog.clear_history();
+                // `self.events` is the *filtered* view, so its length would
+                // understate what was actually removed. Say nothing numeric.
+                crate::notify::outcome_info(
+                    self.catalog.clear_history(),
+                    "History cleared",
+                    "Every reading event was removed",
+                    "Could not clear the history",
+                );
                 self.reload();
             }
             HistoryMsg::Refresh => self.reload(),

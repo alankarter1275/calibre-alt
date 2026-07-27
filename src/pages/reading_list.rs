@@ -104,12 +104,24 @@ impl Component for ReadingListModel {
     ) {
         match msg {
             ReadingListMsg::Move { book_id, delta } => {
-                let _ = self.catalog.move_reading_list_entry(book_id, delta);
+                // The list visibly reorders itself, so success needs no toast.
+                crate::notify::report(
+                    self.catalog.move_reading_list_entry(book_id, delta),
+                    "Could not reorder the reading list",
+                );
                 self.reload();
             }
             ReadingListMsg::Remove(book_id) => {
-                crate::notify::report(
+                let title = self
+                    .entries
+                    .iter()
+                    .find(|e| e.book.id == book_id)
+                    .map(|e| e.book.title.clone())
+                    .unwrap_or_default();
+                crate::notify::outcome_info(
                     self.catalog.remove_from_reading_list(book_id),
+                    "Removed from reading list",
+                    &title,
                     "Could not update the reading list",
                 );
                 self.reload();
@@ -347,15 +359,20 @@ fn open_picker(
                 let catalog = catalog.clone();
                 let on_changed = on_changed.clone();
                 let book_id = book.id;
+                let book_title = book.title.clone();
                 check.connect_toggled(move |c| {
                     if c.is_active() {
-                        crate::notify::report(
+                        crate::notify::outcome(
                             catalog.add_to_reading_list(book_id),
+                            "Added to reading list",
+                            &book_title,
                             "Could not update the reading list",
                         );
                     } else {
-                        crate::notify::report(
+                        crate::notify::outcome_info(
                             catalog.remove_from_reading_list(book_id),
+                            "Removed from reading list",
+                            &book_title,
                             "Could not update the reading list",
                         );
                     }
