@@ -27,6 +27,11 @@ pub const SCHEMA_VERSION: i64 = 6;
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
     conn: Mutex<Connection>,
+    /// `library_stats()` runs ~20 aggregates and is called on Home, the
+    /// Library dashboard and Analytics. The result is memoised against
+    /// SQLite's total_changes() counter: any write anywhere bumps it, so the
+    /// cache cannot go stale and no write path has to remember to clear it.
+    stats_cache: Mutex<Option<(i64, LibraryStats)>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -298,10 +303,19 @@ impl Catalog {
             "
             PRAGMA foreign_keys = ON;
             PRAGMA journal_mode = WAL;
+            -- WAL already survives crashes; full fsync per commit is the
+            -- single biggest cost on spinning disks and cheap SSDs.
+            PRAGMA synchronous = NORMAL;
+            -- 64 MB page cache and memory temp tables: the catalog is small
+            -- enough to sit in RAM, which removes most read latency.
+            PRAGMA cache_size = -64000;
+            PRAGMA temp_store = MEMORY;
+            PRAGMA mmap_size = 268435456;
             ",
         )?;
         let cat = Self {
             conn: Mutex::new(conn),
+            stats_cache: Mutex::new(None),
         };
         cat.migrate()?;
         Ok(cat)
@@ -314,6 +328,7 @@ impl Catalog {
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let cat = Self {
             conn: Mutex::new(conn),
+            stats_cache: Mutex::new(None),
         };
         cat.migrate()?;
         Ok(cat)
@@ -542,7 +557,7 @@ impl Catalog {
         let q = query.trim();
         let mut books = if q.is_empty() {
             let sql = format!("SELECT {BOOK_COLUMNS} FROM books ORDER BY {order}");
-            let mut stmt = conn.prepare(&sql)?;
+            let mut stmt = conn.prepare_cached(&sql)?;
             let rows = stmt.query_map([], row_to_book)?;
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         } else {
@@ -555,19 +570,24 @@ impl Catalog {
                     OR IFNULL(books.series,'') LIKE ?1 ESCAPE '\\'
                  ORDER BY {order}"
             );
-            let mut stmt = conn.prepare(&sql)?;
+            let mut stmt = conn.prepare_cached(&sql)?;
             let rows = stmt.query_map(params![like], row_to_book)?;
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         };
 
-        for book in &mut books {
-            book.tags = tags_for_book(&conn, book.id)?;
-            book.cover_path = book
-                .cover_name
-                .as_ref()
-                .map(|name| book_dir(&book.uuid).join(name));
-            book.file_path = book_dir(&book.uuid).join(&book.file_name);
-        }
+        hydrate_books(&conn, &mut books)?;
+        Ok(books)
+    }
+
+    /// Newest books, capped. Pages that show a handful of covers were calling
+    /// `list_books` and loading the entire library to display six of them.
+    pub fn recent_books(&self, limit: usize) -> Result<Vec<Book>> {
+        let conn = self.conn.lock().expect("db lock");
+        let sql = format!("SELECT {BOOK_COLUMNS} FROM books ORDER BY books.added_at DESC LIMIT ?1");
+        let mut stmt = conn.prepare_cached(&sql)?;
+        let rows = stmt.query_map(params![limit as i64], row_to_book)?;
+        let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        hydrate_books(&conn, &mut books)?;
         Ok(books)
     }
 
@@ -769,7 +789,7 @@ impl Catalog {
 
     pub fn get_annotations_for_book(&self, book_id: i64) -> Result<Vec<Annotation>> {
         let conn = self.conn.lock().expect("db lock");
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
                     color, text_excerpt, note, cfi, created_at, updated_at
              FROM annotations WHERE book_id = ?1 ORDER BY chapter_index ASC, created_at ASC",
@@ -788,7 +808,7 @@ impl Catalog {
         chapter_index: i64,
     ) -> Result<Vec<Annotation>> {
         let conn = self.conn.lock().expect("db lock");
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
                     color, text_excerpt, note, cfi, created_at, updated_at
              FROM annotations
@@ -803,18 +823,49 @@ impl Catalog {
         Ok(out)
     }
 
+    /// A few recent quotes with their book titles, in one query.
+    /// The dashboard previously fetched 500 rows and then a book per card.
+    pub fn recent_quotes(&self, limit: usize) -> Result<Vec<(Annotation, String)>> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare_cached(
+            "SELECT a.id, a.book_id, a.kind, a.chapter_index, a.start_path, a.start_offset,
+                    a.end_path, a.end_offset, a.color, a.text_excerpt, a.note, a.cfi,
+                    a.created_at, a.updated_at, books.title
+             FROM annotations a
+             JOIN books ON books.id = a.book_id
+             WHERE a.kind IN ('quote','highlight') AND TRIM(a.text_excerpt) <> ''
+             ORDER BY a.created_at DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |r| {
+            Ok((row_to_annotation(r)?, r.get::<_, String>(14)?))
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Total saved quotes, for counts that do not need the rows themselves.
+    pub fn count_quotes(&self) -> Result<i64> {
+        let conn = self.conn.lock().expect("db lock");
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM annotations WHERE kind IN ('quote','highlight')",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(n)
+    }
+
     pub fn list_all_quotes(&self, query: &str) -> Result<Vec<Annotation>> {
         let conn = self.conn.lock().expect("db lock");
         let q = query.trim();
         let mut stmt = if q.is_empty() {
-            conn.prepare(
+            conn.prepare_cached(
                 "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
                         color, text_excerpt, note, cfi, created_at, updated_at
                  FROM annotations WHERE kind IN ('quote','highlight')
                  ORDER BY created_at DESC LIMIT 500",
             )?
         } else {
-            conn.prepare(
+            conn.prepare_cached(
                 "SELECT id, book_id, kind, chapter_index, start_path, start_offset, end_path, end_offset,
                         color, text_excerpt, note, cfi, created_at, updated_at
                  FROM annotations
@@ -897,7 +948,7 @@ impl Catalog {
         let conn = self.conn.lock().expect("db lock");
         let q = query.trim();
         if q.is_empty() {
-            let mut stmt = conn.prepare(
+            let mut stmt = conn.prepare_cached(
                 "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at
                  FROM saved_words ORDER BY created_at DESC LIMIT 500",
             )?;
@@ -906,7 +957,7 @@ impl Catalog {
                 .map_err(Into::into)
         } else {
             let like = format!("%{}%", escape_like(q));
-            let mut stmt = conn.prepare(
+            let mut stmt = conn.prepare_cached(
                 "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at
                  FROM saved_words
                  WHERE word LIKE ?1 ESCAPE '\\' OR definition LIKE ?1 ESCAPE '\\'
@@ -930,7 +981,7 @@ impl Catalog {
 
     pub fn list_dictionaries(&self) -> Result<Vec<Dictionary>> {
         let conn = self.conn.lock().expect("db lock");
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT id, name, lang, entry_count, added_at FROM dictionaries ORDER BY name ASC",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -1030,7 +1081,7 @@ impl Catalog {
             return Ok(Vec::new());
         }
         // Exact match first, then prefix, then LIKE fallback
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT id, dict_id, word, definition FROM dict_entries
              WHERE word = ?1 COLLATE NOCASE
              ORDER BY word ASC LIMIT ?2",
@@ -1053,7 +1104,7 @@ impl Catalog {
 
         // Prefix search
         let like = format!("{}%", escape_like(clean));
-        let mut stmt2 = conn.prepare(
+        let mut stmt2 = conn.prepare_cached(
             "SELECT id, dict_id, word, definition FROM dict_entries
              WHERE word LIKE ?1 ESCAPE '\\' COLLATE NOCASE
              ORDER BY LENGTH(word) ASC, word ASC LIMIT ?2",
@@ -1074,7 +1125,7 @@ impl Catalog {
 
         // Substring fallback
         let like2 = format!("%{}%", escape_like(clean));
-        let mut stmt3 = conn.prepare(
+        let mut stmt3 = conn.prepare_cached(
             "SELECT id, dict_id, word, definition FROM dict_entries
              WHERE word LIKE ?1 ESCAPE '\\' COLLATE NOCASE
                 OR definition LIKE ?1 ESCAPE '\\'
@@ -1225,7 +1276,7 @@ impl Catalog {
             return out;
         };
         let cutoff = iso_days_ago(6);
-        let Ok(mut stmt) = conn.prepare(
+        let Ok(mut stmt) = conn.prepare_cached(
             "SELECT DISTINCT substr(started_at, 1, 10) FROM reading_sessions
              WHERE started_at >= ?1 AND seconds > 0",
         ) else {
@@ -1283,7 +1334,7 @@ impl Catalog {
     pub fn list_shelves(&self) -> Result<Vec<Shelf>> {
         let mut shelves = {
             let conn = self.conn.lock().expect("db lock");
-            let mut stmt = conn.prepare(
+            let mut stmt = conn.prepare_cached(
                 "SELECT id, name, kind, description, rules, position, created_at, updated_at
                  FROM shelves
                  ORDER BY position ASC, name COLLATE NOCASE ASC",
@@ -1292,8 +1343,24 @@ impl Catalog {
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         };
 
+        // Manual counts come back in a single grouped query; only smart
+        // shelves need their rules compiled and counted individually.
+        let manual_counts: std::collections::HashMap<i64, usize> = {
+            let conn = self.conn.lock().expect("db lock");
+            let mut stmt = conn.prepare_cached(
+                "SELECT shelf_id, COUNT(*) FROM shelf_books GROUP BY shelf_id",
+            )?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
+            rows.filter_map(|r| r.ok())
+                .map(|(id, n)| (id, n as usize))
+                .collect()
+        };
+
         for shelf in &mut shelves {
-            shelf.book_count = self.shelf_book_count(shelf).unwrap_or(0);
+            shelf.book_count = match shelf.kind {
+                ShelfKind::Manual => manual_counts.get(&shelf.id).copied().unwrap_or(0),
+                ShelfKind::Smart => self.shelf_book_count(shelf).unwrap_or(0),
+            };
         }
         Ok(shelves)
     }
@@ -1405,7 +1472,7 @@ impl Catalog {
              ORDER BY {order}"
         );
         let like = format!("%{}%", escape_like(q));
-        let mut stmt = conn.prepare(&sql)?;
+        let mut stmt = conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![shelf_id, q, like], row_to_book)?;
         let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
         hydrate_books(&conn, &mut books)?;
@@ -1444,6 +1511,7 @@ impl Catalog {
         bound.push(&like);
         bound.push(&like);
 
+        // Not cached: the WHERE clause is generated from this shelf's rules.
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(bound.as_slice(), row_to_book)?;
         let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1461,6 +1529,7 @@ impl Catalog {
             )?,
             ShelfKind::Smart => {
                 let (where_sql, rule_params) = shelf.rule_set().to_sql();
+                // Rule-derived SQL differs per shelf, so it is not cached.
                 let sql = format!("SELECT COUNT(*) FROM books WHERE {where_sql}");
                 let bound: Vec<&dyn rusqlite::ToSql> = rule_params
                     .iter()
@@ -1514,7 +1583,7 @@ impl Catalog {
     /// Manual shelves this book belongs to (id, name) — for the book page chips.
     pub fn shelves_for_book(&self, book_id: i64) -> Result<Vec<(i64, String)>> {
         let conn = self.conn.lock().expect("db lock");
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT s.id, s.name FROM shelves s
              JOIN shelf_books sb ON sb.shelf_id = s.id
              WHERE sb.book_id = ?1
@@ -1528,7 +1597,7 @@ impl Catalog {
     pub fn move_shelf_book(&self, shelf_id: i64, book_id: i64, delta: i64) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         let ids: Vec<i64> = {
-            let mut stmt = conn.prepare(
+            let mut stmt = conn.prepare_cached(
                 "SELECT book_id FROM shelf_books WHERE shelf_id = ?1
                  ORDER BY position ASC, added_at ASC",
             )?;
@@ -1565,7 +1634,7 @@ impl Catalog {
              JOIN reading_list rl ON rl.book_id = books.id
              ORDER BY rl.position ASC, rl.added_at ASC"
         );
-        let mut stmt = conn.prepare(&sql)?;
+        let mut stmt = conn.prepare_cached(&sql)?;
         let rows = stmt.query_map([], |row| {
             let book = row_to_book(row)?;
             Ok(ReadingListEntry {
@@ -1791,7 +1860,7 @@ impl Catalog {
         let q = query.trim();
         let like = format!("%{}%", escape_like(q));
         let kind_str = kind.map(|k| k.as_str().to_string());
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT e.id, e.book_id, e.kind, e.at, e.detail, books.title, books.authors
              FROM reading_events e
              JOIN books ON books.id = e.book_id
@@ -1833,7 +1902,7 @@ impl Catalog {
              ORDER BY books.last_opened_at DESC
              LIMIT ?1"
         );
-        let mut stmt = conn.prepare(&sql)?;
+        let mut stmt = conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![limit as i64], row_to_book)?;
         let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
         hydrate_books(&conn, &mut books)?;
@@ -1884,7 +1953,7 @@ impl Catalog {
     /// (tag name, book count), most used first.
     pub fn list_tags_with_counts(&self) -> Result<Vec<(String, i64)>> {
         let conn = self.conn.lock().expect("db lock");
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT t.name, COUNT(bt.book_id) AS n
              FROM tags t
              LEFT JOIN book_tags bt ON bt.tag_id = t.id
@@ -1911,7 +1980,7 @@ impl Catalog {
              WHERE t.name = ?1 COLLATE NOCASE
              ORDER BY {order}"
         );
-        let mut stmt = conn.prepare(&sql)?;
+        let mut stmt = conn.prepare_cached(&sql)?;
         let rows = stmt.query_map(params![tag], row_to_book)?;
         let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
         hydrate_books(&conn, &mut books)?;
@@ -1923,6 +1992,28 @@ impl Catalog {
     // -----------------------------------------------------------------------
 
     pub fn library_stats(&self) -> Result<LibraryStats> {
+        // Cheap: total_changes() is an in-memory counter, not a query.
+        let version = {
+            let conn = self.conn.lock().expect("db lock");
+            conn.total_changes() as i64
+        };
+
+        if let Ok(cache) = self.stats_cache.lock() {
+            if let Some((cached_version, stats)) = cache.as_ref() {
+                if *cached_version == version {
+                    return Ok(stats.clone());
+                }
+            }
+        }
+
+        let stats = self.compute_library_stats()?;
+        if let Ok(mut cache) = self.stats_cache.lock() {
+            *cache = Some((version, stats.clone()));
+        }
+        Ok(stats)
+    }
+
+    fn compute_library_stats(&self) -> Result<LibraryStats> {
         let conn = self.conn.lock().expect("db lock");
 
         let one =
@@ -1979,7 +2070,7 @@ impl Catalog {
 
         // Books added per month, last 6 calendar months present in the data.
         {
-            let mut stmt = conn.prepare(
+            let mut stmt = conn.prepare_cached(
                 "SELECT substr(added_at, 1, 7) AS ym, COUNT(*)
                  FROM books
                  GROUP BY ym
@@ -1994,7 +2085,7 @@ impl Catalog {
 
         // Reading minutes per day for the last 14 days (zero-filled).
         {
-            let mut stmt = conn.prepare(
+            let mut stmt = conn.prepare_cached(
                 "SELECT substr(started_at, 1, 10) AS d, IFNULL(SUM(seconds), 0)
                  FROM reading_sessions
                  WHERE started_at >= ?1
@@ -2036,7 +2127,7 @@ impl Catalog {
         }
 
         {
-            let mut stmt = conn.prepare(
+            let mut stmt = conn.prepare_cached(
                 "SELECT t.name, COUNT(bt.book_id) AS n
                  FROM tags t JOIN book_tags bt ON bt.tag_id = t.id
                  GROUP BY t.id ORDER BY n DESC, t.name COLLATE NOCASE LIMIT 8",
@@ -2046,7 +2137,7 @@ impl Catalog {
         }
 
         {
-            let mut stmt = conn.prepare(
+            let mut stmt = conn.prepare_cached(
                 "SELECT authors, COUNT(*) AS n FROM books
                  WHERE TRIM(authors) <> ''
                  GROUP BY authors COLLATE NOCASE
@@ -2057,7 +2148,7 @@ impl Catalog {
         }
 
         {
-            let mut stmt = conn.prepare(
+            let mut stmt = conn.prepare_cached(
                 "SELECT books.title, SUM(rs.seconds) AS n
                  FROM reading_sessions rs JOIN books ON books.id = rs.book_id
                  GROUP BY rs.book_id
@@ -2070,7 +2161,7 @@ impl Catalog {
 
         // Streaks over distinct days that have any reading session.
         {
-            let mut stmt = conn.prepare(
+            let mut stmt = conn.prepare_cached(
                 "SELECT DISTINCT substr(started_at, 1, 10) FROM reading_sessions
                  WHERE seconds > 0 ORDER BY 1 DESC",
             )?;
@@ -2096,8 +2187,37 @@ const MAX_SESSION_SECONDS: i64 = 6 * 60 * 60;
 
 /// Fill tags + resolved paths for a freshly queried batch of books.
 fn hydrate_books(conn: &Connection, books: &mut [Book]) -> Result<()> {
+    if books.is_empty() {
+        return Ok(());
+    }
+
+    // One query for every book's tags, rather than one query per book. With a
+    // few hundred books the old loop was the dominant cost of opening any page
+    // that showed a list.
+    let ids: Vec<String> = books.iter().map(|b| b.id.to_string()).collect();
+    let sql = format!(
+        "SELECT bt.book_id, t.name FROM tags t
+         JOIN book_tags bt ON bt.tag_id = t.id
+         WHERE bt.book_id IN ({})
+         ORDER BY t.name COLLATE NOCASE",
+        ids.join(",")
+    );
+
+    let mut by_book: std::collections::HashMap<i64, Vec<String>> =
+        std::collections::HashMap::new();
+    {
+        // Plain prepare: the id list makes this SQL unique per call, so caching
+        // it would grow the statement cache without bound.
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+        for row in rows {
+            let (book_id, tag) = row?;
+            by_book.entry(book_id).or_default().push(tag);
+        }
+    }
+
     for book in books.iter_mut() {
-        book.tags = tags_for_book(conn, book.id)?;
+        book.tags = by_book.remove(&book.id).unwrap_or_default();
         book.cover_path = book
             .cover_name
             .as_ref()
@@ -2125,7 +2245,7 @@ fn row_to_shelf(row: &rusqlite::Row<'_>) -> rusqlite::Result<Shelf> {
 /// `ALTER TABLE ... ADD COLUMN` guarded by a PRAGMA lookup, so migrations stay
 /// idempotent on databases created by older versions.
 fn add_column_if_missing(conn: &Connection, table: &str, column: &str, ty: &str) -> Result<()> {
-    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let mut stmt = conn.prepare_cached(&format!("PRAGMA table_info({table})"))?;
     let existing: Vec<String> = stmt
         .query_map([], |r| r.get::<_, String>(1))?
         .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -2295,7 +2415,7 @@ fn row_to_saved_word(row: &rusqlite::Row<'_>) -> rusqlite::Result<SavedWord> {
 }
 
 fn tags_for_book(conn: &Connection, book_id: i64) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
+    let mut stmt = conn.prepare_cached(
         "SELECT t.name FROM tags t
          JOIN book_tags bt ON bt.tag_id = t.id
          WHERE bt.book_id = ?1
@@ -2585,6 +2705,60 @@ mod tests {
         assert_eq!(stats.reading, 1);
         assert_eq!(stats.unread, 1);
         assert_eq!(stats.minutes_by_day.len(), 14);
+    }
+
+    #[test]
+    fn stats_cache_refreshes_after_a_write() {
+        let cat = Catalog::open_in_memory().unwrap();
+        seed(&cat, "A", "x", &[]);
+        assert_eq!(cat.library_stats().unwrap().total_books, 1);
+
+        // A second call must hit the cache and still be correct.
+        assert_eq!(cat.library_stats().unwrap().total_books, 1);
+
+        // Any write bumps total_changes(), so the next read recomputes.
+        seed(&cat, "B", "y", &[]);
+        assert_eq!(cat.library_stats().unwrap().total_books, 2);
+    }
+
+    #[test]
+    fn recent_books_is_bounded_and_newest_first() {
+        let cat = Catalog::open_in_memory().unwrap();
+        for name in ["A", "B", "C"] {
+            seed(&cat, name, "x", &["t"]);
+        }
+        let books = cat.recent_books(2).unwrap();
+        assert_eq!(books.len(), 2);
+        // Tags must still be hydrated by the batched lookup.
+        assert_eq!(books[0].tags, vec!["t".to_string()]);
+    }
+
+    #[test]
+    fn batched_tag_hydration_matches_per_book() {
+        let cat = Catalog::open_in_memory().unwrap();
+        seed(&cat, "Dune", "Herbert", &["scifi", "classic"]);
+        seed(&cat, "Emma", "Austen", &["classic"]);
+        seed(&cat, "Bare", "Nobody", &[]);
+
+        let books = cat.list_books(SortKey::Title, "").unwrap();
+        let find = |t: &str| books.iter().find(|b| b.title == t).unwrap().tags.clone();
+        assert_eq!(find("Dune").len(), 2);
+        assert_eq!(find("Emma"), vec!["classic".to_string()]);
+        // A book with no tags must come back empty, not missing.
+        assert!(find("Bare").is_empty());
+    }
+
+    #[test]
+    fn recent_quotes_carries_its_book_title() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "Dune", "Herbert", &[]);
+        cat.insert_annotation(id, "quote", 0, "p", 0, "p", 9, "yellow", "Fear is the mind-killer", "")
+            .unwrap();
+
+        let quotes = cat.recent_quotes(5).unwrap();
+        assert_eq!(quotes.len(), 1);
+        assert_eq!(quotes[0].1, "Dune");
+        assert_eq!(cat.count_quotes().unwrap(), 1);
     }
 
     #[test]

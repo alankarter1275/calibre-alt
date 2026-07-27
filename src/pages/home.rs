@@ -1,4 +1,4 @@
-use crate::db::{Catalog, SortKey};
+use crate::db::Catalog;
 use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W};
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -102,7 +102,8 @@ impl SimpleComponent for HomePageModel {
         let model = HomePageModel;
         let widgets = view_output!();
 
-        let books = catalog.list_books(SortKey::Added, "").unwrap_or_default();
+        // Bounded: Home shows a dozen covers, not the whole library.
+        let books = catalog.recent_books(12).unwrap_or_default();
 
         // ── counts strip ────────────────────────────────────────────────
         let stats = catalog.library_stats().unwrap_or_default();

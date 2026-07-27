@@ -5,7 +5,7 @@
 //! Section headers double as the way in — click a header or any card to drill
 //! down. Nothing here requires a click just to find out what is behind it.
 
-use crate::db::{Catalog, LibraryStats, SortKey};
+use crate::db::{Catalog, LibraryStats};
 use crate::models::{Book, LibrarySection};
 use crate::widgets::book_row::{build_book_card, cover_widget, CARD_H, CARD_W};
 use crate::widgets::charts::{line_chart, monthly_series, sparkline, stars_label};
@@ -175,8 +175,9 @@ fn build_dashboard(
     // ── continue reading: covers with progress bars ─────────────────────
     let mut continuing = catalog.recently_opened(6).unwrap_or_default();
     if continuing.is_empty() {
+        // Bounded: this used to load every book to show at most six.
         continuing = catalog
-            .list_books(SortKey::Added, "")
+            .recent_books(60)
             .unwrap_or_default()
             .into_iter()
             .filter(|b| b.progress > 0 && b.progress < 100)
@@ -245,11 +246,14 @@ fn build_dashboard(
     }
 
     // ── saved quotes ────────────────────────────────────────────────────
-    let quotes = catalog.list_all_quotes("").unwrap_or_default();
+    // Two rows joined with their titles, instead of 500 rows plus a book
+    // lookup per card.
+    let quotes = catalog.recent_quotes(2).unwrap_or_default();
+    let quote_total = catalog.count_quotes().unwrap_or(0);
     if !quotes.is_empty() {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         row.set_homogeneous(true);
-        for anno in quotes.iter().take(2) {
+        for (anno, book_title) in quotes.iter() {
             let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
             card.add_css_class("kalam-quote-card");
 
@@ -267,19 +271,17 @@ fn build_dashboard(
             quote.set_halign(gtk::Align::Start);
             card.append(&quote);
 
-            if let Ok(Some(book)) = catalog.get_book(anno.book_id) {
-                let src = gtk::Label::new(Some(&format!("— {}", book.title)));
-                src.add_css_class("kalam-quote-source");
-                src.set_halign(gtk::Align::Start);
-                src.set_xalign(0.0);
-                src.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                card.append(&src);
-            }
+            let src = gtk::Label::new(Some(&format!("— {book_title}")));
+            src.add_css_class("kalam-quote-source");
+            src.set_halign(gtk::Align::Start);
+            src.set_xalign(0.0);
+            src.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            card.append(&src);
             row.append(&card);
         }
         body.append(&section(
             "QUOTES",
-            Some(&format!("{} saved", quotes.len())),
+            Some(&format!("{quote_total} saved")),
             LibrarySection::SavedQuotes,
             sender,
             row.upcast::<gtk::Widget>(),
@@ -323,12 +325,12 @@ fn build_dashboard(
     }
 
     // ── recently added ──────────────────────────────────────────────────
-    let recent = catalog.list_books(SortKey::Added, "").unwrap_or_default();
+    let recent = catalog.recent_books(6).unwrap_or_default();
     if !recent.is_empty() {
-        let strip: Vec<Book> = recent.iter().take(6).cloned().collect();
+        let strip: Vec<Book> = recent.clone();
         body.append(&section(
             "RECENTLY ADDED",
-            Some(&format!("{} total", recent.len())),
+            Some(&format!("{} total", stats.total_books)),
             LibrarySection::AllBooks,
             sender,
             cover_strip(&strip, sender),
