@@ -408,3 +408,63 @@ pub fn strip_html(input: &str) -> String {
         .replace("<br />", " ");
     collapse_ws(&plain)
 }
+
+// ---------------------------------------------------------------------------
+// P5: cover replacement
+// ---------------------------------------------------------------------------
+
+/// Write new cover bytes into the book's own directory and point the catalog
+/// at them. Returns the stored file name.
+///
+/// A fresh name is generated each time (`cover-<n>.<ext>`) rather than
+/// overwriting: GTK caches textures by path, and reusing the path would leave
+/// the previous image on screen until restart.
+pub fn replace_cover_bytes(
+    catalog: &crate::db::Catalog,
+    book: &crate::models::Book,
+    bytes: &[u8],
+) -> Result<String> {
+    let ext = guess_image_ext(bytes);
+    let dir = crate::paths::book_dir(&book.uuid);
+    fs::create_dir_all(&dir)?;
+
+    // Pick a name that is not currently in use.
+    let mut name = format!("cover.{ext}");
+    let mut n = 1;
+    while dir.join(&name).exists() {
+        name = format!("cover-{n}.{ext}");
+        n += 1;
+    }
+
+    let path = dir.join(&name);
+    fs::write(&path, bytes).with_context(|| format!("write cover {}", path.display()))?;
+
+    // Remove the old file only after the new one is safely on disk.
+    if let Some(old) = &book.cover_name {
+        if old != &name {
+            let old_path = dir.join(old);
+            if old_path.exists() {
+                let _ = fs::remove_file(&old_path);
+            }
+            crate::widgets::book_row::invalidate_cover_cache(&old_path);
+        }
+    }
+
+    catalog.set_cover_name(book.id, Some(&name))?;
+    Ok(name)
+}
+
+/// Sniff the format from magic bytes; extension alone is unreliable.
+fn guess_image_ext(bytes: &[u8]) -> &'static str {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        "png"
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        "jpg"
+    } else if bytes.starts_with(b"GIF8") {
+        "gif"
+    } else if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        "webp"
+    } else {
+        "jpg"
+    }
+}

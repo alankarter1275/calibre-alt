@@ -960,6 +960,24 @@ popover.kalam-reader-popover > contents {
     background: @kalam_accent;
 }
 
+/* ── metadata editor ────────────────────────────────── */
+.kalam-desc-scroll {
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
+    background: @kalam_surface;
+}
+
+.kalam-desc-view {
+    background: transparent;
+    padding: 8px;
+    font-size: 0.86rem;
+}
+
+.kalam-desc-view text {
+    background: transparent;
+    color: @kalam_text;
+}
+
 /* ── ratings ────────────────────────────────────────── */
 .kalam-stars {
     color: #fbbf24;

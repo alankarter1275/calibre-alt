@@ -1,6 +1,7 @@
 use crate::db::{Catalog, ShelfKind};
 use crate::models::Book;
 use crate::widgets::book_row::cover_widget;
+use crate::pages::metadata_editor::open_metadata_editor;
 use crate::widgets::book_row::invalidate_cover_cache;
 use crate::widgets::charts::star_picker;
 use gtk::prelude::*;
@@ -24,6 +25,7 @@ pub enum BookPageMsg {
     ToggleReadingList,
     ToggleFinished,
     SetRating(u8),
+    EditMetadata,
     ShowShelfMenu,
     Refresh,
 }
@@ -171,8 +173,7 @@ impl Component for BookPageModel {
                         gtk::Button {
                             set_label: "Edit metadata",
                             add_css_class: "kalam-secondary-btn",
-                            set_sensitive: false,
-                            set_tooltip_text: Some("Coming in a later phase"),
+                            connect_clicked => BookPageMsg::EditMetadata,
                         },
                         gtk::Button {
                             set_label: "Remove",
@@ -295,6 +296,20 @@ impl Component for BookPageModel {
                     let _ = self.catalog.set_book_finished(id, !self.finished);
                     self.book = self.catalog.get_book(id).ok().flatten();
                     self.reload_p4(id);
+                }
+            }
+            BookPageMsg::EditMetadata => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    let s = sender.clone();
+                    open_metadata_editor(
+                        root.root()
+                            .and_then(|r| r.downcast::<gtk::Window>().ok())
+                            .as_ref(),
+                        self.catalog.clone(),
+                        id,
+                        move || s.input(BookPageMsg::Refresh),
+                    );
                 }
             }
             BookPageMsg::ShowShelfMenu => {

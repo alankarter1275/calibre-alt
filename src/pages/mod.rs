@@ -7,6 +7,7 @@ pub mod book_float;
 pub mod history;
 pub mod home;
 pub mod library;
+pub mod metadata_editor;
 pub mod placeholder;
 pub mod reader;
 pub mod reading_list;

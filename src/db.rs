@@ -1095,6 +1095,78 @@ impl Catalog {
     }
 
     // -----------------------------------------------------------------------
+    // P5: metadata editing
+    // -----------------------------------------------------------------------
+
+    /// Overwrite the editable metadata fields. Tags are replaced wholesale,
+    /// which matches what the edit dialog presents (one comma-separated box).
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_book_metadata(
+        &self,
+        book_id: i64,
+        title: &str,
+        authors: &str,
+        series: Option<&str>,
+        description: &str,
+        tags: &[String],
+    ) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        let title = title.trim();
+        // sort_title mirrors insert_book so ordering stays consistent.
+        conn.execute(
+            "UPDATE books
+             SET title = ?2, sort_title = ?3, authors = ?4, series = ?5, description = ?6
+             WHERE id = ?1",
+            params![
+                book_id,
+                title,
+                title.to_lowercase(),
+                authors.trim(),
+                series.map(|s| s.trim()).filter(|s| !s.is_empty()),
+                description,
+            ],
+        )?;
+
+        conn.execute("DELETE FROM book_tags WHERE book_id = ?1", params![book_id])?;
+        for tag in tags {
+            let tag = tag.trim();
+            if tag.is_empty() {
+                continue;
+            }
+            conn.execute(
+                "INSERT OR IGNORE INTO tags (name) VALUES (?1)",
+                params![tag],
+            )?;
+            let tag_id: i64 = conn.query_row(
+                "SELECT id FROM tags WHERE name = ?1 COLLATE NOCASE",
+                params![tag],
+                |r| r.get(0),
+            )?;
+            conn.execute(
+                "INSERT OR IGNORE INTO book_tags (book_id, tag_id) VALUES (?1, ?2)",
+                params![book_id, tag_id],
+            )?;
+        }
+
+        // Tags orphaned by this edit would otherwise clutter the tag browser.
+        conn.execute(
+            "DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM book_tags)",
+            [],
+        )?;
+        Ok(())
+    }
+
+    /// Point the book at a new cover file inside its own directory.
+    pub fn set_cover_name(&self, book_id: i64, cover_name: Option<&str>) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE books SET cover_name = ?2 WHERE id = ?1",
+            params![book_id, cover_name],
+        )?;
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------------
     // P4.2: ratings & reading goals
     // -----------------------------------------------------------------------
 
