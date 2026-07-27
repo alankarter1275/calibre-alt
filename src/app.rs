@@ -22,7 +22,7 @@ use crate::pages::{
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum AppMsg {
@@ -93,7 +93,7 @@ struct FloatingBook {
 }
 
 pub struct AppModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     route: Route,
     history: Vec<Route>,
     sidebar_override: Option<NavItem>,
@@ -155,7 +155,7 @@ impl AppModel {
     }
 
     fn build_page(
-        catalog: &Rc<Catalog>,
+        catalog: &Arc<Catalog>,
         route: &Route,
         sender: &ComponentSender<Self>,
     ) -> PageSlot {
@@ -586,10 +586,10 @@ impl Component for AppModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let catalog = match Catalog::open() {
-            Ok(c) => Rc::new(c),
+            Ok(c) => Arc::new(c),
             Err(err) => {
                 eprintln!("kalam: failed to open catalog: {err}");
-                Rc::new(Catalog::open().expect("catalog open"))
+                Arc::new(Catalog::open().expect("catalog open"))
             }
         };
 

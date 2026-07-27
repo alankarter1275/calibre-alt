@@ -434,6 +434,15 @@ mod tests {
     }
 
     #[test]
+    fn human_size_scales_units() {
+        assert_eq!(human_size(0), "0 B");
+        assert_eq!(human_size(512), "512 B");
+        assert_eq!(human_size(2048), "2.0 KB");
+        assert_eq!(human_size(5 * 1024 * 1024), "5.0 MB");
+        assert!(human_size(3 * 1024 * 1024 * 1024).ends_with("GB"));
+    }
+
+    #[test]
     fn backup_name_sits_beside_the_book() {
         let p = backup_path(Path::new("/lib/uuid/book.epub"));
         assert_eq!(p, PathBuf::from("/lib/uuid/book.epub.orig"));
@@ -489,4 +498,55 @@ pub fn sync_book_to_file(catalog: &crate::db::Catalog, book_id: i64) -> Result<W
         }
     }
     Ok(report)
+}
+
+/// Every `.epub.orig` backup under the library, with its size.
+pub fn list_backups() -> Vec<(PathBuf, u64)> {
+    let mut out = Vec::new();
+    let Ok(entries) = fs::read_dir(crate::paths::library_dir()) else {
+        return out;
+    };
+    // Backups sit inside each book's own uuid directory.
+    for book_dir in entries.flatten() {
+        let Ok(files) = fs::read_dir(book_dir.path()) else {
+            continue;
+        };
+        for file in files.flatten() {
+            let path = file.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("orig") {
+                let size = file.metadata().map(|m| m.len()).unwrap_or(0);
+                out.push((path, size));
+            }
+        }
+    }
+    out
+}
+
+/// Delete every backup. Returns how many went and how much was freed.
+pub fn delete_backups() -> (usize, u64) {
+    let mut count = 0;
+    let mut freed = 0;
+    for (path, size) in list_backups() {
+        if fs::remove_file(&path).is_ok() {
+            count += 1;
+            freed += size;
+        }
+    }
+    (count, freed)
+}
+
+/// `1.4 GB`, `812 MB`, `44 KB`.
+pub fn human_size(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
 }

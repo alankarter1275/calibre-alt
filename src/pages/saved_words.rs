@@ -1,7 +1,7 @@
 use crate::db::{Catalog, SavedWord};
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum SavedWordsOut {
@@ -17,7 +17,7 @@ pub enum SavedWordsMsg {
 }
 
 pub struct SavedWordsModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     query: String,
     words: Vec<SavedWord>,
     status: String,
@@ -25,7 +25,7 @@ pub struct SavedWordsModel {
 
 #[relm4::component(pub)]
 impl Component for SavedWordsModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = SavedWordsMsg;
     type Output = SavedWordsOut;
     type CommandOutput = ();

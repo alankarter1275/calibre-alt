@@ -15,6 +15,7 @@ use gtk::prelude::*;
 use relm4::RelmWidgetExt;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// Self-referential redraw hook: rule rows need to trigger a full rebuild of
 /// the list they live in, so the closure is shared back into itself.
@@ -30,7 +31,7 @@ pub enum ShelfEditorMode {
 /// refresh its list.
 pub fn open_shelf_editor(
     parent: Option<&gtk::Window>,
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     mode: ShelfEditorMode,
     on_saved: impl Fn() + 'static,
 ) {
@@ -284,7 +285,7 @@ fn show_error(label: &gtk::Label, text: &str) {
 fn rebuild_rule_rows(
     host: &gtk::Box,
     rules: &Rc<RefCell<RuleSet>>,
-    catalog: &Rc<Catalog>,
+    catalog: &Arc<Catalog>,
     count_label: &gtk::Label,
     rebuild: Option<Rc<dyn Fn()>>,
 ) {
@@ -314,7 +315,7 @@ fn rebuild_rule_rows(
 fn build_rule_row(
     idx: usize,
     rules: &Rc<RefCell<RuleSet>>,
-    catalog: &Rc<Catalog>,
+    catalog: &Arc<Catalog>,
     count_label: &gtk::Label,
     rebuild: Option<Rc<dyn Fn()>>,
 ) -> gtk::Box {
@@ -450,7 +451,7 @@ fn build_rule_row(
     row
 }
 
-fn update_count(label: &gtk::Label, rules: &Rc<RefCell<RuleSet>>, catalog: &Rc<Catalog>) {
+fn update_count(label: &gtk::Label, rules: &Rc<RefCell<RuleSet>>, catalog: &Arc<Catalog>) {
     let set = rules.borrow();
     if set.is_empty() {
         label.set_label("No usable rules — matches 0 books");

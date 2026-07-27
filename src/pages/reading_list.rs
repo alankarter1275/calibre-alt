@@ -5,6 +5,7 @@ use crate::widgets::book_row::cover_widget;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum ReadingListOut {
@@ -21,13 +22,13 @@ pub enum ReadingListMsg {
 }
 
 pub struct ReadingListModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     entries: Vec<ReadingListEntry>,
 }
 
 #[relm4::component(pub)]
 impl Component for ReadingListModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = ReadingListMsg;
     type Output = ReadingListOut;
     type CommandOutput = ();
@@ -283,7 +284,7 @@ fn build_row(
 /// Library checklist for bulk-queueing books.
 fn open_picker(
     parent: Option<&gtk::Window>,
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     on_changed: impl Fn() + 'static,
 ) {
     let window = gtk::Window::builder()

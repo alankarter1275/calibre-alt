@@ -3,7 +3,7 @@ use crate::dict;
 use crate::paths::{catalog_db, data_dir, dictionaries_dir, library_dir};
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum SettingsMsg {
@@ -13,14 +13,14 @@ pub enum SettingsMsg {
 }
 
 pub struct SettingsPageModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     dicts: Vec<crate::db::Dictionary>,
     status: String,
 }
 
 #[relm4::component(pub)]
 impl Component for SettingsPageModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = SettingsMsg;
     type Output = ();
     type CommandOutput = ();
@@ -304,7 +304,7 @@ fn rebuild_dicts(
 }
 
 /// Toggle for writing metadata back into the EPUB itself.
-fn build_file_write(host: &gtk::Box, catalog: &Rc<Catalog>) {
+fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
     use crate::epub_write::{set_write_enabled, write_enabled};
 
     while let Some(child) = host.first_child() {
@@ -334,6 +334,60 @@ fn build_file_write(host: &gtk::Box, catalog: &Rc<Catalog>) {
     note.set_wrap(true);
     row.append(&note);
 
+    // ── backup cleanup ──────────────────────────────────────────────────
+    let backups = crate::epub_write::list_backups();
+    let total: u64 = backups.iter().map(|(_, size)| size).sum();
+
+    let cleanup_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    cleanup_row.set_margin_top(6);
+
+    let summary = gtk::Label::new(Some(&if backups.is_empty() {
+        "No original backups stored.".to_string()
+    } else {
+        format!(
+            "{} original{} kept, using {}.",
+            backups.len(),
+            if backups.len() == 1 { "" } else { "s" },
+            crate::epub_write::human_size(total)
+        )
+    }));
+    summary.add_css_class("kalam-muted");
+    summary.set_halign(gtk::Align::Start);
+    summary.set_hexpand(true);
+    summary.set_wrap(true);
+    summary.set_xalign(0.0);
+    cleanup_row.append(&summary);
+
+    let clean = gtk::Button::with_label("Delete backups");
+    clean.add_css_class("kalam-mini-btn");
+    clean.add_css_class("kalam-mini-btn-danger");
+    clean.set_sensitive(!backups.is_empty());
+    clean.set_valign(gtk::Align::Center);
+    {
+        let summary = summary.clone();
+        clean.connect_clicked(move |btn| {
+            let (count, freed) = crate::epub_write::delete_backups();
+            summary.set_label(&format!(
+                "Deleted {count} backup{}, freed {}.",
+                if count == 1 { "" } else { "s" },
+                crate::epub_write::human_size(freed)
+            ));
+            btn.set_sensitive(false);
+        });
+    }
+    cleanup_row.append(&clean);
+    row.append(&cleanup_row);
+
+    let warn = gtk::Label::new(Some(
+        "Deleting backups is permanent: you lose the ability to undo metadata \
+         written into those files.",
+    ));
+    warn.add_css_class("kalam-muted");
+    warn.set_halign(gtk::Align::Start);
+    warn.set_xalign(0.0);
+    warn.set_wrap(true);
+    row.append(&warn);
+
     host.append(&row);
 }
 
@@ -349,7 +403,7 @@ fn country_hint_label() -> gtk::Label {
 }
 
 /// Toggle each metadata provider, plus the optional Google Books key.
-fn build_sources(host: &gtk::Box, catalog: &Rc<Catalog>) {
+fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
     use crate::metadata::{set_source_enabled, source_enabled, SourceId};
 
     while let Some(child) = host.first_child() {

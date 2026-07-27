@@ -2,7 +2,7 @@ use crate::db::Catalog;
 use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W};
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum HomeOut {
@@ -14,7 +14,7 @@ pub struct HomePageModel;
 
 #[relm4::component(pub)]
 impl SimpleComponent for HomePageModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = ();
     type Output = HomeOut;
 

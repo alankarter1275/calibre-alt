@@ -4,7 +4,7 @@ use crate::db::{Catalog, LibraryStats};
 use crate::widgets::charts::{line_chart, monthly_series, sparkline, streak_strip};
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum AnalyticsMsg {
@@ -13,7 +13,7 @@ pub enum AnalyticsMsg {
 }
 
 pub struct AnalyticsModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     stats: LibraryStats,
     goal: i64,
     finished_this_year: i64,
@@ -22,7 +22,7 @@ pub struct AnalyticsModel {
 
 #[relm4::component(pub)]
 impl Component for AnalyticsModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = AnalyticsMsg;
     type Output = ();
     type CommandOutput = ();

@@ -11,7 +11,7 @@ use crate::widgets::book_row::{build_book_card, cover_widget, CARD_H, CARD_W};
 use crate::widgets::charts::{line_chart, monthly_series, sparkline, stars_label};
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// Navigation requests from the dashboard. Variants are named for their
 /// destination rather than sharing an `Open` prefix (clippy::enum_variant_names).
@@ -24,12 +24,12 @@ pub enum LibraryOut {
 }
 
 pub struct LibraryPageModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
 }
 
 #[relm4::component(pub)]
 impl SimpleComponent for LibraryPageModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = ();
     type Output = LibraryOut;
 
@@ -63,7 +63,7 @@ impl SimpleComponent for LibraryPageModel {
 
 fn build_dashboard(
     body: &gtk::Box,
-    catalog: &Rc<Catalog>,
+    catalog: &Arc<Catalog>,
     sender: &ComponentSender<LibraryPageModel>,
 ) {
     let stats = catalog.library_stats().unwrap_or_default();

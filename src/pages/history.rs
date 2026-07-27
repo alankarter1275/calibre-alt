@@ -3,7 +3,7 @@
 use crate::db::{Catalog, EventKind, ReadingEvent};
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 const PAGE_LIMIT: usize = 300;
 
@@ -21,7 +21,7 @@ pub enum HistoryMsg {
 }
 
 pub struct HistoryModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     events: Vec<ReadingEvent>,
     query: String,
     filter: Option<EventKind>,
@@ -29,7 +29,7 @@ pub struct HistoryModel {
 
 #[relm4::component(pub)]
 impl Component for HistoryModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = HistoryMsg;
     type Output = HistoryOut;
     type CommandOutput = ();

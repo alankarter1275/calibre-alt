@@ -7,6 +7,7 @@ use crate::widgets::charts::star_picker;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum BookPageOut {
@@ -31,7 +32,7 @@ pub enum BookPageMsg {
 }
 
 pub struct BookPageModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     book: Option<Book>,
     in_reading_list: bool,
     finished: bool,
@@ -40,7 +41,7 @@ pub struct BookPageModel {
 
 #[relm4::component(pub)]
 impl Component for BookPageModel {
-    type Init = (Rc<Catalog>, i64);
+    type Init = (Arc<Catalog>, i64);
     type Input = BookPageMsg;
     type Output = BookPageOut;
     type CommandOutput = ();
@@ -429,7 +430,7 @@ fn return_rating_text(v: f32) -> String {
 /// Checklist of manual shelves for one book.
 fn open_shelf_menu(
     parent: Option<&gtk::Window>,
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     book_id: i64,
     on_changed: impl Fn() + 'static,
 ) {

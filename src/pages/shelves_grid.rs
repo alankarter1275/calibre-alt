@@ -4,7 +4,7 @@ use crate::db::{Catalog, Shelf, ShelfKind};
 use crate::pages::shelf_editor::{open_shelf_editor, ShelfEditorMode};
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum ShelvesOut {
@@ -21,13 +21,13 @@ pub enum ShelvesMsg {
 }
 
 pub struct ShelvesGridModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     shelves: Vec<Shelf>,
 }
 
 #[relm4::component(pub)]
 impl Component for ShelvesGridModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = ShelvesMsg;
     type Output = ShelvesOut;
     type CommandOutput = ();

@@ -7,6 +7,7 @@ use crate::widgets::book_row::build_book_grid;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum ShelfDetailOut {
@@ -24,7 +25,7 @@ pub enum ShelfDetailMsg {
 }
 
 pub struct ShelfDetailModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     shelf: Option<Shelf>,
     books: Vec<Book>,
     query: String,
@@ -33,7 +34,7 @@ pub struct ShelfDetailModel {
 
 #[relm4::component(pub)]
 impl Component for ShelfDetailModel {
-    type Init = (Rc<Catalog>, i64);
+    type Init = (Arc<Catalog>, i64);
     type Input = ShelfDetailMsg;
     type Output = ShelfDetailOut;
     type CommandOutput = ();
@@ -422,7 +423,7 @@ fn group_toggles(box_: &gtk::Box) {
 /// manual shelf. Toggling writes straight through to the DB.
 fn open_book_picker(
     parent: Option<&gtk::Window>,
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     shelf_id: i64,
     on_changed: impl Fn() + 'static,
 ) {

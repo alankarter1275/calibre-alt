@@ -17,6 +17,7 @@ use gtk::prelude::*;
 use relm4::RelmWidgetExt;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// Width of the slide-out search panel, and how much the window grows to
 /// accommodate it so the form itself never gets squeezed.
@@ -44,7 +45,7 @@ enum FetchMsg {
 /// Open the editor for `book_id`. `on_saved` runs after a successful write.
 pub fn open_metadata_editor(
     parent: Option<&gtk::Window>,
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     book_id: i64,
     on_saved: impl Fn() + 'static,
 ) {
@@ -53,7 +54,7 @@ pub fn open_metadata_editor(
 
 fn open_editor_inner(
     parent: Option<&gtk::Window>,
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     book_id: i64,
     on_saved: Rc<dyn Fn()>,
 ) {

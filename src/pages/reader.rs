@@ -6,7 +6,7 @@ use crate::paths::reader_cache_dir;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use serde::Deserialize;
-use std::rc::Rc;
+use std::sync::Arc;
 use webkit6::prelude::*;
 
 #[derive(Debug)]
@@ -67,7 +67,7 @@ pub enum ReaderMsg {
 }
 
 pub struct ReaderModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     book_id: i64,
     book_title: String,
     open: OpenBook,
@@ -100,7 +100,7 @@ pub struct ReaderModel {
 
 #[relm4::component(pub)]
 impl Component for ReaderModel {
-    type Init = (Rc<Catalog>, i64);
+    type Init = (Arc<Catalog>, i64);
     type Input = ReaderMsg;
     type Output = ReaderOut;
     type CommandOutput = ();

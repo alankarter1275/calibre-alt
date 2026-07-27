@@ -2,7 +2,7 @@ use crate::db::{Annotation, Catalog};
 use crate::models::Book;
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -21,7 +21,7 @@ pub enum SavedQuotesMsg {
 }
 
 pub struct SavedQuotesModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     query: String,
     quotes: Vec<(Annotation, Option<Book>)>,
     status: String,
@@ -29,7 +29,7 @@ pub struct SavedQuotesModel {
 
 #[relm4::component(pub)]
 impl Component for SavedQuotesModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = SavedQuotesMsg;
     type Output = SavedQuotesOut;
     type CommandOutput = ();

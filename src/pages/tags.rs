@@ -5,7 +5,7 @@ use crate::models::Book;
 use crate::widgets::book_row::build_book_grid;
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // Tag cloud
@@ -28,7 +28,7 @@ pub struct TagsModel {
 
 #[relm4::component(pub)]
 impl Component for TagsModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = TagsMsg;
     type Output = TagsOut;
     type CommandOutput = ();
@@ -191,7 +191,7 @@ pub enum TagBooksMsg {
 }
 
 pub struct TagBooksModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     tag: String,
     books: Vec<Book>,
     sort: SortKey,
@@ -199,7 +199,7 @@ pub struct TagBooksModel {
 
 #[relm4::component(pub)]
 impl Component for TagBooksModel {
-    type Init = (Rc<Catalog>, String);
+    type Init = (Arc<Catalog>, String);
     type Input = TagBooksMsg;
     type Output = TagBooksOut;
     type CommandOutput = ();
