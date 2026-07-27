@@ -20,12 +20,12 @@ use std::rc::Rc;
 
 /// Width of the slide-out search panel, and how much the window grows to
 /// accommodate it so the form itself never gets squeezed.
-/// The right-hand column. The publication/cover block and the search panel
-/// both occupy exactly this width, so revealing the panel swaps one for the
-/// other without the dialog or the form changing size.
-const PANEL_WIDTH: i32 = 400;
-/// The left-hand form column.
-const BASE_WIDTH: i32 = 620;
+/// Each half of the dialog. The form, the publication/cover column and the
+/// search panel are all exactly this wide, so revealing the panel swaps one
+/// right-hand column for another and the split stays even.
+const PANEL_WIDTH: i32 = 470;
+/// The left-hand form column — same width, so the dialog reads as two halves.
+const BASE_WIDTH: i32 = PANEL_WIDTH;
 /// Total dialog width: form plus room for the search panel. Fixed for the
 /// lifetime of the dialog so revealing the panel cannot push it off-screen or
 /// leave it visually off-centre.
@@ -98,6 +98,9 @@ fn open_editor_inner(
 
     let fields = gtk::Box::new(gtk::Orientation::Vertical, 8);
     fields.set_hexpand(true);
+    // Entries report their content as natural width, so a long tag list would
+    // otherwise widen the whole column.
+    fields.set_size_request(0, -1);
 
     // Search icons live on the field they act on, Calibre-style.
     let (title_entry, title_search) = labelled_entry_with_search(
@@ -116,6 +119,8 @@ fn open_editor_inner(
     let series_entry = gtk::Entry::new();
     series_entry.set_text(book.series.as_deref().unwrap_or_default());
     series_entry.set_hexpand(true);
+    series_entry.set_width_chars(1);
+    series_entry.set_max_width_chars(1);
     series_row.append(&series_entry);
 
     // Fractional steps because novellas are routinely "#2.5".
@@ -221,6 +226,8 @@ fn open_editor_inner(
     // Built here but revealed only on demand, so the form stays uncluttered.
     let search_entry = gtk::Entry::new();
     search_entry.set_hexpand(true);
+    search_entry.set_width_chars(1);
+    search_entry.set_max_width_chars(1);
     search_entry.set_placeholder_text(Some("Title and author…"));
     // Seed with what we already know so one click usually suffices.
     search_entry.set_text(
@@ -295,12 +302,17 @@ fn open_editor_inner(
     revealer.set_hexpand(false);
 
     // ── actions: pinned outside the scroller so Save is always reachable ─
+    // Fixed rather than hexpand: letting the form absorb all leftover width is
+    // what made the left half visibly larger than the right.
     let content_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
         .vexpand(true)
-        .hexpand(true)
+        // Deliberately not hexpand: absorbing the leftover width is exactly
+        // what made the left half larger than the right.
+        .hexpand(false)
         .child(&root)
         .build();
+    content_scroll.set_size_request(BASE_WIDTH, -1);
 
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     body.set_vexpand(true);
@@ -1034,6 +1046,8 @@ fn labelled_entry_with_search(
     let entry = gtk::Entry::new();
     entry.set_text(value);
     entry.set_hexpand(true);
+    entry.set_width_chars(1);
+    entry.set_max_width_chars(1);
     row.append(&entry);
     // U+F002 is the Nerd Font / Font Awesome magnifying glass.
     let btn = icon_button("\u{f002}", tooltip);
@@ -1047,6 +1061,10 @@ fn labelled_entry(parent: &gtk::Box, label: &str, value: &str) -> gtk::Entry {
     let entry = gtk::Entry::new();
     entry.set_text(value);
     entry.set_hexpand(true);
+    // An Entry asks for its whole content by default, so a long tag list would
+    // widen the column past its half of the dialog.
+    entry.set_width_chars(1);
+    entry.set_max_width_chars(1);
     parent.append(&entry);
     entry
 }
