@@ -64,41 +64,40 @@ impl MetadataSource for GoogleBooks {
             req = req.query("key", self.api_key.trim());
         }
 
-        let body =
-            match req.call() {
-                Ok(resp) => resp
+        let body = match req.call() {
+            Ok(resp) => resp
+                .into_string()
+                .map_err(|e| FetchError::Network(e.to_string()))?,
+            Err(ureq::Error::Status(code, resp)) => {
+                // Google puts a useful sentence in the body; a bare status
+                // code leaves the user with nothing to act on.
+                let detail = resp
                     .into_string()
-                    .map_err(|e| FetchError::Network(e.to_string()))?,
-                Err(ureq::Error::Status(code, resp)) => {
-                    // Google puts a useful sentence in the body; a bare status
-                    // code leaves the user with nothing to act on.
-                    let detail = resp
-                        .into_string()
-                        .ok()
-                        .and_then(|b| {
-                            serde_json::from_str::<ErrorResponse>(&b)
-                                .ok()
-                                .map(|e| e.error.message)
-                        })
-                        .unwrap_or_default();
+                    .ok()
+                    .and_then(|b| {
+                        serde_json::from_str::<ErrorResponse>(&b)
+                            .ok()
+                            .map(|e| e.error.message)
+                    })
+                    .unwrap_or_default();
 
-                    return Err(match code {
-                        429 => FetchError::Limited(
-                            "rate limited. Add a free API key in Settings for your own allowance."
-                                .into(),
-                        ),
-                        400 if !self.api_key.trim().is_empty() => {
-                            FetchError::Limited("the API key in Settings was rejected.".into())
-                        }
-                        403 if detail.contains("location") => FetchError::Limited(format!(
-                            "{detail} Set your country in Settings."
-                        )),
-                        _ if !detail.is_empty() => FetchError::Limited(detail),
-                        _ => FetchError::Network(format!("HTTP {code}")),
-                    });
-                }
-                Err(err) => return Err(FetchError::Network(err.to_string())),
-            };
+                return Err(match code {
+                    429 => FetchError::Limited(
+                        "rate limited. Add a free API key in Settings for your own allowance."
+                            .into(),
+                    ),
+                    400 if !self.api_key.trim().is_empty() => {
+                        FetchError::Limited("the API key in Settings was rejected.".into())
+                    }
+                    403 if detail.contains("location") => {
+                        FetchError::Limited(format!("{detail} Set your country in Settings."))
+                    }
+                    _ if !detail.is_empty() => FetchError::Limited(detail),
+                    _ => FetchError::Network(format!("HTTP {code}")),
+                });
+            }
+            Err(err) => return Err(FetchError::Network(err.to_string())),
+        };
 
         let parsed: VolumesResponse =
             serde_json::from_str(&body).map_err(|e| FetchError::Parse(e.to_string()))?;
