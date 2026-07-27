@@ -701,8 +701,8 @@ fn open_editor_inner(
             window.set_default_size(target, height);
             if let Some(surface) = window.surface() {
                 // Clamp to the monitor: 1110px must not overflow a 1366px screen.
-                if let Some(monitor) = gtk::gdk::Display::default()
-                    .and_then(|d| d.monitor_at_surface(&surface))
+                if let Some(monitor) =
+                    gtk::gdk::Display::default().and_then(|d| d.monitor_at_surface(&surface))
                 {
                     let available = monitor.geometry().width();
                     if target > available - 40 {
