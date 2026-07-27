@@ -469,6 +469,13 @@ impl Catalog {
             );
             CREATE INDEX IF NOT EXISTS idx_reading_sessions_book ON reading_sessions(book_id);
             CREATE INDEX IF NOT EXISTS idx_reading_sessions_started ON reading_sessions(started_at DESC);
+
+            -- P4.1: tiny key/value store for UI preferences that must survive
+            -- restarts (reader theme, font size, ...).
+            CREATE TABLE IF NOT EXISTS app_prefs (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             "#,
         )?;
 
@@ -1077,6 +1084,39 @@ impl Catalog {
         let conn = self.conn.lock().expect("db lock");
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM dict_entries", [], |r| r.get(0))?;
         Ok(n)
+    }
+
+    // -----------------------------------------------------------------------
+    // P4.1: preferences
+    // -----------------------------------------------------------------------
+
+    pub fn get_pref(&self, key: &str) -> Option<String> {
+        let conn = self.conn.lock().ok()?;
+        conn.query_row(
+            "SELECT value FROM app_prefs WHERE key = ?1",
+            params![key],
+            |r| r.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
+    pub fn set_pref(&self, key: &str, value: &str) {
+        if let Ok(conn) = self.conn.lock() {
+            let _ = conn.execute(
+                "INSERT INTO app_prefs (key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![key, value],
+            );
+        }
+    }
+
+    /// Convenience for numeric prefs; falls back when unset or unparsable.
+    pub fn get_pref_i64(&self, key: &str, default: i64) -> i64 {
+        self.get_pref(key)
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default)
     }
 
     // -----------------------------------------------------------------------

@@ -879,11 +879,7 @@ fn join_zip_path(dir: &str, href: &str) -> String {
 /// link styling. We nuke link chrome entirely for reading. P3 adds highlight
 /// and chip styling.
 pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, margin_em: f32) -> String {
-    let (bg, fg) = match theme {
-        ReadingTheme::Light => ("#faf8f5", "#1c1917"),
-        ReadingTheme::Sepia => ("#f4ecd8", "#3e3226"),
-        ReadingTheme::Dark => ("#1a1b1e", "#e7e5e4"),
-    };
+    let (bg, fg) = theme.swatch();
 
     // Many EPUBs ship chapter headings, ornaments and diagrams as PNG/JPEG with
     // a baked-in **white** background. CSS cannot repaint pixels inside an
@@ -1198,4 +1194,32 @@ pub enum ReadingTheme {
     Light,
     Sepia,
     Dark,
+}
+
+impl ReadingTheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReadingTheme::Light => "light",
+            ReadingTheme::Sepia => "sepia",
+            ReadingTheme::Dark => "dark",
+        }
+    }
+
+    pub fn from_str_lossy(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "light" => ReadingTheme::Light,
+            "dark" => ReadingTheme::Dark,
+            _ => ReadingTheme::Sepia,
+        }
+    }
+
+    /// Page and ink colours — shared by the reading CSS and the theme buttons
+    /// in the typography popover, so a swatch always matches the real page.
+    pub fn swatch(self) -> (&'static str, &'static str) {
+        match self {
+            ReadingTheme::Light => ("#faf8f5", "#1c1917"),
+            ReadingTheme::Sepia => ("#f4ecd8", "#3e3226"),
+            ReadingTheme::Dark => ("#1a1b1e", "#e7e5e4"),
+        }
+    }
 }

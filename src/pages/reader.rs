@@ -257,6 +257,12 @@ color:#3e3226;font-family:Georgia,serif'>\
             .get_annotations_for_book(book_id)
             .unwrap_or_default();
 
+        let catalog_theme = catalog
+            .get_pref("reader.theme")
+            .map(|v| ReadingTheme::from_str_lossy(&v))
+            .unwrap_or(ReadingTheme::Sepia);
+        let catalog_font = catalog.get_pref_i64("reader.font_px", 19).clamp(14, 36) as u32;
+
         let model = ReaderModel {
             catalog,
             book_id,
@@ -264,8 +270,9 @@ color:#3e3226;font-family:Georgia,serif'>\
             open,
             chapter,
             fraction,
-            theme: ReadingTheme::Sepia,
-            font_px: 19,
+            // Restored from app_prefs so the reader reopens the way it was left.
+            theme: catalog_theme,
+            font_px: catalog_font,
             line_height: 1.65,
             margin_em: 1.4,
             loading: false,
@@ -376,16 +383,23 @@ color:#3e3226;font-family:Georgia,serif'>\
         size_l.set_halign(gtk::Align::Start);
         aa_wrap.append(&size_l);
         let size_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        size_row.set_halign(gtk::Align::Center);
+        size_row.set_halign(gtk::Align::Fill);
         let a_minus = gtk::Button::with_label("A−");
         a_minus.add_css_class("kalam-reader-pill-btn");
         let s1 = sender.clone();
         a_minus.connect_clicked(move |_| s1.input(ReaderMsg::FontDelta(-1)));
+
+        // Current size, so the control reports state instead of just changing it.
+        let font_size_label = gtk::Label::new(Some(&format!("{}px", model.font_px)));
+        font_size_label.add_css_class("kalam-reader-size-value");
+        font_size_label.set_hexpand(true);
+
         let a_plus = gtk::Button::with_label("A+");
         a_plus.add_css_class("kalam-reader-pill-btn");
         let s2 = sender.clone();
         a_plus.connect_clicked(move |_| s2.input(ReaderMsg::FontDelta(1)));
         size_row.append(&a_minus);
+        size_row.append(&font_size_label);
         size_row.append(&a_plus);
         aa_wrap.append(&size_row);
 
@@ -393,17 +407,37 @@ color:#3e3226;font-family:Georgia,serif'>\
         theme_l.add_css_class("kalam-reader-popover-title");
         theme_l.set_halign(gtk::Align::Start);
         aa_wrap.append(&theme_l);
-        let theme_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        // Each button is painted in the colours it applies, so the choice is
+        // visible at a glance; the active one carries a tick.
+        let theme_row = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        let mut theme_buttons = Vec::new();
         for (label, theme) in [
             ("Light", ReadingTheme::Light),
             ("Sepia", ReadingTheme::Sepia),
             ("Dark", ReadingTheme::Dark),
         ] {
-            let b = gtk::Button::with_label(label);
+            let b = gtk::Button::new();
+
+            let inner = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            let tick = gtk::Label::new(Some("✓"));
+            tick.add_css_class("kalam-theme-tick");
+            tick.set_width_chars(1);
+            let name = gtk::Label::new(Some(label));
+            name.set_halign(gtk::Align::Start);
+            name.set_hexpand(true);
+            inner.append(&tick);
+            inner.append(&name);
+            b.set_child(Some(&inner));
+
             b.add_css_class("kalam-reader-theme-btn");
+            // Swatch colours live in the global stylesheet (style.rs) keyed by
+            // theme name, so no per-open CssProvider is registered.
+            b.add_css_class(&format!("kalam-theme-{}", theme.as_str()));
+
             let s = sender.clone();
             b.connect_clicked(move |_| s.input(ReaderMsg::Theme(theme)));
             theme_row.append(&b);
+            theme_buttons.push((theme, tick));
         }
         aa_wrap.append(&theme_row);
 
@@ -462,8 +496,14 @@ color:#3e3226;font-family:Georgia,serif'>\
         unsafe {
             aa_pop.set_data("kalam-dict-list", dict_list.clone());
             aa_pop.set_data("kalam-dict-res", dict_res_label.clone());
+            aa_pop.set_data("kalam-font-size", font_size_label.clone());
+            for (theme, tick) in &theme_buttons {
+                aa_pop.set_data(theme_tick_key(*theme), tick.clone());
+            }
         }
         widgets.dict_btn.set_popover(Some(&aa_pop));
+        // Reflect the restored theme on first open.
+        refresh_theme_buttons(&widgets, model.theme);
 
         // Title notify fallback
         let s = sender.clone();
@@ -600,6 +640,8 @@ color:#3e3226;font-family:Georgia,serif'>\
             }
             ReaderMsg::Theme(t) => {
                 self.theme = t;
+                self.catalog.set_pref("reader.theme", t.as_str());
+                refresh_theme_buttons(widgets, t);
                 widgets.dict_btn.popdown();
                 self.loading = true;
                 load_chapter(self);
@@ -609,6 +651,9 @@ color:#3e3226;font-family:Georgia,serif'>\
                 let next = (self.font_px as i32 + d).clamp(14, 36) as u32;
                 if next != self.font_px {
                     self.font_px = next;
+                    self.catalog
+                        .set_pref("reader.font_px", &next.to_string());
+                    set_font_size_label(widgets, next);
                     self.loading = true;
                     load_chapter(self);
                     self.loading = false;
@@ -1136,6 +1181,46 @@ fn append_toc_btn(list: &gtk::Box, label: &str, idx: usize, sender: &ComponentSe
     let s = sender.clone();
     btn.connect_clicked(move |_| s.input(ReaderMsg::TocSelect(idx)));
     list.append(&btn);
+}
+
+/// Stable `set_data` key per theme — `set_data` needs a `&'static str`.
+fn theme_tick_key(theme: ReadingTheme) -> &'static str {
+    match theme {
+        ReadingTheme::Light => "kalam-tick-light",
+        ReadingTheme::Sepia => "kalam-tick-sepia",
+        ReadingTheme::Dark => "kalam-tick-dark",
+    }
+}
+
+/// Show the tick only on the active theme's button.
+fn refresh_theme_buttons(widgets: &ReaderModelWidgets, active: ReadingTheme) {
+    let Some(pop) = widgets.dict_btn.popover() else {
+        return;
+    };
+    let Some(pop) = pop.downcast_ref::<gtk::Popover>() else {
+        return;
+    };
+    for theme in [ReadingTheme::Light, ReadingTheme::Sepia, ReadingTheme::Dark] {
+        unsafe {
+            if let Some(tick) = pop.data::<gtk::Label>(theme_tick_key(theme)) {
+                tick.as_ref().set_opacity(if theme == active { 1.0 } else { 0.0 });
+            }
+        }
+    }
+}
+
+fn set_font_size_label(widgets: &ReaderModelWidgets, px: u32) {
+    let Some(pop) = widgets.dict_btn.popover() else {
+        return;
+    };
+    let Some(pop) = pop.downcast_ref::<gtk::Popover>() else {
+        return;
+    };
+    unsafe {
+        if let Some(label) = pop.data::<gtk::Label>("kalam-font-size") {
+            label.as_ref().set_label(&format!("{px}px"));
+        }
+    }
 }
 
 fn rebuild_anno_list(list: &gtk::Box, annos: &[Annotation], sender: &ComponentSender<ReaderModel>) {

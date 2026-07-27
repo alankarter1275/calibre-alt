@@ -617,9 +617,54 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-reader-theme-btn {
-    border-radius: 999px;
-    padding: 8px 14px;
-    font-size: 0.85rem;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 0.9rem;
+    border: 1px solid @kalam_border;
+}
+
+.kalam-reader-theme-btn:hover {
+    border-color: @kalam_accent;
+}
+
+/* Hidden by opacity rather than visibility so the row never reflows. */
+.kalam-theme-tick {
+    font-weight: 700;
+}
+
+/* Theme swatches — these MUST match ReadingTheme::swatch() in epub_book.rs so
+   the button previews the page it produces. */
+.kalam-theme-light {
+    background: #faf8f5;
+    color: #1c1917;
+}
+
+.kalam-theme-light label {
+    color: #1c1917;
+}
+
+.kalam-theme-sepia {
+    background: #f4ecd8;
+    color: #3e3226;
+}
+
+.kalam-theme-sepia label {
+    color: #3e3226;
+}
+
+.kalam-theme-dark {
+    background: #1a1b1e;
+    color: #e7e5e4;
+}
+
+.kalam-theme-dark label {
+    color: #e7e5e4;
+}
+
+.kalam-reader-size-value {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: @kalam_text;
 }
 
 .kalam-toc-item {
@@ -849,6 +894,72 @@ popover.kalam-reader-popover > contents {
 }
 
 /* ── analytics ──────────────────────────────────────── */
+/* ── library dashboard ──────────────────────────────── */
+.kalam-section-header {
+    padding: 2px 0;
+}
+
+.kalam-section-header:hover .kalam-section-arrow,
+.kalam-section-header:hover .kalam-section-meta {
+    color: @kalam_accent;
+}
+
+.kalam-section-meta {
+    font-size: 0.78rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-section-arrow {
+    font-size: 1.1rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-shelf-mini {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 12px 14px;
+    min-height: 84px;
+}
+
+.kalam-quote-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-left: 3px solid @kalam_accent;
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+
+.kalam-quote-text {
+    font-size: 0.88rem;
+    color: @kalam_text;
+}
+
+.kalam-quote-source {
+    font-size: 0.76rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-progress-cell {
+    padding: 0;
+}
+
+.kalam-mini-progress {
+    min-height: 4px;
+}
+
+.kalam-mini-progress trough {
+    min-height: 4px;
+    border-radius: 999px;
+    background: @kalam_border;
+}
+
+.kalam-mini-progress progress {
+    min-height: 4px;
+    border-radius: 999px;
+    background: @kalam_accent;
+}
+
 .kalam-hero-card {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
