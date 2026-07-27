@@ -1,7 +1,7 @@
 use crate::db::{Catalog, ShelfKind};
 use crate::models::Book;
-use crate::widgets::book_row::cover_widget;
 use crate::pages::metadata_editor::open_metadata_editor;
+use crate::widgets::book_row::cover_widget;
 use crate::widgets::book_row::invalidate_cover_cache;
 use crate::widgets::charts::star_picker;
 use gtk::prelude::*;

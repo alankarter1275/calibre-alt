@@ -103,7 +103,11 @@ pub fn open_metadata_editor(
     search_entry.set_hexpand(true);
     search_entry.set_placeholder_text(Some("Title and author…"));
     // Seed with what we already know so one click usually suffices.
-    search_entry.set_text(&format!("{} {}", book.title, book.authors).trim().to_string());
+    search_entry.set_text(
+        &format!("{} {}", book.title, book.authors)
+            .trim()
+            .to_string(),
+    );
     search_row.append(&search_entry);
 
     let search_btn = gtk::Button::with_label("Search");
