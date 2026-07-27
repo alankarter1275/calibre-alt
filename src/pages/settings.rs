@@ -289,6 +289,17 @@ fn rebuild_dicts(
     }
 }
 
+/// Explains why a country code is needed at all.
+fn country_hint_label() -> gtk::Label {
+    let label = gtk::Label::new(Some(
+        "Two-letter code. Google only serves results for countries it has rights in.",
+    ));
+    label.add_css_class("kalam-muted");
+    label.set_wrap(true);
+    label.set_xalign(0.0);
+    label
+}
+
 /// Toggle each metadata provider, plus the optional Google Books key.
 fn build_sources(host: &gtk::Box, catalog: &Rc<Catalog>) {
     use crate::metadata::{set_source_enabled, source_enabled, SourceId};
@@ -365,6 +376,42 @@ fn build_sources(host: &gtk::Box, catalog: &Rc<Catalog>) {
             hint.set_xalign(0.0);
             hint.set_wrap(true);
             row.append(&hint);
+
+            // Google refuses requests whose IP it cannot geolocate — common on
+            // VPNs and some ISPs — so the country is sent explicitly.
+            let country_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            let country_label = gtk::Label::new(Some("Country"));
+            country_label.add_css_class("kalam-muted");
+            country_row.append(&country_label);
+
+            let country = gtk::Entry::new();
+            country.set_max_length(2);
+            country.set_width_chars(4);
+            country.set_placeholder_text(Some("IN"));
+            country.set_text(
+                &catalog
+                    .get_pref("meta.googlebooks.country")
+                    .unwrap_or_else(crate::metadata::google_books::detect_country),
+            );
+            country_row.append(&country);
+
+            let save_country = gtk::Button::with_label("Save");
+            save_country.add_css_class("kalam-mini-btn");
+            {
+                let catalog = catalog.clone();
+                let country = country.clone();
+                save_country.connect_clicked(move |_| {
+                    catalog.set_pref(
+                        "meta.googlebooks.country",
+                        &country.text().trim().to_uppercase(),
+                    );
+                });
+            }
+            country_row.append(&save_country);
+
+            let country_hint = country_hint_label();
+            country_row.append(&country_hint);
+            row.append(&country_row);
         }
 
         host.append(&row);

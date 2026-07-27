@@ -15,6 +15,28 @@ const SEARCH_URL: &str = "https://www.googleapis.com/books/v1/volumes";
 pub struct GoogleBooks {
     /// Empty means "no key" — still works, just shares the global quota.
     pub api_key: String,
+    /// ISO country code sent with every request; see the note in `search`.
+    pub country: String,
+}
+
+/// Google only serves results for countries it has rights in, so the fallback
+/// has to be somewhere with broad coverage rather than blank.
+pub const DEFAULT_COUNTRY: &str = "US";
+
+/// Best-effort guess from the environment, so most users never touch Settings.
+pub fn detect_country() -> String {
+    for var in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+        if let Ok(value) = std::env::var(var) {
+            // en_IN.UTF-8 -> IN
+            if let Some(region) = value.split('.').next().and_then(|s| s.split('_').nth(1)) {
+                let region = region.trim();
+                if region.len() == 2 && region.chars().all(|c| c.is_ascii_alphabetic()) {
+                    return region.to_ascii_uppercase();
+                }
+            }
+        }
+    }
+    DEFAULT_COUNTRY.to_string()
 }
 
 impl MetadataSource for GoogleBooks {
@@ -32,7 +54,12 @@ impl MetadataSource for GoogleBooks {
             .get(SEARCH_URL)
             .query("q", query)
             .query("maxResults", &limit.clamp(1, 40).to_string())
-            .query("printType", "books");
+            .query("printType", "books")
+            // Google refuses the request outright when it cannot geolocate the
+            // caller's IP ("Cannot determine user location for geographically
+            // restricted operation"), which happens on VPNs, some ISPs and most
+            // hosting providers. An explicit country sidesteps the lookup.
+            .query("country", &self.country);
         if !self.api_key.trim().is_empty() {
             req = req.query("key", self.api_key.trim());
         }
@@ -42,17 +69,33 @@ impl MetadataSource for GoogleBooks {
                 Ok(resp) => resp
                     .into_string()
                     .map_err(|e| FetchError::Network(e.to_string()))?,
-                // 429 is the common failure without a key; say so plainly rather
-                // than surfacing a bare status code.
-                Err(ureq::Error::Status(429, _)) => return Err(FetchError::Limited(
-                    "Google Books is rate limited right now. Add a free API key in Settings to \
-                     get your own allowance."
-                        .into(),
-                )),
-                Err(ureq::Error::Status(400, _)) if !self.api_key.trim().is_empty() => {
-                    return Err(FetchError::Limited(
-                        "Google Books rejected the API key in Settings.".into(),
-                    ))
+                Err(ureq::Error::Status(code, resp)) => {
+                    // Google puts a useful sentence in the body; a bare status
+                    // code leaves the user with nothing to act on.
+                    let detail = resp
+                        .into_string()
+                        .ok()
+                        .and_then(|b| {
+                            serde_json::from_str::<ErrorResponse>(&b)
+                                .ok()
+                                .map(|e| e.error.message)
+                        })
+                        .unwrap_or_default();
+
+                    return Err(match code {
+                        429 => FetchError::Limited(
+                            "rate limited. Add a free API key in Settings for your own allowance."
+                                .into(),
+                        ),
+                        400 if !self.api_key.trim().is_empty() => {
+                            FetchError::Limited("the API key in Settings was rejected.".into())
+                        }
+                        403 if detail.contains("location") => FetchError::Limited(format!(
+                            "{detail} Set your country in Settings."
+                        )),
+                        _ if !detail.is_empty() => FetchError::Limited(detail),
+                        _ => FetchError::Network(format!("HTTP {code}")),
+                    });
                 }
                 Err(err) => return Err(FetchError::Network(err.to_string())),
             };
@@ -72,6 +115,18 @@ impl MetadataSource for GoogleBooks {
 // ---------------------------------------------------------------------------
 // Wire format
 // ---------------------------------------------------------------------------
+
+/// Google's error envelope: `{"error": {"message": "...", "code": 403}}`.
+#[derive(Debug, Deserialize)]
+struct ErrorResponse {
+    error: ErrorBody,
+}
+
+#[derive(Debug, Deserialize)]
+struct ErrorBody {
+    #[serde(default)]
+    message: String,
+}
 
 #[derive(Debug, Deserialize)]
 struct VolumesResponse {
@@ -254,6 +309,23 @@ mod tests {
     #[test]
     fn empty_payload_is_not_an_error() {
         assert!(parse(r#"{}"#).is_empty());
+    }
+
+    #[test]
+    fn country_falls_back_when_locale_is_unhelpful() {
+        // Nothing parseable in the environment must still give a usable code.
+        assert_eq!(DEFAULT_COUNTRY.len(), 2);
+        let detected = detect_country();
+        assert_eq!(detected.len(), 2, "got {detected}");
+        assert!(detected.chars().all(|c| c.is_ascii_uppercase()));
+    }
+
+    #[test]
+    fn error_envelope_parses() {
+        let body = r#"{"error":{"code":403,
+            "message":"Cannot determine user location for geographically restricted operation."}}"#;
+        let parsed: ErrorResponse = serde_json::from_str(body).unwrap();
+        assert!(parsed.error.message.contains("location"));
     }
 
     #[test]

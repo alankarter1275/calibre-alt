@@ -201,6 +201,10 @@ pub fn enabled_sources(catalog: &crate::db::Catalog) -> Vec<Box<dyn MetadataSour
             SourceId::OpenLibrary => out.push(Box::new(openlibrary::OpenLibrary)),
             SourceId::GoogleBooks => out.push(Box::new(google_books::GoogleBooks {
                 api_key: catalog.get_pref("meta.googlebooks.key").unwrap_or_default(),
+                country: catalog
+                    .get_pref("meta.googlebooks.country")
+                    .filter(|c| !c.trim().is_empty())
+                    .unwrap_or_else(google_books::detect_country),
             })),
         }
     }

@@ -248,7 +248,7 @@ fn open_editor_inner(
     panel.set_size_request(PANEL_WIDTH, -1);
 
     let panel_head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    let panel_title = gtk::Label::new(Some("OPEN LIBRARY"));
+    let panel_title = gtk::Label::new(Some("FIND METADATA"));
     panel_title.add_css_class("kalam-detail-section-title");
     panel_title.set_halign(gtk::Align::Start);
     panel_title.set_hexpand(true);
@@ -434,6 +434,8 @@ fn open_editor_inner(
                         );
                         // Partial failures are worth naming: results that look
                         // thin may just be one provider being unavailable.
+                        // Name the actual failure: "unavailable" gives the
+                        // user nothing to act on.
                         let note = if errors.is_empty() {
                             String::new()
                         } else {
@@ -441,9 +443,9 @@ fn open_editor_inner(
                                 "  ({})",
                                 errors
                                     .iter()
-                                    .map(|(id, _)| format!("{} unavailable", id.label()))
+                                    .map(|(id, e)| format!("{}: {e}", id.label()))
                                     .collect::<Vec<_>>()
-                                    .join(", ")
+                                    .join("; ")
                             )
                         };
                         search_status.set_label(&if list.is_empty() {
@@ -948,6 +950,7 @@ fn rebuild_results(
                             metadata::SourceId::GoogleBooks => {
                                 Box::new(metadata::google_books::GoogleBooks {
                                     api_key: String::new(),
+                                    country: metadata::google_books::detect_country(),
                                 })
                             }
                         };
