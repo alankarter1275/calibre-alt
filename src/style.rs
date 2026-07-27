@@ -1037,20 +1037,12 @@ popover.kalam-reader-popover > contents {
     color: @kalam_text_dim;
 }
 
-.kalam-star-btn {
-    background: transparent;
-    background-image: none;
-    border: none;
-    box-shadow: none;
-    padding: 0 1px;
-    min-width: 0;
-    min-height: 0;
-}
-
 /* Glyphs are always drawn, so the control reads at a glance rather than
-   only revealing itself on hover. */
+   only revealing itself on hover. Stars are Labels, not Buttons — see the
+   comment in star_picker() for why. */
 .kalam-star-glyph {
-    font-size: 1.25rem;
+    font-size: 1.35rem;
+    padding: 0 1px;
     color: @kalam_text_dim;
 }
 
@@ -1058,7 +1050,8 @@ popover.kalam-reader-popover > contents {
     color: #fbbf24;
 }
 
-.kalam-star-btn:hover .kalam-star-glyph {
+/* Applied by an EventControllerMotion, since Labels do not prelight. */
+.kalam-star-hover {
     color: #fcd34d;
 }
 
