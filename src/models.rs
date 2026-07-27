@@ -132,6 +132,10 @@ pub enum LibrarySection {
 }
 
 impl LibrarySection {
+    /// Kept for the section pickers that will return with the definitive
+    /// layout; the dashboard now routes via content sections instead of a
+    /// generated tile grid.
+    #[allow(dead_code)]
     pub const ALL: &'static [LibrarySection] = &[
         LibrarySection::AllBooks,
         LibrarySection::ReadingList,
@@ -154,6 +158,7 @@ impl LibrarySection {
         }
     }
 
+    #[allow(dead_code)]
     pub fn icon(self) -> &'static str {
         match self {
             LibrarySection::AllBooks => "📚",

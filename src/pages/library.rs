@@ -8,16 +8,19 @@
 use crate::db::{Catalog, LibraryStats, SortKey};
 use crate::models::{Book, LibrarySection};
 use crate::widgets::book_row::{build_book_card, cover_widget, CARD_H, CARD_W};
+use crate::widgets::charts::{line_chart, monthly_series, sparkline};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::rc::Rc;
 
+/// Navigation requests from the dashboard. Variants are named for their
+/// destination rather than sharing an `Open` prefix (clippy::enum_variant_names).
 #[derive(Debug)]
 pub enum LibraryOut {
-    OpenSection(LibrarySection),
-    OpenBook { book_id: i64 },
-    OpenBookDialog { book_id: i64 },
-    OpenTag { tag: String },
+    Section(LibrarySection),
+    Book { book_id: i64 },
+    BookDialog { book_id: i64 },
+    Tag { tag: String },
 }
 
 pub struct LibraryPageModel {
@@ -103,6 +106,70 @@ fn build_dashboard(
             gtk::Label::new(Some("Import your first book here.")).upcast::<gtk::Widget>(),
         ));
         return;
+    }
+
+    // ── reading activity: headline figures + trend, at a glance ─────────
+    let daily: Vec<i64> = stats.minutes_by_day.iter().map(|(_, s)| *s / 60).collect();
+    if daily.iter().any(|v| *v > 0) {
+        let strip = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        strip.set_homogeneous(true);
+        strip.append(&mini_stat(
+            "Avg Time /Day",
+            &stats.avg_minutes_per_active_day.to_string(),
+            "Min/Day",
+            &daily,
+            "kalam-spark-green",
+        ));
+        strip.append(&mini_stat(
+            "Books Completed",
+            &stats.finished.to_string(),
+            if stats.finished == 1 { "Book" } else { "Books" },
+            &monthly_series(&stats),
+            "kalam-spark-red",
+        ));
+        strip.append(&mini_stat(
+            "Current Streak",
+            &stats.current_streak_days.to_string(),
+            if stats.current_streak_days == 1 {
+                "Day"
+            } else {
+                "Days"
+            },
+            &daily,
+            "kalam-spark-blue",
+        ));
+        body.append(&strip);
+
+        let chart_card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        chart_card.add_css_class("kalam-chart-card");
+
+        let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let total = gtk::Label::new(Some(&format!("{} min", daily.iter().sum::<i64>())));
+        total.add_css_class("kalam-chart-title");
+        total.set_halign(gtk::Align::Start);
+        head.append(&total);
+        let sub = gtk::Label::new(Some("Read in the last 14 days"));
+        sub.add_css_class("kalam-chart-sub");
+        sub.set_halign(gtk::Align::Start);
+        sub.set_hexpand(true);
+        sub.set_valign(gtk::Align::End);
+        head.append(&sub);
+        chart_card.append(&head);
+
+        let labels: Vec<String> = stats
+            .minutes_by_day
+            .iter()
+            .map(|(d, _)| d.get(8..10).unwrap_or(d).to_string())
+            .collect();
+        chart_card.append(&line_chart(&daily, &labels));
+
+        body.append(&section(
+            "READING ACTIVITY",
+            Some("Last 14 days"),
+            LibrarySection::Analytics,
+            sender,
+            chart_card.upcast::<gtk::Widget>(),
+        ));
     }
 
     // ── continue reading: covers with progress bars ─────────────────────
@@ -242,7 +309,7 @@ fn build_dashboard(
             let tag = name.clone();
             let s = sender.clone();
             chip.connect_clicked(move |_| {
-                s.output(LibraryOut::OpenTag { tag: tag.clone() }).ok();
+                s.output(LibraryOut::Tag { tag: tag.clone() }).ok();
             });
             flow.insert(&chip, -1);
         }
@@ -311,7 +378,7 @@ fn section(
     click.set_button(1);
     let s = sender.clone();
     click.connect_released(move |_, _, _, _| {
-        s.output(LibraryOut::OpenSection(target)).ok();
+        s.output(LibraryOut::Section(target)).ok();
     });
     header.add_controller(click);
     header.set_cursor_from_name(Some("pointer"));
@@ -356,10 +423,10 @@ fn cover_strip(books: &[Book], sender: &ComponentSender<LibraryPageModel>) -> gt
         let card = build_book_card(
             book,
             move || {
-                s1.output(LibraryOut::OpenBook { book_id: id }).ok();
+                s1.output(LibraryOut::Book { book_id: id }).ok();
             },
             move || {
-                s2.output(LibraryOut::OpenBookDialog { book_id: id }).ok();
+                s2.output(LibraryOut::BookDialog { book_id: id }).ok();
             },
         );
         let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -406,7 +473,7 @@ fn progress_strip(books: &[Book], sender: &ComponentSender<LibraryPageModel>) ->
         let click = gtk::GestureClick::new();
         click.set_button(1);
         click.connect_released(move |_, _, _, _| {
-            s.output(LibraryOut::OpenBookDialog { book_id: id }).ok();
+            s.output(LibraryOut::BookDialog { book_id: id }).ok();
         });
         cell.add_controller(click);
         cell.set_cursor_from_name(Some("pointer"));
@@ -463,7 +530,7 @@ fn stat_footer(stats: &LibraryStats, sender: &ComponentSender<LibraryPageModel>)
         let click = gtk::GestureClick::new();
         click.set_button(1);
         click.connect_released(move |_, _, _, _| {
-            s.output(LibraryOut::OpenSection(target)).ok();
+            s.output(LibraryOut::Section(target)).ok();
         });
         tile.add_controller(click);
         tile.set_cursor_from_name(Some("pointer"));
@@ -471,6 +538,38 @@ fn stat_footer(stats: &LibraryStats, sender: &ComponentSender<LibraryPageModel>)
         row.append(&tile);
     }
     row
+}
+
+/// Compact headline figure with an inline trend line.
+fn mini_stat(
+    label: &str,
+    value: &str,
+    unit: &str,
+    series: &[i64],
+    spark_class: &str,
+) -> gtk::Box {
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    card.add_css_class("kalam-hero-card");
+
+    let l = gtk::Label::new(Some(label));
+    l.add_css_class("kalam-hero-label");
+    l.set_halign(gtk::Align::Start);
+    card.append(&l);
+
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let v = gtk::Label::new(Some(value));
+    v.add_css_class("kalam-hero-value");
+    row.append(&v);
+    let u = gtk::Label::new(Some(unit));
+    u.add_css_class("kalam-hero-unit");
+    u.set_hexpand(true);
+    u.set_halign(gtk::Align::Start);
+    u.set_valign(gtk::Align::End);
+    row.append(&u);
+    row.append(&sparkline(series, spark_class));
+    card.append(&row);
+
+    card
 }
 
 fn human_hours(seconds: i64) -> String {
