@@ -70,9 +70,14 @@ jobs:
         if: steps.clippy.outcome == 'failure'
         run: |
           mkdir -p ci-logs
-          # Keep only the diagnostic lines; the full log is mostly progress spam.
-          grep -E "error(\[|:)|warning:" /tmp/clippy.txt \
-            | head -200 > ci-logs/clippy-latest.txt || true
+          # Prefer the diagnostic lines, but always fall back to the tail: a
+          # grep that matches nothing used to publish an empty file, which is
+          # worse than useless.
+          grep -E "error|warning:" /tmp/clippy.txt | head -100 > ci-logs/clippy-latest.txt || true
+          if [ ! -s ci-logs/clippy-latest.txt ]; then
+            echo "(no lines matched; last 100 lines of output)" > ci-logs/clippy-latest.txt
+            tail -100 /tmp/clippy.txt >> ci-logs/clippy-latest.txt || true
+          fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/clippy-latest.txt
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"

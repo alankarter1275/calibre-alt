@@ -1317,60 +1317,55 @@ impl Catalog {
     /// Re-apply remembered edits to a freshly imported book. Returns true when
     /// something was restored.
     pub fn restore_overrides(&self, book_id: i64, file_hash: &str) -> Result<bool> {
-        #[allow(clippy::type_complexity)]
-        let row: Option<(
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<f64>,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<i64>,
-            Option<String>,
-        )> = {
+        // A named struct rather than a ten-element tuple: the tuple needed a
+        // type annotation that tripped clippy::type_complexity, and this is
+        // easier to read besides.
+        struct Saved {
+            title: String,
+            authors: String,
+            series: Option<String>,
+            series_index: f64,
+            publisher: String,
+            published: String,
+            description: String,
+            tags: String,
+            rating: i64,
+            cover_name: Option<String>,
+        }
+
+        let saved: Option<Saved> = {
             let conn = self.conn.lock().expect("db lock");
             conn.query_row(
-                "SELECT title, authors, series, series_index, publisher,
-                        published, description, tags, rating, cover_name
+                "SELECT IFNULL(title,''), IFNULL(authors,''), series,
+                        IFNULL(series_index,0), IFNULL(publisher,''),
+                        IFNULL(published,''), IFNULL(description,''),
+                        IFNULL(tags,''), IFNULL(rating,0), cover_name
                  FROM metadata_overrides WHERE file_hash = ?1",
                 params![file_hash],
                 |r| {
-                    Ok((
-                        r.get(0)?,
-                        r.get(1)?,
-                        r.get(2)?,
-                        r.get(3)?,
-                        r.get(4)?,
-                        r.get(5)?,
-                        r.get(6)?,
-                        r.get(7)?,
-                        r.get(8)?,
-                        r.get(9)?,
-                    ))
+                    Ok(Saved {
+                        title: r.get(0)?,
+                        authors: r.get(1)?,
+                        series: r.get(2)?,
+                        series_index: r.get(3)?,
+                        publisher: r.get(4)?,
+                        published: r.get(5)?,
+                        description: r.get(6)?,
+                        tags: r.get(7)?,
+                        rating: r.get(8)?,
+                        cover_name: r.get(9)?,
+                    })
                 },
             )
             .optional()?
         };
 
-        let Some((
-            title,
-            authors,
-            series,
-            series_index,
-            publisher,
-            published,
-            description,
-            tags,
-            rating,
-        )) = row
-        else {
+        let Some(saved) = saved else {
             return Ok(false);
         };
 
-        let tags: Vec<String> = tags
-            .unwrap_or_default()
+        let tags: Vec<String> = saved
+            .tags
             .split(',')
             .map(|t| t.trim().to_string())
             .filter(|t| !t.is_empty())
@@ -1378,24 +1373,24 @@ impl Catalog {
 
         self.update_book_metadata(
             book_id,
-            &title.unwrap_or_default(),
-            &authors.unwrap_or_default(),
-            series.as_deref(),
-            series_index.unwrap_or(0.0) as f32,
-            &publisher.unwrap_or_default(),
-            &published.unwrap_or_default(),
-            &description.unwrap_or_default(),
+            &saved.title,
+            &saved.authors,
+            saved.series.as_deref(),
+            saved.series_index as f32,
+            &saved.publisher,
+            &saved.published,
+            &saved.description,
             &tags,
         )?;
 
-        if let Some(rating) = rating {
-            self.set_book_rating(book_id, rating.clamp(0, 10) as u8)?;
+        if saved.rating > 0 {
+            self.set_book_rating(book_id, saved.rating.clamp(0, 10) as u8)?;
         }
 
         // Copy the stashed cover back into the new book's directory. Failing
         // here is not fatal — the text metadata is already restored, and the
         // book keeps whatever cover the EPUB supplied.
-        if let (Some(stashed), Some(book)) = (cover_name, self.get_book(book_id)?) {
+        if let (Some(stashed), Some(book)) = (saved.cover_name, self.get_book(book_id)?) {
             let src = crate::paths::override_covers_dir().join(&stashed);
             if src.is_file() {
                 let ext = src
@@ -1418,16 +1413,17 @@ impl Catalog {
     pub fn forget_overrides(&self, file_hash: &str) -> Result<()> {
         // Drop the stashed cover too, otherwise the covers directory grows
         // forever with images nothing references.
-        let stashed: Option<Option<String>> = {
+        let stashed: Option<String> = {
             let conn = self.conn.lock().expect("db lock");
             conn.query_row(
-                "SELECT cover_name FROM metadata_overrides WHERE file_hash = ?1",
+                "SELECT IFNULL(cover_name, '') FROM metadata_overrides WHERE file_hash = ?1",
                 params![file_hash],
-                |r| r.get(0),
+                |r| r.get::<_, String>(0),
             )
             .optional()?
+            .filter(|n| !n.is_empty())
         };
-        if let Some(Some(name)) = stashed {
+        if let Some(name) = stashed {
             let path = crate::paths::override_covers_dir().join(name);
             let _ = fs::remove_file(path);
         }
