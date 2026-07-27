@@ -26,6 +26,9 @@ const BASE_WIDTH: i32 = 780;
 /// lifetime of the dialog so revealing the panel cannot push it off-screen or
 /// leave it visually off-centre.
 const DIALOG_WIDTH: i32 = BASE_WIDTH + PANEL_WIDTH;
+/// Cover thumbnails keep the standard 1:1.6 book ratio so the grid is even.
+const THUMB_W: i32 = 128;
+const THUMB_H: i32 = (THUMB_W as f32 * 1.6) as i32;
 
 /// What the worker thread sends back to the UI.
 enum FetchMsg {
@@ -98,12 +101,9 @@ fn open_editor_inner(
         &book.title,
         "Search Open Library by title",
     );
-    let (authors_entry, author_search) = labelled_entry_with_search(
-        &fields,
-        "AUTHORS",
-        &book.authors,
-        "Search Open Library by author",
-    );
+    // No search icon here: it sent exactly the same title+author query as the
+    // title icon, so it was a second button for one action.
+    let authors_entry = labelled_entry(&fields, "AUTHORS", &book.authors);
 
     // Series and its position sit on one row, as in Calibre.
     fields.append(&section_label("SERIES"));
@@ -452,21 +452,36 @@ fn open_editor_inner(
                         }
                         let grid = gtk::FlowBox::builder()
                             .selection_mode(gtk::SelectionMode::None)
-                            .max_children_per_line(3)
-                            .column_spacing(8)
-                            .row_spacing(8)
+                            .min_children_per_line(2)
+                            .max_children_per_line(2)
+                            .homogeneous(true)
+                            .column_spacing(10)
+                            .row_spacing(10)
+                            .halign(gtk::Align::Start)
                             .build();
                         for (id, bytes) in choices {
                             let Some(texture) = texture_from_bytes(&bytes) else {
                                 continue;
                             };
                             let pic = gtk::Picture::for_paintable(&texture);
-                            pic.set_size_request(84, 130);
-                            pic.set_content_fit(gtk::ContentFit::Cover);
+                            // Contain, not Cover: show the whole jacket rather
+                            // than cropping to fill the cell.
+                            pic.set_content_fit(gtk::ContentFit::Contain);
+                            pic.set_can_shrink(true);
+                            pic.set_size_request(THUMB_W, THUMB_H);
+
+                            // Fixed-size wrapper stops the FlowBox stretching
+                            // cells to different widths.
+                            let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+                            cell.set_size_request(THUMB_W, THUMB_H);
+                            cell.set_halign(gtk::Align::Center);
+                            cell.set_valign(gtk::Align::Center);
+                            cell.append(&pic);
 
                             let btn = gtk::Button::new();
-                            btn.set_child(Some(&pic));
+                            btn.set_child(Some(&cell));
                             btn.add_css_class("kalam-cover-choice");
+                            btn.set_halign(gtk::Align::Center);
                             btn.set_tooltip_text(Some("Use this cover"));
 
                             let tx2 = tx_inner.clone();
@@ -712,14 +727,14 @@ fn open_editor_inner(
         })
     };
 
-    // Title and author icons both open the panel seeded with title + author;
-    // Open Library matches far better on the pair than on either alone.
-    for btn in [&title_search, &author_search] {
+    // The title icon opens the panel seeded with title + author; Open Library
+    // matches far better on the pair than on either alone.
+    {
         let set_panel = set_panel.clone();
         let search_entry = search_entry.clone();
         let title_entry = title_entry.clone();
         let authors_entry = authors_entry.clone();
-        btn.connect_clicked(move |_| {
+        title_search.connect_clicked(move |_| {
             let query = format!(
                 "{} {}",
                 title_entry.text().trim(),

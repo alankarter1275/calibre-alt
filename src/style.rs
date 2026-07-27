@@ -993,10 +993,13 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-cover-choice {
-    padding: 2px;
+    padding: 4px;
     border-radius: 8px;
     background: @kalam_surface_2;
     border: 1px solid @kalam_border;
+    /* Letterboxed art sits on the surface colour rather than bare window. */
+    min-width: 0;
+    min-height: 0;
 }
 
 .kalam-cover-choice:hover {
