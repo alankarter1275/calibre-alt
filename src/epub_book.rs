@@ -887,50 +887,70 @@ pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, margin_e
 
     // Many EPUBs ship chapter headings, ornaments and diagrams as PNG/JPEG with
     // a baked-in **white** background. CSS cannot repaint pixels inside an
-    // image, so on a dark page those land as glaring white slabs.
+    // image, so on a themed page those land as mismatched slabs.
     //
-    // `mix-blend-mode: multiply` makes white pixels take the page colour while
-    // dark ink stays dark — exactly what we want for line art on white. It is
-    // wrong for genuinely dark/photographic images though, so we pair it with a
-    // slight dim and let the reader opt out per image by hovering (below).
+    // The trick is a blend mode chosen per theme, so the artwork's white
+    // background takes the page colour and the ink stays legible:
     //
-    // Sepia is light enough that untouched images look fine; only Dark needs it.
+    // * Light / Sepia — `multiply`. White × cream = cream (background vanishes);
+    //   black ink × cream = black (ink survives).
+    // * Dark — `multiply` alone would be wrong: the white background does go
+    //   dark, but the black lettering goes black-on-black and disappears. So we
+    //   `invert()` first (black ink → white, white background → black) and then
+    //   `screen`, where black is the no-op colour: the background drops out and
+    //   the lettering comes through **white**.
+    //
+    // Photographs must be excluded — inverting a photo produces a colour
+    // negative — so cover/photo/figure images only get a gentle dim.
     let image_css = match theme {
         ReadingTheme::Dark => {
             r#"
-/* Tame white-background artwork on the dark page. */
+/* Line art / text-as-image: invert then screen so ink renders white and the
+   baked-in white background drops out to the page colour. */
 img, svg, image, picture > img, object[type^="image"] {
-  mix-blend-mode: multiply !important;
-  filter: brightness(0.92) !important;
+  filter: invert(1) brightness(1.06) contrast(1.04) !important;
+  mix-blend-mode: screen !important;
   background: transparent !important;
 }
-/* Blending needs a painted backdrop to multiply against. Author wrappers that
-   paint their own white background would swallow the effect, so force every
-   ancestor transparent and let the page colour show through. */
-html, body {
-  background-color: #1a1b1e !important;
-}
-div, p, section, article, figure, span, td, table, main, header {
-  background-color: transparent !important;
-  background-image: none !important;
-}
-/* Escape hatch: hovering an image restores it verbatim, so photos and
-   already-dark art can still be inspected as the author intended. */
-img:hover, svg:hover, picture:hover > img {
-  mix-blend-mode: normal !important;
-  filter: none !important;
-}
-/* Images the EPUB marks as cover art are usually full-bleed photographs —
-   blending those looks worse than leaving them alone. */
+/* Photographs would become colour negatives — dim them instead. */
 img[class*="cover" i], img[id*="cover" i], img[src*="cover" i],
-img[class*="photo" i], img[class*="figure" i] {
+img[class*="photo" i], img[class*="figure" i], img[class*="illus" i],
+img[src*="photo" i], figure > img[alt]:not([alt=""]) {
+  filter: brightness(0.86) !important;
   mix-blend-mode: normal !important;
-  filter: brightness(0.88) !important;
 }
 "#
         }
-        _ => "",
+        _ => {
+            r#"
+/* White artwork background takes the page tint; ink stays dark. */
+img, svg, image, picture > img, object[type^="image"] {
+  mix-blend-mode: multiply !important;
+  background: transparent !important;
+}
+img[class*="cover" i], img[id*="cover" i], img[src*="cover" i],
+img[class*="photo" i], img[src*="photo" i] {
+  mix-blend-mode: normal !important;
+}
+"#
+        }
     };
+
+    // Blending composites against the nearest painted backdrop, so any author
+    // wrapper that paints its own white would swallow the effect.
+    let image_backdrop_css = r#"
+html, body {
+  background-color: %BG% !important;
+}
+div, p, section, article, figure, figcaption, span, td, table, tbody, tr,
+main, header, blockquote {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+"#
+    .replace("%BG%", bg);
+
+    let image_css = format!("{image_css}{image_backdrop_css}");
 
     // Injected at the *end* of <body> so it wins over author stylesheets.
     format!(

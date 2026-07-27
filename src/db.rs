@@ -238,6 +238,8 @@ pub struct LibraryStats {
     pub added_last_30: i64,
     pub current_streak_days: i64,
     pub longest_streak_days: i64,
+    /// Mean minutes per day across days that had any reading (last 30 days).
+    pub avg_minutes_per_active_day: i64,
     /// (label, count) — newest month last.
     pub added_by_month: Vec<(String, i64)>,
     /// (label, seconds) — last 14 days, oldest first.
@@ -1819,6 +1821,22 @@ impl Catalog {
                 series.push((key, secs));
             }
             s.minutes_by_day = series;
+        }
+
+        // Average over *active* days only — dividing by 30 when you read on 3 of
+        // them reports a demoralising and fairly meaningless number.
+        {
+            let (total, days): (i64, i64) = conn
+                .query_row(
+                    "SELECT IFNULL(SUM(seconds), 0),
+                            COUNT(DISTINCT substr(started_at, 1, 10))
+                     FROM reading_sessions
+                     WHERE started_at >= ?1 AND seconds > 0",
+                    params![cutoff_30],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap_or((0, 0));
+            s.avg_minutes_per_active_day = if days > 0 { total / days / 60 } else { 0 };
         }
 
         {

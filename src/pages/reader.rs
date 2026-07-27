@@ -799,9 +799,23 @@ color:#3e3226;font-family:Georgia,serif'>\
         self.update_view(widgets, sender);
     }
 
-    fn shutdown(&mut self, _widgets: &mut Self::Widgets, _output: relm4::Sender<Self::Output>) {
+    fn shutdown(&mut self, widgets: &mut Self::Widgets, _output: relm4::Sender<Self::Output>) {
         self.save_progress();
         self.close_session();
+
+        // Popovers are their own toplevel surfaces, so they are *not* disposed
+        // along with the MenuButton that owns them. Leaving them attached while
+        // the reader is torn down mid-navigation makes GTK probe a half-disposed
+        // widget later — the `gtk_widget_is_ancestor: assertion 'GTK_IS_WIDGET
+        // (widget)' failed` criticals on the console. Pop them down and detach.
+        for btn in [&widgets.toc_btn, &widgets.anno_btn, &widgets.dict_btn] {
+            btn.popdown();
+            btn.set_popover(None::<&gtk::Popover>);
+        }
+
+        // Stop the WebView before its widget goes away: an in-flight load that
+        // completes after disposal fires callbacks against dead widgets.
+        self.webview.stop_loading();
     }
 }
 

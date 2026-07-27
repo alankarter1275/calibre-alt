@@ -849,6 +849,77 @@ popover.kalam-reader-popover > contents {
 }
 
 /* ── analytics ──────────────────────────────────────── */
+.kalam-hero-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 16px;
+    padding: 14px 16px;
+    min-height: 104px;
+}
+
+.kalam-hero-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: @kalam_text_dim;
+}
+
+.kalam-hero-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-hero-unit {
+    font-size: 0.8rem;
+    color: @kalam_text_dim;
+    margin-left: 2px;
+}
+
+.kalam-hero-blurb {
+    font-size: 0.74rem;
+    color: @kalam_text_dim;
+}
+
+/* Sparkline / line-chart colours come from `color` so the draw handler can
+   read them back via widget.color() — keeps palette decisions in CSS. */
+.kalam-sparkline {
+    color: @kalam_accent;
+}
+
+.kalam-spark-green {
+    color: #6ee7b7;
+}
+
+.kalam-spark-red {
+    color: #fca5a5;
+}
+
+.kalam-spark-blue {
+    color: #7c9cff;
+}
+
+.kalam-chart-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 16px;
+    padding: 16px 18px;
+}
+
+.kalam-chart-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-chart-sub {
+    font-size: 0.8rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-linechart {
+    color: @kalam_accent;
+}
+
 .kalam-stat-tile {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
