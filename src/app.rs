@@ -404,6 +404,33 @@ impl AppModel {
         }
     }
 
+    /// Rebuild the current page if the catalog changed since it was built.
+    ///
+    /// Deleting a book only updated the database; whatever page was on screen
+    /// kept its stale widgets until the next navigation, so a removed book
+    /// lingered on Home until you switched tabs.
+    fn refresh_if_stale(&mut self, content_host: &gtk::Box, sender: &ComponentSender<Self>) {
+        let token = self.catalog.change_token();
+        if token == self.cache_token {
+            return;
+        }
+
+        // Unparent before dropping, as everywhere else, or GTK complains about
+        // a disposed widget. Nothing is cached here: every cached page was
+        // built against the old catalog state.
+        while let Some(child) = content_host.first_child() {
+            content_host.remove(&child);
+        }
+        self.page = None;
+        self.cache.clear();
+        self.cache_token = token;
+
+        // Rebuild the same route in place — no history push.
+        let page = Self::build_page(&self.catalog, &self.route, sender);
+        content_host.append(&page.widget());
+        self.page = Some(page);
+    }
+
     /// Reuse a cached page for the current route, or build a fresh one.
     fn take_or_build(&mut self, sender: &ComponentSender<Self>) -> PageSlot {
         // Any catalog write invalidates every cached page: a stale Home would
@@ -739,6 +766,9 @@ impl Component for AppModel {
                     f.window.set_child(None::<&gtk::Widget>);
                     f.window.destroy();
                 }
+                // The float can delete a book, so the page underneath may now
+                // be showing something that no longer exists.
+                self.refresh_if_stale(&widgets.content_host, &sender);
             }
             AppMsg::OpenReader { book_id } => {
                 if let Some(f) = self.floating.take() {

@@ -1402,7 +1402,7 @@ impl Catalog {
                 let dest = book_dir(&book.uuid).join(&dest_name);
                 if fs::create_dir_all(book_dir(&book.uuid)).is_ok() && fs::copy(&src, &dest).is_ok()
                 {
-                    self.set_cover_name(book_id, Some(&dest_name))?;
+                    self.set_cover_name_quiet(book_id, Some(&dest_name))?;
                 }
             }
         }
@@ -1438,6 +1438,22 @@ impl Catalog {
 
     /// Point the book at a new cover file inside its own directory.
     pub fn set_cover_name(&self, book_id: i64, cover_name: Option<&str>) -> Result<()> {
+        {
+            let conn = self.conn.lock().expect("db lock");
+            conn.execute(
+                "UPDATE books SET cover_name = ?2 WHERE id = ?1",
+                params![book_id, cover_name],
+            )?;
+        }
+        // Re-stash: a replaced cover is an edit, and the remembered copy would
+        // otherwise still be the jacket from before the swap.
+        self.remember_overrides(book_id)?;
+        Ok(())
+    }
+
+    /// Like `set_cover_name`, but does not touch the remembered override.
+    /// Used when *restoring* a cover, where re-stashing would be circular.
+    fn set_cover_name_quiet(&self, book_id: i64, cover_name: Option<&str>) -> Result<()> {
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "UPDATE books SET cover_name = ?2 WHERE id = ?1",
@@ -3025,6 +3041,51 @@ mod tests {
 
         // Tidy up so the test does not leave files in the real data dir.
         let _ = std::fs::remove_dir_all(crate::paths::book_dir(&restored.uuid));
+        let _ = cat.forget_overrides(&hash);
+    }
+
+    #[test]
+    fn replacing_a_cover_updates_the_remembered_copy() {
+        // The bug: editing metadata stashed the cover, then the new cover was
+        // written afterwards, so the override kept the *previous* jacket and a
+        // re-import restored the wrong image.
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "A", "x", &[]);
+        let book = cat.get_book(id).unwrap().unwrap();
+        let hash = book.file_hash.clone();
+        let dir = crate::paths::book_dir(&book.uuid);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        std::fs::write(dir.join("old.png"), vec![b'o'; 600]).unwrap();
+        cat.set_cover_name(id, Some("old.png")).unwrap();
+
+        // Swap in a different cover, as the metadata editor does.
+        std::fs::write(dir.join("new.png"), vec![b'n'; 600]).unwrap();
+        cat.set_cover_name(id, Some("new.png")).unwrap();
+
+        cat.delete_book(id).unwrap();
+        let new_id = cat
+            .insert_book(
+                "uuid-cover-swap",
+                "A",
+                "x",
+                None,
+                "",
+                BookFormat::Epub,
+                "book.epub",
+                &hash,
+                None,
+                &[],
+            )
+            .unwrap();
+        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+
+        let restored = cat.get_book(new_id).unwrap().unwrap();
+        let bytes = std::fs::read(restored.cover_path.as_ref().unwrap()).unwrap();
+        assert_eq!(bytes[0], b'n', "restored the pre-swap cover");
+
+        let _ = std::fs::remove_dir_all(crate::paths::book_dir(&restored.uuid));
+        let _ = std::fs::remove_dir_all(dir);
         let _ = cat.forget_overrides(&hash);
     }
 
