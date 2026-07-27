@@ -3,7 +3,7 @@
 **Kalam** is a lightweight, personal, all-in-one ebook manager and reader for Linux.
 Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest hardware.
 
-> Phase 3 — annotations & offline dictionary on top of the EPUB reader.
+> Phase 4 — library depth: shelves engine, reading list, history, tags, analytics.
 
 ## Working agreement
 
@@ -11,7 +11,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **Your Arch machine** is only needed at **phase boundaries** (smoke-test + design feedback).
 - Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md)
 
-## What works now (P3)
+## What works now (P4)
 
 - Slim sidebar shell + cover-card library grid
 - **SQLite catalog** at `~/.local/share/kalam/catalog.db`
@@ -22,8 +22,18 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **Annotations list**: reader bottom pill ✎ shows highlights/quotes for current book, jump & delete
 - **Library hub**: My Library → Saved quotes (real data) → export to Markdown (`~/Quotes.md`), Saved words (real data)
 - **Settings**: dictionary packs import (+ Import dictionary), list & remove, data paths
+- **Shelves**: manual collections + **smart shelves** with a rule builder
+  (tag / author / series / format / progress / title / added · is · is not ·
+  contains · date windows · All-or-Any), live match count, 2-column grid
+- **Reading list**: ordered TBR with ↑/↓ reorder and a bulk picker
+- **History**: every open / finish / import, grouped by day and filterable
+- **Reading time**: sessions recorded per reader visit (clamped at 6h)
+- **Tags**: usage-weighted tag cloud → per-tag book grid
+- **Analytics**: counts, time read (7d/30d/all), streaks, 14-day bar chart,
+  books-added-per-month, most read, top tags & authors
+- **Book page**: add to reading list, Mark finished / unread, shelf checklist
 - Float detail panel (Suwayomi-style); Read opens the viewer
-- Shelves / AO3 / comics / etc. still placeholders
+- AO3 / comics / downloads still placeholders
 
 ## Phase overview
 
@@ -32,8 +42,8 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 | P0 | Shell + nav ✅ |
 | P1 | SQLite library, EPUB import, covers ✅ |
 | P2 | EPUB reader ✅ |
-| **P3** | **Highlights, quotes, offline dictionary** ← current ✅ |
-| P4 | Home / shelves engine / lists (real data) |
+| P3 | Highlights, quotes, offline dictionary ✅ |
+| **P4** | **Shelves engine, lists, history, tags, analytics** ← current ✅ |
 | P5 | Metadata edit + Open Library fetch |
 | P6–P11 | Downloads, AO3/FF, comics, PDF, tools — see ROADMAP |
 
@@ -56,18 +66,20 @@ Release build (what you’ll use day to day):
 cargo run --release
 ```
 
-## Click-through demo (P3)
+## Click-through demo (P4)
 
-1. **Library → All books → + Import EPUB** → import a book
-2. **Open** book → **Read** → reader opens (sepia default, no blue links)
-3. **Select text** in reader → floating chip appears (colors / ❝ quote / Aa dictionary / copy)
-4. Highlight yellow → annotation saved, reappears on reload
-5. **D** key or chip **Aa** → dictionary lookup (if packs imported in Settings), popup near word, **Save word**
-6. Bottom pill **✎** → list highlights/quotes for book, Jump / Delete
-7. **Library → Saved quotes** → search, delete, **Export Markdown** → `~/Quotes.md`
-8. **Library → Saved words** → search, delete
-9. **Settings** → Offline dictionaries → + Import dictionary (StarDict .ifo or SQLite .db or TSV) → list & remove
-10. **Shelves** still placeholder (P4)
+1. **Shelves → + Smart shelf** → name it, add rules (e.g. `Tag is fantasy`
+   **and** `Progress is Unread`) → watch the **live match count** → Create
+2. Click the card → the shelf lists exactly those books
+3. **Shelves → + Shelf** (manual) → open it → **+ Add books** → tick a few →
+   expand **Manage shelf order** → reorder with ↑/↓ or remove
+4. **Book page → Shelves…** → tick/untick manual shelves → chips update
+5. **Book page → + Reading list** → **Library → Reading list** → reorder, Read
+6. **Read** a book for a minute, leave → **Library → History** shows "Opened"
+7. **Library → Analytics** → time read, streaks, 14-day chart, top tags
+8. **Library → Tags** → click a tag → grid of books with that tag
+9. **Book page → Mark finished** → drops off the reading list, logged in History
+10. **Home** → counts strip, Continue row, Up next peek
 
 ## Project layout
 
@@ -75,13 +87,16 @@ cargo run --release
 src/
   main.rs          entry + dark preference
   app.rs           shell, sidebar, routing
-  db.rs            SQLite catalog + annotations + dict
+  db.rs            SQLite catalog + annotations + dict + P4 shelves/lists/stats
   dict.rs          StarDict / SQLite / TSV import & search
+  shelf_rules.rs   smart-shelf rule documents → SQL
   epub.rs          EPUB OPF metadata + cover extract
   epub_book.rs     spine, TOC, chapter HTML + reading CSS/JS (highlights, chip, dict)
   models.rs        routes + books/shelves
   style.rs         global CSS (including P3 badges/rows)
-  pages/           Home, Library, Shelves, Book, Reader (P3), SavedQuotes, SavedWords, Settings
+  pages/           Home, Library, Shelves (+ editor/detail), ReadingList,
+                   History, Tags, Analytics, Book, Reader, SavedQuotes,
+                   SavedWords, Settings
   widgets/         book row, shelf card
 ```
 

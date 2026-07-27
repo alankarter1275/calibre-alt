@@ -87,7 +87,7 @@ P0  Shell ───────────── sidebar, routing, float/detail
 P1  Library core ────── SQLite, import EPUB, cover cards, search  ✅ done
 P2  Text reader ─────── WebKit EPUB, themes, TOC, progress, UI    ✅ done
 P3  Annotations ─────── highlights, quotes, offline dictionary    ✅ done
-P4  Library depth ───── shelves engine, lists, tags, analytics    ← next
+P4  Library depth ───── shelves engine, lists, tags, analytics    ✅ done
 P5  Metadata ────────── edit metadata, cover pick, Open Library
 P6  Downloads hub ───── unified queue + folder watch
 P7  Fiction sources ─── AO3 first, then other fanfic adapters
@@ -241,26 +241,60 @@ Annotations trustworthy enough you stop using another app for EPUB markup — **
 
 ---
 
-## P4 — Library depth
+## P4 — Library depth  ✅ done
 
 **Goal:** Home, shelves, lists feel like *your* library.
 
-### Scope
+### Shipped
 
-- Home polish: continue, recent, reading-list peek, counts  
-- Reading list (ordered TBR)  
-- History (opened/finished)  
-- **Shelves engine**
-  - Manual shelf (book ids)  
-  - Smart shelf (rules: tag, author, format, progress, series, and/or)  
-  - Shelves grid: 2 columns, live counts (as designed in P0)  
-- Tags browse  
-- Light analytics  
-- Book page / float wired fully to DB  
+- [x] **Schema v4**: `shelves`, `shelf_books`, `reading_list`,
+      `reading_events`, `reading_sessions`, plus `books.last_opened_at` /
+      `books.finished_at` added via an idempotent `ALTER` helper
+- [x] **Shelves engine**
+  - Manual shelf (membership rows, hand-sortable with ↑/↓)
+  - Smart shelf — **flat rule list + one All/Any switch** (decision B)
+  - Fields: tag, author, series, format, progress, title, added
+  - Operators: is / is not / contains / does not contain / in the last N
+    days / more than N days ago
+  - Rules stored as JSON, compiled to a parameterised SQL `WHERE`
+  - Shelves grid: 2 columns, kind badge, live counts, rule summary
+  - Rule editor with **live “N books match”** readout
+- [x] **Reading list** — ordered TBR, ↑/↓ reorder, bulk picker, Read button
+- [x] **History** — append-only event log (opened / finished / unfinished /
+      imported), grouped by day, filterable, same-hour dedupe on opens
+- [x] **Reading time tracking** — a `reading_sessions` row per reader visit,
+      closed on shutdown, clamped at 6h so an idle window can't fake a marathon
+- [x] **Tags browse** — usage-weighted tag cloud → per-tag book grid
+- [x] **Analytics** — books/finished/reading/unread, time read (all time,
+      7d, 30d), current & longest streak, highlights/quotes/words, 14-day
+      reading bar chart, books-added-per-month, most read / top tags / top authors
+- [x] **Home polish** — counts strip, multi-book Continue row driven by
+      `last_opened_at`, Up-next peek from the reading list
+- [x] **Book page** — add/remove reading list, Mark finished / Mark unread,
+      manual-shelf checklist, shelf chips
+- [x] Auto-finish at ≥99% progress (once per book), with manual override
+- [x] Unit tests over an in-memory catalog: rule compilation, membership,
+      reorder, auto-finish, session clamping, stats
+
+### Design decisions locked in P4
+
+- Smart shelves stay **flat** (no nested boolean groups). The stored JSON is
+  forward compatible, so nested groups can arrive later without a migration.
+- An empty smart shelf matches **nothing**, not everything — less surprising.
+- Analytics never invents data: no "hours read" before sessions existed.
+- Deleting a shelf never deletes books.
 
 ### Out
 
 Online sources.
+
+### Arch check
+
+- Create a smart shelf (tag is X **and** progress is unread) → live count moves
+  as you type → save → grid shows the count → open it
+- Create a manual shelf → add books from the book page and the picker → reorder
+- Read a book for a few minutes → History shows "Opened" → Analytics shows time
+- Finish a book → it leaves the reading list and appears as Finished
 
 ---
 
@@ -388,7 +422,11 @@ tags / book_tags
 reading_progress   book_id, chapter_index, fraction, updated_at   -- P2
 annotations        id, book_id, kind, loc, color, body, …         -- P3
 saved_words        …                                              -- P3
-shelves / shelf_books / reading_list                              -- P4
+shelves            id, name, kind, description, rules(JSON), position  -- P4
+shelf_books        shelf_id, book_id, position, added_at             -- P4
+reading_list       book_id, position, note, added_at                 -- P4
+reading_events     id, book_id, kind, at, detail                     -- P4
+reading_sessions   id, book_id, started_at, ended_at, seconds, pct   -- P4
 sources_state / download_jobs                                     -- P6+
 ```
 
@@ -422,7 +460,7 @@ Deps include `webkitgtk-6.0` for P2+.
 
 ## Immediate next steps
 
-1. **P4 — Library depth** (shelves engine, real home, tags browse)
+1. **P5 — Metadata** (edit dialog, cover replace, Open Library fetch)
 2. Keep refining text-reader polish only if you file specific UX bugs (note editing UI, CFI, dict HTML rendering)
 3. **P8** when you want comics for real (UI target already specified above)  
 
@@ -446,4 +484,6 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-26 | Text reader look: sepia default, no blue body/links, no underlines |
 | 2026-07-26 | Comics reader look: Moku-like black stage, top meta + bottom scrub (P8) |
 | 2026-07-26 | P0–P2 treated complete; **next = P3** |
+| 2026-07-27 | P4 shipped: shelves engine (manual + flat-rule smart shelves), reading list, event-log history, reading-time sessions, tags browse, analytics with streaks |
+| 2026-07-27 | Smart shelves locked as flat rules + All/Any; nested groups deferred and kept JSON-compatible |
 | 2026-07-26 | P3 annotations & dictionary shipped: highlights (5 colors), quotes, offline dict packs (StarDict/SQLite/TSV), Saved quotes/words real data, export Markdown, annotations list, dictionary popup, Settings import |
