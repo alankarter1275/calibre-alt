@@ -35,6 +35,14 @@ pub fn reader_cache_dir(uuid: &str) -> PathBuf {
     data_dir().join("cache").join("reader").join(uuid)
 }
 
+/// `~/.local/share/kalam/covers` — covers kept for remembered metadata.
+///
+/// Separate from `library/<uuid>/` because that directory is deleted with the
+/// book; these must outlive it so a re-import can restore the chosen cover.
+pub fn override_covers_dir() -> PathBuf {
+    data_dir().join("covers")
+}
+
 /// `~/.local/share/kalam/dictionaries`
 pub fn dictionaries_dir() -> PathBuf {
     data_dir().join("dictionaries")
@@ -49,5 +57,6 @@ pub fn ensure_data_dirs() -> std::io::Result<()> {
     fs::create_dir_all(library_dir())?;
     fs::create_dir_all(data_dir().join("cache").join("reader"))?;
     fs::create_dir_all(dictionaries_dir())?;
+    fs::create_dir_all(override_covers_dir())?;
     Ok(())
 }

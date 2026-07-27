@@ -1257,6 +1257,27 @@ impl Catalog {
             return Ok(());
         }
 
+        // The cover lives in library/<uuid>/, which is deleted along with the
+        // book, so remembering only its name would leave a dangling pointer.
+        // Keep a copy outside that directory, named after the file hash.
+        let stashed_cover = book.cover_path.as_ref().and_then(|src| {
+            if !src.is_file() {
+                return None;
+            }
+            let ext = src
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("jpg")
+                .to_ascii_lowercase();
+            let dest_name = format!("{}.{ext}", book.file_hash);
+            let dest = crate::paths::override_covers_dir().join(&dest_name);
+            let _ = fs::create_dir_all(crate::paths::override_covers_dir());
+            match fs::copy(src, &dest) {
+                Ok(_) => Some(dest_name),
+                Err(_) => None,
+            }
+        });
+
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "INSERT INTO metadata_overrides
@@ -1286,7 +1307,7 @@ impl Catalog {
                 book.description,
                 book.tags.join(", "),
                 book.rating as i64,
-                book.cover_name,
+                stashed_cover,
                 chrono_like_now(),
             ],
         )?;
@@ -1307,11 +1328,12 @@ impl Catalog {
             Option<String>,
             Option<String>,
             Option<i64>,
+            Option<String>,
         )> = {
             let conn = self.conn.lock().expect("db lock");
             conn.query_row(
                 "SELECT title, authors, series, series_index, publisher,
-                        published, description, tags, rating
+                        published, description, tags, rating, cover_name
                  FROM metadata_overrides WHERE file_hash = ?1",
                 params![file_hash],
                 |r| {
@@ -1325,6 +1347,7 @@ impl Catalog {
                         r.get(6)?,
                         r.get(7)?,
                         r.get(8)?,
+                        r.get(9)?,
                     ))
                 },
             )
@@ -1368,11 +1391,48 @@ impl Catalog {
         if let Some(rating) = rating {
             self.set_book_rating(book_id, rating.clamp(0, 10) as u8)?;
         }
+
+        // Copy the stashed cover back into the new book's directory. Failing
+        // here is not fatal — the text metadata is already restored, and the
+        // book keeps whatever cover the EPUB supplied.
+        if let (Some(stashed), Some(book)) = (cover_name, self.get_book(book_id)?) {
+            let src = crate::paths::override_covers_dir().join(&stashed);
+            if src.is_file() {
+                let ext = src
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("jpg")
+                    .to_ascii_lowercase();
+                let dest_name = format!("cover-restored.{ext}");
+                let dest = book_dir(&book.uuid).join(&dest_name);
+                if fs::create_dir_all(book_dir(&book.uuid)).is_ok()
+                    && fs::copy(&src, &dest).is_ok()
+                {
+                    self.set_cover_name(book_id, Some(&dest_name))?;
+                }
+            }
+        }
         Ok(true)
     }
 
     /// Forget remembered edits for a file — used by "import fresh".
     pub fn forget_overrides(&self, file_hash: &str) -> Result<()> {
+        // Drop the stashed cover too, otherwise the covers directory grows
+        // forever with images nothing references.
+        let stashed: Option<Option<String>> = {
+            let conn = self.conn.lock().expect("db lock");
+            conn.query_row(
+                "SELECT cover_name FROM metadata_overrides WHERE file_hash = ?1",
+                params![file_hash],
+                |r| r.get(0),
+            )
+            .optional()?
+        };
+        if let Some(Some(name)) = stashed {
+            let path = crate::paths::override_covers_dir().join(name);
+            let _ = fs::remove_file(path);
+        }
+
         let conn = self.conn.lock().expect("db lock");
         conn.execute(
             "DELETE FROM metadata_overrides WHERE file_hash = ?1",
@@ -2928,6 +2988,49 @@ mod tests {
         assert_eq!(restored.publisher, "Random House");
         assert_eq!(restored.rating, 9);
         assert_eq!(restored.tags.len(), 2);
+    }
+
+    #[test]
+    fn a_restored_book_keeps_its_cover() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "A", "x", &[]);
+        let book = cat.get_book(id).unwrap().unwrap();
+        let hash = book.file_hash.clone();
+
+        // Put a real file where the cover is expected.
+        let dir = crate::paths::book_dir(&book.uuid);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("cover.png"), b"not-really-a-png-but-long-enough").unwrap();
+        cat.set_cover_name(id, Some("cover.png")).unwrap();
+
+        cat.delete_book(id).unwrap();
+
+        let new_id = cat
+            .insert_book(
+                "uuid-restored-cover",
+                "A",
+                "x",
+                None,
+                "",
+                BookFormat::Epub,
+                "book.epub",
+                &hash,
+                None,
+                &[],
+            )
+            .unwrap();
+        assert!(cat.restore_overrides(new_id, &hash).unwrap());
+
+        let restored = cat.get_book(new_id).unwrap().unwrap();
+        assert!(restored.cover_name.is_some(), "cover was not restored");
+        assert!(
+            restored.cover_path.as_ref().is_some_and(|p| p.is_file()),
+            "cover file missing on disk"
+        );
+
+        // Tidy up so the test does not leave files in the real data dir.
+        let _ = std::fs::remove_dir_all(crate::paths::book_dir(&restored.uuid));
+        let _ = cat.forget_overrides(&hash);
     }
 
     #[test]

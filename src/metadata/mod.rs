@@ -32,10 +32,35 @@ pub enum FetchError {
 impl std::fmt::Display for FetchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FetchError::Network(m) => write!(f, "Network error: {m}"),
+            FetchError::Network(m) => write!(f, "{}", humanise_network(m)),
             FetchError::Parse(m) => write!(f, "Could not read the response: {m}"),
             FetchError::Limited(m) => write!(f, "{m}"),
         }
+    }
+}
+
+/// ureq embeds the full request URL and a DNS trace in its error text, which
+/// is unreadable in a narrow panel. Collapse the common cases to one line.
+fn humanise_network(raw: &str) -> String {
+    let lower = raw.to_lowercase();
+    if lower.contains("name resolution") || lower.contains("dns") {
+        return "no internet connection (DNS lookup failed).".into();
+    }
+    if lower.contains("timed out") || lower.contains("timeout") {
+        return "the request timed out.".into();
+    }
+    if lower.contains("connection refused") || lower.contains("connect") {
+        return "could not reach the server.".into();
+    }
+    if lower.contains("certificate") || lower.contains("tls") {
+        return "the secure connection failed.".into();
+    }
+    // Unknown shape: keep it, but never let a URL run away with the layout.
+    let trimmed: String = raw.chars().take(110).collect();
+    if raw.chars().count() > 110 {
+        format!("{trimmed}…")
+    } else {
+        trimmed
     }
 }
 
@@ -397,6 +422,35 @@ mod tests {
         rich.cover = Some(CoverRef::OpenLibraryId(1));
         rich.description = "text".into();
         assert!(rich.richness() > bare.richness());
+    }
+
+    #[test]
+    fn network_errors_are_collapsed_to_one_line() {
+        // The real message ureq produced in the field, URL and all.
+        let raw = "https://openlibrary.org/search.json?q=Nyxia%3A+The+Nyxia+Triad&fields=title \
+                   Dns Failed: resolve dns name 'openlibrary.org:443': failed to lookup address \
+                   information: Temporary failure in name resolution";
+        let shown = FetchError::Network(raw.into()).to_string();
+        assert!(shown.contains("no internet"), "{shown}");
+        assert!(!shown.contains("openlibrary.org/search.json"), "{shown}");
+        assert!(shown.chars().count() < 80, "too long: {shown}");
+    }
+
+    #[test]
+    fn unknown_network_errors_are_still_truncated() {
+        let raw = "x".repeat(500);
+        let shown = FetchError::Network(raw).to_string();
+        assert!(shown.chars().count() <= 111, "{}", shown.chars().count());
+    }
+
+    #[test]
+    fn timeouts_and_refusals_get_their_own_wording() {
+        assert!(FetchError::Network("operation timed out".into())
+            .to_string()
+            .contains("timed out"));
+        assert!(FetchError::Network("connection refused".into())
+            .to_string()
+            .contains("could not reach"));
     }
 
     #[test]

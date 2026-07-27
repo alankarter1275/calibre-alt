@@ -235,6 +235,14 @@ fn open_editor_inner(
     search_status.set_halign(gtk::Align::Start);
     search_status.set_wrap(true);
     search_status.set_xalign(0.0);
+    // A raw network error carries the whole request URL. Without a cap the
+    // label's natural width is that URL, which stretched the panel across the
+    // dialog; without a line limit it pushed the results out of view.
+    search_status.set_width_chars(1);
+    search_status.set_max_width_chars(44);
+    search_status.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    search_status.set_lines(4);
+    search_status.set_ellipsize(gtk::pango::EllipsizeMode::End);
 
     let results = gtk::Box::new(gtk::Orientation::Vertical, 6);
     let results_scroll = gtk::ScrolledWindow::builder()
