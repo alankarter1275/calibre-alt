@@ -1,7 +1,7 @@
 //! P4 — Analytics: honest numbers derived from the catalog and session log.
 
 use crate::db::{Catalog, LibraryStats};
-use crate::widgets::charts::{line_chart, monthly_series, sparkline};
+use crate::widgets::charts::{line_chart, monthly_series, sparkline, streak_strip};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::rc::Rc;
@@ -9,11 +9,15 @@ use std::rc::Rc;
 #[derive(Debug)]
 pub enum AnalyticsMsg {
     Refresh,
+    SetGoal(i64),
 }
 
 pub struct AnalyticsModel {
     catalog: Rc<Catalog>,
     stats: LibraryStats,
+    goal: i64,
+    finished_this_year: i64,
+    week: [bool; 7],
 }
 
 #[relm4::component(pub)]
@@ -78,10 +82,15 @@ impl Component for AnalyticsModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let stats = catalog.library_stats().unwrap_or_default();
-        let model = AnalyticsModel { catalog, stats };
+        let model = AnalyticsModel {
+            goal: catalog.reading_goal(),
+            finished_this_year: catalog.finished_this_year(),
+            week: catalog.week_activity(),
+            catalog,
+            stats,
+        };
         let widgets = view_output!();
-        rebuild(&widgets.body, &model.stats);
-        let _ = sender;
+        rebuild(&widgets.body, &model, &sender);
         ComponentParts { model, widgets }
     }
 
@@ -94,15 +103,29 @@ impl Component for AnalyticsModel {
     ) {
         match msg {
             AnalyticsMsg::Refresh => {
-                self.stats = self.catalog.library_stats().unwrap_or_default();
+                self.reload();
+            }
+            AnalyticsMsg::SetGoal(books) => {
+                self.catalog.set_reading_goal(books);
+                self.reload();
             }
         }
-        rebuild(&widgets.body, &self.stats);
+        rebuild(&widgets.body, self, &sender);
         self.update_view(widgets, sender);
     }
 }
 
-fn rebuild(body: &gtk::Box, stats: &LibraryStats) {
+impl AnalyticsModel {
+    fn reload(&mut self) {
+        self.stats = self.catalog.library_stats().unwrap_or_default();
+        self.goal = self.catalog.reading_goal();
+        self.finished_this_year = self.catalog.finished_this_year();
+        self.week = self.catalog.week_activity();
+    }
+}
+
+fn rebuild(body: &gtk::Box, model: &AnalyticsModel, sender: &ComponentSender<AnalyticsModel>) {
+    let stats = &model.stats;
     while let Some(child) = body.first_child() {
         body.remove(&child);
     }
@@ -154,6 +177,93 @@ fn rebuild(body: &gtk::Box, stats: &LibraryStats) {
         &streak_blurb(stats.current_streak_days, stats.longest_streak_days),
     ));
     body.append(&hero);
+
+    // ── goal + weekly streak ────────────────────────────────────────────
+    let goal_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+
+    let goal_card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    goal_card.add_css_class("kalam-chart-card");
+    goal_card.set_hexpand(true);
+
+    let goal_head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let gl = gtk::Label::new(Some("YEARLY GOAL"));
+    gl.add_css_class("kalam-section-label");
+    gl.set_hexpand(true);
+    gl.set_halign(gtk::Align::Start);
+    goal_head.append(&gl);
+    goal_card.append(&goal_head);
+
+    if model.goal > 0 {
+        let figure = gtk::Label::new(Some(&format!(
+            "{} / {} books",
+            model.finished_this_year, model.goal
+        )));
+        figure.add_css_class("kalam-hero-value");
+        figure.set_halign(gtk::Align::Start);
+        goal_card.append(&figure);
+
+        let bar = gtk::ProgressBar::new();
+        bar.set_fraction((model.finished_this_year as f64 / model.goal as f64).clamp(0.0, 1.0));
+        bar.add_css_class("kalam-mini-progress");
+        goal_card.append(&bar);
+
+        let left = (model.goal - model.finished_this_year).max(0);
+        let note = gtk::Label::new(Some(&if left == 0 {
+            "Goal reached — nicely done.".to_string()
+        } else {
+            format!("{left} to go this year")
+        }));
+        note.add_css_class("kalam-hero-blurb");
+        note.set_halign(gtk::Align::Start);
+        goal_card.append(&note);
+    } else {
+        let note = gtk::Label::new(Some("No goal set for this year."));
+        note.add_css_class("kalam-hero-blurb");
+        note.set_halign(gtk::Align::Start);
+        goal_card.append(&note);
+    }
+
+    let picker = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    for target in [0_i64, 12, 24, 52] {
+        let b = gtk::Button::with_label(&if target == 0 {
+            "Off".to_string()
+        } else {
+            format!("{target}")
+        });
+        b.add_css_class("kalam-mini-btn");
+        if target == model.goal {
+            b.add_css_class("kalam-mini-btn-active");
+        }
+        let s = sender.clone();
+        b.connect_clicked(move |_| s.input(AnalyticsMsg::SetGoal(target)));
+        picker.append(&b);
+    }
+    let hint = gtk::Label::new(Some("Set goal:"));
+    hint.add_css_class("kalam-muted");
+    let picker_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    picker_row.append(&hint);
+    picker_row.append(&picker);
+    goal_card.append(&picker_row);
+    goal_row.append(&goal_card);
+
+    let streak_card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    streak_card.add_css_class("kalam-chart-card");
+    streak_card.set_hexpand(true);
+    let sl = gtk::Label::new(Some("DAILY STREAK"));
+    sl.add_css_class("kalam-section-label");
+    sl.set_halign(gtk::Align::Start);
+    streak_card.append(&sl);
+    streak_card.append(&streak_strip(model.week));
+    let sn = gtk::Label::new(Some(&format!(
+        "{} day streak · longest {}",
+        stats.current_streak_days, stats.longest_streak_days
+    )));
+    sn.add_css_class("kalam-hero-blurb");
+    sn.set_halign(gtk::Align::Start);
+    streak_card.append(&sn);
+    goal_row.append(&streak_card);
+
+    body.append(&goal_row);
 
     // ── reading activity line chart ─────────────────────────────────────
     if daily.iter().any(|v| *v > 0) {

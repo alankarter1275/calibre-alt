@@ -960,6 +960,85 @@ popover.kalam-reader-popover > contents {
     background: @kalam_accent;
 }
 
+/* ── ratings ────────────────────────────────────────── */
+.kalam-stars {
+    color: #fbbf24;
+    font-size: 0.95rem;
+}
+
+.kalam-stars-value {
+    font-size: 0.76rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-star-picker button {
+    background: transparent;
+    border: none;
+    min-width: 11px;
+    min-height: 24px;
+    padding: 0;
+    color: @kalam_border;
+    font-size: 1.2rem;
+}
+
+.kalam-star-half {
+    background-image: none;
+    box-shadow: none;
+}
+
+.kalam-star-left {
+    border-radius: 6px 0 0 6px;
+}
+
+.kalam-star-right {
+    border-radius: 0 6px 6px 0;
+}
+
+/* Filled halves use the same amber as the read-only display. */
+.kalam-star-filled {
+    background: #fbbf24;
+}
+
+.kalam-star-picker button:hover {
+    background: alpha(#fbbf24, 0.45);
+}
+
+/* ── streak strip ───────────────────────────────────── */
+.kalam-streak-day {
+    padding: 6px 2px;
+    border-radius: 10px;
+}
+
+.kalam-streak-today {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_accent;
+}
+
+.kalam-streak-label {
+    font-size: 0.72rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-streak-flame {
+    font-size: 1rem;
+}
+
+/* Inactive days keep their slot but recede. */
+.kalam-streak-off {
+    opacity: 0.22;
+}
+
+.kalam-mini-btn-active {
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+.kalam-note-entry {
+    font-size: 0.82rem;
+    min-height: 28px;
+    border-radius: 8px;
+}
+
 .kalam-hero-card {
     background: @kalam_surface;
     border: 1px solid @kalam_border;

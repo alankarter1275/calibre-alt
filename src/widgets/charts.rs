@@ -153,3 +153,113 @@ pub fn line_chart(series: &[i64], labels: &[String]) -> gtk::Box {
     wrap.append(&axis);
     wrap
 }
+
+/// Read-only star display, e.g. `★★★½☆` plus the numeric value.
+pub fn stars_label(half_stars: u8) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+
+    let full = half_stars / 2;
+    let half = half_stars % 2;
+    let mut glyphs = String::new();
+    for i in 0..5u8 {
+        if i < full {
+            glyphs.push('★');
+        } else if i == full && half == 1 {
+            glyphs.push('⯨');
+        } else {
+            glyphs.push('☆');
+        }
+    }
+
+    let stars = gtk::Label::new(Some(&glyphs));
+    stars.add_css_class("kalam-stars");
+    row.append(&stars);
+
+    if half_stars > 0 {
+        let value = gtk::Label::new(Some(&format!("{:.1}/5", half_stars as f32 / 2.0)));
+        value.add_css_class("kalam-stars-value");
+        row.append(&value);
+    }
+    row
+}
+
+/// Interactive 0–5 star picker in half-star steps. `on_pick` receives
+/// half-stars (0..=10); clicking the current value again clears the rating.
+pub fn star_picker(current: u8, on_pick: impl Fn(u8) + 'static) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+    row.add_css_class("kalam-star-picker");
+    let on_pick = std::rc::Rc::new(on_pick);
+
+    for star in 1..=5u8 {
+        // Two half-width buttons per star give half-star granularity without a
+        // fiddly custom drawing area.
+        for half in 0..2u8 {
+            let value = star * 2 - 1 + half;
+            let filled = current >= value;
+            let btn = gtk::Button::new();
+            btn.add_css_class("kalam-star-half");
+            btn.add_css_class(if half == 0 {
+                "kalam-star-left"
+            } else {
+                "kalam-star-right"
+            });
+            if filled {
+                btn.add_css_class("kalam-star-filled");
+            }
+            btn.set_tooltip_text(Some(&format!("{:.1} stars", value as f32 / 2.0)));
+
+            let on_pick = on_pick.clone();
+            btn.connect_clicked(move |_| {
+                // Clicking the active value clears it, so a rating is undoable.
+                on_pick(if current == value { 0 } else { value });
+            });
+            row.append(&btn);
+        }
+    }
+    row
+}
+
+/// Seven-day streak strip: weekday initials with a flame on active days.
+pub fn streak_strip(active: [bool; 7]) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    row.add_css_class("kalam-streak-strip");
+    row.set_homogeneous(true);
+
+    // `active` runs oldest → newest, so the last cell is today.
+    let today_idx = 6;
+    let labels = weekday_initials();
+
+    for (i, on) in active.iter().enumerate() {
+        let cell = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        cell.add_css_class("kalam-streak-day");
+        if i == today_idx {
+            cell.add_css_class("kalam-streak-today");
+        }
+
+        let name = gtk::Label::new(Some(labels[i]));
+        name.add_css_class("kalam-streak-label");
+        cell.append(&name);
+
+        let flame = gtk::Label::new(Some("🔥"));
+        flame.add_css_class("kalam-streak-flame");
+        if !on {
+            flame.add_css_class("kalam-streak-off");
+        }
+        cell.append(&flame);
+        row.append(&cell);
+    }
+    row
+}
+
+/// Weekday initials for the last seven days, oldest first.
+fn weekday_initials() -> [&'static str; 7] {
+    const NAMES: [&str; 7] = ["M", "T", "W", "T", "F", "S", "S"];
+    // 1970-01-01 was a Thursday, so day-of-week = (days + 3) mod 7 with Monday 0.
+    let today = crate::db::days_since_epoch();
+    let mut out = ["" ; 7];
+    for (i, slot) in out.iter_mut().enumerate() {
+        let day = today - (6 - i as i64);
+        *slot = NAMES[(((day + 3) % 7 + 7) % 7) as usize];
+    }
+    out
+}

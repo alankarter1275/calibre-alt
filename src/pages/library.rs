@@ -8,7 +8,7 @@
 use crate::db::{Catalog, LibraryStats, SortKey};
 use crate::models::{Book, LibrarySection};
 use crate::widgets::book_row::{build_book_card, cover_widget, CARD_H, CARD_W};
-use crate::widgets::charts::{line_chart, monthly_series, sparkline};
+use crate::widgets::charts::{line_chart, monthly_series, sparkline, stars_label};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::rc::Rc;
@@ -459,6 +459,12 @@ fn progress_strip(books: &[Book], sender: &ComponentSender<LibraryPageModel>) ->
         pct.add_css_class("kalam-progress");
         pct.set_halign(gtk::Align::End);
         cell.append(&pct);
+
+        if book.rating > 0 {
+            let stars = stars_label(book.rating);
+            stars.set_halign(gtk::Align::Start);
+            cell.append(&stars);
+        }
 
         let title = gtk::Label::new(Some(&book.title));
         title.add_css_class("kalam-book-card-title");

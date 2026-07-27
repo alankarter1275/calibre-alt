@@ -231,12 +231,23 @@ pub struct Book {
     pub cover_name: Option<String>,
     pub added_at: String,
     pub progress: u8,
+    /// 0..=10 half-stars; 0 means unrated.
+    pub rating: u8,
     pub tags: Vec<String>,
     pub cover_path: Option<PathBuf>,
     pub file_path: PathBuf,
 }
 
 impl Book {
+    /// `3.5` for 7 half-stars — `None` when unrated.
+    pub fn rating_stars(&self) -> Option<f32> {
+        if self.rating == 0 {
+            None
+        } else {
+            Some(self.rating as f32 / 2.0)
+        }
+    }
+
     pub fn authors_display(&self) -> &str {
         if self.authors.trim().is_empty() {
             "Unknown"

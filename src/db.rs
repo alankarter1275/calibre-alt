@@ -20,8 +20,9 @@ pub enum DbError {
 pub type Result<T> = std::result::Result<T, DbError>;
 
 /// Bumped whenever `migrate()` learns new tables/columns.
-/// v3 = P3 annotations & dictionary · v4 = P4 shelves, lists, history, sessions.
-pub const SCHEMA_VERSION: i64 = 4;
+/// v3 = P3 annotations & dictionary · v4 = P4 shelves, lists, history, sessions
+/// · v5 = ratings + reading goals.
+pub const SCHEMA_VERSION: i64 = 5;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -483,6 +484,20 @@ impl Catalog {
         // way to extend an existing table created by v1–v3.
         add_column_if_missing(&conn, "books", "last_opened_at", "TEXT")?;
         add_column_if_missing(&conn, "books", "finished_at", "TEXT")?;
+        // v5: half-star ratings stored as 0..=10 (i.e. tenths of the 5-star
+        // scale x2) so "3.5 stars" is an integer 7 and needs no float compare.
+        add_column_if_missing(&conn, "books", "rating", "INTEGER NOT NULL DEFAULT 0")?;
+
+        // Indexed *after* the ALTERs above, since these columns do not exist in
+        // the CREATE TABLE that older databases were built from.
+        // Stats and the dashboard filter on them on every visit.
+        conn.execute_batch(
+            "
+            CREATE INDEX IF NOT EXISTS idx_books_progress ON books(progress);
+            CREATE INDEX IF NOT EXISTS idx_books_last_opened ON books(last_opened_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_books_finished ON books(finished_at);
+            ",
+        )?;
 
         let version: Option<i64> = conn
             .query_row("SELECT version FROM schema_version LIMIT 1", [], |r| {
@@ -521,23 +536,18 @@ impl Catalog {
 
         let q = query.trim();
         let mut books = if q.is_empty() {
-            let sql = format!(
-                "SELECT id, uuid, title, authors, series, description, format, file_name,
-                        file_hash, cover_name, added_at, progress
-                 FROM books ORDER BY {order}"
-            );
+            let sql = format!("SELECT {BOOK_COLUMNS} FROM books ORDER BY {order}");
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map([], row_to_book)?;
             rows.collect::<std::result::Result<Vec<_>, _>>()?
         } else {
             let like = format!("%{}%", escape_like(q));
             let sql = format!(
-                "SELECT id, uuid, title, authors, series, description, format, file_name,
-                        file_hash, cover_name, added_at, progress
+                "SELECT {BOOK_COLUMNS}
                  FROM books
-                 WHERE title LIKE ?1 ESCAPE '\\'
-                    OR authors LIKE ?1 ESCAPE '\\'
-                    OR IFNULL(series,'') LIKE ?1 ESCAPE '\\'
+                 WHERE books.title LIKE ?1 ESCAPE '\\'
+                    OR books.authors LIKE ?1 ESCAPE '\\'
+                    OR IFNULL(books.series,'') LIKE ?1 ESCAPE '\\'
                  ORDER BY {order}"
             );
             let mut stmt = conn.prepare(&sql)?;
@@ -560,9 +570,7 @@ impl Catalog {
         let conn = self.conn.lock().expect("db lock");
         let mut book = conn
             .query_row(
-                "SELECT id, uuid, title, authors, series, description, format, file_name,
-                        file_hash, cover_name, added_at, progress
-                 FROM books WHERE id = ?1",
+                &format!("SELECT {BOOK_COLUMNS} FROM books WHERE books.id = ?1"),
                 params![id],
                 row_to_book,
             )
@@ -1084,6 +1092,70 @@ impl Catalog {
         let conn = self.conn.lock().expect("db lock");
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM dict_entries", [], |r| r.get(0))?;
         Ok(n)
+    }
+
+    // -----------------------------------------------------------------------
+    // P4.2: ratings & reading goals
+    // -----------------------------------------------------------------------
+
+    /// Ratings are stored as 0..=10 half-stars (7 == 3.5 stars); 0 == unrated.
+    pub fn set_book_rating(&self, book_id: i64, half_stars: u8) -> Result<()> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "UPDATE books SET rating = ?2 WHERE id = ?1",
+            params![book_id, half_stars.min(10) as i64],
+        )?;
+        Ok(())
+    }
+
+    /// Yearly target, e.g. "read 24 books this year". 0 disables the goal.
+    pub fn reading_goal(&self) -> i64 {
+        self.get_pref_i64("goal.books_per_year", 0)
+    }
+
+    pub fn set_reading_goal(&self, books: i64) {
+        self.set_pref("goal.books_per_year", &books.max(0).to_string());
+    }
+
+    /// Books finished since 1 January of the current year.
+    pub fn finished_this_year(&self) -> i64 {
+        let year = &chrono_like_now()[..4];
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(_) => return 0,
+        };
+        conn.query_row(
+            "SELECT COUNT(*) FROM books
+             WHERE finished_at IS NOT NULL AND substr(finished_at, 1, 4) = ?1",
+            params![year],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
+    }
+
+    /// Which of the last 7 days had any reading — powers the streak strip.
+    /// Index 0 is six days ago, index 6 is today.
+    pub fn week_activity(&self) -> [bool; 7] {
+        let mut out = [false; 7];
+        let Ok(conn) = self.conn.lock() else {
+            return out;
+        };
+        let cutoff = iso_days_ago(6);
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT DISTINCT substr(started_at, 1, 10) FROM reading_sessions
+             WHERE started_at >= ?1 AND seconds > 0",
+        ) else {
+            return out;
+        };
+        let Ok(rows) = stmt.query_map(params![cutoff], |r| r.get::<_, String>(0)) else {
+            return out;
+        };
+        let days: Vec<String> = rows.flatten().collect();
+        for (i, slot) in out.iter_mut().enumerate() {
+            let key = iso_days_ago(6 - i as i64)[..10].to_string();
+            *slot = days.iter().any(|d| *d == key);
+        }
+        out
     }
 
     // -----------------------------------------------------------------------
@@ -1932,7 +2004,7 @@ impl Catalog {
 /// Shared projection so every book query returns the same column order.
 const BOOK_COLUMNS: &str = "books.id, books.uuid, books.title, books.authors, books.series, \
      books.description, books.format, books.file_name, books.file_hash, books.cover_name, \
-     books.added_at, books.progress";
+     books.added_at, books.progress, books.rating";
 
 /// Sessions longer than this are almost certainly an idle window.
 const MAX_SESSION_SECONDS: i64 = 6 * 60 * 60;
@@ -2038,6 +2110,15 @@ fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     era * 146097 + doe - 719468
 }
 
+/// Whole days since the Unix epoch, for weekday arithmetic.
+pub fn days_since_epoch() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| (d.as_secs() / 86400) as i64)
+        .unwrap_or(0)
+}
+
 /// ISO-8601 UTC timestamp for midnight `days` ago — used by date-window rules.
 pub fn iso_days_ago(days: i64) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -2085,6 +2166,8 @@ fn row_to_book(row: &rusqlite::Row<'_>) -> rusqlite::Result<Book> {
         cover_name: row.get(9)?,
         added_at: row.get(10)?,
         progress: row.get::<_, i64>(11)? as u8,
+        // Older rows predate the column; treat a read failure as unrated.
+        rating: row.get::<_, i64>(12).unwrap_or(0) as u8,
         tags: Vec::new(),
         cover_path: None,
         file_path: PathBuf::new(),

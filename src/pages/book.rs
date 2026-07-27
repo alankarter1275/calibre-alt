@@ -1,4 +1,6 @@
 use crate::db::{Catalog, ShelfKind};
+use crate::widgets::book_row::invalidate_cover_cache;
+use crate::widgets::charts::star_picker;
 use crate::models::Book;
 use crate::widgets::book_row::cover_widget;
 use gtk::prelude::*;
@@ -21,6 +23,7 @@ pub enum BookPageMsg {
     Delete,
     ToggleReadingList,
     ToggleFinished,
+    SetRating(u8),
     ShowShelfMenu,
     Refresh,
 }
@@ -99,6 +102,17 @@ impl Component for BookPageModel {
                     gtk::Label {
                         add_css_class: "kalam-progress",
                         set_halign: gtk::Align::Start,
+                    },
+
+                    gtk::Label {
+                        set_label: "YOUR RATING",
+                        add_css_class: "kalam-detail-section-title",
+                        set_halign: gtk::Align::Start,
+                    },
+                    #[name = "rating_host"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 8,
                     },
 
                     gtk::Label {
@@ -246,6 +260,11 @@ impl Component for BookPageModel {
             BookPageMsg::Delete => {
                 if let Some(book) = &self.book {
                     let id = book.id;
+                    // Drop the cached texture so a re-import of the same path
+                    // cannot show the old cover.
+                    if let Some(path) = &book.cover_path {
+                        invalidate_cover_cache(path);
+                    }
                     if self.catalog.delete_book(id).is_ok() {
                         self.book = None;
                         sender.output(BookPageOut::Deleted { book_id: id }).ok();
@@ -261,6 +280,13 @@ impl Component for BookPageModel {
                         let _ = self.catalog.add_to_reading_list(id);
                     }
                     self.reload_p4(id);
+                }
+            }
+            BookPageMsg::SetRating(half_stars) => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    let _ = self.catalog.set_book_rating(id, half_stars);
+                    self.book = self.catalog.get_book(id).ok().flatten();
                 }
             }
             BookPageMsg::ToggleFinished => {
@@ -340,6 +366,25 @@ impl BookPageModel {
             "Mark finished"
         });
 
+        // Star picker is rebuilt so the filled state matches the stored value.
+        let host = &widgets.rating_host;
+        while let Some(child) = host.first_child() {
+            host.remove(&child);
+        }
+        if let Some(book) = &self.book {
+            let s = sender.clone();
+            host.append(&star_picker(book.rating, move |v| {
+                s.input(BookPageMsg::SetRating(v))
+            }));
+            let hint = gtk::Label::new(Some(match book.rating_stars() {
+                Some(v) => return_rating_text(v),
+                None => "Not rated yet".into(),
+            }.as_str()));
+            hint.add_css_class("kalam-muted");
+            hint.set_valign(gtk::Align::Center);
+            host.append(&hint);
+        }
+
         let chips = &widgets.shelf_chips;
         while let Some(child) = chips.first_child() {
             chips.remove(&child);
@@ -357,6 +402,10 @@ impl BookPageModel {
         }
         let _ = sender;
     }
+}
+
+fn return_rating_text(v: f32) -> String {
+    format!("{v:.1} / 5 — click again to clear")
 }
 
 /// Checklist of manual shelves for one book.
