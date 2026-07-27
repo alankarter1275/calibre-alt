@@ -39,13 +39,18 @@ pub fn open_metadata_editor(
     let window = gtk::Window::builder()
         .title("Edit metadata")
         .modal(true)
-        .default_width(760)
-        .default_height(640)
+        .default_width(780)
+        // Deliberately short: on a 768px-tall laptop a 640px dialog plus window
+        // chrome pushed the action bar off-screen. Content scrolls instead.
+        .default_height(560)
         .build();
     window.add_css_class("kalam-window");
     if let Some(parent) = parent {
         window.set_transient_for(Some(parent));
     }
+
+    // Outer shell holds the scroller and an always-visible action bar.
+    let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
     let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
     root.set_margin_all(18);
@@ -85,7 +90,8 @@ pub fn open_metadata_editor(
         .buffer()
         .set_text(&crate::epub::strip_html(&book.description));
     let desc_scroll = gtk::ScrolledWindow::builder()
-        .min_content_height(110)
+        .min_content_height(120)
+        .max_content_height(120)
         .hscrollbar_policy(gtk::PolicyType::Never)
         .child(&desc_view)
         .build();
@@ -126,26 +132,33 @@ pub fn open_metadata_editor(
 
     let results = gtk::Box::new(gtk::Orientation::Vertical, 6);
     let results_scroll = gtk::ScrolledWindow::builder()
-        .min_content_height(150)
-        .vexpand(true)
+        .min_content_height(140)
+        .max_content_height(220)
         .hscrollbar_policy(gtk::PolicyType::Never)
         .child(&results)
         .build();
     root.append(&results_scroll);
 
-    // ── actions ─────────────────────────────────────────────────────────
+    // ── actions: pinned outside the scroller so Save is always reachable ─
+    let content_scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vexpand(true)
+        .child(&root)
+        .build();
+    shell.append(&content_scroll);
+
     let actions = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    actions.add_css_class("kalam-dialog-actions");
     actions.set_halign(gtk::Align::End);
-    actions.set_margin_top(4);
     let cancel = gtk::Button::with_label("Cancel");
     cancel.add_css_class("kalam-secondary-btn");
     let save = gtk::Button::with_label("Save");
     save.add_css_class("kalam-primary-btn");
     actions.append(&cancel);
     actions.append(&save);
-    root.append(&actions);
+    shell.append(&actions);
 
-    window.set_child(Some(&root));
+    window.set_child(Some(&shell));
 
     // Cover bytes fetched from Open Library, written only on Save.
     let pending_cover: Rc<RefCell<Option<Vec<u8>>>> = Rc::new(RefCell::new(None));

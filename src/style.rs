@@ -961,6 +961,13 @@ popover.kalam-reader-popover > contents {
 }
 
 /* ── metadata editor ────────────────────────────────── */
+/* Pinned below the scroller, so Save never scrolls out of reach. */
+.kalam-dialog-actions {
+    padding: 12px 18px;
+    background: @kalam_surface;
+    border-top: 1px solid @kalam_border;
+}
+
 .kalam-desc-scroll {
     border: 1px solid @kalam_border;
     border-radius: 8px;
