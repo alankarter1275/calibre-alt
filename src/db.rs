@@ -17,7 +17,6 @@ mod prefs;
 mod shelves;
 mod stats;
 
-
 #[derive(Debug, Error)]
 pub enum DbError {
     #[error("sqlite: {0}")]
