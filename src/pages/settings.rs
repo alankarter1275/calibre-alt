@@ -708,7 +708,10 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
                     if key.is_empty() {
                         crate::notify::info("Google Books key cleared", "Using the shared quota");
                     } else {
-                        crate::notify::success("Google Books key saved", "Your own quota is in use");
+                        crate::notify::success(
+                            "Google Books key saved",
+                            "Your own quota is in use",
+                        );
                     }
                 });
             }

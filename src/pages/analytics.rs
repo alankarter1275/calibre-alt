@@ -109,7 +109,10 @@ impl Component for AnalyticsModel {
                 self.catalog.set_reading_goal(books);
                 crate::notify::success(
                     "Reading goal saved",
-                    &format!("{books} book{} this year", if books == 1 { "" } else { "s" }),
+                    &format!(
+                        "{books} book{} this year",
+                        if books == 1 { "" } else { "s" }
+                    ),
                 );
                 self.reload();
             }

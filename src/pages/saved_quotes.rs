@@ -151,7 +151,10 @@ impl Component for SavedQuotesModel {
                     Ok(()) => {
                         self.status = format!("Exported to {}", out_path.display());
                         crate::notify::success(
-                            &format!("{count} quote{} exported", if count == 1 { "" } else { "s" }),
+                            &format!(
+                                "{count} quote{} exported",
+                                if count == 1 { "" } else { "s" }
+                            ),
                             &out_path.display().to_string(),
                         );
                     }
