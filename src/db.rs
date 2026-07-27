@@ -1405,8 +1405,7 @@ impl Catalog {
                     .to_ascii_lowercase();
                 let dest_name = format!("cover-restored.{ext}");
                 let dest = book_dir(&book.uuid).join(&dest_name);
-                if fs::create_dir_all(book_dir(&book.uuid)).is_ok()
-                    && fs::copy(&src, &dest).is_ok()
+                if fs::create_dir_all(book_dir(&book.uuid)).is_ok() && fs::copy(&src, &dest).is_ok()
                 {
                     self.set_cover_name(book_id, Some(&dest_name))?;
                 }
