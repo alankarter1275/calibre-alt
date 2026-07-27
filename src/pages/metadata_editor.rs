@@ -20,8 +20,12 @@ use std::rc::Rc;
 
 /// Width of the slide-out search panel, and how much the window grows to
 /// accommodate it so the form itself never gets squeezed.
-const PANEL_WIDTH: i32 = 330;
-const BASE_WIDTH: i32 = 780;
+/// The right-hand column. The publication/cover block and the search panel
+/// both occupy exactly this width, so revealing the panel swaps one for the
+/// other without the dialog or the form changing size.
+const PANEL_WIDTH: i32 = 400;
+/// The left-hand form column.
+const BASE_WIDTH: i32 = 620;
 /// Total dialog width: form plus room for the search panel. Fixed for the
 /// lifetime of the dialog so revealing the panel cannot push it off-screen or
 /// leave it visually off-centre.
@@ -206,7 +210,7 @@ fn open_editor_inner(
 
     let side = gtk::Box::new(gtk::Orientation::Vertical, 8);
     side.set_valign(gtk::Align::Start);
-    side.set_size_request(230, -1);
+    side.set_size_request(PANEL_WIDTH, -1);
     side.add_css_class("kalam-metadata-side");
     side.append(&pub_block);
     side.append(&cover_block);
@@ -237,7 +241,7 @@ fn open_editor_inner(
     search_status.set_xalign(0.0);
     // Without a cap a long error message widens the whole panel.
     search_status.set_width_chars(1);
-    search_status.set_max_width_chars(36);
+    search_status.set_max_width_chars(42);
 
     let results = gtk::Box::new(gtk::Orientation::Vertical, 6);
     let results_scroll = gtk::ScrolledWindow::builder()
@@ -279,7 +283,7 @@ fn open_editor_inner(
     hint.set_wrap(true);
     hint.set_xalign(0.0);
     hint.set_width_chars(1);
-    hint.set_max_width_chars(36);
+    hint.set_max_width_chars(42);
     panel.append(&hint);
 
     // Revealer gives the slide-out; the window widens to match.
@@ -897,7 +901,7 @@ fn rebuild_results(
         // width_chars(1) makes the natural request tiny, so a long title
         // ellipsizes instead of widening the panel.
         title.set_width_chars(1);
-        title.set_max_width_chars(1);
+        title.set_max_width_chars(34);
         title.set_tooltip_text(Some(&candidate.title));
         text.append(&title);
 
@@ -908,7 +912,7 @@ fn rebuild_results(
         meta.set_xalign(0.0);
         meta.set_ellipsize(gtk::pango::EllipsizeMode::End);
         meta.set_width_chars(1);
-        meta.set_max_width_chars(1);
+        meta.set_max_width_chars(38);
         meta.set_tooltip_text(Some(&summary));
         text.append(&meta);
         row.append(&text);
