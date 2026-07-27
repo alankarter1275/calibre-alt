@@ -188,32 +188,35 @@ impl AppModel {
                 PageSlot::SavedWords(ctrl)
             }
             Route::LibrarySection(LibrarySection::ReadingList) => {
-                let ctrl = ReadingListModel::builder()
-                    .launch(catalog.clone())
-                    .forward(sender.input_sender(), |out| match out {
+                let ctrl = ReadingListModel::builder().launch(catalog.clone()).forward(
+                    sender.input_sender(),
+                    |out| match out {
                         ReadingListOut::OpenBook { book_id } => {
                             AppMsg::Push(Route::BookPage { book_id })
                         }
                         ReadingListOut::OpenReader { book_id } => AppMsg::OpenReader { book_id },
-                    });
+                    },
+                );
                 PageSlot::ReadingList(ctrl)
             }
             Route::LibrarySection(LibrarySection::History) => {
-                let ctrl = HistoryModel::builder()
-                    .launch(catalog.clone())
-                    .forward(sender.input_sender(), |out| match out {
+                let ctrl = HistoryModel::builder().launch(catalog.clone()).forward(
+                    sender.input_sender(),
+                    |out| match out {
                         HistoryOut::OpenBook { book_id } => {
                             AppMsg::Push(Route::BookPage { book_id })
                         }
-                    });
+                    },
+                );
                 PageSlot::History(ctrl)
             }
             Route::LibrarySection(LibrarySection::Tags) => {
-                let ctrl = TagsModel::builder()
-                    .launch(catalog.clone())
-                    .forward(sender.input_sender(), |out| match out {
+                let ctrl = TagsModel::builder().launch(catalog.clone()).forward(
+                    sender.input_sender(),
+                    |out| match out {
                         TagsOut::OpenTag { tag } => AppMsg::Push(Route::TagBooks { tag }),
-                    });
+                    },
+                );
                 PageSlot::Tags(ctrl)
             }
             Route::LibrarySection(LibrarySection::Analytics) => {
@@ -222,13 +225,14 @@ impl AppModel {
             }
             Route::LibrarySection(section) => PageSlot::Widget(placeholder_section(*section)),
             Route::Module(NavItem::Shelves) | Route::ShelvesGrid => {
-                let ctrl = ShelvesGridModel::builder()
-                    .launch(catalog.clone())
-                    .forward(sender.input_sender(), |out| match out {
+                let ctrl = ShelvesGridModel::builder().launch(catalog.clone()).forward(
+                    sender.input_sender(),
+                    |out| match out {
                         ShelvesOut::OpenShelf { shelf_id } => {
                             AppMsg::Push(Route::ShelfDetail { shelf_id })
                         }
-                    });
+                    },
+                );
                 PageSlot::Shelves(ctrl)
             }
             Route::ShelfDetail { shelf_id } => {

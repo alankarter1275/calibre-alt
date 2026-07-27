@@ -35,7 +35,9 @@ pub fn open_shelf_editor(
     on_saved: impl Fn() + 'static,
 ) {
     let (shelf_id, kind, name0, desc0, rules0) = match mode {
-        ShelfEditorMode::Create(kind) => (None, kind, String::new(), String::new(), RuleSet::default()),
+        ShelfEditorMode::Create(kind) => {
+            (None, kind, String::new(), String::new(), RuleSet::default())
+        }
         ShelfEditorMode::Edit { shelf_id } => match catalog.get_shelf(shelf_id) {
             Ok(Some(shelf)) => (
                 Some(shelf.id),
@@ -227,10 +229,7 @@ pub fn open_shelf_editor(
                 show_error(&error_label, "Give the shelf a name.");
                 return;
             }
-            if catalog
-                .shelf_name_taken(&name, shelf_id)
-                .unwrap_or(false)
-            {
+            if catalog.shelf_name_taken(&name, shelf_id).unwrap_or(false) {
                 show_error(&error_label, "A shelf with that name already exists.");
                 return;
             }
@@ -335,10 +334,7 @@ fn build_rule_row(
     // ── field ───────────────────────────────────────────────────────────
     let field_labels: Vec<&str> = RuleField::ALL.iter().map(|f| f.label()).collect();
     let field_combo = gtk::DropDown::from_strings(&field_labels);
-    let field_index = RuleField::ALL
-        .iter()
-        .position(|f| *f == field)
-        .unwrap_or(0) as u32;
+    let field_index = RuleField::ALL.iter().position(|f| *f == field).unwrap_or(0) as u32;
     field_combo.set_selected(field_index);
     row.append(&field_combo);
 
@@ -461,10 +457,7 @@ fn update_count(label: &gtk::Label, rules: &Rc<RefCell<RuleSet>>, catalog: &Rc<C
         return;
     }
     match catalog.count_matching_rules(&set) {
-        Ok(n) => label.set_label(&format!(
-            "{n} book{} match",
-            if n == 1 { "" } else { "s" }
-        )),
+        Ok(n) => label.set_label(&format!("{n} book{} match", if n == 1 { "" } else { "s" })),
         Err(err) => label.set_label(&format!("Rule error: {err}")),
     }
 }

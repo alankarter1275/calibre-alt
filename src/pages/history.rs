@@ -108,7 +108,9 @@ impl Component for HistoryModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let events = catalog.list_events(None, "", PAGE_LIMIT).unwrap_or_default();
+        let events = catalog
+            .list_events(None, "", PAGE_LIMIT)
+            .unwrap_or_default();
         let model = HistoryModel {
             catalog,
             events,
@@ -260,7 +262,11 @@ fn build_row(event: &ReadingEvent, sender: &ComponentSender<HistoryModel>) -> gt
     text.append(&title);
 
     let detail = if event.detail == "auto" && event.kind == EventKind::Finished {
-        format!("{} automatically · {}", event.kind.label(), event.book_authors)
+        format!(
+            "{} automatically · {}",
+            event.kind.label(),
+            event.book_authors
+        )
     } else {
         format!("{} · {}", event.kind.label(), event.book_authors)
     };

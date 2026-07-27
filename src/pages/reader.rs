@@ -298,10 +298,7 @@ color:#3e3226;font-family:Georgia,serif'>\
                 .unwrap_or(0);
             model.session_start_pct = start_pct;
             model.session_start = std::time::Instant::now();
-            model.session_id = model
-                .catalog
-                .start_reading_session(book_id, start_pct)
-                .ok();
+            model.session_id = model.catalog.start_reading_session(book_id, start_pct).ok();
         }
         let model = model;
 

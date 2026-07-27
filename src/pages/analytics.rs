@@ -138,7 +138,11 @@ fn rebuild(body: &gtk::Box, stats: &LibraryStats) {
             format!(
                 "{} day{}",
                 stats.current_streak_days,
-                if stats.current_streak_days == 1 { "" } else { "s" }
+                if stats.current_streak_days == 1 {
+                    ""
+                } else {
+                    "s"
+                }
             ),
         ),
         (
@@ -146,7 +150,11 @@ fn rebuild(body: &gtk::Box, stats: &LibraryStats) {
             format!(
                 "{} day{}",
                 stats.longest_streak_days,
-                if stats.longest_streak_days == 1 { "" } else { "s" }
+                if stats.longest_streak_days == 1 {
+                    ""
+                } else {
+                    "s"
+                }
             ),
         ),
         ("Finished (30d)", stats.finished_last_30.to_string()),

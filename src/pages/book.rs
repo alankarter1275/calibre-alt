@@ -209,11 +209,7 @@ impl Component for BookPageModel {
     ) -> ComponentParts<Self> {
         let book = catalog.get_book(book_id).ok().flatten();
         let in_reading_list = catalog.is_in_reading_list(book_id).unwrap_or(false);
-        let finished = catalog
-            .book_finished_at(book_id)
-            .ok()
-            .flatten()
-            .is_some();
+        let finished = catalog.book_finished_at(book_id).ok().flatten().is_some();
         let shelves = catalog.shelves_for_book(book_id).unwrap_or_default();
         let model = BookPageModel {
             catalog,
@@ -280,7 +276,9 @@ impl Component for BookPageModel {
                     let id = book.id;
                     let s = sender.clone();
                     open_shelf_menu(
-                        root.root().and_then(|r| r.downcast::<gtk::Window>().ok()).as_ref(),
+                        root.root()
+                            .and_then(|r| r.downcast::<gtk::Window>().ok())
+                            .as_ref(),
                         self.catalog.clone(),
                         id,
                         move || s.input(BookPageMsg::Refresh),

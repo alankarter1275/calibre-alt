@@ -202,9 +202,7 @@ impl Component for ShelfDetailModel {
                     open_shelf_editor(
                         window_of(root).as_ref(),
                         self.catalog.clone(),
-                        ShelfEditorMode::Edit {
-                            shelf_id: shelf.id,
-                        },
+                        ShelfEditorMode::Edit { shelf_id: shelf.id },
                         move || s.input(ShelfDetailMsg::Refresh),
                     );
                 }
@@ -311,7 +309,8 @@ impl ShelfDetailModel {
                 s1.output(ShelfDetailOut::OpenBook { book_id: id }).ok();
             },
             move |id| {
-                s2.output(ShelfDetailOut::OpenBookDialog { book_id: id }).ok();
+                s2.output(ShelfDetailOut::OpenBookDialog { book_id: id })
+                    .ok();
             },
         );
         list.append(&grid);
@@ -332,12 +331,7 @@ impl ShelfDetailModel {
         }
     }
 
-    fn manage_row(
-        &self,
-        shelf_id: i64,
-        book: &Book,
-        sender: &ComponentSender<Self>,
-    ) -> gtk::Box {
+    fn manage_row(&self, shelf_id: i64, book: &Book, sender: &ComponentSender<Self>) -> gtk::Box {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         row.add_css_class("kalam-manage-row");
 
