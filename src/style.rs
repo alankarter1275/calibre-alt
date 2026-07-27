@@ -992,37 +992,45 @@ popover.kalam-reader-popover > contents {
     font-size: 1.05rem;
 }
 
-/* The accent stripe carries the severity, as in the reference. */
+/* The accent stripe carries the severity. Colours sampled straight out of
+   docs/design/notifications.png: the reference uses muted, desaturated tones,
+   not the bright mint/salmon this first shipped with. A rounded pill inset
+   from the card edge, not a full-height bar. */
+.kalam-toast-accent {
+    border-radius: 999px;
+    margin-left: 4px;
+}
+
 .kalam-toast-success .kalam-toast-accent {
-    background: #6ee7b7;
+    background: #a8c4a8;
 }
 
 .kalam-toast-success .kalam-toast-icon {
-    color: #6ee7b7;
+    color: #a8c4a8;
 }
 
 .kalam-toast-error .kalam-toast-accent {
-    background: #fca5a5;
+    background: #c47a7a;
 }
 
 .kalam-toast-error .kalam-toast-icon {
-    color: #fca5a5;
+    color: #c47a7a;
 }
 
 .kalam-toast-info .kalam-toast-accent {
-    background: alpha(#e8eaf0, 0.35);
+    background: #4e4d4a;
 }
 
 .kalam-toast-info .kalam-toast-icon {
-    color: alpha(#e8eaf0, 0.6);
+    color: #89877f;
 }
 
 .kalam-toast-progress .kalam-toast-accent {
-    background: #86efac;
+    background: #a8c4a8;
 }
 
 .kalam-toast-progress .kalam-toast-icon {
-    color: #86efac;
+    color: #a8c4a8;
 }
 
 /* ── metadata editor ────────────────────────────────── */
