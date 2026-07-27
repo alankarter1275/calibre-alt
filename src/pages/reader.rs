@@ -651,8 +651,7 @@ color:#3e3226;font-family:Georgia,serif'>\
                 let next = (self.font_px as i32 + d).clamp(14, 36) as u32;
                 if next != self.font_px {
                     self.font_px = next;
-                    self.catalog
-                        .set_pref("reader.font_px", &next.to_string());
+                    self.catalog.set_pref("reader.font_px", &next.to_string());
                     set_font_size_label(widgets, next);
                     self.loading = true;
                     load_chapter(self);
@@ -1203,7 +1202,8 @@ fn refresh_theme_buttons(widgets: &ReaderModelWidgets, active: ReadingTheme) {
     for theme in [ReadingTheme::Light, ReadingTheme::Sepia, ReadingTheme::Dark] {
         unsafe {
             if let Some(tick) = pop.data::<gtk::Label>(theme_tick_key(theme)) {
-                tick.as_ref().set_opacity(if theme == active { 1.0 } else { 0.0 });
+                tick.as_ref()
+                    .set_opacity(if theme == active { 1.0 } else { 0.0 });
             }
         }
     }
