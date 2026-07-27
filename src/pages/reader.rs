@@ -654,8 +654,7 @@ color:#3e3226;font-family:Georgia,serif'>\
                 let next = (self.font_px as i32 + d).clamp(14, 36) as u32;
                 if next != self.font_px {
                     self.font_px = next;
-                    self.catalog
-                        .set_pref("reader.font_px", &next.to_string());
+                    self.catalog.set_pref("reader.font_px", &next.to_string());
                     self.refresh_font_label();
                     self.loading = true;
                     load_chapter(self);
