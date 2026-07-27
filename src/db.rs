@@ -1331,8 +1331,17 @@ impl Catalog {
             .optional()?
         };
 
-        let Some((title, authors, series, series_index, publisher, published, description, tags, rating)) =
-            row
+        let Some((
+            title,
+            authors,
+            series,
+            series_index,
+            publisher,
+            published,
+            description,
+            tags,
+            rating,
+        )) = row
         else {
             return Ok(false);
         };
