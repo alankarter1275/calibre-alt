@@ -10,7 +10,6 @@ pub enum LibraryOut {
 }
 
 pub struct LibraryPageModel {
-    #[allow(dead_code)]
     catalog: Rc<Catalog>,
     count: usize,
 }
@@ -66,8 +65,16 @@ impl SimpleComponent for LibraryPageModel {
         let model = LibraryPageModel { catalog, count };
         let widgets = view_output!();
 
+        // One stats query for all tiles rather than one per tile.
+        let stats = model.catalog.library_stats().unwrap_or_default();
+        let tag_count = model
+            .catalog
+            .list_tags_with_counts()
+            .map(|t| t.len() as i64)
+            .unwrap_or(0);
+
         for section in LibrarySection::ALL {
-            let tile = make_hub_tile(*section);
+            let tile = make_hub_tile(*section, section_count(*section, &stats, tag_count));
             let sec = *section;
             let s = sender.clone();
             let btn = gtk::Button::new();
@@ -83,7 +90,23 @@ impl SimpleComponent for LibraryPageModel {
     }
 }
 
-fn make_hub_tile(section: LibrarySection) -> gtk::Box {
+/// Live count shown under each hub tile, or None where a count is meaningless.
+fn section_count(
+    section: LibrarySection,
+    stats: &crate::db::LibraryStats,
+    tag_count: i64,
+) -> Option<i64> {
+    match section {
+        LibrarySection::AllBooks => Some(stats.total_books),
+        LibrarySection::ReadingList => Some(stats.reading_list),
+        LibrarySection::SavedQuotes => Some(stats.quotes),
+        LibrarySection::SavedWords => Some(stats.saved_words),
+        LibrarySection::Tags => Some(tag_count),
+        LibrarySection::History | LibrarySection::Analytics => None,
+    }
+}
+
+fn make_hub_tile(section: LibrarySection, count: Option<i64>) -> gtk::Box {
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 4);
     box_.set_halign(gtk::Align::Center);
 
@@ -95,6 +118,14 @@ fn make_hub_tile(section: LibrarySection) -> gtk::Box {
     label.add_css_class("kalam-hub-tile-label");
     label.set_halign(gtk::Align::Center);
 
+    if let Some(n) = count {
+        let badge = gtk::Label::new(Some(&n.to_string()));
+        badge.add_css_class("kalam-hub-tile-count");
+        badge.set_halign(gtk::Align::Center);
+        box_.append(&icon);
+        box_.append(&badge);
+    }
+
     let meta = gtk::Label::new(Some(section.blurb()));
     meta.add_css_class("kalam-hub-tile-meta");
     meta.set_halign(gtk::Align::Center);
@@ -102,7 +133,9 @@ fn make_hub_tile(section: LibrarySection) -> gtk::Box {
     meta.set_max_width_chars(18);
     meta.set_justify(gtk::Justification::Center);
 
-    box_.append(&icon);
+    if count.is_none() {
+        box_.append(&icon);
+    }
     box_.append(&label);
     box_.append(&meta);
     box_

@@ -88,6 +88,10 @@ pub struct ReaderModel {
     dict_lookup_rect_json: Option<String>,
     dict_context: Option<String>,
     last_selection: Option<String>,
+    /// P4: open reading session row + when it started, for time tracking.
+    session_id: Option<i64>,
+    session_start: std::time::Instant,
+    session_start_pct: i64,
 }
 
 #[relm4::component(pub)]
@@ -275,7 +279,31 @@ color:#3e3226;font-family:Georgia,serif'>\
             dict_lookup_rect_json: None,
             dict_context: None,
             last_selection: None,
+            session_id: None,
+            session_start: std::time::Instant::now(),
+            session_start_pct: 0,
         };
+
+        let mut model = model;
+        // P4: history + time tracking. Only for books that actually opened —
+        // a failed EPUB shouldn't pollute History or the reading stats.
+        if model.open.chapter_count() > 0 {
+            let _ = model.catalog.mark_book_opened(book_id);
+            let start_pct = model
+                .catalog
+                .get_book(book_id)
+                .ok()
+                .flatten()
+                .map(|b| b.progress as i64)
+                .unwrap_or(0);
+            model.session_start_pct = start_pct;
+            model.session_start = std::time::Instant::now();
+            model.session_id = model
+                .catalog
+                .start_reading_session(book_id, start_pct)
+                .ok();
+        }
+        let model = model;
 
         let widgets = view_output!();
         widgets.web_host.append(&webview);
@@ -776,6 +804,7 @@ color:#3e3226;font-family:Georgia,serif'>\
 
     fn shutdown(&mut self, _widgets: &mut Self::Widgets, _output: relm4::Sender<Self::Output>) {
         self.save_progress();
+        self.close_session();
     }
 }
 
@@ -794,6 +823,30 @@ impl ReaderModel {
             self.fraction,
             self.open.chapter_count(),
         );
+        // P4: crossing the end auto-marks the book finished (once).
+        let pct = self.progress_pct();
+        let _ = self.catalog.auto_finish_if_complete(self.book_id, pct);
+    }
+
+    fn progress_pct(&self) -> i64 {
+        let count = self.open.chapter_count();
+        if count == 0 {
+            return 0;
+        }
+        let overall = ((self.chapter as f64) + self.fraction) / (count as f64) * 100.0;
+        overall.round().clamp(0.0, 100.0) as i64
+    }
+
+    /// Close the open reading-session row. Idempotent: called from shutdown,
+    /// and the id is cleared so a second call is a no-op.
+    fn close_session(&mut self) {
+        let Some(session_id) = self.session_id.take() else {
+            return;
+        };
+        let seconds = self.session_start.elapsed().as_secs() as i64;
+        let _ = self
+            .catalog
+            .end_reading_session(session_id, seconds, self.progress_pct());
     }
 
     fn go_chapter(&mut self, idx: usize, frac: f64) {

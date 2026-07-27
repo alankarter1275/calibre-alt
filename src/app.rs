@@ -4,17 +4,21 @@ use crate::db::Catalog;
 use crate::models::{LibrarySection, NavItem, Route};
 use crate::pages::{
     all_books::{AllBooksModel, AllBooksOut},
+    analytics::AnalyticsModel,
     book::{BookPageModel, BookPageOut},
     book_float::{BookFloatModel, BookFloatOut},
+    history::{HistoryModel, HistoryOut},
     home::{HomeOut, HomePageModel},
     library::{LibraryOut, LibraryPageModel},
     placeholder::PlaceholderPageModel,
     reader::{ReaderModel, ReaderOut},
+    reading_list::{ReadingListModel, ReadingListOut},
     saved_quotes::{SavedQuotesModel, SavedQuotesOut},
     saved_words::{SavedWordsModel, SavedWordsOut},
     settings::SettingsPageModel,
     shelf_detail::{ShelfDetailModel, ShelfDetailOut},
     shelves_grid::{ShelvesGridModel, ShelvesOut},
+    tags::{TagBooksModel, TagBooksOut, TagsModel, TagsOut},
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -47,6 +51,11 @@ enum PageSlot {
     SavedWords(Controller<SavedWordsModel>),
     Shelves(Controller<ShelvesGridModel>),
     ShelfDetail(Controller<ShelfDetailModel>),
+    ReadingList(Controller<ReadingListModel>),
+    History(Controller<HistoryModel>),
+    Tags(Controller<TagsModel>),
+    TagBooks(Controller<TagBooksModel>),
+    Analytics(Controller<AnalyticsModel>),
     Book(Controller<BookPageModel>),
     Reader(Controller<ReaderModel>),
     Settings(Controller<SettingsPageModel>),
@@ -64,6 +73,11 @@ impl PageSlot {
             PageSlot::SavedWords(c) => c.widget().clone().upcast(),
             PageSlot::Shelves(c) => c.widget().clone().upcast(),
             PageSlot::ShelfDetail(c) => c.widget().clone().upcast(),
+            PageSlot::ReadingList(c) => c.widget().clone().upcast(),
+            PageSlot::History(c) => c.widget().clone().upcast(),
+            PageSlot::Tags(c) => c.widget().clone().upcast(),
+            PageSlot::TagBooks(c) => c.widget().clone().upcast(),
+            PageSlot::Analytics(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
             PageSlot::Reader(c) => c.widget().clone().upcast(),
             PageSlot::Settings(c) => c.widget().clone().upcast(),
@@ -173,31 +187,75 @@ impl AppModel {
                         });
                 PageSlot::SavedWords(ctrl)
             }
+            Route::LibrarySection(LibrarySection::ReadingList) => {
+                let ctrl = ReadingListModel::builder()
+                    .launch(catalog.clone())
+                    .forward(sender.input_sender(), |out| match out {
+                        ReadingListOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                        ReadingListOut::OpenReader { book_id } => AppMsg::OpenReader { book_id },
+                    });
+                PageSlot::ReadingList(ctrl)
+            }
+            Route::LibrarySection(LibrarySection::History) => {
+                let ctrl = HistoryModel::builder()
+                    .launch(catalog.clone())
+                    .forward(sender.input_sender(), |out| match out {
+                        HistoryOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                    });
+                PageSlot::History(ctrl)
+            }
+            Route::LibrarySection(LibrarySection::Tags) => {
+                let ctrl = TagsModel::builder()
+                    .launch(catalog.clone())
+                    .forward(sender.input_sender(), |out| match out {
+                        TagsOut::OpenTag { tag } => AppMsg::Push(Route::TagBooks { tag }),
+                    });
+                PageSlot::Tags(ctrl)
+            }
+            Route::LibrarySection(LibrarySection::Analytics) => {
+                let ctrl = AnalyticsModel::builder().launch(catalog.clone()).detach();
+                PageSlot::Analytics(ctrl)
+            }
             Route::LibrarySection(section) => PageSlot::Widget(placeholder_section(*section)),
             Route::Module(NavItem::Shelves) | Route::ShelvesGrid => {
-                let ctrl =
-                    ShelvesGridModel::builder()
-                        .launch(())
-                        .forward(sender.input_sender(), |out| match out {
-                            ShelvesOut::OpenShelf { shelf_id } => {
-                                AppMsg::Push(Route::ShelfDetail { shelf_id })
-                            }
-                        });
+                let ctrl = ShelvesGridModel::builder()
+                    .launch(catalog.clone())
+                    .forward(sender.input_sender(), |out| match out {
+                        ShelvesOut::OpenShelf { shelf_id } => {
+                            AppMsg::Push(Route::ShelfDetail { shelf_id })
+                        }
+                    });
                 PageSlot::Shelves(ctrl)
             }
             Route::ShelfDetail { shelf_id } => {
-                let ctrl = ShelfDetailModel::builder().launch(*shelf_id).forward(
-                    sender.input_sender(),
-                    |out| match out {
+                let ctrl = ShelfDetailModel::builder()
+                    .launch((catalog.clone(), *shelf_id))
+                    .forward(sender.input_sender(), |out| match out {
                         ShelfDetailOut::OpenBook { book_id } => {
                             AppMsg::Push(Route::BookPage { book_id })
                         }
                         ShelfDetailOut::OpenBookDialog { book_id } => {
                             AppMsg::OpenBookDialog { book_id }
                         }
-                    },
-                );
+                    });
                 PageSlot::ShelfDetail(ctrl)
+            }
+            Route::TagBooks { tag } => {
+                let ctrl = TagBooksModel::builder()
+                    .launch((catalog.clone(), tag.clone()))
+                    .forward(sender.input_sender(), |out| match out {
+                        TagBooksOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                        TagBooksOut::OpenBookDialog { book_id } => {
+                            AppMsg::OpenBookDialog { book_id }
+                        }
+                    });
+                PageSlot::TagBooks(ctrl)
             }
             Route::BookPage { book_id } => {
                 let id = *book_id;
@@ -271,6 +329,15 @@ impl AppModel {
                 self.title_override = Some(b.title.clone());
                 self.subtitle_override = Some("Reading".into());
             }
+        }
+        if let Route::ShelfDetail { shelf_id } = &route {
+            if let Ok(Some(shelf)) = self.catalog.get_shelf(*shelf_id) {
+                self.title_override = Some(shelf.name.clone());
+                self.subtitle_override = Some(shelf.summary());
+            }
+        }
+        if let Route::TagBooks { tag } = &route {
+            self.title_override = Some(format!("#{tag}"));
         }
 
         // Toggle reader padding class without negative margins.

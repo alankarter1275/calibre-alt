@@ -106,6 +106,10 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         &tags,
     )?;
 
+    // P4: imports show up in History. Best-effort — a logging failure must not
+    // undo an otherwise successful import.
+    let _ = catalog.log_event(id, crate::db::EventKind::Imported, "");
+
     Ok(ImportResult {
         book_id: id,
         title,

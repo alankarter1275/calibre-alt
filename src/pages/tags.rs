@@ -1,0 +1,358 @@
+//! P4 — Tags: browse the library by tag, then drill into one tag's books.
+
+use crate::db::{Catalog, SortKey};
+use crate::models::Book;
+use crate::widgets::book_row::build_book_grid;
+use gtk::prelude::*;
+use relm4::prelude::*;
+use std::rc::Rc;
+
+// ---------------------------------------------------------------------------
+// Tag cloud
+// ---------------------------------------------------------------------------
+
+#[derive(Debug)]
+pub enum TagsOut {
+    OpenTag { tag: String },
+}
+
+#[derive(Debug)]
+pub enum TagsMsg {
+    SearchChanged(String),
+}
+
+pub struct TagsModel {
+    tags: Vec<(String, i64)>,
+    query: String,
+}
+
+#[relm4::component(pub)]
+impl Component for TagsModel {
+    type Init = Rc<Catalog>;
+    type Input = TagsMsg;
+    type Output = TagsOut;
+    type CommandOutput = ();
+
+    view! {
+        #[root]
+        gtk::Box {
+            set_orientation: gtk::Orientation::Vertical,
+            set_spacing: 12,
+            set_hexpand: true,
+
+            gtk::Label {
+                set_label: "Tags",
+                add_css_class: "kalam-page-title",
+                set_halign: gtk::Align::Start,
+            },
+            gtk::Label {
+                #[watch]
+                set_label: &status_line(model.visible().len()),
+                add_css_class: "kalam-page-sub",
+                set_halign: gtk::Align::Start,
+            },
+
+            gtk::SearchEntry {
+                set_hexpand: true,
+                set_placeholder_text: Some("Filter tags…"),
+                connect_search_changed[sender] => move |e| {
+                    sender.input(TagsMsg::SearchChanged(e.text().to_string()));
+                },
+            },
+
+            gtk::ScrolledWindow {
+                set_vexpand: true,
+                set_hexpand: true,
+                set_hscrollbar_policy: gtk::PolicyType::Never,
+
+                #[name = "cloud"]
+                gtk::FlowBox {
+                    set_valign: gtk::Align::Start,
+                    set_max_children_per_line: 6,
+                    set_min_children_per_line: 2,
+                    set_selection_mode: gtk::SelectionMode::None,
+                    set_column_spacing: 8,
+                    set_row_spacing: 8,
+                },
+            },
+        }
+    }
+
+    fn init(
+        catalog: Self::Init,
+        _root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let tags = catalog.list_tags_with_counts().unwrap_or_default();
+        let model = TagsModel {
+            tags,
+            query: String::new(),
+        };
+        let widgets = view_output!();
+        rebuild(&widgets.cloud, &model.visible(), &sender);
+        ComponentParts { model, widgets }
+    }
+
+    fn update_with_view(
+        &mut self,
+        widgets: &mut Self::Widgets,
+        msg: Self::Input,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
+        match msg {
+            TagsMsg::SearchChanged(q) => self.query = q,
+        }
+        rebuild(&widgets.cloud, &self.visible(), &sender);
+        self.update_view(widgets, sender);
+    }
+}
+
+impl TagsModel {
+    fn visible(&self) -> Vec<(String, i64)> {
+        let q = self.query.trim().to_lowercase();
+        if q.is_empty() {
+            return self.tags.clone();
+        }
+        self.tags
+            .iter()
+            .filter(|(name, _)| name.to_lowercase().contains(&q))
+            .cloned()
+            .collect()
+    }
+}
+
+fn status_line(n: usize) -> String {
+    if n == 0 {
+        "No tags yet — tags come from EPUB metadata on import.".into()
+    } else {
+        format!("{n} tag{} in your library", if n == 1 { "" } else { "s" })
+    }
+}
+
+fn rebuild(cloud: &gtk::FlowBox, tags: &[(String, i64)], sender: &ComponentSender<TagsModel>) {
+    while let Some(child) = cloud.first_child() {
+        cloud.remove(&child);
+    }
+
+    if tags.is_empty() {
+        let empty = gtk::Label::new(Some("No tags match."));
+        empty.add_css_class("kalam-placeholder");
+        empty.set_halign(gtk::Align::Start);
+        cloud.insert(&empty, -1);
+        return;
+    }
+
+    // Scale the chip with usage so heavy tags stand out.
+    let max = tags.iter().map(|(_, n)| *n).max().unwrap_or(1).max(1);
+
+    for (name, count) in tags {
+        let btn = gtk::Button::new();
+        btn.add_css_class("kalam-tag-chip");
+        let weight = (*count * 3) / max;
+        btn.add_css_class(match weight {
+            0 => "kalam-tag-w1",
+            1 => "kalam-tag-w2",
+            2 => "kalam-tag-w3",
+            _ => "kalam-tag-w4",
+        });
+
+        let inner = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let label = gtk::Label::new(Some(name));
+        label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        inner.append(&label);
+        let badge = gtk::Label::new(Some(&count.to_string()));
+        badge.add_css_class("kalam-tag-count");
+        inner.append(&badge);
+        btn.set_child(Some(&inner));
+
+        let tag = name.clone();
+        let s = sender.clone();
+        btn.connect_clicked(move |_| {
+            s.output(TagsOut::OpenTag { tag: tag.clone() }).ok();
+        });
+        cloud.insert(&btn, -1);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Books for one tag
+// ---------------------------------------------------------------------------
+
+#[derive(Debug)]
+pub enum TagBooksOut {
+    OpenBook { book_id: i64 },
+    OpenBookDialog { book_id: i64 },
+}
+
+#[derive(Debug)]
+pub enum TagBooksMsg {
+    SortChanged(SortKey),
+}
+
+pub struct TagBooksModel {
+    catalog: Rc<Catalog>,
+    tag: String,
+    books: Vec<Book>,
+    sort: SortKey,
+}
+
+#[relm4::component(pub)]
+impl Component for TagBooksModel {
+    type Init = (Rc<Catalog>, String);
+    type Input = TagBooksMsg;
+    type Output = TagBooksOut;
+    type CommandOutput = ();
+
+    view! {
+        #[root]
+        gtk::Box {
+            set_orientation: gtk::Orientation::Vertical,
+            set_spacing: 12,
+            set_hexpand: true,
+
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 10,
+
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_hexpand: true,
+
+                    #[name = "title"]
+                    gtk::Label {
+                        add_css_class: "kalam-page-title",
+                        set_halign: gtk::Align::Start,
+                    },
+                    gtk::Label {
+                        #[watch]
+                        set_label: &format!(
+                            "{} book{} tagged",
+                            model.books.len(),
+                            if model.books.len() == 1 { "" } else { "s" }
+                        ),
+                        add_css_class: "kalam-page-sub",
+                        set_halign: gtk::Align::Start,
+                    },
+                },
+
+                #[name = "sort_box"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 4,
+                    set_valign: gtk::Align::Center,
+                },
+            },
+
+            gtk::ScrolledWindow {
+                set_vexpand: true,
+                set_hexpand: true,
+                set_hscrollbar_policy: gtk::PolicyType::Never,
+
+                #[name = "list"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                },
+            },
+        }
+    }
+
+    fn init(
+        (catalog, tag): Self::Init,
+        _root: Self::Root,
+        sender: ComponentSender<Self>,
+    ) -> ComponentParts<Self> {
+        let sort = SortKey::Title;
+        let books = catalog.books_with_tag(&tag, sort).unwrap_or_default();
+        let model = TagBooksModel {
+            catalog,
+            tag,
+            books,
+            sort,
+        };
+        let widgets = view_output!();
+        widgets.title.set_label(&format!("#{}", model.tag));
+
+        for key in SortKey::ALL {
+            let btn = gtk::ToggleButton::with_label(key.label());
+            btn.add_css_class("kalam-secondary-btn");
+            if *key == SortKey::Title {
+                btn.set_active(true);
+            }
+            let k = *key;
+            let s = sender.clone();
+            btn.connect_toggled(move |b| {
+                if b.is_active() {
+                    s.input(TagBooksMsg::SortChanged(k));
+                }
+            });
+            widgets.sort_box.append(&btn);
+        }
+        group_toggles(&widgets.sort_box);
+
+        rebuild_books(&widgets.list, &model.books, &sender);
+        ComponentParts { model, widgets }
+    }
+
+    fn update_with_view(
+        &mut self,
+        widgets: &mut Self::Widgets,
+        msg: Self::Input,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
+        match msg {
+            TagBooksMsg::SortChanged(sort) => {
+                self.sort = sort;
+                self.books = self
+                    .catalog
+                    .books_with_tag(&self.tag, sort)
+                    .unwrap_or_default();
+            }
+        }
+        rebuild_books(&widgets.list, &self.books, &sender);
+        self.update_view(widgets, sender);
+    }
+}
+
+fn group_toggles(box_: &gtk::Box) {
+    let mut leader: Option<gtk::ToggleButton> = None;
+    let mut child = box_.first_child();
+    while let Some(w) = child {
+        let next = w.next_sibling();
+        if let Ok(btn) = w.downcast::<gtk::ToggleButton>() {
+            match &leader {
+                Some(l) => btn.set_group(Some(l)),
+                None => leader = Some(btn),
+            }
+        }
+        child = next;
+    }
+}
+
+fn rebuild_books(list: &gtk::Box, books: &[Book], sender: &ComponentSender<TagBooksModel>) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+
+    if books.is_empty() {
+        let empty = gtk::Label::new(Some("No books carry this tag any more."));
+        empty.add_css_class("kalam-placeholder");
+        empty.set_halign(gtk::Align::Start);
+        list.append(&empty);
+        return;
+    }
+
+    let s1 = sender.clone();
+    let s2 = sender.clone();
+    let grid = build_book_grid(
+        books,
+        move |id| {
+            s1.output(TagBooksOut::OpenBook { book_id: id }).ok();
+        },
+        move |id| {
+            s2.output(TagBooksOut::OpenBookDialog { book_id: id }).ok();
+        },
+    );
+    list.append(&grid);
+}

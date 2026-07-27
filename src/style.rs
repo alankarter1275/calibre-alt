@@ -192,6 +192,13 @@ window.kalam-window {
     color: @kalam_text;
 }
 
+.kalam-hub-tile-count {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: @kalam_accent;
+    margin-bottom: 2px;
+}
+
 .kalam-hub-tile-meta {
     font-size: 0.75rem;
     color: @kalam_text_dim;
@@ -668,6 +675,233 @@ popover.kalam-reader-popover > contents {
 .kalam-badge-orange {
     background: #fed7aa;
     color: #1e1410;
+}
+
+/* ══════════════════════════════════════════════════════
+   P4 — shelves, lists, history, tags, analytics
+   ══════════════════════════════════════════════════════ */
+
+/* ── shelf cards ────────────────────────────────────── */
+.kalam-shelf-card {
+    min-height: 120px;
+}
+
+.kalam-badge-smart {
+    background: alpha(@kalam_accent, 0.18);
+    color: @kalam_accent;
+}
+
+.kalam-badge-manual {
+    background: @kalam_surface_2;
+    color: @kalam_text_dim;
+}
+
+/* ── compact row buttons (reorder, remove, read) ────── */
+.kalam-mini-btn {
+    padding: 4px 10px;
+    font-size: 0.78rem;
+    border-radius: 999px;
+    background: @kalam_surface_2;
+    color: @kalam_text;
+    border: 1px solid @kalam_border;
+    min-height: 0;
+}
+
+.kalam-mini-btn:hover {
+    border-color: @kalam_accent;
+}
+
+.kalam-mini-btn:disabled {
+    opacity: 0.35;
+}
+
+.kalam-mini-btn-danger:hover {
+    border-color: #f87171;
+    color: #fca5a5;
+}
+
+/* ── generic list rows (reading list, history) ──────── */
+.kalam-list-row {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 10px 14px;
+}
+
+.kalam-list-row:hover {
+    border-color: @kalam_accent;
+    background: @kalam_surface_2;
+}
+
+.kalam-list-ordinal {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: @kalam_text_dim;
+}
+
+/* ── manual shelf management strip ──────────────────── */
+.kalam-manage-expander {
+    margin-top: 14px;
+    color: @kalam_text_dim;
+    font-size: 0.85rem;
+}
+
+.kalam-manage-row {
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: alpha(@kalam_surface, 0.6);
+}
+
+/* ── shelf editor / rule builder ────────────────────── */
+.kalam-shelf-editor entry {
+    border-radius: 8px;
+    min-height: 32px;
+}
+
+.kalam-rule-row {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+    padding: 8px 10px;
+}
+
+.kalam-rule-remove {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: transparent;
+    color: @kalam_text_dim;
+    border: none;
+    min-height: 0;
+}
+
+.kalam-rule-remove:hover {
+    color: #fca5a5;
+}
+
+.kalam-rule-count {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: @kalam_accent;
+}
+
+.kalam-error-text {
+    color: #fca5a5;
+    font-size: 0.85rem;
+}
+
+.kalam-picker-row {
+    padding: 6px 8px;
+    border-radius: 8px;
+}
+
+.kalam-picker-row:hover {
+    background: @kalam_surface_2;
+}
+
+/* ── history event icons ────────────────────────────── */
+.kalam-event-icon {
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.kalam-event-finished {
+    color: #6ee7b7;
+}
+
+.kalam-event-opened {
+    color: @kalam_accent;
+}
+
+.kalam-event-imported {
+    color: #fcd34d;
+}
+
+/* ── tag cloud ──────────────────────────────────────── */
+.kalam-tag-chip {
+    border-radius: 999px;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    padding: 6px 14px;
+    color: @kalam_text;
+}
+
+.kalam-tag-chip:hover {
+    border-color: @kalam_accent;
+    background: @kalam_surface_2;
+}
+
+/* Weight classes scale the chip with how many books carry the tag. */
+.kalam-tag-w1 { font-size: 0.8rem; }
+.kalam-tag-w2 { font-size: 0.9rem; }
+.kalam-tag-w3 { font-size: 1.0rem; font-weight: 600; }
+.kalam-tag-w4 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    border-color: alpha(@kalam_accent, 0.5);
+}
+
+.kalam-tag-count {
+    font-size: 0.72rem;
+    color: @kalam_text_dim;
+    background: @kalam_surface_2;
+    border-radius: 999px;
+    padding: 1px 7px;
+}
+
+/* ── analytics ──────────────────────────────────────── */
+.kalam-stat-tile {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+
+.kalam-stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-stat-label {
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    color: @kalam_text_dim;
+}
+
+.kalam-bar-chart {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 14px 12px 10px 12px;
+    min-height: 150px;
+}
+
+.kalam-bar {
+    background: linear-gradient(180deg, @kalam_accent 0%, alpha(@kalam_accent, 0.55) 100%);
+    border-radius: 5px 5px 2px 2px;
+    min-width: 14px;
+}
+
+.kalam-bar-empty {
+    background: @kalam_border;
+}
+
+.kalam-bar-value {
+    font-size: 0.68rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-bar-label {
+    font-size: 0.7rem;
+    color: @kalam_text_dim;
+    margin-top: 4px;
+}
+
+.kalam-rank-row {
+    padding: 7px 12px;
+    border-radius: 8px;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
 }
 
 .kalam-dict-row {

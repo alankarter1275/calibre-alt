@@ -1,4 +1,4 @@
-use crate::db::Catalog;
+use crate::db::{Catalog, ShelfKind};
 use crate::models::Book;
 use crate::widgets::book_row::cover_widget;
 use gtk::prelude::*;
@@ -19,11 +19,18 @@ pub enum BookPageOut {
 #[derive(Debug)]
 pub enum BookPageMsg {
     Delete,
+    ToggleReadingList,
+    ToggleFinished,
+    ShowShelfMenu,
+    Refresh,
 }
 
 pub struct BookPageModel {
     catalog: Rc<Catalog>,
     book: Option<Book>,
+    in_reading_list: bool,
+    finished: bool,
+    shelves: Vec<(i64, String)>,
 }
 
 #[relm4::component(pub)]
@@ -131,6 +138,22 @@ impl Component for BookPageModel {
                                 sender.output(BookPageOut::OpenReader).ok();
                             },
                         },
+                        #[name = "tbr_btn"]
+                        gtk::Button {
+                            add_css_class: "kalam-secondary-btn",
+                            connect_clicked => BookPageMsg::ToggleReadingList,
+                        },
+                        #[name = "finish_btn"]
+                        gtk::Button {
+                            add_css_class: "kalam-secondary-btn",
+                            connect_clicked => BookPageMsg::ToggleFinished,
+                        },
+                        #[name = "shelf_btn"]
+                        gtk::Button {
+                            set_label: "Shelves…",
+                            add_css_class: "kalam-secondary-btn",
+                            connect_clicked => BookPageMsg::ShowShelfMenu,
+                        },
                         gtk::Button {
                             set_label: "Edit metadata",
                             add_css_class: "kalam-secondary-btn",
@@ -142,6 +165,17 @@ impl Component for BookPageModel {
                             add_css_class: "kalam-secondary-btn",
                             connect_clicked => BookPageMsg::Delete,
                         },
+                    },
+
+                    gtk::Label {
+                        set_label: "SHELVES",
+                        add_css_class: "kalam-detail-section-title",
+                        set_halign: gtk::Align::Start,
+                    },
+                    #[name = "shelf_chips"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 6,
                     },
                 },
             },
@@ -174,7 +208,20 @@ impl Component for BookPageModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let book = catalog.get_book(book_id).ok().flatten();
-        let model = BookPageModel { catalog, book };
+        let in_reading_list = catalog.is_in_reading_list(book_id).unwrap_or(false);
+        let finished = catalog
+            .book_finished_at(book_id)
+            .ok()
+            .flatten()
+            .is_some();
+        let shelves = catalog.shelves_for_book(book_id).unwrap_or_default();
+        let model = BookPageModel {
+            catalog,
+            book,
+            in_reading_list,
+            finished,
+            shelves,
+        };
         let widgets = view_output!();
         fill(
             &widgets.cover_host,
@@ -188,7 +235,7 @@ impl Component for BookPageModel {
             &widgets.description,
             model.book.as_ref(),
         );
-        let _ = sender;
+        model.refresh_p4(&widgets, &sender);
         ComponentParts { model, widgets }
     }
 
@@ -197,7 +244,7 @@ impl Component for BookPageModel {
         widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
-        _root: &Self::Root,
+        root: &Self::Root,
     ) {
         match msg {
             BookPageMsg::Delete => {
@@ -207,6 +254,44 @@ impl Component for BookPageModel {
                         self.book = None;
                         sender.output(BookPageOut::Deleted { book_id: id }).ok();
                     }
+                }
+            }
+            BookPageMsg::ToggleReadingList => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    if self.in_reading_list {
+                        let _ = self.catalog.remove_from_reading_list(id);
+                    } else {
+                        let _ = self.catalog.add_to_reading_list(id);
+                    }
+                    self.reload_p4(id);
+                }
+            }
+            BookPageMsg::ToggleFinished => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    let _ = self.catalog.set_book_finished(id, !self.finished);
+                    self.book = self.catalog.get_book(id).ok().flatten();
+                    self.reload_p4(id);
+                }
+            }
+            BookPageMsg::ShowShelfMenu => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    let s = sender.clone();
+                    open_shelf_menu(
+                        root.root().and_then(|r| r.downcast::<gtk::Window>().ok()).as_ref(),
+                        self.catalog.clone(),
+                        id,
+                        move || s.input(BookPageMsg::Refresh),
+                    );
+                }
+            }
+            BookPageMsg::Refresh => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    self.book = self.catalog.get_book(id).ok().flatten();
+                    self.reload_p4(id);
                 }
             }
         }
@@ -222,8 +307,153 @@ impl Component for BookPageModel {
             &widgets.description,
             self.book.as_ref(),
         );
+        self.refresh_p4(widgets, &sender);
         self.update_view(widgets, sender);
     }
+}
+
+impl BookPageModel {
+    fn reload_p4(&mut self, book_id: i64) {
+        self.in_reading_list = self.catalog.is_in_reading_list(book_id).unwrap_or(false);
+        self.finished = self
+            .catalog
+            .book_finished_at(book_id)
+            .ok()
+            .flatten()
+            .is_some();
+        self.shelves = self.catalog.shelves_for_book(book_id).unwrap_or_default();
+    }
+
+    /// Sync the P4 buttons and shelf chips with current state.
+    fn refresh_p4(&self, widgets: &BookPageModelWidgets, sender: &ComponentSender<Self>) {
+        let has_book = self.book.is_some();
+        widgets.tbr_btn.set_visible(has_book);
+        widgets.finish_btn.set_visible(has_book);
+        widgets.shelf_btn.set_visible(has_book);
+
+        widgets.tbr_btn.set_label(if self.in_reading_list {
+            "− Reading list"
+        } else {
+            "+ Reading list"
+        });
+        widgets.finish_btn.set_label(if self.finished {
+            "Mark unread"
+        } else {
+            "Mark finished"
+        });
+
+        let chips = &widgets.shelf_chips;
+        while let Some(child) = chips.first_child() {
+            chips.remove(&child);
+        }
+        if self.shelves.is_empty() {
+            let none = gtk::Label::new(Some("Not on any shelf"));
+            none.add_css_class("kalam-muted");
+            chips.append(&none);
+        } else {
+            for (_, name) in &self.shelves {
+                let chip = gtk::Label::new(Some(name));
+                chip.add_css_class("kalam-chip");
+                chips.append(&chip);
+            }
+        }
+        let _ = sender;
+    }
+}
+
+/// Checklist of manual shelves for one book.
+fn open_shelf_menu(
+    parent: Option<&gtk::Window>,
+    catalog: Rc<Catalog>,
+    book_id: i64,
+    on_changed: impl Fn() + 'static,
+) {
+    let window = gtk::Window::builder()
+        .title("Shelves")
+        .modal(true)
+        .default_width(380)
+        .default_height(420)
+        .build();
+    window.add_css_class("kalam-window");
+    if let Some(parent) = parent {
+        window.set_transient_for(Some(parent));
+    }
+
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    root.set_margin_all(16);
+
+    let all: Vec<_> = catalog
+        .list_shelves()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|s| s.kind == ShelfKind::Manual)
+        .collect();
+
+    if all.is_empty() {
+        let empty = gtk::Label::new(Some(
+            "No manual shelves yet.\n\nCreate one from the Shelves page, then add books to it here.\n\nSmart shelves fill themselves from rules — they can't be edited by hand.",
+        ));
+        empty.add_css_class("kalam-placeholder");
+        empty.set_wrap(true);
+        root.append(&empty);
+    } else {
+        let hint = gtk::Label::new(Some("Tick the shelves this book belongs on."));
+        hint.add_css_class("kalam-muted");
+        hint.set_halign(gtk::Align::Start);
+        root.append(&hint);
+
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        let current: Vec<i64> = catalog
+            .shelves_for_book(book_id)
+            .unwrap_or_default()
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
+
+        let on_changed = Rc::new(on_changed);
+        for shelf in all {
+            let check = gtk::CheckButton::with_label(&format!(
+                "{}  ({} book{})",
+                shelf.name,
+                shelf.book_count,
+                if shelf.book_count == 1 { "" } else { "s" }
+            ));
+            check.add_css_class("kalam-picker-row");
+            check.set_active(current.contains(&shelf.id));
+
+            let catalog = catalog.clone();
+            let on_changed = on_changed.clone();
+            let shelf_id = shelf.id;
+            check.connect_toggled(move |c| {
+                if c.is_active() {
+                    let _ = catalog.add_book_to_shelf(shelf_id, book_id);
+                } else {
+                    let _ = catalog.remove_book_from_shelf(shelf_id, book_id);
+                }
+                on_changed();
+            });
+            list.append(&check);
+        }
+
+        let scroll = gtk::ScrolledWindow::builder()
+            .vexpand(true)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .child(&list)
+            .build();
+        root.append(&scroll);
+    }
+
+    let done = gtk::Button::with_label("Done");
+    done.add_css_class("kalam-primary-btn");
+    done.set_halign(gtk::Align::End);
+    {
+        let window = window.clone();
+        done.connect_clicked(move |_| window.close());
+    }
+    root.append(&done);
+
+    window.set_child(Some(&root));
+    window.present();
 }
 
 #[allow(clippy::too_many_arguments)]

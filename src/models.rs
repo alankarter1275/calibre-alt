@@ -64,7 +64,11 @@ pub enum Route {
     LibrarySection(LibrarySection),
     ShelvesGrid,
     ShelfDetail {
-        shelf_id: u64,
+        shelf_id: i64,
+    },
+    /// Books carrying one tag (P4 tag browse).
+    TagBooks {
+        tag: String,
     },
     BookPage {
         book_id: i64,
@@ -82,6 +86,7 @@ impl Route {
             Route::LibrarySection(s) => s.label().to_string(),
             Route::ShelvesGrid => "Shelves".into(),
             Route::ShelfDetail { .. } => "Shelf".into(),
+            Route::TagBooks { tag } => tag.clone(),
             Route::BookPage { .. } => "Book".into(),
             Route::Reader { .. } => "Reading".into(),
         }
@@ -94,6 +99,7 @@ impl Route {
             Route::ShelvesGrid => Some("Smart and manual collections".into()),
             Route::LibrarySection(s) => Some(s.blurb().into()),
             Route::Module(NavItem::Settings) => Some("Paths and preferences".into()),
+            Route::TagBooks { .. } => Some("Every book with this tag".into()),
             Route::Reader { .. } => Some("Esc back · T TOC · N/P chapter · A+/A−".into()),
             _ => None,
         }
@@ -104,6 +110,7 @@ impl Route {
             Route::Module(item) => *item,
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
+            Route::TagBooks { .. } => NavItem::Library,
             Route::BookPage { .. } | Route::Reader { .. } => NavItem::Library,
         }
     }
