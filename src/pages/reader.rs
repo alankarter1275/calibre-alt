@@ -1128,14 +1128,22 @@ impl ReaderModel {
                 let word = payload.word.unwrap_or_default();
                 let def = payload.definition.unwrap_or_default();
                 if !word.trim().is_empty() && !def.trim().is_empty() {
-                    let _ = self.catalog.insert_saved_word(
+                    // The in-page dictionary's save button comes through here,
+                    // separate from the popover's ReaderMsg::SaveCurrentWord.
+                    // It dropped its Result too, so a failure was invisible.
+                    match self.catalog.insert_saved_word(
                         &word,
                         &def,
                         None,
                         Some(self.book_id),
                         Some(self.chapter as i64),
                         payload.context.as_deref().or(self.dict_context.as_deref()),
-                    );
+                    ) {
+                        Ok(_) => crate::notify::compact("Word saved", &word),
+                        Err(e) => {
+                            crate::notify::error("Could not save the word", &e.to_string())
+                        }
+                    }
                 }
             }
             "dict-shortcut" => {

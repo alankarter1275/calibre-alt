@@ -434,20 +434,36 @@ Only sources you’re allowed to use. No unauthorized scraper assistance.
 
 ## Schema (current + planned)
 
+Current `SCHEMA_VERSION` = **7** (`src/db.rs`). Migrations run on open and are
+additive; there is no downgrade path, so take a copy of
+`~/.local/share/kalam/catalog.db` before testing a build that bumps it.
+
 ```text
 books              id, uuid, title, sort_title, authors, series, description,
                    format, file_name, file_hash, cover_name, added_at, progress
+                   + last_opened_at, finished_at                  -- v4
+                   + rating (0..=10 half-stars)                   -- v5
+                   + publisher, published, series_index (REAL)    -- v6
 tags / book_tags
 reading_progress   book_id, chapter_index, fraction, updated_at   -- P2
-annotations        id, book_id, kind, loc, color, body, …         -- P3
-saved_words        …                                              -- P3
-shelves            id, name, kind, description, rules(JSON), position  -- P4
-shelf_books        shelf_id, book_id, position, added_at             -- P4
-reading_list       book_id, position, note, added_at                 -- P4
-reading_events     id, book_id, kind, at, detail                     -- P4
-reading_sessions   id, book_id, started_at, ended_at, seconds, pct   -- P4
+annotations        id, book_id, kind, loc, color, body, …         -- P3 (v3)
+saved_words        …                                              -- P3 (v3)
+dictionaries       id, name, lang, entry_count, …                 -- P3 (v3)
+shelves            id, name, kind, description, rules(JSON), position  -- P4 (v4)
+shelf_books        shelf_id, book_id, position, added_at             -- P4 (v4)
+reading_list       book_id, position, note, added_at                 -- P4 (v4)
+reading_events     id, book_id, kind, at, detail                     -- P4 (v4)
+reading_sessions   id, book_id, started_at, ended_at, seconds, pct   -- P4 (v4)
+reading_goals      year, target_books                                -- v5
+app_prefs          key, value
+metadata_overrides keyed on file_hash, NOT cascaded from books      -- v7
 sources_state / download_jobs                                     -- P6+
 ```
+
+`metadata_overrides` is deliberately **not** `ON DELETE CASCADE`: surviving a
+book's deletion is the entire point, so edits come back when the same file is
+re-imported. Its cover lives in `covers/<file_hash>.<ext>`, not in
+`library/<uuid>/`, which is removed with the book.
 
 ---
 
@@ -477,14 +493,53 @@ Deps include `webkitgtk-6.0` for P2+.
 
 ---
 
+## Post-P5 work (done, between P5 and P6)
+
+### Performance pass ✅
+- **Query storm**: ~99 SQL queries per Library click with 50 books → ~8.
+  N+1 tag lookups collapsed, `list_books()` no longer loads the whole library
+  to draw 6 covers, prepared-statement cache, `library_stats()` memoised
+  against SQLite's `total_changes()` so no write path has to remember to
+  invalidate. `synchronous=NORMAL`, 64 MB cache, `temp_store=MEMORY`, mmap.
+  Indexes on `progress`, `last_opened_at`, `finished_at`.
+- **Widget rebuilds**: pages cached in `AppModel.cache` keyed by route.
+  Reader/BookPage/ShelfDetail/TagBooks/LibrarySection deliberately excluded
+  (they own a WebView or per-book state). Invalidated via `cache_token`.
+- **Blocking imports**: `Catalog` moved `Rc` → `Arc`; the import loop runs on
+  `spawn_command` and reports per-file progress.
+
+### Hardening pass ✅
+1. **Notifications** (`src/notify.rs`) — toast overlay per
+   `docs/design/notifications.png`; history panel in Settings.
+2. **Library backup** — `VACUUM INTO`, consistent even while running.
+3. **Reader cache pruning** — orphaned + 14-day-stale extracts dropped at
+   startup.
+4. **Poison-safe locks** — 77 `expect("db lock")` → `Catalog::conn()`.
+5. **`db.rs` split** — 3,367 lines → 1,702 + 7 focused modules.
+
+### Bug fixes worth remembering
+- **Metadata overrides** keyed on `file_hash` (schema v7) so edits survive
+  delete → re-import, including the cover, which is stashed in
+  `covers/<hash>.<ext>` because `library/<uuid>/` goes with the book.
+- **EPUB writeback on single-line OPFs** — `rewrite_opf` filtered the
+  metadata block line by line, which only works on pretty-printed files.
+  Real EPUBs often put the whole block on one line, leaving the old
+  `<dc:title>` beside the new one; readers showed the stale one. Now walks
+  elements, not lines.
+- **Notifications only fired on failure** — `notify::report` stayed silent on
+  `Ok`, so every successful action looked broken. Added
+  `notify::outcome`/`outcome_info`.
+
+---
+
 ## Immediate next steps
 
-1. **Performance pass** — agreed for after P5: page trees rebuild on every
-   navigation, the reader extracts whole EPUBs on open, and all DB work runs
-   on the UI thread. Cover caching and stats indexes landed early.
-2. **UI overhaul** once the Figma designs are final (see `docs/design/`)
+1. **UI overhaul** once the Figma designs are final (see `docs/design/`).
+   `library_look.png` shows a two-column dashboard; the app is currently a
+   single vertical stack. Known divergence, deliberately deferred.
+2. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
 3. Keep refining text-reader polish only if you file specific UX bugs (note editing UI, CFI, dict HTML rendering)
-3. **P8** when you want comics for real (UI target already specified above)  
+4. **P8** when you want comics for real (UI target already specified above)  
 
 ---
 
@@ -511,3 +566,7 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-27 | P4 shipped: shelves engine (manual + flat-rule smart shelves), reading list, event-log history, reading-time sessions, tags browse, analytics with streaks |
 | 2026-07-27 | Smart shelves locked as flat rules + All/Any; nested groups deferred and kept JSON-compatible |
 | 2026-07-26 | P3 annotations & dictionary shipped: highlights (5 colors), quotes, offline dict packs (StarDict/SQLite/TSV), Saved quotes/words real data, export Markdown, annotations list, dictionary popup, Settings import |
+| 2026-07-28 | Performance pass shipped: query batching + stats memoisation, page cache, imports off the UI thread |
+| 2026-07-28 | Hardening pass shipped: toast notifications, `VACUUM INTO` backup, reader-cache pruning, poison-safe locks, `db.rs` split |
+| 2026-07-28 | Metadata overrides keyed on `file_hash` (schema v7) so edits and covers survive delete → re-import |
+| 2026-07-28 | EPUB writeback fixed for single-line OPFs; toast accent restyled to the reference; every user action now confirms |

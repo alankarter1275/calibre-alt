@@ -33,7 +33,11 @@ fn main() {
 
     // Ensure data dirs exist early so import never races mkdir.
     if let Err(err) = paths::ensure_data_dirs() {
+        // Nothing will work if this failed, so say so on screen rather than
+        // only on a terminal the user probably did not launch from. The
+        // toast queues until the window exists.
         eprintln!("kalam: failed to create data directories: {err}");
+        crate::notify::error("Could not create Kalam's data folders", &err.to_string());
     }
 
     app.run::<AppModel>(());
