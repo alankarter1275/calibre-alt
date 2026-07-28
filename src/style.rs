@@ -31,16 +31,18 @@ scrollbar slider {
     background: alpha(@kalam_text_dim, 0.35);
     border: none;
     border-radius: 999px;
-    min-width: 4px;
+    min-width: 3px;
     min-height: 28px;
-    margin: 3px;
+    /* Asymmetric: 1px from the window edge, more on the content side, so the
+       bar hugs the edge instead of floating in a gutter. */
+    margin: 3px 1px 3px 4px;
     transition: background 180ms ease, min-width 180ms ease;
 }
 
 scrollbar:hover slider,
 scrollbar.hovering slider {
     background: alpha(@kalam_text_dim, 0.65);
-    min-width: 7px;
+    min-width: 5px;
 }
 
 scrollbar slider:active,
@@ -75,11 +77,14 @@ scrollbar trough {
 }
 
 .kalam-brand {
-    font-weight: 700;
-    font-size: 0.95rem;
-    letter-spacing: 0.04em;
-    color: @kalam_accent;
-    padding: 8px 0 14px 0;
+    padding: 10px 0 14px 0;
+}
+
+/* Sized here rather than in code so the sidebar's eventual width change is a
+   one-line edit. The logo is square with transparent padding baked in. */
+.kalam-brand-logo {
+    min-width: 34px;
+    min-height: 34px;
 }
 
 .kalam-nav-btn {

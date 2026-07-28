@@ -507,8 +507,8 @@ impl Component for AppModel {
                         add_css_class: "kalam-sidebar-inner",
                         set_vexpand: true,
 
-                        gtk::Label {
-                            set_label: "KALAM",
+                        #[name = "brand"]
+                        gtk::Box {
                             add_css_class: "kalam-brand",
                             set_halign: gtk::Align::Center,
                         },
@@ -651,6 +651,8 @@ impl Component for AppModel {
                 );
             }
         }
+
+        widgets.brand.append(&brand_logo());
 
         for item in NavItem::ALL {
             let btn = make_nav_button(*item, *item == NavItem::Home);
@@ -840,6 +842,26 @@ impl Component for AppModel {
         update_nav_styles(&widgets.bottom_nav, active);
         self.update_view(widgets, sender);
     }
+}
+
+/// The sidebar wordmark: the Kalam logo.
+///
+/// Embedded with `include_bytes!` rather than read from disk so the binary
+/// stays self-contained — there is no install step that would place an asset
+/// directory next to it.
+fn brand_logo() -> gtk::Picture {
+    const LOGO: &[u8] = include_bytes!("../assets/logo.png");
+
+    let bytes = gtk::glib::Bytes::from_static(LOGO);
+    let picture = match gtk::gdk::Texture::from_bytes(&bytes) {
+        Ok(texture) => gtk::Picture::for_paintable(&texture),
+        // A corrupt asset should not stop the app from starting.
+        Err(_) => gtk::Picture::new(),
+    };
+    picture.set_content_fit(gtk::ContentFit::Contain);
+    picture.set_can_shrink(true);
+    picture.add_css_class("kalam-brand-logo");
+    picture
 }
 
 fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {

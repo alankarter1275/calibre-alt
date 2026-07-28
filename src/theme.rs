@@ -191,13 +191,168 @@ pub const AYU_MIRAGE: Theme = Theme {
     info: "#73d0ff",
 };
 
+// ── Darker variants ────────────────────────────────────────────────────────
+// Where upstream publishes an official darker mode (Tokyo Night "Night",
+// Everforest "hard", Gruvbox "hard", Ayu "Dark") those exact values are used.
+// The rest deepen the surfaces while keeping hue and accents intact, so a pair
+// still reads as the same theme.
+
+/// One Dark Darker — the default. Same palette, deeper surfaces.
+pub const ONEDARK_DARKER: Theme = Theme {
+    id: "onedark-darker",
+    label: "One Dark Darker",
+    bg: "#1b1e24",
+    sidebar: "#15171c",
+    surface: "#21242b",
+    surface_2: "#282c34",
+    border: "#343842",
+    text: "#abb2bf",
+    text_dim: "#767d8a",
+    accent: "#61afef",
+    accent_dim: "alpha(#61afef, 0.16)",
+    danger: "#e06c75",
+    success: "#98c379",
+    warning: "#e5c07b",
+    info: "#c678dd",
+};
+
+/// Tokyo Night Night — upstream's darker variant.
+pub const TOKYONIGHT_DARKER: Theme = Theme {
+    id: "tokyonight-darker",
+    label: "Tokyo Night (Night)",
+    bg: "#16161e",
+    sidebar: "#101014",
+    surface: "#1a1b26",
+    surface_2: "#22232f",
+    border: "#292e42",
+    text: "#c0caf5",
+    text_dim: "#737aa2",
+    accent: "#7aa2f7",
+    accent_dim: "alpha(#7aa2f7, 0.16)",
+    danger: "#f7768e",
+    success: "#9ece6a",
+    warning: "#e0af68",
+    info: "#bb9af7",
+};
+
+/// Everforest Hard — upstream's darkest background.
+pub const EVERFOREST_DARKER: Theme = Theme {
+    id: "everforest-darker",
+    label: "Everforest (Hard)",
+    bg: "#232a2e",
+    sidebar: "#1e2326",
+    surface: "#2d353b",
+    surface_2: "#343f44",
+    border: "#3d484d",
+    text: "#d3c6aa",
+    text_dim: "#859289",
+    accent: "#a7c080",
+    accent_dim: "alpha(#a7c080, 0.16)",
+    danger: "#e67e80",
+    success: "#a7c080",
+    warning: "#dbbc7f",
+    info: "#7fbbb3",
+};
+
+/// Catppuccin Crust — the darkest base in the Mocha family.
+pub const CATPPUCCIN_DARKER: Theme = Theme {
+    id: "catppuccin-darker",
+    label: "Catppuccin (Crust)",
+    bg: "#11111b",
+    sidebar: "#0b0b13",
+    surface: "#181825",
+    surface_2: "#1e1e2e",
+    border: "#313244",
+    text: "#cdd6f4",
+    text_dim: "#7f849c",
+    accent: "#89b4fa",
+    accent_dim: "alpha(#89b4fa, 0.16)",
+    danger: "#f38ba8",
+    success: "#a6e3a1",
+    warning: "#f9e2af",
+    info: "#cba6f7",
+};
+
+/// Gruvbox Hard — upstream's hard contrast background.
+pub const GRUVBOX_DARKER: Theme = Theme {
+    id: "gruvbox-darker",
+    label: "Gruvbox (Hard)",
+    bg: "#1d2021",
+    sidebar: "#141617",
+    surface: "#282828",
+    surface_2: "#32302f",
+    border: "#3c3836",
+    text: "#ebdbb2",
+    text_dim: "#928374",
+    accent: "#83a598",
+    accent_dim: "alpha(#83a598, 0.16)",
+    danger: "#fb4934",
+    success: "#b8bb26",
+    warning: "#fabd2f",
+    info: "#d3869b",
+};
+
+/// Nord Darker — Polar Night deepened below nord0.
+pub const NORD_DARKER: Theme = Theme {
+    id: "nord-darker",
+    label: "Nord Darker",
+    bg: "#242933",
+    sidebar: "#1c2029",
+    surface: "#2e3440",
+    surface_2: "#3b4252",
+    border: "#434c5e",
+    text: "#eceff4",
+    text_dim: "#8f97a6",
+    accent: "#88c0d0",
+    accent_dim: "alpha(#88c0d0, 0.16)",
+    danger: "#bf616a",
+    success: "#a3be8c",
+    warning: "#ebcb8b",
+    info: "#b48ead",
+};
+
+/// Ayu Dark — upstream's darkest Ayu.
+pub const AYU_DARKER: Theme = Theme {
+    id: "ayu-darker",
+    label: "Ayu Dark",
+    bg: "#0f1419",
+    sidebar: "#0b0e13",
+    surface: "#151a1e",
+    surface_2: "#1c2228",
+    border: "#273038",
+    text: "#bfbdb6",
+    text_dim: "#7b8288",
+    accent: "#e6b450",
+    accent_dim: "alpha(#e6b450, 0.16)",
+    danger: "#f07178",
+    success: "#aad94c",
+    warning: "#ffb454",
+    info: "#59c2ff",
+};
+
 /// Every theme, in the order Settings lists them.
 pub const ALL: &[Theme] = &[
-    ONEDARK, TOKYONIGHT, EVERFOREST, CATPPUCCIN, GRUVBOX, NORD, AYU_MIRAGE,
+    // Darker variants first: the default lives here, and these are what the
+    // interface is designed against.
+    ONEDARK_DARKER,
+    TOKYONIGHT_DARKER,
+    EVERFOREST_DARKER,
+    CATPPUCCIN_DARKER,
+    GRUVBOX_DARKER,
+    NORD_DARKER,
+    AYU_DARKER,
+    // Standard variants.
+    ONEDARK,
+    TOKYONIGHT,
+    EVERFOREST,
+    CATPPUCCIN,
+    GRUVBOX,
+    NORD,
+    AYU_MIRAGE,
 ];
 
 /// The theme used on first run and whenever a stored id is unrecognised.
-pub const DEFAULT: Theme = ONEDARK;
+pub const DEFAULT: Theme = ONEDARK_DARKER;
 
 /// Look up by stored id, falling back to the default.
 ///
@@ -280,6 +435,21 @@ mod tests {
             assert!(!seen.contains(&t.id), "duplicate theme id: {}", t.id);
             seen.push(t.id);
         }
+    }
+
+    #[test]
+    fn every_theme_has_a_darker_or_standard_partner() {
+        // Each family ships a pair; a stray single usually means a new theme
+        // was added without its counterpart. Match on the suffix, not a
+        // substring: "onedark" contains "dark" without being a darker variant.
+        assert_eq!(ALL.len() % 2, 0, "themes should come in pairs");
+        let darker = ALL.iter().filter(|t| t.id.ends_with("-darker")).count();
+        assert_eq!(darker, ALL.len() / 2, "expected one darker variant per family");
+    }
+
+    #[test]
+    fn default_is_a_darker_variant() {
+        assert_eq!(DEFAULT.id, ONEDARK_DARKER.id);
     }
 
     #[test]
