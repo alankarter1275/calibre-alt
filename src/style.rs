@@ -72,8 +72,8 @@ scrollbar trough {
 .kalam-sidebar {
     background: @kalam_sidebar;
     border-right: 1px solid @kalam_border;
-    /* Icon-only rail: 30px button + 6px padding either side. */
-    min-width: 44px;
+    /* Icon-only rail: 34px disc + 7px either side. */
+    min-width: 48px;
     padding: 8px 0;
 }
 
@@ -85,24 +85,22 @@ scrollbar trough {
     padding: 2px 0 10px 0;
 }
 
-/* Small on purpose: it is a mark at the head of a narrow rail, not a banner.
-   Picture honours this as an exact size because can-shrink is on and the
-   texture is square. */
-.kalam-brand-logo {
-    min-width: 20px;
-    min-height: 20px;
-}
+/* No size here on purpose. The exact size is set in code with
+   gtk::Image::set_pixel_size; a CSS min-width would only act as a floor and
+   could push the mark larger again. */
 
 .kalam-nav-btn {
     padding: 0;
-    border-radius: 9px;
-    margin-top: 3px;
-    margin-bottom: 3px;
+    /* A circle, not a rounded square: width and height match, so a fully
+       round radius reads as a disc behind the glyph. */
+    border-radius: 999px;
+    margin-top: 4px;
+    margin-bottom: 4px;
     background: transparent;
     border: none;
     color: @kalam_text_dim;
-    min-width: 30px;
-    min-height: 30px;
+    min-width: 34px;
+    min-height: 34px;
 }
 
 .kalam-nav-btn:hover {
@@ -117,7 +115,7 @@ scrollbar trough {
 }
 
 .kalam-nav-icon {
-    font-size: 1rem;
+    font-size: 1.25rem;
 }
 
 .kalam-nav-spacer {
@@ -682,9 +680,15 @@ popover.kalam-reader-popover > contents {
     border-color: @kalam_accent;
 }
 
-/* Hidden by opacity rather than visibility so the row never reflows. */
+/* The tick keeps its space even when inactive so the row never reflows.
+   Hidden with a transparent colour, not `opacity`, which would force GTK to
+   render through an offscreen surface (see the scrollbar note above). */
 .kalam-theme-tick {
     font-weight: 700;
+}
+
+.kalam-theme-tick-off {
+    color: transparent;
 }
 
 /* Theme swatches — these MUST match ReadingTheme::swatch() in epub_book.rs so

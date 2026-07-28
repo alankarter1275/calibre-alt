@@ -913,9 +913,19 @@ impl ReaderModel {
     }
 
     /// Show the tick only on the active theme's button.
+    ///
+    /// Toggling a CSS class rather than set_opacity(0.0): any opacity below 1
+    /// makes GTK render the widget through an offscreen surface, and a label
+    /// that has not been allocated yet can produce a zero-sized one, which
+    /// pixman rejects with "Invalid rectangle passed". The hidden class just
+    /// paints the glyph transparent, so the row still never reflows.
     fn refresh_theme_ticks(&self) {
         for (theme, tick) in &self.theme_ticks {
-            tick.set_opacity(if *theme == self.theme { 1.0 } else { 0.0 });
+            if *theme == self.theme {
+                tick.remove_css_class("kalam-theme-tick-off");
+            } else {
+                tick.add_css_class("kalam-theme-tick-off");
+            }
         }
     }
 

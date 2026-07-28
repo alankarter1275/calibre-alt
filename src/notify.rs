@@ -239,6 +239,9 @@ fn present(entry: &Entry) {
 
         let card = build_card(entry);
         host.append(&card);
+        // The overlay wrapper is hidden while empty (a 0x0 overlay child is an
+        // invalid pixman rectangle), so reveal it now that it has content.
+        set_host_visible(&host, true);
 
         // Keep the stack short so a burst of messages cannot cover the app.
         while count_children(&host) > MAX_VISIBLE {
@@ -262,9 +265,22 @@ fn present(entry: &Entry) {
                 if card_for_timeout.parent().is_some() {
                     host_for_timeout.remove(&card_for_timeout);
                 }
+                if host_for_timeout.first_child().is_none() {
+                    set_host_visible(&host_for_timeout, false);
+                }
             },
         );
     });
+}
+
+/// Toggle the overlay wrapper that holds the toast stack.
+///
+/// `host` is the inner box; its parent is the overlay child that carries the
+/// margin, and that is the widget which must not be allocated while empty.
+fn set_host_visible(host: &gtk::Box, visible: bool) {
+    if let Some(wrapper) = host.parent() {
+        wrapper.set_visible(visible);
+    }
 }
 
 fn count_children(host: &gtk::Box) -> usize {
@@ -357,6 +373,9 @@ fn build_card(entry: &Entry) -> gtk::Box {
         if let Some(parent) = card_for_click.parent() {
             if let Some(host) = parent.downcast_ref::<gtk::Box>() {
                 host.remove(&card_for_click);
+                if host.first_child().is_none() {
+                    set_host_visible(host, false);
+                }
             }
         }
     });

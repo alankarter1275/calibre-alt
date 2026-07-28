@@ -478,6 +478,11 @@ impl Component for AppModel {
                     add_css_class: "kalam-toast-host",
                     // Must not swallow clicks meant for the app beneath.
                     set_can_target: true,
+                    // With no toasts up, this overlay child has no content and
+                    // would be allocated 0x0 — an invalid rectangle as far as
+                    // pixman is concerned. Hiding it until a toast exists keeps
+                    // it out of the layout entirely.
+                    set_visible: false,
 
                     #[name = "toast_host"]
                     gtk::Box {
@@ -849,25 +854,26 @@ impl Component for AppModel {
 /// Embedded with `include_bytes!` rather than read from disk so the binary
 /// stays self-contained — there is no install step that would place an asset
 /// directory next to it.
-fn brand_logo() -> gtk::Picture {
+fn brand_logo() -> gtk::Image {
     const LOGO: &[u8] = include_bytes!("../assets/logo.png");
+    // Matches the nav glyphs, a shade larger so the mark still leads the rail.
+    const LOGO_PX: i32 = 24;
 
     let bytes = gtk::glib::Bytes::from_static(LOGO);
-    let picture = match gtk::gdk::Texture::from_bytes(&bytes) {
-        Ok(texture) => gtk::Picture::for_paintable(&texture),
+    let image = match gtk::gdk::Texture::from_bytes(&bytes) {
+        Ok(texture) => gtk::Image::from_paintable(Some(&texture)),
         // A corrupt asset should not stop the app from starting.
-        Err(_) => gtk::Picture::new(),
+        Err(_) => gtk::Image::new(),
     };
-    picture.set_content_fit(gtk::ContentFit::Contain);
-    picture.set_can_shrink(true);
-    // Pin the size here, not in CSS: min-width is a floor, so a Picture given
-    // a 128px texture would happily draw at 128px and stretch the rail. A
-    // size request plus Center alignment fixes it at exactly this size.
-    picture.set_size_request(20, 20);
-    picture.set_halign(gtk::Align::Center);
-    picture.set_valign(gtk::Align::Center);
-    picture.add_css_class("kalam-brand-logo");
-    picture
+    // gtk::Image, not gtk::Picture. A Picture's natural size is the texture's
+    // own size, and both set_size_request and CSS min-width are *floors*, so a
+    // 128px texture drew at 128px and stretched the whole rail. Image with
+    // set_pixel_size is the one widget that treats the number as exact.
+    image.set_pixel_size(LOGO_PX);
+    image.set_halign(gtk::Align::Center);
+    image.set_valign(gtk::Align::Center);
+    image.add_css_class("kalam-brand-logo");
+    image
 }
 
 fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
