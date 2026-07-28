@@ -13,31 +13,30 @@ window.kalam-window {
 }
 
 /* ── scrollbars ─────────────────────────────────────── */
-/* Invisible until the pointer reaches the edge, then a thin 5px pill tucked
- * right up against it.
+/* A 5px rounded pill, no outline, hidden until the pointer reaches the edge.
  *
- * THE INVARIANT, which every previous attempt broke somewhere:
+ * SPECIFICITY is why earlier attempts kept losing. Adwaita ships
+ *     scrollbar.overlay-indicator:not(.dragging):not(.hovering) slider
+ * at (0,5,2), which sets min-width: 3px, a pale background and
+ * `border: 1px solid black` — that hairline is the outline seen inside the
+ * grey bar. Anything less specific simply does not apply, and trying to
+ * out-specify it in every state produced a wall of near-duplicate selectors
+ * that still missed cases.
  *
- *     min-width  >= left border + right border
- *     min-height >= top border + bottom border
+ * So the size is pinned on the SCROLLBAR node instead of the slider. Adwaita
+ * only ever sets min-width on the slider, so there is no competing rule: the
+ * scrollbar is 11px wide in every state, the slider fills it, and its 5px/1px
+ * transparent borders leave a 5px pill tucked against the window edge. The two
+ * `!important`-free declarations that do touch the slider — border and
+ * background — are repeated with Adwaita's own :not() chain so they win where
+ * it matters.
  *
- * GTK derives the painted box by subtracting the borders from the min size,
- * so if the borders are ever larger the result is negative and GTK complains
- *     GtkGizmo (slider) reported min width -6, but sizes must be >= 0
- * or pixman refuses the rectangle outright. The last round used a 6px border
- * against rules that only matched some of the time, so whenever they missed
- * the sum was 0 - 6 = -6, exactly what was reported. Both numbers below are
- * therefore set on the BASE selector, which always matches, and every later
- * rule keeps the invariant on its own.
+ * SIZE INVARIANT: GTK paints the pill as size minus borders, so the borders
+ * must never exceed it. 11 - (5 + 1) = 5px.
  *
- * The inset comes from a transparent border rather than a margin. A margin is
- * subtracted from the scrollbar's own narrow allocation, which is what caused
- * the pixman errors; a border belongs to the widget, so it is safe, it insets
- * the visible pill, and it doubles as extra grab area.
- *
- * Visibility is gated purely on opacity. GTK fades the scrollbar in by itself
- * whenever you scroll, and no amount of recolouring the slider can override
- * that — CSS opacity multiplies with it, so 0 wins in every state. */
+ * Inset is a transparent border, never a margin. A margin is subtracted from
+ * the scrollbar's allocation and was the original cause of
+ *     *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed */
 scrollbar {
     background: transparent;
     border: none;
@@ -45,12 +44,20 @@ scrollbar {
     transition: opacity 130ms ease;
 }
 
-/* The only states that reveal it: pointer on the bar, or dragging it. Merely
-   scrolling never does. */
+/* Revealed by the pointer only — never by scrolling. */
 scrollbar:hover,
 scrollbar.hovering,
 scrollbar.dragging {
     opacity: 1;
+}
+
+/* Thickness lives here, where Adwaita has no competing declaration. */
+scrollbar.vertical {
+    min-width: 11px;
+}
+
+scrollbar.horizontal {
+    min-height: 11px;
 }
 
 scrollbar trough {
@@ -58,76 +65,58 @@ scrollbar trough {
     border: none;
 }
 
-/* 11 - 6 = a 5px pill, and 11 >= 6 keeps the invariant even if no rule below
-   matches. Transparent border, so there is no visible outline. */
-scrollbar slider {
-    border: 3px solid transparent;
+/* Slider geometry. The :not() chain matches Adwaita's specificity so the
+   transparent border replaces its black hairline in the collapsed state too. */
+scrollbar slider,
+scrollbar.overlay-indicator slider,
+scrollbar.overlay-indicator:not(.dragging):not(.hovering) slider {
+    border-style: solid;
+    border-color: transparent;
     border-radius: 999px;
     background-clip: padding-box;
-    min-width: 11px;
-    min-height: 11px;
-    background-color: alpha(@kalam_text_dim, 0.5);
-    transition: background-color 130ms ease;
+    min-width: 0;
+    min-height: 0;
 }
 
-scrollbar slider:hover {
-    background-color: alpha(@kalam_text_dim, 0.72);
-}
-
-scrollbar slider:active {
-    background-color: @kalam_accent;
-}
-
-/* Asymmetric inset: 1px at the window edge, 5px on the content side, so the
-   bar hugs the edge instead of floating in a gutter. 12 - (5 + 1) = 5px. */
-scrollbar.vertical slider {
-    border-left-width: 5px;
-    border-right-width: 1px;
-    min-width: 12px;
+/* Asymmetric inset: more on the content side than at the window edge, so the
+   pill hugs the edge rather than floating in a gutter. */
+scrollbar.vertical slider,
+scrollbar.vertical.overlay-indicator slider,
+scrollbar.vertical.overlay-indicator:not(.dragging):not(.hovering) slider {
+    border-width: 3px 1px 3px 5px;
     min-height: 36px;
 }
 
-scrollbar.horizontal slider {
-    border-top-width: 5px;
-    border-bottom-width: 1px;
-    min-height: 12px;
+scrollbar.horizontal slider,
+scrollbar.horizontal.overlay-indicator slider,
+scrollbar.horizontal.overlay-indicator:not(.dragging):not(.hovering) slider {
+    border-width: 5px 3px 1px 3px;
     min-width: 36px;
 }
 
-/* Adwaita shrinks the slider to 3px in the collapsed indicator state and
-   widens it while hovering or dragging. Both would break the invariant or
-   fatten the bar, so the size is restated here. Same specificity as Adwaita's
-   own selector, and this sheet loads at application priority. */
-scrollbar.vertical.overlay-indicator slider,
-scrollbar.vertical.overlay-indicator:not(.dragging):not(.hovering) slider,
-scrollbar.vertical:hover slider,
-scrollbar.vertical.hovering slider,
-scrollbar.vertical.dragging slider,
-scrollbar.vertical slider:hover,
-scrollbar.vertical slider:active {
-    border-left-width: 5px;
-    border-right-width: 1px;
-    min-width: 12px;
-}
-
-scrollbar.horizontal.overlay-indicator slider,
-scrollbar.horizontal.overlay-indicator:not(.dragging):not(.hovering) slider,
-scrollbar.horizontal:hover slider,
-scrollbar.horizontal.hovering slider,
-scrollbar.horizontal.dragging slider,
-scrollbar.horizontal slider:hover,
-scrollbar.horizontal slider:active {
-    border-top-width: 5px;
-    border-bottom-width: 1px;
-    min-height: 12px;
-}
-
-/* Belt and braces for the orientation-less case: if the orientation classes
-   ever fail to match, this still holds the invariant. */
+/* Dim grey whenever it is showing... */
+scrollbar slider,
 scrollbar.overlay-indicator slider,
-scrollbar.overlay-indicator:not(.dragging):not(.hovering) slider {
-    min-width: 11px;
-    min-height: 11px;
+scrollbar.overlay-indicator:not(.dragging):not(.hovering) slider,
+scrollbar:hover slider,
+scrollbar.hovering slider {
+    background-color: alpha(@kalam_text_dim, 0.55);
+    transition: background-color 130ms ease;
+}
+
+/* ...and the theme accent while it is being dragged. Written with the same
+   :not() chain length as the dim rule above, otherwise the dim colour wins on
+   specificity and the accent never shows. */
+scrollbar.dragging slider,
+scrollbar.overlay-indicator.dragging slider,
+scrollbar.overlay-indicator.dragging:not(.hovering) slider,
+scrollbar.hovering.dragging slider,
+scrollbar.vertical.dragging slider,
+scrollbar.horizontal.dragging slider,
+scrollbar slider:active,
+scrollbar.overlay-indicator slider:active,
+scrollbar.overlay-indicator:not(.dragging):not(.hovering) slider:active {
+    background-color: @kalam_accent;
 }
 
 /* ── slim sidebar ───────────────────────────────────── */
