@@ -1140,9 +1140,7 @@ impl ReaderModel {
                         payload.context.as_deref().or(self.dict_context.as_deref()),
                     ) {
                         Ok(_) => crate::notify::compact("Word saved", &word),
-                        Err(e) => {
-                            crate::notify::error("Could not save the word", &e.to_string())
-                        }
+                        Err(e) => crate::notify::error("Could not save the word", &e.to_string()),
                     }
                 }
             }
