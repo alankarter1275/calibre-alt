@@ -13,24 +13,38 @@ window.kalam-window {
 }
 
 /* ── scrollbars ─────────────────────────────────────── */
-/* A thin bar that appears ONLY when the pointer is at the right edge.
+/* Invisible until the pointer reaches the right edge. Thin, and it stays thin.
  *
- * How Adwaita builds a slider, which everything here is designed around:
- * the widget is wide, with a transparent border and
- * `background-clip: padding-box`, so the painted pill is just the content box
- * while the border provides an invisible grab area. That also means the border
- * width is what insets the pill from the window edge — no margin needed, which
- * matters because a margin is subtracted from the scrollbar's own narrow
- * allocation and going negative is what produced both
+ * Visibility is gated on ONE thing: `opacity` on the scrollbar itself, off by
+ * default and on only while hovered or dragged. Earlier attempts tried to
+ * enumerate GTK's states and paint the slider transparent in each one, which
+ * kept missing cases — GTK also fades the scrollbar in programmatically when
+ * you scroll, and no amount of colouring the slider can veto that. CSS opacity
+ * multiplies with that programmatic fade, so 0 here wins no matter what state
+ * GTK thinks it is in. Adwaita styles its own scrollbars with opacity too, so
+ * this is the supported route, and opacity does not affect hit testing — the
+ * bar is still grabbable the instant the pointer reaches it.
+ *
+ * Geometry rules, learned the hard way: never use `margin` or `padding` here,
+ * and keep every length positive. A margin is subtracted from the scrollbar's
+ * own narrow allocation and going negative is what produced both
  *     *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
  * and
  *     GtkGizmo (slider) reported min width -12, but sizes must be >= 0
- *
- * Rules: every length below is positive, there are no margins anywhere, and
- * thickness is restated in every state so nothing can grow it. */
+ * The inset from the window edge therefore comes from a transparent BORDER,
+ * which is part of the widget: it holds the pill off the edge and doubles as
+ * the grab area, exactly as Adwaita does it. */
 scrollbar {
     background: transparent;
     border: none;
+    opacity: 0;
+    transition: opacity 130ms ease;
+}
+
+scrollbar:hover,
+scrollbar.hovering,
+scrollbar.dragging {
+    opacity: 1;
 }
 
 scrollbar trough {
@@ -39,55 +53,43 @@ scrollbar trough {
 }
 
 scrollbar slider {
-    /* 3px transparent border floats the pill just off the edge and keeps the
-       grab area bigger than the 4px that is actually drawn. */
+    /* Transparent border, not a margin: insets the pill ~3px from the edge and
+       keeps the grab area wider than the 4px actually drawn. Setting the
+       colour explicitly also removes the outline Adwaita draws on the
+       collapsed indicator, which was the ring around the bar. */
     border: 3px solid transparent;
     border-radius: 999px;
     background-clip: padding-box;
-    background-color: transparent;
-    transition: background-color 140ms ease;
-}
-
-/* Thickness and length are different axes per orientation, so they are set
-   per orientation rather than with a single min-width/min-height pair. */
-scrollbar.vertical slider {
-    min-width: 4px;
-    min-height: 30px;
-}
-
-scrollbar.horizontal slider {
-    min-height: 4px;
-    min-width: 30px;
-}
-
-/* Invisible while merely scrolling.
-   GTK reveals the overlay indicator on scroll; this is that exact state
-   (`overlay-indicator` without `hovering`/`dragging`). Painting it
-   transparent means a wheel scroll or two-finger slide shows nothing. */
-scrollbar.overlay-indicator:not(.hovering):not(.dragging) slider {
-    background-color: transparent;
-    /* Adwaita outlines the collapsed indicator; that is the border that looked
-       like an ugly ring. Only the colour is cleared, so geometry is intact. */
-    border-color: transparent;
-}
-
-/* Visible only with the pointer on the bar itself, at the right edge. */
-scrollbar:hover slider,
-scrollbar.hovering slider {
     background-color: alpha(@kalam_text_dim, 0.55);
 }
 
-scrollbar.dragging slider,
+scrollbar slider:hover {
+    background-color: alpha(@kalam_text_dim, 0.75);
+}
+
 scrollbar slider:active {
     background-color: @kalam_accent;
 }
 
-/* Adwaita widens the slider on hover and while dragging. Restating the
-   thickness in those states pins it, so the bar never fattens under the
-   cursor. Length is left alone. */
+/* Thickness is one axis, length the other, so they are set per orientation. */
+scrollbar.vertical slider {
+    min-width: 4px;
+    min-height: 32px;
+}
+
+scrollbar.horizontal slider {
+    min-height: 4px;
+    min-width: 32px;
+}
+
+/* Adwaita grows the slider in its hovering, dragging and indicator states.
+   Restating the thickness in each pins it, so the bar never fattens under the
+   cursor. Length is deliberately left alone. */
 scrollbar.vertical:hover slider,
 scrollbar.vertical.hovering slider,
 scrollbar.vertical.dragging slider,
+scrollbar.vertical.overlay-indicator slider,
+scrollbar.vertical slider:hover,
 scrollbar.vertical slider:active {
     min-width: 4px;
 }
@@ -95,6 +97,8 @@ scrollbar.vertical slider:active {
 scrollbar.horizontal:hover slider,
 scrollbar.horizontal.hovering slider,
 scrollbar.horizontal.dragging slider,
+scrollbar.horizontal.overlay-indicator slider,
+scrollbar.horizontal slider:hover,
 scrollbar.horizontal slider:active {
     min-height: 4px;
 }

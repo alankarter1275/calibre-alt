@@ -20,6 +20,9 @@ mod theme;
 mod widgets;
 
 use app::AppModel;
+// SettingsExt carries the gtk-overlay-scrolling setter used below. `gtk` is a
+// direct dependency, matching how every other module imports it.
+use gtk::prelude::SettingsExt;
 use relm4::RelmApp;
 
 fn main() {
@@ -29,6 +32,16 @@ fn main() {
     // Dark baseline via Adwaita (GtkSettings prefer-dark is unsupported with libadwaita).
     let style = adw::StyleManager::default();
     style.set_color_scheme(adw::ColorScheme::ForceDark);
+
+    // Force overlay scrollbars. When a desktop sets gtk-overlay-scrolling=false
+    // — several tiling setups and GTK theme tweaks do — scrollbars become
+    // permanent widgets that occupy layout space and are always drawn, so no
+    // amount of CSS can make them appear only on hover. Kalam's reading layout
+    // assumes the overlay behaviour, so it is requested explicitly rather than
+    // left to the environment.
+    if let Some(settings) = gtk::Settings::default() {
+        settings.set_gtk_overlay_scrolling(true);
+    }
 
     // Ensure data dirs exist before the catalog is opened to read the theme.
     if let Err(err) = paths::ensure_data_dirs() {
