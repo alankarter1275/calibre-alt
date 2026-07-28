@@ -43,7 +43,15 @@ fn main() {
     // never flashes the default palette on the way to the chosen one. Read
     // straight from the prefs table: AppModel opens its own handle a moment
     // later, and threading one through just for this would be worse.
-    theme::apply(&startup_theme());
+    //
+    // KALAM_NO_CSS=1 skips the stylesheet entirely. It is a diagnostic: if a
+    // GTK rendering warning still appears with no custom CSS loaded, the cause
+    // is not in style.rs and no amount of editing it will help.
+    if std::env::var_os("KALAM_NO_CSS").is_none() {
+        theme::apply(&startup_theme());
+    } else {
+        eprintln!("kalam: KALAM_NO_CSS set — running with stock GTK styling");
+    }
 
     app.run::<AppModel>(());
 }

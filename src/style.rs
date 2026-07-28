@@ -13,76 +13,34 @@ window.kalam-window {
 }
 
 /* ── scrollbars ─────────────────────────────────────── */
-/* A thin pill that hugs the window edge and stays out of the way.
+/* Deliberately minimal.
  *
- * Fading is done by making the *slider* transparent, never with `opacity` on
- * the scrollbar itself. An opacity below 1 makes GTK render the widget through
- * an offscreen surface, and while an overlay scrollbar is collapsed that
- * surface can be zero-sized, which pixman rejects:
+ * Five attempts at a custom thin overlay scrollbar each produced
  *     *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
- * Colouring the slider avoids the offscreen entirely. */
-scrollbar {
-    background: transparent;
-    border: none;
-    /* Vertical inset only; horizontal padding on the scrollbar would shrink
-       the slider's allocation again. */
-    margin-top: 2px;
-    margin-bottom: 2px;
-}
-
-/* No horizontal margin. This is the one that caused the pixman errors.
+ * in varying numbers. GTK4 allocates a collapsed overlay scrollbar only a few
+ * pixels wide, and anything that shrinks the slider further — margins, padding,
+ * a smaller min-width — risks a negative allocation, which is what pixman
+ * rejects. Restyling geometry here is not worth a stream of runtime errors.
  *
- * A collapsed GTK4 overlay scrollbar is allocated only a few pixels wide, and
- * the slider gets that width MINUS its margins. With `margin: 3px 1px 3px 4px`
- * a ~3px scrollbar left the slider 3 - 5 = -2px, and a negative allocation is
- * what pixman rejects:
- *     gtk_widget_size_allocate(): ... with width -2 and height -2
- *     *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
- * The error count tracked how many scrolled windows were realised, which is
- * why it kept moving between runs.
- *
- * Thickness now comes from min-width alone, and the whole scrollbar is nudged
- * toward the edge with a margin on `scrollbar` itself, which is allocated the
- * full gutter and can absorb one safely. */
+ * So: colour only. No margin, no padding, no size overrides. GTK's own
+ * geometry is left completely alone. */
 scrollbar slider {
-    background: transparent;
-    border: none;
+    background: alpha(@kalam_text_dim, 0.4);
     border-radius: 999px;
-    min-width: 4px;
-    min-height: 28px;
-    margin: 0;
-    transition: background 180ms ease;
 }
 
-/* Visible once the pointer is over the scroll area or the bar itself. */
-scrolledwindow:hover scrollbar slider,
-scrollbar:hover slider,
-scrollbar.hovering slider {
-    background: alpha(@kalam_text_dim, 0.45);
-}
-
-scrollbar:hover slider {
+scrollbar slider:hover {
     background: alpha(@kalam_text_dim, 0.7);
 }
 
-scrollbar slider:active,
-scrollbar.dragging slider {
+scrollbar slider:active {
     background: @kalam_accent;
 }
 
-/* No trough fill, so the gutter stays narrow. */
 scrollbar trough {
     background: transparent;
     border: none;
-    margin: 0;
 }
-
-/* Stepper buttons are deliberately NOT styled to zero size here. GTK still
-   allocates and snapshots them, and a 0x0 allocation makes pixman reject the
-   clip rectangle:
-       *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
-   one per stepper, four per scrolled window. GTK4 hides steppers by default,
-   so there is nothing to suppress in the first place. */
 
 /* ── slim sidebar ───────────────────────────────────── */
 .kalam-sidebar {
