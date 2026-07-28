@@ -350,11 +350,11 @@ rounds.
 - **Sidebar** — 48px icon-only rail, logo pinned top, nav centred, Settings
   bottom, circular active state.
 - **Logo** — `assets/logo.png`, embedded with `include_bytes!`.
+- **Settings (`src/pages/settings.rs`)** — redesigned into a two-column layout: a 220px navigation rail with 6 categories (Appearance, Storage & Backup, Dictionaries, Book Files, Metadata Sources, Notifications) and rounded cards (`kalam-card`) grouping individual setting rows.
 
 ### Next
-1. **Settings** — currently one long unstructured column; needs grouping.
-2. Home / dashboard — the two-column layout the design references imply.
-3. Library, Book page, Reader chrome, dialogs.
+1. Home / dashboard — the two-column layout the design references imply.
+2. Library, Book page, Reader chrome, dialogs.
 
 ### Hard-won GTK/CSS rules
 
@@ -631,3 +631,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-28 | Metadata overrides keyed on `file_hash` (schema v7) so edits and covers survive delete → re-import |
 | 2026-07-28 | EPUB writeback fixed for single-line OPFs; toast accent restyled to the reference; every user action now confirms |
 | 2026-07-28 | P5.5 opened: UI overhaul, one window at a time, mockup before code. Colour system + 13 dark themes + slim sidebar shipped |
+| 2026-07-28 | P5.5 Settings window redesigned: 220px 6-tab navigation rail + rounded cards layout |
