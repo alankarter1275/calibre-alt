@@ -193,13 +193,7 @@ pub const AYU_MIRAGE: Theme = Theme {
 
 /// Every theme, in the order Settings lists them.
 pub const ALL: &[Theme] = &[
-    ONEDARK,
-    TOKYONIGHT,
-    EVERFOREST,
-    CATPPUCCIN,
-    GRUVBOX,
-    NORD,
-    AYU_MIRAGE,
+    ONEDARK, TOKYONIGHT, EVERFOREST, CATPPUCCIN, GRUVBOX, NORD, AYU_MIRAGE,
 ];
 
 /// The theme used on first run and whenever a stored id is unrecognised.
@@ -210,10 +204,7 @@ pub const DEFAULT: Theme = ONEDARK;
 /// Deliberately total: a pref left behind by a renamed or removed theme
 /// should quietly fall back, never fail to start the app.
 pub fn by_id(id: &str) -> Theme {
-    ALL.iter()
-        .find(|t| t.id == id)
-        .copied()
-        .unwrap_or(DEFAULT)
+    ALL.iter().find(|t| t.id == id).copied().unwrap_or(DEFAULT)
 }
 
 /// The `@define-color` block prepended to the stylesheet.
