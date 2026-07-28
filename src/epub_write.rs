@@ -214,15 +214,19 @@ fn rewrite_opf(xml: &str, book: &Book) -> Result<String> {
 
     // Keep anything we do not manage: identifiers, language, modified stamps,
     // the cover pointer, and any vendor metadata.
-    for line in original.lines() {
-        let t = line.trim();
-        if t.is_empty() {
+    //
+    // This walks *elements*, not lines. Splitting on newlines assumed every
+    // metadata tag sat on its own line, which is only true of pretty-printed
+    // OPFs. Plenty of real EPUBs put the whole block on one line, and then a
+    // single "line" contained both managed and unmanaged tags: either the lot
+    // was dropped, or nothing was, leaving the old title in place beside the
+    // new one. Two <dc:title>s is why Foliate kept showing the original.
+    for element in metadata_elements(original) {
+        if is_managed_element(element, &prefix) {
             continue;
         }
-        if is_managed_tag(t, &prefix) {
-            continue;
-        }
-        rebuilt.push_str(line);
+        rebuilt.push_str("    ");
+        rebuilt.push_str(element.trim());
         rebuilt.push('\n');
     }
 
@@ -298,8 +302,77 @@ fn detect_dc_prefix(metadata: &str) -> String {
     }
 }
 
+/// Split a metadata block into top-level elements, regardless of line breaks.
+///
+/// Deliberately small rather than a full parser: it tracks whether it is
+/// inside a quoted attribute or a comment so that a `>` in either does not
+/// end an element early. Nested children (rare in OPF metadata, but legal)
+/// come back attached to their parent, which is what we want — the parent is
+/// either kept whole or dropped whole.
+fn metadata_elements(block: &str) -> Vec<&str> {
+    let bytes = block.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    let mut depth = 0i32;
+    let mut start = 0usize;
+    let mut quote: Option<u8> = None;
+
+    while i < bytes.len() {
+        let c = bytes[i];
+
+        if let Some(q) = quote {
+            if c == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+
+        match c {
+            b'"' | b'\'' if depth > 0 => quote = Some(c),
+            b'<' => {
+                // Comments and CDATA/processing instructions are copied as-is.
+                if block[i..].starts_with("<!--") {
+                    let stop = block[i..].find("-->").map(|p| i + p + 3).unwrap_or(bytes.len());
+                    if depth == 0 {
+                        out.push(&block[i..stop]);
+                    }
+                    i = stop;
+                    continue;
+                }
+                if depth == 0 {
+                    start = i;
+                }
+                // A closing tag `</x>` pairs with the open that preceded it.
+                if !block[i..].starts_with("</") {
+                    depth += 1;
+                } else {
+                    depth -= 1;
+                }
+            }
+            b'>' => {
+                // Self-closing `<x/>` opened and closed in one tag.
+                if i > 0 && bytes[i - 1] == b'/' {
+                    depth -= 1;
+                }
+                if depth <= 0 {
+                    let piece = block[start..=i].trim();
+                    if !piece.is_empty() {
+                        out.push(piece);
+                    }
+                    depth = 0;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    out
+}
+
 /// Tags we replace wholesale, so old values are not left behind.
-fn is_managed_tag(line: &str, prefix: &str) -> bool {
+fn is_managed_element(element: &str, prefix: &str) -> bool {
     const MANAGED: [&str; 6] = [
         "title",
         "creator",
@@ -308,15 +381,20 @@ fn is_managed_tag(line: &str, prefix: &str) -> bool {
         "date",
         "subject",
     ];
+    let t = element.trim_start();
     for tag in MANAGED {
-        if line.starts_with(&format!("<{prefix}{tag}>"))
-            || line.starts_with(&format!("<{prefix}{tag} "))
-        {
-            return true;
+        let open = format!("<{prefix}{tag}");
+        if let Some(rest) = t.strip_prefix(&open) {
+            // Guard against <dc:date> matching <dc:dateCopyrighted>: the name
+            // must actually end here.
+            if rest.starts_with('>') || rest.starts_with('/') || rest.starts_with(char::is_whitespace)
+            {
+                return true;
+            }
         }
     }
     // Calibre series markers are rewritten too.
-    line.contains("name=\"calibre:series\"") || line.contains("name=\"calibre:series_index\"")
+    t.contains("name=\"calibre:series\"") || t.contains("name=\"calibre:series_index\"")
 }
 
 fn escape_xml(s: &str) -> String {
@@ -414,6 +492,78 @@ mod tests {
     #[test]
     fn missing_metadata_block_is_an_error_not_a_panic() {
         assert!(rewrite_opf("<package></package>", &book()).is_err());
+    }
+
+    /// The bug Foliate exposed: an OPF whose metadata is all on one line.
+    /// The old line-based filter could not drop individual tags, so the
+    /// original title survived alongside the new one and readers showed the
+    /// stale value.
+    #[test]
+    fn rewrites_single_line_metadata() {
+        let opf = concat!(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">"#,
+            r#"<dc:identifier id="BookId">urn:uuid:abc</dc:identifier>"#,
+            r#"<dc:title>Old Title</dc:title>"#,
+            r#"<dc:creator>Someone Else</dc:creator>"#,
+            r#"<dc:language>en</dc:language>"#,
+            r#"</metadata></package>"#
+        );
+        let out = rewrite_opf(opf, &book()).unwrap();
+        assert!(out.contains("<dc:title>New Title</dc:title>"), "{out}");
+        assert!(!out.contains("Old Title"), "stale title survived: {out}");
+        assert!(!out.contains("Someone Else"), "stale author survived: {out}");
+        assert_eq!(out.matches("<dc:title>").count(), 1, "duplicated: {out}");
+        // Unmanaged entries still have to survive.
+        assert!(out.contains("urn:uuid:abc"));
+        assert!(out.contains("<dc:language>en</dc:language>"));
+    }
+
+    #[test]
+    fn keeps_a_greater_than_inside_an_attribute() {
+        let opf = concat!(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">"#,
+            r#"<dc:title>Old</dc:title><meta name="x" content="a > b"/>"#,
+            r#"</metadata></package>"#
+        );
+        let out = rewrite_opf(opf, &book()).unwrap();
+        assert!(out.contains(r#"<meta name="x" content="a > b"/>"#), "{out}");
+        assert!(!out.contains(">Old<"), "{out}");
+    }
+
+    /// `<dc:date>` is managed; `<dc:dateCopyrighted>` merely starts with it.
+    #[test]
+    fn prefix_match_does_not_eat_longer_tag_names() {
+        let opf = concat!(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">"#,
+            r#"<dc:date>2001</dc:date><dc:dateCopyrighted>1999</dc:dateCopyrighted>"#,
+            r#"</metadata></package>"#
+        );
+        let out = rewrite_opf(opf, &book()).unwrap();
+        assert!(out.contains("<dc:dateCopyrighted>1999</dc:dateCopyrighted>"), "{out}");
+        assert!(!out.contains(">2001<"), "{out}");
+    }
+
+    #[test]
+    fn title_with_attributes_is_still_replaced() {
+        let opf = concat!(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">"#,
+            r#"<dc:title id="t1" xml:lang="en">Old Title</dc:title>"#,
+            r#"</metadata></package>"#
+        );
+        let out = rewrite_opf(opf, &book()).unwrap();
+        assert!(!out.contains("Old Title"), "{out}");
+        assert!(out.contains("<dc:title>New Title</dc:title>"), "{out}");
+    }
+
+    #[test]
+    fn comments_survive_the_rewrite() {
+        let opf = concat!(
+            r#"<package><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">"#,
+            r#"<!-- built by something --><dc:title>Old</dc:title>"#,
+            r#"</metadata></package>"#
+        );
+        let out = rewrite_opf(opf, &book()).unwrap();
+        assert!(out.contains("<!-- built by something -->"), "{out}");
     }
 
     #[test]

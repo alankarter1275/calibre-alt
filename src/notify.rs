@@ -21,6 +21,8 @@ use std::collections::VecDeque;
 /// How long a toast stays on screen before fading, by severity.
 const DISMISS_MS_INFO: u32 = 4_000;
 const DISMISS_MS_ERROR: u32 = 9_000;
+/// Compact toasts are acknowledgements, not messages; they go quickly.
+const DISMISS_MS_COMPACT: u32 = 2_000;
 /// Toasts visible at once; older ones are dropped from the stack.
 const MAX_VISIBLE: usize = 4;
 /// Entries kept for the history view.
@@ -79,6 +81,9 @@ pub struct Entry {
     pub detail: String,
     /// Wall-clock `HH:MM` for the history list.
     pub at: String,
+    /// Slimmer card, shorter life. For things that recur mid-read and would
+    /// otherwise nag.
+    pub compact: bool,
 }
 
 thread_local! {
@@ -101,19 +106,26 @@ pub fn attach(host: gtk::Box) {
 }
 
 pub fn success(title: &str, detail: &str) {
-    push(Kind::Success, title, detail);
+    push(Kind::Success, title, detail, false);
 }
 
 pub fn error(title: &str, detail: &str) {
-    push(Kind::Error, title, detail);
+    push(Kind::Error, title, detail, false);
 }
 
 pub fn info(title: &str, detail: &str) {
-    push(Kind::Info, title, detail);
+    push(Kind::Info, title, detail, false);
 }
 
 pub fn activity(title: &str, detail: &str) {
-    push(Kind::Progress, title, detail);
+    push(Kind::Progress, title, detail, false);
+}
+
+/// A small, brief confirmation. Highlighting and saving quotes happen many
+/// times in a sitting, so those get a slim card that clears itself quickly
+/// rather than a full-sized toast parked over the page.
+pub fn compact(title: &str, detail: &str) {
+    push(Kind::Success, title, detail, true);
 }
 
 /// Report a `Result`'s error, if it has one. Returns whether it was Ok, so
@@ -185,12 +197,13 @@ pub fn outcome_info<T, E: std::fmt::Display>(
     }
 }
 
-fn push(kind: Kind, title: &str, detail: &str) {
+fn push(kind: Kind, title: &str, detail: &str, compact: bool) {
     let entry = Entry {
         kind,
         title: title.to_string(),
         detail: detail.to_string(),
         at: clock_now(),
+        compact,
     };
 
     HISTORY.with(|h| {
@@ -238,8 +251,13 @@ fn present(entry: &Entry) {
         // because we check its parent first.
         let host_for_timeout = host.clone();
         let card_for_timeout = card.clone();
+        let life = if entry.compact {
+            DISMISS_MS_COMPACT
+        } else {
+            entry.kind.dismiss_ms()
+        };
         gtk::glib::timeout_add_local_once(
-            std::time::Duration::from_millis(entry.kind.dismiss_ms() as u64),
+            std::time::Duration::from_millis(life as u64),
             move || {
                 if card_for_timeout.parent().is_some() {
                     host_for_timeout.remove(&card_for_timeout);
@@ -264,6 +282,9 @@ fn build_card(entry: &Entry) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     card.add_css_class("kalam-toast");
     card.add_css_class(entry.kind.css());
+    if entry.compact {
+        card.add_css_class("kalam-toast-compact");
+    }
     card.set_halign(gtk::Align::End);
     // GTK CSS has no `overflow`; clip here so the accent stripe follows the
     // rounded corners.
@@ -282,6 +303,11 @@ fn build_card(entry: &Entry) -> gtk::Box {
     accent.add_css_class("kalam-toast-accent");
     accent.set_size_request(5, -1);
     accent.set_valign(gtk::Align::Fill);
+    if entry.compact {
+        // A compact card is much shorter, so the standard 13px inset would
+        // eat the whole bar; the compact rule uses a smaller one.
+        accent.add_css_class("kalam-toast-accent-compact");
+    }
     card.append(&accent);
 
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 14);

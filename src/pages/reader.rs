@@ -797,7 +797,9 @@ color:#3e3226;font-family:Georgia,serif'>\
             }
             ReaderMsg::SaveCurrentWord => {
                 if let (Some(w), Some(def)) = (&self.dict_lookup_word, &self.dict_lookup_def) {
-                    let _ = self.catalog.insert_saved_word(
+                    // The Result was dropped here, so the popover reported
+                    // "Word saved" even when the insert had failed.
+                    let saved = self.catalog.insert_saved_word(
                         w,
                         def,
                         None,
@@ -805,13 +807,25 @@ color:#3e3226;font-family:Georgia,serif'>\
                         Some(self.chapter as i64),
                         self.dict_context.as_deref(),
                     );
-                    self.dict_lookup_word = None;
-                    self.dict_lookup_def = None;
+                    let message = match &saved {
+                        Ok(_) => {
+                            crate::notify::compact("Word saved", w);
+                            "Word saved to Saved words."
+                        }
+                        Err(e) => {
+                            crate::notify::error("Could not save the word", &e.to_string());
+                            "Could not save that word."
+                        }
+                    };
+                    if saved.is_ok() {
+                        self.dict_lookup_word = None;
+                        self.dict_lookup_def = None;
+                    }
                     if let Some(pop) = widgets.dict_btn.popover() {
                         if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
                             unsafe {
                                 if let Some(label) = pop.data::<gtk::Label>("kalam-dict-res") {
-                                    label.as_ref().set_label("Word saved to Saved words.");
+                                    label.as_ref().set_label(message);
                                 }
                             }
                         }
@@ -1045,7 +1059,9 @@ impl ReaderModel {
                             .unwrap_or_default();
                         sender.input(ReaderMsg::AnnotationsReload);
                     }
-                    Err(e) => eprintln!("kalam: insert highlight failed: {e}"),
+                    // This used to print to stderr, so a failed highlight just
+                    // silently did not appear.
+                    Err(e) => crate::notify::error("Could not save the highlight", &e.to_string()),
                 }
             }
             "quote" => {
@@ -1057,26 +1073,26 @@ impl ReaderModel {
                 if sp.is_empty() || ep.is_empty() || text.trim().is_empty() {
                     return;
                 }
-                if self
-                    .catalog
-                    .insert_annotation(
-                        self.book_id,
-                        "quote",
-                        self.chapter as i64,
-                        &sp,
-                        so,
-                        &ep,
-                        eo,
-                        "yellow",
-                        &text,
-                        "",
-                    )
-                    .is_ok()
-                {
-                    self.all_book_annotations = self
-                        .catalog
-                        .get_annotations_for_book(self.book_id)
-                        .unwrap_or_default();
+                match self.catalog.insert_annotation(
+                    self.book_id,
+                    "quote",
+                    self.chapter as i64,
+                    &sp,
+                    so,
+                    &ep,
+                    eo,
+                    "yellow",
+                    &text,
+                    "",
+                ) {
+                    Ok(_) => {
+                        crate::notify::compact("Quote saved", "");
+                        self.all_book_annotations = self
+                            .catalog
+                            .get_annotations_for_book(self.book_id)
+                            .unwrap_or_default();
+                    }
+                    Err(e) => crate::notify::error("Could not save the quote", &e.to_string()),
                 }
             }
             "dict-lookup" => {

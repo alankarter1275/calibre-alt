@@ -977,6 +977,31 @@ popover.kalam-reader-popover > contents {
     padding: 14px 18px 14px 14px;
 }
 
+/* Highlighting and quoting recur constantly while reading, so those get a
+   slimmer, quieter card rather than a full-sized toast over the page. */
+.kalam-toast-compact {
+    min-width: 210px;
+}
+
+.kalam-toast-compact .kalam-toast-body {
+    padding: 7px 14px 7px 10px;
+}
+
+.kalam-toast-compact .kalam-toast-title {
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+
+.kalam-toast-compact .kalam-toast-icon {
+    font-size: 0.9rem;
+}
+
+.kalam-toast-accent-compact {
+    margin-top: 6px;
+    margin-bottom: 6px;
+    min-height: 12px;
+}
+
 .kalam-toast-title {
     font-size: 0.92rem;
     font-weight: 600;
