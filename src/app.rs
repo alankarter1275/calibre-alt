@@ -594,6 +594,11 @@ impl Component for AppModel {
                     gtk::ScrolledWindow {
                         set_hexpand: true,
                         set_vexpand: true,
+                        // GTK4 dropped the global gtk-overlay-scrolling setting;
+                        // it is per-widget now. Without this the scrollbar can be
+                        // a permanent widget that takes layout space and is always
+                        // painted, which no CSS can hide.
+                        set_overlay_scrolling: true,
                         set_hscrollbar_policy: gtk::PolicyType::Never,
                         #[watch]
                         set_vscrollbar_policy: if model.route.is_reader() {
