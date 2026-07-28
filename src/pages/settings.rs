@@ -444,7 +444,9 @@ fn build_theme_picker(host: &gtk::Box, catalog: &Arc<Catalog>) {
             // style_context() API is deprecated in GTK 4.10.
             let class = format!("kalam-swatch-{}-{slot}", theme.id);
             let provider = gtk::CssProvider::new();
-            provider.load_from_data(&format!(".{class} {{ background: {colour}; }}"));
+            // load_from_data is deprecated as of GTK 4.12 in favour of
+            // load_from_string; we build with the v4_12 feature.
+            provider.load_from_string(&format!(".{class} {{ background: {colour}; }}"));
             if let Some(display) = gtk::gdk::Display::default() {
                 gtk::style_context_add_provider_for_display(
                     &display,

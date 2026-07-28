@@ -48,21 +48,19 @@ scrollbar.dragging slider {
     background: @kalam_accent;
 }
 
-/* No stepper buttons, and no trough fill to widen the gutter. */
+/* No trough fill, so the gutter stays narrow. */
 scrollbar trough {
     background: transparent;
     border: none;
     margin: 0;
 }
 
-scrollbar button {
-    min-width: 0;
-    min-height: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: transparent;
-}
+/* Stepper buttons are deliberately NOT styled to zero size here. GTK still
+   allocates and snapshots them, and a 0x0 allocation makes pixman reject the
+   clip rectangle:
+       *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
+   one per stepper, four per scrolled window. GTK4 hides steppers by default,
+   so there is nothing to suppress in the first place. */
 
 /* ── slim sidebar ───────────────────────────────────── */
 .kalam-sidebar {
