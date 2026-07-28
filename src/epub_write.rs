@@ -333,7 +333,10 @@ fn metadata_elements(block: &str) -> Vec<&str> {
             b'<' => {
                 // Comments and CDATA/processing instructions are copied as-is.
                 if block[i..].starts_with("<!--") {
-                    let stop = block[i..].find("-->").map(|p| i + p + 3).unwrap_or(bytes.len());
+                    let stop = block[i..]
+                        .find("-->")
+                        .map(|p| i + p + 3)
+                        .unwrap_or(bytes.len());
                     if depth == 0 {
                         out.push(&block[i..stop]);
                     }
@@ -387,7 +390,9 @@ fn is_managed_element(element: &str, prefix: &str) -> bool {
         if let Some(rest) = t.strip_prefix(&open) {
             // Guard against <dc:date> matching <dc:dateCopyrighted>: the name
             // must actually end here.
-            if rest.starts_with('>') || rest.starts_with('/') || rest.starts_with(char::is_whitespace)
+            if rest.starts_with('>')
+                || rest.starts_with('/')
+                || rest.starts_with(char::is_whitespace)
             {
                 return true;
             }
@@ -511,7 +516,10 @@ mod tests {
         let out = rewrite_opf(opf, &book()).unwrap();
         assert!(out.contains("<dc:title>New Title</dc:title>"), "{out}");
         assert!(!out.contains("Old Title"), "stale title survived: {out}");
-        assert!(!out.contains("Someone Else"), "stale author survived: {out}");
+        assert!(
+            !out.contains("Someone Else"),
+            "stale author survived: {out}"
+        );
         assert_eq!(out.matches("<dc:title>").count(), 1, "duplicated: {out}");
         // Unmanaged entries still have to survive.
         assert!(out.contains("urn:uuid:abc"));
@@ -539,7 +547,10 @@ mod tests {
             r#"</metadata></package>"#
         );
         let out = rewrite_opf(opf, &book()).unwrap();
-        assert!(out.contains("<dc:dateCopyrighted>1999</dc:dateCopyrighted>"), "{out}");
+        assert!(
+            out.contains("<dc:dateCopyrighted>1999</dc:dateCopyrighted>"),
+            "{out}"
+        );
         assert!(!out.contains(">2001<"), "{out}");
     }
 
