@@ -356,6 +356,17 @@ rounds.
 2. Home / dashboard — the two-column layout the design references imply.
 3. Library, Book page, Reader chrome, dialogs.
 
+### Hard-won rules
+- **Never put `margin` or `padding` on `scrollbar` or `scrollbar slider`.**
+  A collapsed GTK4 overlay scrollbar is allocated ~3px wide and a margin is
+  subtracted from that, giving a negative allocation and a stream of
+  `pixman_region32_init_rect: Invalid rectangle passed` at runtime — one per
+  realised scrolled window, so the count looks random. `min-width`,
+  `min-height`, `background` and `border-radius` are safe, because a floor
+  cannot go negative. Confirmed by testing with `KALAM_NO_CSS=1`.
+- `KALAM_NO_CSS=1` runs the app with no custom stylesheet. Use it first when a
+  GTK rendering warning appears, before theorising about causes.
+
 ### Notes
 - Reader *page* theming (Light/Sepia/Dark paper) stays separate from app
   chrome: a sepia page inside a dark app is a legitimate combination.

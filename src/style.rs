@@ -13,33 +13,57 @@ window.kalam-window {
 }
 
 /* ── scrollbars ─────────────────────────────────────── */
-/* Deliberately minimal.
+/* Thin, edge-hugging, invisible until the pointer is in the scroll area.
  *
- * Five attempts at a custom thin overlay scrollbar each produced
+ * ONE HARD RULE: never put `margin` or `padding` on `scrollbar` or its
+ * `slider`. That was the pixman bug, confirmed by testing — removing them took
+ * the error count to zero. A collapsed GTK4 overlay scrollbar is allocated only
+ * about 3px wide, and a margin is subtracted from that allocation, so
+ * `margin: 3px` left the slider at 3 - 6 = -3px. A negative allocation is what
+ * pixman rejects:
  *     *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
- * in varying numbers. GTK4 allocates a collapsed overlay scrollbar only a few
- * pixels wide, and anything that shrinks the slider further — margins, padding,
- * a smaller min-width — risks a negative allocation, which is what pixman
- * rejects. Restyling geometry here is not worth a stream of runtime errors.
+ * The count varied per run because it fired once per realised scrolled window.
  *
- * So: colour only. No margin, no padding, no size overrides. GTK's own
- * geometry is left completely alone. */
-scrollbar slider {
-    background: alpha(@kalam_text_dim, 0.4);
-    border-radius: 999px;
-}
-
-scrollbar slider:hover {
-    background: alpha(@kalam_text_dim, 0.7);
-}
-
-scrollbar slider:active {
-    background: @kalam_accent;
+ * `min-width`, `min-height`, `background` and `border-radius` are all safe:
+ * a floor can never go negative. Everything below uses only those. */
+scrollbar {
+    background: transparent;
+    border: none;
 }
 
 scrollbar trough {
     background: transparent;
     border: none;
+}
+
+/* Transparent at rest — the bar is there, just unpainted, so nothing shifts
+   when it appears. */
+scrollbar slider {
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    min-width: 4px;
+    min-height: 30px;
+    transition: background 160ms ease, min-width 160ms ease;
+}
+
+/* Pointer anywhere in the scrolling area: a faint hint. */
+scrolledwindow:hover scrollbar slider {
+    background: alpha(@kalam_text_dim, 0.4);
+}
+
+/* Pointer on the bar itself: brighter and a little thicker, so it is easy to
+   grab. Widening is safe; only shrinking risks a negative allocation. */
+scrollbar:hover slider,
+scrollbar.hovering slider {
+    background: alpha(@kalam_text_dim, 0.75);
+    min-width: 7px;
+}
+
+scrollbar slider:active,
+scrollbar.dragging slider {
+    background: @kalam_accent;
+    min-width: 7px;
 }
 
 /* ── slim sidebar ───────────────────────────────────── */
