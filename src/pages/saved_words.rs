@@ -1,7 +1,7 @@
 use crate::db::{Catalog, SavedWord};
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum SavedWordsOut {
@@ -17,7 +17,7 @@ pub enum SavedWordsMsg {
 }
 
 pub struct SavedWordsModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     query: String,
     words: Vec<SavedWord>,
     status: String,
@@ -25,7 +25,7 @@ pub struct SavedWordsModel {
 
 #[relm4::component(pub)]
 impl Component for SavedWordsModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = SavedWordsMsg;
     type Output = SavedWordsOut;
     type CommandOutput = ();
@@ -118,7 +118,18 @@ impl Component for SavedWordsModel {
                 widgets.status_label.set_label(&self.status);
             }
             SavedWordsMsg::Delete(id) => {
-                let _ = self.catalog.delete_saved_word(id);
+                let word = self
+                    .words
+                    .iter()
+                    .find(|w| w.id == id)
+                    .map(|w| w.word.clone())
+                    .unwrap_or_default();
+                crate::notify::outcome_info(
+                    self.catalog.delete_saved_word(id),
+                    "Word deleted",
+                    &word,
+                    "Could not delete the word",
+                );
                 self.reload();
                 rebuild(&widgets.list_box, &self.words, &sender);
                 widgets.status_label.set_label(&self.status);

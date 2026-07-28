@@ -64,7 +64,11 @@ pub enum Route {
     LibrarySection(LibrarySection),
     ShelvesGrid,
     ShelfDetail {
-        shelf_id: u64,
+        shelf_id: i64,
+    },
+    /// Books carrying one tag (P4 tag browse).
+    TagBooks {
+        tag: String,
     },
     BookPage {
         book_id: i64,
@@ -82,6 +86,7 @@ impl Route {
             Route::LibrarySection(s) => s.label().to_string(),
             Route::ShelvesGrid => "Shelves".into(),
             Route::ShelfDetail { .. } => "Shelf".into(),
+            Route::TagBooks { tag } => tag.clone(),
             Route::BookPage { .. } => "Book".into(),
             Route::Reader { .. } => "Reading".into(),
         }
@@ -94,6 +99,7 @@ impl Route {
             Route::ShelvesGrid => Some("Smart and manual collections".into()),
             Route::LibrarySection(s) => Some(s.blurb().into()),
             Route::Module(NavItem::Settings) => Some("Paths and preferences".into()),
+            Route::TagBooks { .. } => Some("Every book with this tag".into()),
             Route::Reader { .. } => Some("Esc back · T TOC · N/P chapter · A+/A−".into()),
             _ => None,
         }
@@ -104,6 +110,7 @@ impl Route {
             Route::Module(item) => *item,
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
+            Route::TagBooks { .. } => NavItem::Library,
             Route::BookPage { .. } | Route::Reader { .. } => NavItem::Library,
         }
     }
@@ -125,6 +132,10 @@ pub enum LibrarySection {
 }
 
 impl LibrarySection {
+    /// Kept for the section pickers that will return with the definitive
+    /// layout; the dashboard now routes via content sections instead of a
+    /// generated tile grid.
+    #[allow(dead_code)]
     pub const ALL: &'static [LibrarySection] = &[
         LibrarySection::AllBooks,
         LibrarySection::ReadingList,
@@ -147,6 +158,7 @@ impl LibrarySection {
         }
     }
 
+    #[allow(dead_code)]
     pub fn icon(self) -> &'static str {
         match self {
             LibrarySection::AllBooks => "📚",
@@ -219,12 +231,45 @@ pub struct Book {
     pub cover_name: Option<String>,
     pub added_at: String,
     pub progress: u8,
+    /// 0..=10 half-stars; 0 means unrated.
+    pub rating: u8,
+    pub publisher: String,
+    /// Free text as printed on the book, e.g. "February 15, 2012".
+    pub published: String,
+    /// Position within `series`; 0 means unset. Fractional for novellas.
+    pub series_index: f32,
     pub tags: Vec<String>,
     pub cover_path: Option<PathBuf>,
     pub file_path: PathBuf,
 }
 
 impl Book {
+    /// `3.5` for 7 half-stars — `None` when unrated.
+    pub fn rating_stars(&self) -> Option<f32> {
+        if self.rating == 0 {
+            None
+        } else {
+            Some(self.rating as f32 / 2.0)
+        }
+    }
+
+    /// "Lord of the Rings #3", or just the series when no index is set.
+    pub fn series_display(&self) -> Option<String> {
+        let series = self.series.as_deref()?.trim();
+        if series.is_empty() {
+            return None;
+        }
+        if self.series_index <= 0.0 {
+            return Some(series.to_string());
+        }
+        // Whole numbers should not render as "3.0".
+        if (self.series_index.fract()).abs() < f32::EPSILON {
+            Some(format!("{series} #{}", self.series_index as i64))
+        } else {
+            Some(format!("{series} #{}", self.series_index))
+        }
+    }
+
     pub fn authors_display(&self) -> &str {
         if self.authors.trim().is_empty() {
             "Unknown"

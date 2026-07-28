@@ -8,7 +8,7 @@ use crate::models::Book;
 use crate::widgets::book_row::cover_widget;
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum BookFloatOut {
@@ -34,13 +34,13 @@ pub enum BookFloatMsg {
 }
 
 pub struct BookFloatModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     book: Option<Book>,
 }
 
 #[relm4::component(pub)]
 impl Component for BookFloatModel {
-    type Init = (Rc<Catalog>, i64);
+    type Init = (Arc<Catalog>, i64);
     type Input = BookFloatMsg;
     type Output = BookFloatOut;
     type CommandOutput = ();
@@ -305,7 +305,15 @@ impl Component for BookFloatModel {
             BookFloatMsg::Remove => {
                 if let Some(b) = &self.book {
                     let id = b.id;
-                    if self.catalog.delete_book(id).is_ok() {
+                    let title = b.title.clone();
+                    // This panel used to delete in total silence — the card
+                    // simply vanished with no confirmation either way.
+                    if crate::notify::outcome(
+                        self.catalog.delete_book(id),
+                        "Book removed",
+                        &title,
+                        "Could not remove the book",
+                    ) {
                         self.book = None;
                         sender.output(BookFloatOut::Deleted { book_id: id }).ok();
                     }

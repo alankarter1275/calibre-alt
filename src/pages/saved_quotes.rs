@@ -2,7 +2,7 @@ use crate::db::{Annotation, Catalog};
 use crate::models::Book;
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -17,10 +17,11 @@ pub enum SavedQuotesMsg {
     Delete(i64),
     Export,
     Refresh,
+    SaveNote { id: i64, note: String },
 }
 
 pub struct SavedQuotesModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     query: String,
     quotes: Vec<(Annotation, Option<Book>)>,
     status: String,
@@ -28,7 +29,7 @@ pub struct SavedQuotesModel {
 
 #[relm4::component(pub)]
 impl Component for SavedQuotesModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = SavedQuotesMsg;
     type Output = SavedQuotesOut;
     type CommandOutput = ();
@@ -130,7 +131,12 @@ impl Component for SavedQuotesModel {
                 widgets.status_label.set_label(&self.status);
             }
             SavedQuotesMsg::Delete(id) => {
-                let _ = self.catalog.delete_annotation(id);
+                crate::notify::outcome_info(
+                    self.catalog.delete_annotation(id),
+                    "Quote deleted",
+                    "",
+                    "Could not delete the quote",
+                );
                 self.reload();
                 rebuild(&widgets.list_box, &self.quotes, &sender);
                 widgets.status_label.set_label(&self.status);
@@ -140,13 +146,33 @@ impl Component for SavedQuotesModel {
                 let out_path = dirs::home_dir()
                     .unwrap_or_else(|| std::path::PathBuf::from("."))
                     .join("Quotes.md");
-                let res = std::fs::write(&out_path, exported);
-                if res.is_ok() {
-                    self.status = format!("Exported to {}", out_path.display());
-                } else {
-                    self.status = format!("Export failed: {:?}", res.err());
+                let count = self.quotes.len();
+                match std::fs::write(&out_path, exported) {
+                    Ok(()) => {
+                        self.status = format!("Exported to {}", out_path.display());
+                        crate::notify::success(
+                            &format!(
+                                "{count} quote{} exported",
+                                if count == 1 { "" } else { "s" }
+                            ),
+                            &out_path.display().to_string(),
+                        );
+                    }
+                    Err(err) => {
+                        self.status = format!("Export failed: {err}");
+                        crate::notify::error("Could not export quotes", &err.to_string());
+                    }
                 }
                 widgets.status_label.set_label(&self.status);
+            }
+            SavedQuotesMsg::SaveNote { id, note } => {
+                crate::notify::outcome(
+                    self.catalog.update_annotation_note(id, note.trim()),
+                    "Note saved",
+                    "",
+                    "Could not save your note",
+                );
+                self.reload();
             }
             SavedQuotesMsg::Refresh => {
                 self.reload();
@@ -246,13 +272,39 @@ fn rebuild(
         quote_l.set_halign(gtk::Align::Start);
         row.append(&quote_l);
 
-        if !anno.note.trim().is_empty() {
-            let note_l = gtk::Label::new(Some(&format!("Note: {}", anno.note)));
-            note_l.add_css_class("kalam-muted");
-            note_l.set_wrap(true);
-            note_l.set_xalign(0.0);
-            row.append(&note_l);
+        // Your own thoughts on the quote — editable in place.
+        let note_wrap = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let note_entry = gtk::Entry::new();
+        note_entry.set_placeholder_text(Some("Add your thoughts…"));
+        note_entry.set_text(&anno.note);
+        note_entry.set_hexpand(true);
+        note_entry.add_css_class("kalam-note-entry");
+        note_wrap.append(&note_entry);
+
+        let save_note = gtk::Button::with_label("Save");
+        save_note.add_css_class("kalam-mini-btn");
+        {
+            let entry = note_entry.clone();
+            let s = sender.clone();
+            save_note.connect_clicked(move |_| {
+                s.input(SavedQuotesMsg::SaveNote {
+                    id,
+                    note: entry.text().to_string(),
+                });
+            });
         }
+        note_wrap.append(&save_note);
+        // Enter saves too.
+        {
+            let s = sender.clone();
+            note_entry.connect_activate(move |e| {
+                s.input(SavedQuotesMsg::SaveNote {
+                    id,
+                    note: e.text().to_string(),
+                });
+            });
+        }
+        row.append(&note_wrap);
 
         let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let jump_btn = gtk::Button::with_label("Open in book");

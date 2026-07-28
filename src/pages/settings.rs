@@ -3,24 +3,25 @@ use crate::dict;
 use crate::paths::{catalog_db, data_dir, dictionaries_dir, library_dir};
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum SettingsMsg {
+    ClearNotifications,
     ImportDict,
     DeleteDict(i64),
     Refresh,
 }
 
 pub struct SettingsPageModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     dicts: Vec<crate::db::Dictionary>,
     status: String,
 }
 
 #[relm4::component(pub)]
 impl Component for SettingsPageModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = SettingsMsg;
     type Output = ();
     type CommandOutput = ();
@@ -44,9 +45,28 @@ impl Component for SettingsPageModel {
             },
 
             gtk::Label {
+                set_label: "Appearance",
+                add_css_class: "kalam-page-title",
+                set_halign: gtk::Align::Start,
+                set_margin_top: 8,
+            },
+            gtk::Label {
+                set_label: "Every theme is dark. Changes apply immediately.",
+                add_css_class: "kalam-page-sub",
+                set_halign: gtk::Align::Start,
+            },
+
+            #[name = "theme_row"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 8,
+            },
+
+            gtk::Label {
                 set_label: "DATA DIRECTORY",
                 add_css_class: "kalam-detail-section-title",
                 set_halign: gtk::Align::Start,
+                set_margin_top: 24,
             },
             gtk::Label {
                 set_label: data_dir().to_string_lossy().as_ref(),
@@ -122,6 +142,79 @@ impl Component for SettingsPageModel {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 8,
             },
+
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 10,
+                set_margin_top: 24,
+
+                gtk::Label {
+                    set_label: "Notifications",
+                    add_css_class: "kalam-page-title",
+                    set_halign: gtk::Align::Start,
+                    set_hexpand: true,
+                },
+                gtk::Button {
+                    set_label: "Clear",
+                    add_css_class: "kalam-mini-btn",
+                    set_valign: gtk::Align::Center,
+                    connect_clicked => SettingsMsg::ClearNotifications,
+                },
+            },
+
+            #[name = "notify_list"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 6,
+            },
+
+            gtk::Label {
+                set_label: "Library backup",
+                add_css_class: "kalam-page-title",
+                set_halign: gtk::Align::Start,
+                set_margin_top: 24,
+            },
+
+            #[name = "backup_row"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 6,
+            },
+
+            gtk::Label {
+                set_label: "Book files",
+                add_css_class: "kalam-page-title",
+                set_halign: gtk::Align::Start,
+                set_margin_top: 24,
+            },
+
+            #[name = "file_write_row"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 6,
+            },
+
+            gtk::Label {
+                set_label: "Metadata sources",
+                add_css_class: "kalam-page-title",
+                set_halign: gtk::Align::Start,
+                set_margin_top: 24,
+            },
+            gtk::Label {
+                set_label: concat!(
+                    "Used by Edit metadata. Results from every enabled source are ",
+                    "merged and badged with their origin."
+                ),
+                add_css_class: "kalam-page-sub",
+                set_halign: gtk::Align::Start,
+                set_wrap: true,
+            },
+
+            #[name = "source_list"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 8,
+            },
         }
     }
 
@@ -148,6 +241,11 @@ impl Component for SettingsPageModel {
         let widgets = view_output!();
         widgets.dict_status.set_label(&model.status);
         rebuild_dicts(&widgets.dict_list, &model.dicts, &sender);
+        build_sources(&widgets.source_list, &model.catalog);
+        build_file_write(&widgets.file_write_row, &model.catalog);
+        build_backup(&widgets.backup_row, &model.catalog);
+        build_notifications(&widgets.notify_list);
+        build_theme_picker(&widgets.theme_row, &model.catalog);
         ComponentParts { model, widgets }
     }
 
@@ -159,10 +257,16 @@ impl Component for SettingsPageModel {
         _root: &Self::Root,
     ) {
         match msg {
+            SettingsMsg::ClearNotifications => {
+                crate::notify::clear_history();
+                build_notifications(&widgets.notify_list);
+            }
             SettingsMsg::Refresh => {
                 self.refresh();
                 widgets.dict_status.set_label(&self.status);
                 rebuild_dicts(&widgets.dict_list, &self.dicts, &sender);
+                // An import may have added notifications while we were away.
+                build_notifications(&widgets.notify_list);
             }
             SettingsMsg::ImportDict => {
                 // GTK file chooser dialog (native)
@@ -177,14 +281,27 @@ impl Component for SettingsPageModel {
                     move |res| {
                         if let Ok(file) = res {
                             if let Some(path) = file.path() {
+                                // Dictionary packs can be hundreds of
+                                // thousands of entries; this was reporting
+                                // only to stderr either way.
+                                crate::notify::activity(
+                                    "Importing dictionary…",
+                                    &path
+                                        .file_name()
+                                        .map(|n| n.to_string_lossy().into_owned())
+                                        .unwrap_or_default(),
+                                );
                                 match dict::import_dictionary(&catalog_clone, &path) {
                                     Ok((name, count)) => {
-                                        eprintln!("kalam: dict imported {name} {count} entries");
+                                        crate::notify::success(
+                                            "Dictionary imported",
+                                            &format!("{name} · {count} entries"),
+                                        );
                                     }
                                     Err(e) => {
-                                        eprintln!(
-                                            "kalam: dict import failed {}: {e:#}",
-                                            path.display()
+                                        crate::notify::error(
+                                            "Dictionary import failed",
+                                            &format!("{e:#}"),
                                         );
                                     }
                                 }
@@ -195,7 +312,18 @@ impl Component for SettingsPageModel {
                 );
             }
             SettingsMsg::DeleteDict(id) => {
-                let _ = self.catalog.delete_dictionary(id);
+                let name = self
+                    .dicts
+                    .iter()
+                    .find(|d| d.id == id)
+                    .map(|d| d.name.clone())
+                    .unwrap_or_default();
+                crate::notify::outcome_info(
+                    self.catalog.delete_dictionary(id),
+                    "Dictionary removed",
+                    &name,
+                    "Could not remove the dictionary",
+                );
                 self.refresh();
                 widgets.dict_status.set_label(&self.status);
                 rebuild_dicts(&widgets.dict_list, &self.dicts, &sender);
@@ -263,5 +391,551 @@ fn rebuild_dicts(
         row.append(&del);
 
         list.append(&row);
+    }
+}
+
+/// Theme swatches, grouped by family.
+///
+/// Each family is one row: the name, then its Normal and Darker variants side
+/// by side, so a pair reads as two takes on the same palette rather than two
+/// unrelated entries in a long list.
+fn build_theme_picker(host: &gtk::Box, catalog: &Arc<Catalog>) {
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+
+    let active = crate::theme::current(catalog).id;
+
+    // ALL is ordered standard-then-darker, so walking it in order and starting
+    // a new group whenever a non-darker theme appears reproduces the families
+    // without a second list to keep in sync.
+    let mut families: Vec<Vec<&crate::theme::Theme>> = Vec::new();
+    for theme in crate::theme::ALL {
+        if theme.id.ends_with("-darker") {
+            // Belongs to the family opened by the preceding standard variant.
+            if let Some(last) = families.last_mut() {
+                last.push(theme);
+                continue;
+            }
+        }
+        families.push(vec![theme]);
+    }
+
+    for family in &families {
+        host.append(&theme_family_row(family, &active, host, catalog));
+    }
+}
+
+/// One family: a caption plus its variants.
+fn theme_family_row(
+    family: &[&crate::theme::Theme],
+    active: &str,
+    host: &gtk::Box,
+    catalog: &Arc<Catalog>,
+) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Vertical, 5);
+    row.add_css_class("kalam-theme-family");
+
+    // The family name comes from the standard variant, with the parenthetical
+    // ("(Hard)", "(Night)") trimmed so the caption stays short.
+    let title = family[0]
+        .label
+        .split(" (")
+        .next()
+        .unwrap_or(family[0].label);
+    let caption = gtk::Label::new(Some(title));
+    caption.add_css_class("kalam-theme-family-name");
+    caption.set_halign(gtk::Align::Start);
+    row.append(&caption);
+
+    let variants = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    variants.set_homogeneous(true);
+    for theme in family {
+        variants.append(&theme_swatch_button(theme, active, host, catalog));
+    }
+    row.append(&variants);
+    row
+}
+
+/// A single clickable swatch.
+fn theme_swatch_button(
+    theme: &crate::theme::Theme,
+    active: &str,
+    host: &gtk::Box,
+    catalog: &Arc<Catalog>,
+) -> gtk::Button {
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 5);
+    card.add_css_class("kalam-theme-card");
+    if theme.id == active {
+        card.add_css_class("active");
+    }
+
+    // A miniature of the app: sidebar, surface, raised surface, accent.
+    let strip = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    strip.add_css_class("kalam-theme-strip");
+    strip.set_height_request(26);
+    // GTK CSS has no `overflow`; clip in code so the swatches follow the
+    // strip's rounded corners instead of squaring them off.
+    strip.set_overflow(gtk::Overflow::Hidden);
+    for (slot, (colour, weight)) in [
+        (theme.sidebar, 1),
+        (theme.surface, 2),
+        (theme.surface_2, 1),
+        (theme.accent, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        cell.set_hexpand(true);
+        cell.set_size_request(weight * 12, -1);
+        // A preview must show colours the *current* theme is not using, so
+        // these cannot come from the global sheet. Each swatch gets its own
+        // class and a display-scoped provider; the widget-level
+        // style_context() API is deprecated in GTK 4.10.
+        let class = format!("kalam-swatch-{}-{slot}", theme.id);
+        let provider = gtk::CssProvider::new();
+        // load_from_data is deprecated as of GTK 4.12 in favour of
+        // load_from_string; we build with the v4_12 feature.
+        provider.load_from_string(&format!(".{class} {{ background: {colour}; }}"));
+        if let Some(display) = gtk::gdk::Display::default() {
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+        cell.add_css_class(&class);
+        strip.append(&cell);
+    }
+    card.append(&strip);
+
+    // Within a family only the variant matters, so the caption says "Normal" /
+    // "Darker" rather than repeating the theme name twice.
+    let variant = if theme.id.ends_with("-darker") {
+        "Darker"
+    } else {
+        "Normal"
+    };
+    let name = gtk::Label::new(Some(variant));
+    name.add_css_class("kalam-theme-name");
+    name.set_halign(gtk::Align::Start);
+    name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    card.append(&name);
+
+    let btn = gtk::Button::new();
+    btn.set_child(Some(&card));
+    btn.add_css_class("kalam-theme-btn");
+    btn.set_tooltip_text(Some(theme.label));
+
+    let catalog = catalog.clone();
+    let host = host.clone();
+    let chosen = *theme;
+    btn.connect_clicked(move |_| {
+        crate::theme::save_and_apply(&catalog, &chosen);
+        crate::notify::success("Theme changed", chosen.label);
+        // Rebuild so the tick moves. Deferred: rebuilding the widget tree from
+        // inside its own click handler upsets GTK.
+        let host = host.clone();
+        let catalog = catalog.clone();
+        gtk::glib::idle_add_local_once(move || {
+            build_theme_picker(&host, &catalog);
+        });
+    });
+
+    btn
+}
+
+/// Recent notifications, so a toast that faded can still be read.
+fn build_notifications(host: &gtk::Box) {
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+
+    let entries = crate::notify::history();
+    if entries.is_empty() {
+        let empty = gtk::Label::new(Some("Nothing yet this session."));
+        empty.add_css_class("kalam-muted");
+        empty.set_halign(gtk::Align::Start);
+        host.append(&empty);
+        return;
+    }
+
+    // Only the recent ones; the full log would dominate the page.
+    for entry in entries.iter().take(25) {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        row.add_css_class("kalam-list-row");
+
+        let badge = gtk::Label::new(Some(entry.kind.label()));
+        badge.add_css_class("kalam-card-badge");
+        badge.add_css_class(match entry.kind {
+            crate::notify::Kind::Error => "kalam-badge-ol",
+            _ => "kalam-badge-manual",
+        });
+        badge.set_valign(gtk::Align::Center);
+        row.append(&badge);
+
+        let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        text.set_hexpand(true);
+
+        let title = gtk::Label::new(Some(&entry.title));
+        title.add_css_class("kalam-card-title");
+        title.set_halign(gtk::Align::Start);
+        title.set_xalign(0.0);
+        title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        text.append(&title);
+
+        if !entry.detail.trim().is_empty() {
+            let detail = gtk::Label::new(Some(entry.detail.trim()));
+            detail.add_css_class("kalam-card-meta");
+            detail.set_halign(gtk::Align::Start);
+            detail.set_xalign(0.0);
+            detail.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            detail.set_tooltip_text(Some(&entry.detail));
+            text.append(&detail);
+        }
+        row.append(&text);
+
+        let at = gtk::Label::new(Some(&entry.at));
+        at.add_css_class("kalam-muted");
+        at.set_valign(gtk::Align::Center);
+        row.append(&at);
+
+        host.append(&row);
+    }
+}
+
+/// Back up the catalog, and clear the reader cache.
+fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+
+    let row = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    row.add_css_class("kalam-list-row");
+
+    let note = gtk::Label::new(Some(
+        "Your highlights, quotes, ratings, shelves, reading history and metadata \
+         edits all live in catalog.db. Back it up before upgrades, or to move \
+         Kalam to another machine.",
+    ));
+    note.add_css_class("kalam-card-meta");
+    note.set_halign(gtk::Align::Start);
+    note.set_xalign(0.0);
+    note.set_wrap(true);
+    row.append(&note);
+
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let backup_btn = gtk::Button::with_label("Back up library…");
+    backup_btn.add_css_class("kalam-secondary-btn");
+    {
+        let catalog = catalog.clone();
+        backup_btn.connect_clicked(move |btn| {
+            let dialog = gtk::FileDialog::builder()
+                .title("Save library backup")
+                .modal(true)
+                .initial_name(format!("kalam-backup-{}.db", today_stamp()))
+                .build();
+            let window = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+            let catalog = catalog.clone();
+            dialog.save(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+                let Ok(file) = res else { return };
+                let Some(path) = file.path() else { return };
+                match catalog.backup_to(&path) {
+                    Ok(size) => crate::notify::success(
+                        "Library backed up",
+                        &format!(
+                            "{} · {}",
+                            crate::epub_write::human_size(size),
+                            path.display()
+                        ),
+                    ),
+                    Err(err) => {
+                        crate::notify::error("Backup failed", &err.to_string());
+                    }
+                }
+            });
+        });
+    }
+    actions.append(&backup_btn);
+    row.append(&actions);
+
+    // ── reader cache ────────────────────────────────────────────────────
+    let cache_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    cache_row.set_margin_top(6);
+
+    let size = crate::paths::reader_cache_size();
+    let cache_label = gtk::Label::new(Some(&format!(
+        "Reader cache: {} of extracted books.",
+        crate::epub_write::human_size(size)
+    )));
+    cache_label.add_css_class("kalam-muted");
+    cache_label.set_halign(gtk::Align::Start);
+    cache_label.set_hexpand(true);
+    cache_label.set_xalign(0.0);
+    cache_row.append(&cache_label);
+
+    let clear = gtk::Button::with_label("Clear cache");
+    clear.add_css_class("kalam-mini-btn");
+    clear.set_valign(gtk::Align::Center);
+    clear.set_sensitive(size > 0);
+    {
+        let cache_label = cache_label.clone();
+        clear.connect_clicked(move |btn| {
+            let (_, freed) = crate::paths::clear_reader_cache();
+            cache_label.set_label(&format!(
+                "Reader cache cleared, freed {}.",
+                crate::epub_write::human_size(freed)
+            ));
+            btn.set_sensitive(false);
+        });
+    }
+    cache_row.append(&clear);
+    row.append(&cache_row);
+
+    let cache_note = gtk::Label::new(Some(
+        "Safe to clear: books are re-extracted the next time you open them.",
+    ));
+    cache_note.add_css_class("kalam-card-meta");
+    cache_note.set_halign(gtk::Align::Start);
+    cache_note.set_xalign(0.0);
+    cache_note.set_wrap(true);
+    row.append(&cache_note);
+
+    host.append(&row);
+}
+
+/// `2026-07-28`, for backup filenames.
+fn today_stamp() -> String {
+    gtk::glib::DateTime::now_local()
+        .and_then(|d| d.format("%Y-%m-%d"))
+        .map(|s| s.to_string())
+        .unwrap_or_default()
+}
+
+/// Toggle for writing metadata back into the EPUB itself.
+fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
+    use crate::epub_write::{set_write_enabled, write_enabled};
+
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+
+    let row = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    row.add_css_class("kalam-list-row");
+
+    let check = gtk::CheckButton::with_label("Also write metadata into the EPUB file");
+    check.set_active(write_enabled(catalog));
+    {
+        let catalog = catalog.clone();
+        check.connect_toggled(move |c| set_write_enabled(&catalog, c.is_active()));
+    }
+    row.append(&check);
+
+    let note = gtk::Label::new(Some(
+        "On: saving in Edit metadata also updates the book file, so Calibre and other \
+         readers see your changes. The untouched original is kept once as \
+         <name>.epub.orig, and the new file is only swapped in after it is verified.\n\
+         Off: edits stay inside Kalam and your files are never modified.",
+    ));
+    note.add_css_class("kalam-card-meta");
+    note.set_halign(gtk::Align::Start);
+    note.set_xalign(0.0);
+    note.set_wrap(true);
+    row.append(&note);
+
+    // ── backup cleanup ──────────────────────────────────────────────────
+    let backups = crate::epub_write::list_backups();
+    let total: u64 = backups.iter().map(|(_, size)| size).sum();
+
+    let cleanup_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    cleanup_row.set_margin_top(6);
+
+    let summary = gtk::Label::new(Some(&if backups.is_empty() {
+        "No original backups stored.".to_string()
+    } else {
+        format!(
+            "{} original{} kept, using {}.",
+            backups.len(),
+            if backups.len() == 1 { "" } else { "s" },
+            crate::epub_write::human_size(total)
+        )
+    }));
+    summary.add_css_class("kalam-muted");
+    summary.set_halign(gtk::Align::Start);
+    summary.set_hexpand(true);
+    summary.set_wrap(true);
+    summary.set_xalign(0.0);
+    cleanup_row.append(&summary);
+
+    let clean = gtk::Button::with_label("Delete backups");
+    clean.add_css_class("kalam-mini-btn");
+    clean.add_css_class("kalam-mini-btn-danger");
+    clean.set_sensitive(!backups.is_empty());
+    clean.set_valign(gtk::Align::Center);
+    {
+        let summary = summary.clone();
+        clean.connect_clicked(move |btn| {
+            let (count, freed) = crate::epub_write::delete_backups();
+            summary.set_label(&format!(
+                "Deleted {count} backup{}, freed {}.",
+                if count == 1 { "" } else { "s" },
+                crate::epub_write::human_size(freed)
+            ));
+            btn.set_sensitive(false);
+        });
+    }
+    cleanup_row.append(&clean);
+    row.append(&cleanup_row);
+
+    let warn = gtk::Label::new(Some(
+        "Deleting backups is permanent: you lose the ability to undo metadata \
+         written into those files.",
+    ));
+    warn.add_css_class("kalam-muted");
+    warn.set_halign(gtk::Align::Start);
+    warn.set_xalign(0.0);
+    warn.set_wrap(true);
+    row.append(&warn);
+
+    host.append(&row);
+}
+
+/// Explains why a country code is needed at all.
+fn country_hint_label() -> gtk::Label {
+    let label = gtk::Label::new(Some(
+        "Two-letter code. Google only serves results for countries it has rights in.",
+    ));
+    label.add_css_class("kalam-muted");
+    label.set_wrap(true);
+    label.set_xalign(0.0);
+    label
+}
+
+/// Toggle each metadata provider, plus the optional Google Books key.
+fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
+    use crate::metadata::{set_source_enabled, source_enabled, SourceId};
+
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+
+    for id in SourceId::ALL {
+        let row = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        row.add_css_class("kalam-list-row");
+
+        let head = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        let check = gtk::CheckButton::with_label(id.label());
+        check.set_active(source_enabled(catalog, *id));
+        check.set_hexpand(true);
+        {
+            let catalog = catalog.clone();
+            let id = *id;
+            check.connect_toggled(move |c| set_source_enabled(&catalog, id, c.is_active()));
+        }
+        head.append(&check);
+
+        let badge = gtk::Label::new(Some(id.badge()));
+        badge.add_css_class("kalam-card-badge");
+        badge.add_css_class(id.css_class());
+        badge.set_valign(gtk::Align::Center);
+        head.append(&badge);
+        row.append(&head);
+
+        let note = gtk::Label::new(Some(match id {
+            SourceId::OpenLibrary => {
+                "Internet Archive. No key needed. Strong on older and public-domain titles."
+            }
+            SourceId::GoogleBooks => {
+                "Broad coverage, good for recent and non-English books. Works without a key, \
+                 but anonymous requests share a global quota and can be rate limited."
+            }
+        }));
+        note.add_css_class("kalam-card-meta");
+        note.set_halign(gtk::Align::Start);
+        note.set_xalign(0.0);
+        note.set_wrap(true);
+        row.append(&note);
+
+        // Google Books is the only source with a key, so the field is local
+        // to it rather than a generic per-source setting.
+        if *id == SourceId::GoogleBooks {
+            let key_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            let entry = gtk::Entry::new();
+            entry.set_placeholder_text(Some("Optional API key — lifts the shared rate limit"));
+            entry.set_text(&catalog.get_pref("meta.googlebooks.key").unwrap_or_default());
+            entry.set_hexpand(true);
+            key_row.append(&entry);
+
+            let save = gtk::Button::with_label("Save key");
+            save.add_css_class("kalam-mini-btn");
+            {
+                let catalog = catalog.clone();
+                let entry = entry.clone();
+                save.connect_clicked(move |_| {
+                    let key = entry.text().trim().to_string();
+                    catalog.set_pref("meta.googlebooks.key", &key);
+                    // Never echo the key itself into a toast: the history
+                    // panel keeps it around and screenshots leak it.
+                    if key.is_empty() {
+                        crate::notify::info("Google Books key cleared", "Using the shared quota");
+                    } else {
+                        crate::notify::success(
+                            "Google Books key saved",
+                            "Your own quota is in use",
+                        );
+                    }
+                });
+            }
+            key_row.append(&save);
+            row.append(&key_row);
+
+            let hint = gtk::Label::new(Some(
+                "Free from console.cloud.google.com — create a project, enable the Books API, \
+                 then make an API key. No card required.",
+            ));
+            hint.add_css_class("kalam-muted");
+            hint.set_halign(gtk::Align::Start);
+            hint.set_xalign(0.0);
+            hint.set_wrap(true);
+            row.append(&hint);
+
+            // Google refuses requests whose IP it cannot geolocate — common on
+            // VPNs and some ISPs — so the country is sent explicitly.
+            let country_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            let country_label = gtk::Label::new(Some("Country"));
+            country_label.add_css_class("kalam-muted");
+            country_row.append(&country_label);
+
+            let country = gtk::Entry::new();
+            country.set_max_length(2);
+            country.set_width_chars(4);
+            country.set_placeholder_text(Some("IN"));
+            country.set_text(
+                &catalog
+                    .get_pref("meta.googlebooks.country")
+                    .unwrap_or_else(crate::metadata::google_books::detect_country),
+            );
+            country_row.append(&country);
+
+            let save_country = gtk::Button::with_label("Save");
+            save_country.add_css_class("kalam-mini-btn");
+            {
+                let catalog = catalog.clone();
+                let country = country.clone();
+                save_country.connect_clicked(move |_| {
+                    let code = country.text().trim().to_uppercase();
+                    catalog.set_pref("meta.googlebooks.country", &code);
+                    crate::notify::success("Country saved", &code);
+                });
+            }
+            country_row.append(&save_country);
+
+            let country_hint = country_hint_label();
+            country_row.append(&country_hint);
+            row.append(&country_row);
+        }
+
+        host.append(&row);
     }
 }

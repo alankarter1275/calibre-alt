@@ -13,6 +13,8 @@ use zip::ZipArchive;
 
 #[derive(Debug)]
 pub struct ImportResult {
+    /// True when hand-edited metadata was re-applied from a previous import.
+    pub restored: bool,
     #[allow(dead_code)]
     pub book_id: i64,
     pub title: String,
@@ -57,6 +59,7 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
             book_id: existing,
             title,
             duplicate: true,
+            restored: false,
         });
     }
 
@@ -106,10 +109,30 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         &tags,
     )?;
 
+    // P4: imports show up in History. Best-effort — a logging failure must not
+    // undo an otherwise successful import.
+    let _ = catalog.log_event(id, crate::db::EventKind::Imported, "");
+
+    // If this exact file was in the library before and had hand-edited
+    // metadata, put those edits back rather than silently reverting to
+    // whatever the EPUB's OPF says.
+    let restored = catalog.restore_overrides(id, &hash).unwrap_or(false);
+    let title = if restored {
+        catalog
+            .get_book(id)
+            .ok()
+            .flatten()
+            .map(|b| b.title)
+            .unwrap_or(title)
+    } else {
+        title
+    };
+
     Ok(ImportResult {
         book_id: id,
         title,
         duplicate: false,
+        restored,
     })
 }
 
@@ -151,6 +174,11 @@ fn parse_epub_meta(path: &Path) -> Result<OpfMeta> {
         }
     }
     Ok(meta)
+}
+
+/// Locate the OPF inside an EPUB. Exposed for the writer in `epub_write`.
+pub fn find_opf_path_pub<R: Read + std::io::Seek>(archive: &mut ZipArchive<R>) -> Result<String> {
+    find_opf_path(archive)
 }
 
 fn find_opf_path<R: Read + std::io::Seek>(archive: &mut ZipArchive<R>) -> Result<String> {
@@ -403,4 +431,64 @@ pub fn strip_html(input: &str) -> String {
         .replace("<br/>", " ")
         .replace("<br />", " ");
     collapse_ws(&plain)
+}
+
+// ---------------------------------------------------------------------------
+// P5: cover replacement
+// ---------------------------------------------------------------------------
+
+/// Write new cover bytes into the book's own directory and point the catalog
+/// at them. Returns the stored file name.
+///
+/// A fresh name is generated each time (`cover-<n>.<ext>`) rather than
+/// overwriting: GTK caches textures by path, and reusing the path would leave
+/// the previous image on screen until restart.
+pub fn replace_cover_bytes(
+    catalog: &crate::db::Catalog,
+    book: &crate::models::Book,
+    bytes: &[u8],
+) -> Result<String> {
+    let ext = guess_image_ext(bytes);
+    let dir = crate::paths::book_dir(&book.uuid);
+    fs::create_dir_all(&dir)?;
+
+    // Pick a name that is not currently in use.
+    let mut name = format!("cover.{ext}");
+    let mut n = 1;
+    while dir.join(&name).exists() {
+        name = format!("cover-{n}.{ext}");
+        n += 1;
+    }
+
+    let path = dir.join(&name);
+    fs::write(&path, bytes).with_context(|| format!("write cover {}", path.display()))?;
+
+    // Remove the old file only after the new one is safely on disk.
+    if let Some(old) = &book.cover_name {
+        if old != &name {
+            let old_path = dir.join(old);
+            if old_path.exists() {
+                let _ = fs::remove_file(&old_path);
+            }
+            crate::widgets::book_row::invalidate_cover_cache(&old_path);
+        }
+    }
+
+    catalog.set_cover_name(book.id, Some(&name))?;
+    Ok(name)
+}
+
+/// Sniff the format from magic bytes; extension alone is unreliable.
+fn guess_image_ext(bytes: &[u8]) -> &'static str {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        "png"
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        "jpg"
+    } else if bytes.starts_with(b"GIF8") {
+        "gif"
+    } else if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        "webp"
+    } else {
+        "jpg"
+    }
 }

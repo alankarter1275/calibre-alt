@@ -1,23 +1,35 @@
-use crate::db::Catalog;
-use crate::models::LibrarySection;
+//! My Library — a single at-a-glance dashboard.
+//!
+//! Deliberately *not* a menu of buttons: every section shows real content
+//! (covers, quotes, shelves, tags) and the whole page is visible by scrolling.
+//! Section headers double as the way in — click a header or any card to drill
+//! down. Nothing here requires a click just to find out what is behind it.
+
+use crate::db::{Catalog, LibraryStats};
+use crate::models::{Book, LibrarySection};
+use crate::widgets::book_row::{build_book_card, cover_widget, CARD_H, CARD_W};
+use crate::widgets::charts::{line_chart, monthly_series, sparkline, stars_label};
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
+/// Navigation requests from the dashboard. Variants are named for their
+/// destination rather than sharing an `Open` prefix (clippy::enum_variant_names).
 #[derive(Debug)]
 pub enum LibraryOut {
-    OpenSection(LibrarySection),
+    Section(LibrarySection),
+    Book { book_id: i64 },
+    BookDialog { book_id: i64 },
+    Tag { tag: String },
 }
 
 pub struct LibraryPageModel {
-    #[allow(dead_code)]
-    catalog: Rc<Catalog>,
-    count: usize,
+    catalog: Arc<Catalog>,
 }
 
 #[relm4::component(pub)]
 impl SimpleComponent for LibraryPageModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = ();
     type Output = LibraryOut;
 
@@ -25,34 +37,14 @@ impl SimpleComponent for LibraryPageModel {
         #[root]
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
-            set_spacing: 12,
+            set_spacing: 18,
             set_hexpand: true,
 
-            gtk::Label {
-                set_label: "My Library",
-                add_css_class: "kalam-page-title",
-                set_halign: gtk::Align::Start,
-            },
-            gtk::Label {
-                #[watch]
-                set_label: &format!(
-                    "{} book{} · catalog, lists, quotes, words, tags, analytics.",
-                    model.count,
-                    if model.count == 1 { "" } else { "s" }
-                ),
-                add_css_class: "kalam-page-sub",
-                set_halign: gtk::Align::Start,
-            },
-
-            #[name = "grid_host"]
-            gtk::FlowBox {
-                set_valign: gtk::Align::Start,
-                set_max_children_per_line: 4,
-                set_min_children_per_line: 2,
-                set_selection_mode: gtk::SelectionMode::None,
-                set_column_spacing: 10,
-                set_row_spacing: 10,
-                add_css_class: "kalam-hub-grid",
+            #[name = "body"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 22,
+                set_hexpand: true,
             },
         }
     }
@@ -62,48 +54,534 @@ impl SimpleComponent for LibraryPageModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let count = catalog.count_books().unwrap_or(0);
-        let model = LibraryPageModel { catalog, count };
+        let model = LibraryPageModel { catalog };
         let widgets = view_output!();
-
-        for section in LibrarySection::ALL {
-            let tile = make_hub_tile(*section);
-            let sec = *section;
-            let s = sender.clone();
-            let btn = gtk::Button::new();
-            btn.set_child(Some(&tile));
-            btn.add_css_class("kalam-hub-tile");
-            btn.connect_clicked(move |_| {
-                s.output(LibraryOut::OpenSection(sec)).ok();
-            });
-            widgets.grid_host.insert(&btn, -1);
-        }
-
+        build_dashboard(&widgets.body, &model.catalog, &sender);
         ComponentParts { model, widgets }
     }
 }
 
-fn make_hub_tile(section: LibrarySection) -> gtk::Box {
-    let box_ = gtk::Box::new(gtk::Orientation::Vertical, 4);
-    box_.set_halign(gtk::Align::Center);
+fn build_dashboard(
+    body: &gtk::Box,
+    catalog: &Arc<Catalog>,
+    sender: &ComponentSender<LibraryPageModel>,
+) {
+    let stats = catalog.library_stats().unwrap_or_default();
 
-    let icon = gtk::Label::new(Some(section.icon()));
-    icon.add_css_class("kalam-hub-tile-icon");
-    icon.set_halign(gtk::Align::Center);
+    // ── header ──────────────────────────────────────────────────────────
+    let head = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    let title = gtk::Label::new(Some("My Library"));
+    title.add_css_class("kalam-page-title");
+    title.set_halign(gtk::Align::Start);
+    head.append(&title);
 
-    let label = gtk::Label::new(Some(section.label()));
-    label.add_css_class("kalam-hub-tile-label");
-    label.set_halign(gtk::Align::Center);
+    let sub = gtk::Label::new(Some(&format!(
+        "{} book{} · {} reading · {} finished · {} unread",
+        stats.total_books,
+        if stats.total_books == 1 { "" } else { "s" },
+        stats.reading,
+        stats.finished,
+        stats.unread
+    )));
+    sub.add_css_class("kalam-page-sub");
+    sub.set_halign(gtk::Align::Start);
+    head.append(&sub);
+    body.append(&head);
 
-    let meta = gtk::Label::new(Some(section.blurb()));
-    meta.add_css_class("kalam-hub-tile-meta");
-    meta.set_halign(gtk::Align::Center);
-    meta.set_wrap(true);
-    meta.set_max_width_chars(18);
-    meta.set_justify(gtk::Justification::Center);
+    if stats.total_books == 0 {
+        let empty = gtk::Label::new(Some(concat!(
+            "Your library is empty.\n\n",
+            "Import an EPUB from All books to get started — this page fills up ",
+            "with your shelves, quotes and reading progress as you go."
+        )));
+        empty.add_css_class("kalam-placeholder");
+        empty.set_wrap(true);
+        empty.set_halign(gtk::Align::Start);
+        body.append(&empty);
+        body.append(&section(
+            "ALL BOOKS",
+            None,
+            LibrarySection::AllBooks,
+            sender,
+            gtk::Label::new(Some("Import your first book here.")).upcast::<gtk::Widget>(),
+        ));
+        return;
+    }
 
-    box_.append(&icon);
-    box_.append(&label);
-    box_.append(&meta);
-    box_
+    // ── reading activity: headline figures + trend, at a glance ─────────
+    let daily: Vec<i64> = stats.minutes_by_day.iter().map(|(_, s)| *s / 60).collect();
+    if daily.iter().any(|v| *v > 0) {
+        let strip = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        strip.set_homogeneous(true);
+        strip.append(&mini_stat(
+            "Avg Time /Day",
+            &stats.avg_minutes_per_active_day.to_string(),
+            "Min/Day",
+            &daily,
+            "kalam-spark-green",
+        ));
+        strip.append(&mini_stat(
+            "Books Completed",
+            &stats.finished.to_string(),
+            if stats.finished == 1 { "Book" } else { "Books" },
+            &monthly_series(&stats),
+            "kalam-spark-red",
+        ));
+        strip.append(&mini_stat(
+            "Current Streak",
+            &stats.current_streak_days.to_string(),
+            if stats.current_streak_days == 1 {
+                "Day"
+            } else {
+                "Days"
+            },
+            &daily,
+            "kalam-spark-blue",
+        ));
+        body.append(&strip);
+
+        let chart_card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        chart_card.add_css_class("kalam-chart-card");
+
+        let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let total = gtk::Label::new(Some(&format!("{} min", daily.iter().sum::<i64>())));
+        total.add_css_class("kalam-chart-title");
+        total.set_halign(gtk::Align::Start);
+        head.append(&total);
+        let sub = gtk::Label::new(Some("Read in the last 14 days"));
+        sub.add_css_class("kalam-chart-sub");
+        sub.set_halign(gtk::Align::Start);
+        sub.set_hexpand(true);
+        sub.set_valign(gtk::Align::End);
+        head.append(&sub);
+        chart_card.append(&head);
+
+        let labels: Vec<String> = stats
+            .minutes_by_day
+            .iter()
+            .map(|(d, _)| d.get(8..10).unwrap_or(d).to_string())
+            .collect();
+        chart_card.append(&line_chart(&daily, &labels));
+
+        body.append(&section(
+            "READING ACTIVITY",
+            Some("Last 14 days"),
+            LibrarySection::Analytics,
+            sender,
+            chart_card.upcast::<gtk::Widget>(),
+        ));
+    }
+
+    // ── continue reading: covers with progress bars ─────────────────────
+    let mut continuing = catalog.recently_opened(6).unwrap_or_default();
+    if continuing.is_empty() {
+        // Bounded: this used to load every book to show at most six.
+        continuing = catalog
+            .recent_books(60)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|b| b.progress > 0 && b.progress < 100)
+            .take(6)
+            .collect();
+    }
+    if !continuing.is_empty() {
+        body.append(&section(
+            "CONTINUE READING",
+            Some(&format!("{} in progress", continuing.len())),
+            LibrarySection::History,
+            sender,
+            progress_strip(&continuing, sender),
+        ));
+    }
+
+    // ── reading list ────────────────────────────────────────────────────
+    let tbr = catalog.list_reading_list().unwrap_or_default();
+    if !tbr.is_empty() {
+        let strip: Vec<Book> = tbr.iter().take(6).map(|e| e.book.clone()).collect();
+        body.append(&section(
+            "UP NEXT",
+            Some(&format!("{} queued", tbr.len())),
+            LibrarySection::ReadingList,
+            sender,
+            cover_strip(&strip, sender),
+        ));
+    }
+
+    // ── shelves ─────────────────────────────────────────────────────────
+    let shelves = catalog.list_shelves().unwrap_or_default();
+    if !shelves.is_empty() {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        row.set_homogeneous(true);
+        for shelf in shelves.iter().take(4) {
+            let card = gtk::Box::new(gtk::Orientation::Vertical, 4);
+            card.add_css_class("kalam-shelf-mini");
+
+            let badge = gtk::Label::new(Some(shelf.kind.label()));
+            badge.add_css_class("kalam-card-badge");
+            badge.set_halign(gtk::Align::Start);
+            card.append(&badge);
+
+            let name = gtk::Label::new(Some(&shelf.name));
+            name.add_css_class("kalam-card-title");
+            name.set_halign(gtk::Align::Start);
+            name.set_xalign(0.0);
+            name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            card.append(&name);
+
+            let count = gtk::Label::new(Some(&format!(
+                "{} book{}",
+                shelf.book_count,
+                if shelf.book_count == 1 { "" } else { "s" }
+            )));
+            count.add_css_class("kalam-card-meta");
+            count.set_halign(gtk::Align::Start);
+            card.append(&count);
+            row.append(&card);
+        }
+        body.append(&plain_section(
+            "SHELVES",
+            Some("Smart & manual"),
+            row.upcast::<gtk::Widget>(),
+        ));
+    }
+
+    // ── saved quotes ────────────────────────────────────────────────────
+    // Two rows joined with their titles, instead of 500 rows plus a book
+    // lookup per card.
+    let quotes = catalog.recent_quotes(2).unwrap_or_default();
+    let quote_total = catalog.count_quotes().unwrap_or(0);
+    if !quotes.is_empty() {
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        row.set_homogeneous(true);
+        for (anno, book_title) in quotes.iter() {
+            let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
+            card.add_css_class("kalam-quote-card");
+
+            let text = anno.text_excerpt.trim();
+            let shown = if text.chars().count() > 180 {
+                let cut: String = text.chars().take(180).collect();
+                format!("{cut}…")
+            } else {
+                text.to_string()
+            };
+            let quote = gtk::Label::new(Some(&shown));
+            quote.add_css_class("kalam-quote-text");
+            quote.set_wrap(true);
+            quote.set_xalign(0.0);
+            quote.set_halign(gtk::Align::Start);
+            card.append(&quote);
+
+            let src = gtk::Label::new(Some(&format!("— {book_title}")));
+            src.add_css_class("kalam-quote-source");
+            src.set_halign(gtk::Align::Start);
+            src.set_xalign(0.0);
+            src.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            card.append(&src);
+            row.append(&card);
+        }
+        body.append(&section(
+            "QUOTES",
+            Some(&format!("{quote_total} saved")),
+            LibrarySection::SavedQuotes,
+            sender,
+            row.upcast::<gtk::Widget>(),
+        ));
+    }
+
+    // ── tags ────────────────────────────────────────────────────────────
+    let tags = catalog.list_tags_with_counts().unwrap_or_default();
+    if !tags.is_empty() {
+        let flow = gtk::FlowBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .max_children_per_line(8)
+            .column_spacing(8)
+            .row_spacing(8)
+            .halign(gtk::Align::Start)
+            .build();
+        for (name, count) in tags.iter().take(12) {
+            let chip = gtk::Button::new();
+            chip.add_css_class("kalam-tag-chip");
+            let inner = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+            inner.append(&gtk::Label::new(Some(name)));
+            let badge = gtk::Label::new(Some(&count.to_string()));
+            badge.add_css_class("kalam-tag-count");
+            inner.append(&badge);
+            chip.set_child(Some(&inner));
+
+            let tag = name.clone();
+            let s = sender.clone();
+            chip.connect_clicked(move |_| {
+                s.output(LibraryOut::Tag { tag: tag.clone() }).ok();
+            });
+            flow.insert(&chip, -1);
+        }
+        body.append(&section(
+            "TAGS",
+            Some(&format!("{} in use", tags.len())),
+            LibrarySection::Tags,
+            sender,
+            flow.upcast::<gtk::Widget>(),
+        ));
+    }
+
+    // ── recently added ──────────────────────────────────────────────────
+    let recent = catalog.recent_books(6).unwrap_or_default();
+    if !recent.is_empty() {
+        let strip: Vec<Book> = recent.clone();
+        body.append(&section(
+            "RECENTLY ADDED",
+            Some(&format!("{} total", stats.total_books)),
+            LibrarySection::AllBooks,
+            sender,
+            cover_strip(&strip, sender),
+        ));
+    }
+
+    // ── vocabulary + analytics summary ──────────────────────────────────
+    body.append(&stat_footer(&stats, sender));
+}
+
+/// Section with a clickable header that routes to the full page.
+fn section(
+    title: &str,
+    meta: Option<&str>,
+    target: LibrarySection,
+    sender: &ComponentSender<LibraryPageModel>,
+    content: gtk::Widget,
+) -> gtk::Box {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 10);
+
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    header.add_css_class("kalam-section-header");
+
+    let label = gtk::Label::new(Some(title));
+    label.add_css_class("kalam-section-label");
+    label.set_halign(gtk::Align::Start);
+    header.append(&label);
+
+    if let Some(meta) = meta {
+        let m = gtk::Label::new(Some(meta));
+        m.add_css_class("kalam-section-meta");
+        m.set_halign(gtk::Align::Start);
+        m.set_hexpand(true);
+        header.append(&m);
+    } else {
+        let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        spacer.set_hexpand(true);
+        header.append(&spacer);
+    }
+
+    let arrow = gtk::Label::new(Some("›"));
+    arrow.add_css_class("kalam-section-arrow");
+    header.append(&arrow);
+
+    // The whole header is the affordance — no separate "Show all" button.
+    let click = gtk::GestureClick::new();
+    click.set_button(1);
+    let s = sender.clone();
+    click.connect_released(move |_, _, _, _| {
+        s.output(LibraryOut::Section(target)).ok();
+    });
+    header.add_controller(click);
+    header.set_cursor_from_name(Some("pointer"));
+    header.set_tooltip_text(Some(&format!("Open {}", title.to_lowercase())));
+
+    wrap.append(&header);
+    wrap.append(&content);
+    wrap
+}
+
+/// Section header with no drill-down target.
+fn plain_section(title: &str, meta: Option<&str>, content: gtk::Widget) -> gtk::Box {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+
+    let label = gtk::Label::new(Some(title));
+    label.add_css_class("kalam-section-label");
+    label.set_halign(gtk::Align::Start);
+    header.append(&label);
+
+    if let Some(meta) = meta {
+        let m = gtk::Label::new(Some(meta));
+        m.add_css_class("kalam-section-meta");
+        m.set_hexpand(true);
+        m.set_halign(gtk::Align::Start);
+        header.append(&m);
+    }
+    wrap.append(&header);
+    wrap.append(&content);
+    wrap
+}
+
+/// Horizontal run of cover cards.
+fn cover_strip(books: &[Book], sender: &ComponentSender<LibraryPageModel>) -> gtk::Widget {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+    row.set_halign(gtk::Align::Start);
+
+    for book in books {
+        let id = book.id;
+        let s1 = sender.clone();
+        let s2 = sender.clone();
+        let card = build_book_card(
+            book,
+            move || {
+                s1.output(LibraryOut::Book { book_id: id }).ok();
+            },
+            move || {
+                s2.output(LibraryOut::BookDialog { book_id: id }).ok();
+            },
+        );
+        let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        cell.set_size_request(CARD_W, CARD_H);
+        cell.append(&card);
+        row.append(&cell);
+    }
+    row.upcast::<gtk::Widget>()
+}
+
+/// Covers with a progress bar and percentage underneath, like the reference.
+fn progress_strip(books: &[Book], sender: &ComponentSender<LibraryPageModel>) -> gtk::Widget {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
+    row.set_halign(gtk::Align::Start);
+
+    for book in books {
+        let cell = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        cell.add_css_class("kalam-progress-cell");
+        cell.set_size_request(CARD_W, -1);
+
+        let cover = cover_widget(book.cover_path.as_deref(), CARD_W, 168);
+        cell.append(&cover);
+
+        let bar = gtk::ProgressBar::new();
+        bar.set_fraction((book.progress as f64 / 100.0).clamp(0.0, 1.0));
+        bar.add_css_class("kalam-mini-progress");
+        cell.append(&bar);
+
+        let pct = gtk::Label::new(Some(&format!("{}%", book.progress)));
+        pct.add_css_class("kalam-progress");
+        pct.set_halign(gtk::Align::End);
+        cell.append(&pct);
+
+        if book.rating > 0 {
+            let stars = stars_label(book.rating);
+            stars.set_halign(gtk::Align::Start);
+            cell.append(&stars);
+        }
+
+        let title = gtk::Label::new(Some(&book.title));
+        title.add_css_class("kalam-book-card-title");
+        title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        title.set_max_width_chars(1);
+        title.set_width_chars(1);
+        title.set_xalign(0.0);
+        cell.append(&title);
+
+        let id = book.id;
+        let s = sender.clone();
+        let click = gtk::GestureClick::new();
+        click.set_button(1);
+        click.connect_released(move |_, _, _, _| {
+            s.output(LibraryOut::BookDialog { book_id: id }).ok();
+        });
+        cell.add_controller(click);
+        cell.set_cursor_from_name(Some("pointer"));
+        cell.set_tooltip_text(Some(&book.title));
+
+        row.append(&cell);
+    }
+    row.upcast::<gtk::Widget>()
+}
+
+/// Closing strip: vocabulary and analytics, each routing to its page.
+fn stat_footer(stats: &LibraryStats, sender: &ComponentSender<LibraryPageModel>) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    row.set_homogeneous(true);
+
+    let tiles: [(&str, String, LibrarySection); 4] = [
+        (
+            "Saved words",
+            stats.saved_words.to_string(),
+            LibrarySection::SavedWords,
+        ),
+        (
+            "Highlights",
+            stats.highlights.to_string(),
+            LibrarySection::SavedQuotes,
+        ),
+        (
+            "Time read",
+            human_hours(stats.total_seconds),
+            LibrarySection::Analytics,
+        ),
+        (
+            "Day streak",
+            stats.current_streak_days.to_string(),
+            LibrarySection::Analytics,
+        ),
+    ];
+
+    for (label, value, target) in tiles {
+        let tile = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        tile.add_css_class("kalam-stat-tile");
+
+        let v = gtk::Label::new(Some(&value));
+        v.add_css_class("kalam-stat-value");
+        v.set_halign(gtk::Align::Start);
+        tile.append(&v);
+
+        let l = gtk::Label::new(Some(label));
+        l.add_css_class("kalam-stat-label");
+        l.set_halign(gtk::Align::Start);
+        tile.append(&l);
+
+        let s = sender.clone();
+        let click = gtk::GestureClick::new();
+        click.set_button(1);
+        click.connect_released(move |_, _, _, _| {
+            s.output(LibraryOut::Section(target)).ok();
+        });
+        tile.add_controller(click);
+        tile.set_cursor_from_name(Some("pointer"));
+
+        row.append(&tile);
+    }
+    row
+}
+
+/// Compact headline figure with an inline trend line.
+fn mini_stat(label: &str, value: &str, unit: &str, series: &[i64], spark_class: &str) -> gtk::Box {
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    card.add_css_class("kalam-hero-card");
+
+    let l = gtk::Label::new(Some(label));
+    l.add_css_class("kalam-hero-label");
+    l.set_halign(gtk::Align::Start);
+    card.append(&l);
+
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let v = gtk::Label::new(Some(value));
+    v.add_css_class("kalam-hero-value");
+    row.append(&v);
+    let u = gtk::Label::new(Some(unit));
+    u.add_css_class("kalam-hero-unit");
+    u.set_hexpand(true);
+    u.set_halign(gtk::Align::Start);
+    u.set_valign(gtk::Align::End);
+    row.append(&u);
+    row.append(&sparkline(series, spark_class));
+    card.append(&row);
+
+    card
+}
+
+fn human_hours(seconds: i64) -> String {
+    if seconds <= 0 {
+        return "—".into();
+    }
+    let minutes = seconds / 60;
+    if minutes < 60 {
+        format!("{minutes}m")
+    } else {
+        format!("{}h", minutes / 60)
+    }
 }

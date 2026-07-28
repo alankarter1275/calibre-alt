@@ -6,7 +6,7 @@ use crate::paths::reader_cache_dir;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use serde::Deserialize;
-use std::rc::Rc;
+use std::sync::Arc;
 use webkit6::prelude::*;
 
 #[derive(Debug)]
@@ -67,7 +67,7 @@ pub enum ReaderMsg {
 }
 
 pub struct ReaderModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     book_id: i64,
     book_title: String,
     open: OpenBook,
@@ -88,11 +88,19 @@ pub struct ReaderModel {
     dict_lookup_rect_json: Option<String>,
     dict_context: Option<String>,
     last_selection: Option<String>,
+    /// P4: open reading session row + when it started, for time tracking.
+    session_id: Option<i64>,
+    session_start: std::time::Instant,
+    session_start_pct: i64,
+    /// Typography popover widgets we need to update as state changes.
+    /// Held directly because they are built outside the `view!` tree.
+    font_size_label: Option<gtk::Label>,
+    theme_ticks: Vec<(ReadingTheme, gtk::Label)>,
 }
 
 #[relm4::component(pub)]
 impl Component for ReaderModel {
-    type Init = (Rc<Catalog>, i64);
+    type Init = (Arc<Catalog>, i64);
     type Input = ReaderMsg;
     type Output = ReaderOut;
     type CommandOutput = ();
@@ -253,6 +261,12 @@ color:#3e3226;font-family:Georgia,serif'>\
             .get_annotations_for_book(book_id)
             .unwrap_or_default();
 
+        let catalog_theme = catalog
+            .get_pref("reader.theme")
+            .map(|v| ReadingTheme::from_str_lossy(&v))
+            .unwrap_or(ReadingTheme::Sepia);
+        let catalog_font = catalog.get_pref_i64("reader.font_px", 19).clamp(14, 36) as u32;
+
         let model = ReaderModel {
             catalog,
             book_id,
@@ -260,8 +274,9 @@ color:#3e3226;font-family:Georgia,serif'>\
             open,
             chapter,
             fraction,
-            theme: ReadingTheme::Sepia,
-            font_px: 19,
+            // Restored from app_prefs so the reader reopens the way it was left.
+            theme: catalog_theme,
+            font_px: catalog_font,
             line_height: 1.65,
             margin_em: 1.4,
             loading: false,
@@ -275,8 +290,29 @@ color:#3e3226;font-family:Georgia,serif'>\
             dict_lookup_rect_json: None,
             dict_context: None,
             last_selection: None,
+            session_id: None,
+            session_start: std::time::Instant::now(),
+            session_start_pct: 0,
+            font_size_label: None,
+            theme_ticks: Vec::new(),
         };
 
+        let mut model = model;
+        // P4: history + time tracking. Only for books that actually opened —
+        // a failed EPUB shouldn't pollute History or the reading stats.
+        if model.open.chapter_count() > 0 {
+            let _ = model.catalog.mark_book_opened(book_id);
+            let start_pct = model
+                .catalog
+                .get_book(book_id)
+                .ok()
+                .flatten()
+                .map(|b| b.progress as i64)
+                .unwrap_or(0);
+            model.session_start_pct = start_pct;
+            model.session_start = std::time::Instant::now();
+            model.session_id = model.catalog.start_reading_session(book_id, start_pct).ok();
+        }
         let widgets = view_output!();
         widgets.web_host.append(&webview);
         update_chrome_labels(&widgets, &model);
@@ -351,16 +387,23 @@ color:#3e3226;font-family:Georgia,serif'>\
         size_l.set_halign(gtk::Align::Start);
         aa_wrap.append(&size_l);
         let size_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        size_row.set_halign(gtk::Align::Center);
+        size_row.set_halign(gtk::Align::Fill);
         let a_minus = gtk::Button::with_label("A−");
         a_minus.add_css_class("kalam-reader-pill-btn");
         let s1 = sender.clone();
         a_minus.connect_clicked(move |_| s1.input(ReaderMsg::FontDelta(-1)));
+
+        // Current size, so the control reports state instead of just changing it.
+        let font_size_label = gtk::Label::new(Some(&format!("{}px", model.font_px)));
+        font_size_label.add_css_class("kalam-reader-size-value");
+        font_size_label.set_hexpand(true);
+
         let a_plus = gtk::Button::with_label("A+");
         a_plus.add_css_class("kalam-reader-pill-btn");
         let s2 = sender.clone();
         a_plus.connect_clicked(move |_| s2.input(ReaderMsg::FontDelta(1)));
         size_row.append(&a_minus);
+        size_row.append(&font_size_label);
         size_row.append(&a_plus);
         aa_wrap.append(&size_row);
 
@@ -368,17 +411,37 @@ color:#3e3226;font-family:Georgia,serif'>\
         theme_l.add_css_class("kalam-reader-popover-title");
         theme_l.set_halign(gtk::Align::Start);
         aa_wrap.append(&theme_l);
-        let theme_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        // Each button is painted in the colours it applies, so the choice is
+        // visible at a glance; the active one carries a tick.
+        let theme_row = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        let mut theme_buttons = Vec::new();
         for (label, theme) in [
             ("Light", ReadingTheme::Light),
             ("Sepia", ReadingTheme::Sepia),
             ("Dark", ReadingTheme::Dark),
         ] {
-            let b = gtk::Button::with_label(label);
+            let b = gtk::Button::new();
+
+            let inner = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            let tick = gtk::Label::new(Some("✓"));
+            tick.add_css_class("kalam-theme-tick");
+            tick.set_width_chars(1);
+            let name = gtk::Label::new(Some(label));
+            name.set_halign(gtk::Align::Start);
+            name.set_hexpand(true);
+            inner.append(&tick);
+            inner.append(&name);
+            b.set_child(Some(&inner));
+
             b.add_css_class("kalam-reader-theme-btn");
+            // Swatch colours live in the global stylesheet (style.rs) keyed by
+            // theme name, so no per-open CssProvider is registered.
+            b.add_css_class(&format!("kalam-theme-{}", theme.as_str()));
+
             let s = sender.clone();
             b.connect_clicked(move |_| s.input(ReaderMsg::Theme(theme)));
             theme_row.append(&b);
+            theme_buttons.push((theme, tick));
         }
         aa_wrap.append(&theme_row);
 
@@ -439,6 +502,11 @@ color:#3e3226;font-family:Georgia,serif'>\
             aa_pop.set_data("kalam-dict-res", dict_res_label.clone());
         }
         widgets.dict_btn.set_popover(Some(&aa_pop));
+
+        // Keep handles to the state-reflecting widgets, then paint initial state.
+        model.font_size_label = Some(font_size_label.clone());
+        model.theme_ticks = theme_buttons.clone();
+        model.refresh_theme_ticks();
 
         // Title notify fallback
         let s = sender.clone();
@@ -575,6 +643,8 @@ color:#3e3226;font-family:Georgia,serif'>\
             }
             ReaderMsg::Theme(t) => {
                 self.theme = t;
+                self.catalog.set_pref("reader.theme", t.as_str());
+                self.refresh_theme_ticks();
                 widgets.dict_btn.popdown();
                 self.loading = true;
                 load_chapter(self);
@@ -584,6 +654,8 @@ color:#3e3226;font-family:Georgia,serif'>\
                 let next = (self.font_px as i32 + d).clamp(14, 36) as u32;
                 if next != self.font_px {
                     self.font_px = next;
+                    self.catalog.set_pref("reader.font_px", &next.to_string());
+                    self.refresh_font_label();
                     self.loading = true;
                     load_chapter(self);
                     self.loading = false;
@@ -644,7 +716,10 @@ color:#3e3226;font-family:Georgia,serif'>\
                 }
             }
             ReaderMsg::DeleteAnnotation(id) => {
-                let _ = self.catalog.delete_annotation(id);
+                crate::notify::report(
+                    self.catalog.delete_annotation(id),
+                    "Could not delete the highlight",
+                );
                 self.chapter_annotations = self
                     .catalog
                     .get_annotations_for_chapter(self.book_id, self.chapter as i64)
@@ -722,7 +797,9 @@ color:#3e3226;font-family:Georgia,serif'>\
             }
             ReaderMsg::SaveCurrentWord => {
                 if let (Some(w), Some(def)) = (&self.dict_lookup_word, &self.dict_lookup_def) {
-                    let _ = self.catalog.insert_saved_word(
+                    // The Result was dropped here, so the popover reported
+                    // "Word saved" even when the insert had failed.
+                    let saved = self.catalog.insert_saved_word(
                         w,
                         def,
                         None,
@@ -730,13 +807,25 @@ color:#3e3226;font-family:Georgia,serif'>\
                         Some(self.chapter as i64),
                         self.dict_context.as_deref(),
                     );
-                    self.dict_lookup_word = None;
-                    self.dict_lookup_def = None;
+                    let message = match &saved {
+                        Ok(_) => {
+                            crate::notify::compact("Word saved", w);
+                            "Word saved to Saved words."
+                        }
+                        Err(e) => {
+                            crate::notify::error("Could not save the word", &e.to_string());
+                            "Could not save that word."
+                        }
+                    };
+                    if saved.is_ok() {
+                        self.dict_lookup_word = None;
+                        self.dict_lookup_def = None;
+                    }
                     if let Some(pop) = widgets.dict_btn.popover() {
                         if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
                             unsafe {
                                 if let Some(label) = pop.data::<gtk::Label>("kalam-dict-res") {
-                                    label.as_ref().set_label("Word saved to Saved words.");
+                                    label.as_ref().set_label(message);
                                 }
                             }
                         }
@@ -774,8 +863,23 @@ color:#3e3226;font-family:Georgia,serif'>\
         self.update_view(widgets, sender);
     }
 
-    fn shutdown(&mut self, _widgets: &mut Self::Widgets, _output: relm4::Sender<Self::Output>) {
+    fn shutdown(&mut self, widgets: &mut Self::Widgets, _output: relm4::Sender<Self::Output>) {
         self.save_progress();
+        self.close_session();
+
+        // Popovers are their own toplevel surfaces, so they are *not* disposed
+        // along with the MenuButton that owns them. Leaving them attached while
+        // the reader is torn down mid-navigation makes GTK probe a half-disposed
+        // widget later — the `gtk_widget_is_ancestor: assertion 'GTK_IS_WIDGET
+        // (widget)' failed` criticals on the console. Pop them down and detach.
+        for btn in [&widgets.toc_btn, &widgets.anno_btn, &widgets.dict_btn] {
+            btn.popdown();
+            btn.set_popover(None::<&gtk::Popover>);
+        }
+
+        // Stop the WebView before its widget goes away: an in-flight load that
+        // completes after disposal fires callbacks against dead widgets.
+        self.webview.stop_loading();
     }
 }
 
@@ -794,6 +898,53 @@ impl ReaderModel {
             self.fraction,
             self.open.chapter_count(),
         );
+        // P4: crossing the end auto-marks the book finished (once).
+        let pct = self.progress_pct();
+        let _ = self.catalog.auto_finish_if_complete(self.book_id, pct);
+    }
+
+    fn progress_pct(&self) -> i64 {
+        let count = self.open.chapter_count();
+        if count == 0 {
+            return 0;
+        }
+        let overall = ((self.chapter as f64) + self.fraction) / (count as f64) * 100.0;
+        overall.round().clamp(0.0, 100.0) as i64
+    }
+
+    /// Show the tick only on the active theme's button.
+    ///
+    /// Toggling a CSS class rather than set_opacity(0.0): any opacity below 1
+    /// makes GTK render the widget through an offscreen surface, and a label
+    /// that has not been allocated yet can produce a zero-sized one, which
+    /// pixman rejects with "Invalid rectangle passed". The hidden class just
+    /// paints the glyph transparent, so the row still never reflows.
+    fn refresh_theme_ticks(&self) {
+        for (theme, tick) in &self.theme_ticks {
+            if *theme == self.theme {
+                tick.remove_css_class("kalam-theme-tick-off");
+            } else {
+                tick.add_css_class("kalam-theme-tick-off");
+            }
+        }
+    }
+
+    fn refresh_font_label(&self) {
+        if let Some(label) = &self.font_size_label {
+            label.set_label(&format!("{}px", self.font_px));
+        }
+    }
+
+    /// Close the open reading-session row. Idempotent: called from shutdown,
+    /// and the id is cleared so a second call is a no-op.
+    fn close_session(&mut self) {
+        let Some(session_id) = self.session_id.take() else {
+            return;
+        };
+        let seconds = self.session_start.elapsed().as_secs() as i64;
+        let _ = self
+            .catalog
+            .end_reading_session(session_id, seconds, self.progress_pct());
     }
 
     fn go_chapter(&mut self, idx: usize, frac: f64) {
@@ -918,7 +1069,9 @@ impl ReaderModel {
                             .unwrap_or_default();
                         sender.input(ReaderMsg::AnnotationsReload);
                     }
-                    Err(e) => eprintln!("kalam: insert highlight failed: {e}"),
+                    // This used to print to stderr, so a failed highlight just
+                    // silently did not appear.
+                    Err(e) => crate::notify::error("Could not save the highlight", &e.to_string()),
                 }
             }
             "quote" => {
@@ -930,26 +1083,26 @@ impl ReaderModel {
                 if sp.is_empty() || ep.is_empty() || text.trim().is_empty() {
                     return;
                 }
-                if self
-                    .catalog
-                    .insert_annotation(
-                        self.book_id,
-                        "quote",
-                        self.chapter as i64,
-                        &sp,
-                        so,
-                        &ep,
-                        eo,
-                        "yellow",
-                        &text,
-                        "",
-                    )
-                    .is_ok()
-                {
-                    self.all_book_annotations = self
-                        .catalog
-                        .get_annotations_for_book(self.book_id)
-                        .unwrap_or_default();
+                match self.catalog.insert_annotation(
+                    self.book_id,
+                    "quote",
+                    self.chapter as i64,
+                    &sp,
+                    so,
+                    &ep,
+                    eo,
+                    "yellow",
+                    &text,
+                    "",
+                ) {
+                    Ok(_) => {
+                        crate::notify::compact("Quote saved", "");
+                        self.all_book_annotations = self
+                            .catalog
+                            .get_annotations_for_book(self.book_id)
+                            .unwrap_or_default();
+                    }
+                    Err(e) => crate::notify::error("Could not save the quote", &e.to_string()),
                 }
             }
             "dict-lookup" => {
@@ -985,14 +1138,20 @@ impl ReaderModel {
                 let word = payload.word.unwrap_or_default();
                 let def = payload.definition.unwrap_or_default();
                 if !word.trim().is_empty() && !def.trim().is_empty() {
-                    let _ = self.catalog.insert_saved_word(
+                    // The in-page dictionary's save button comes through here,
+                    // separate from the popover's ReaderMsg::SaveCurrentWord.
+                    // It dropped its Result too, so a failure was invisible.
+                    match self.catalog.insert_saved_word(
                         &word,
                         &def,
                         None,
                         Some(self.book_id),
                         Some(self.chapter as i64),
                         payload.context.as_deref().or(self.dict_context.as_deref()),
-                    );
+                    ) {
+                        Ok(_) => crate::notify::compact("Word saved", &word),
+                        Err(e) => crate::notify::error("Could not save the word", &e.to_string()),
+                    }
                 }
             }
             "dict-shortcut" => {

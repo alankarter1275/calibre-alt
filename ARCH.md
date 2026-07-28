@@ -47,17 +47,64 @@ Rule engine is **not** implemented in P0 (sample data only).
   - JS bridge: `window.webkit.messageHandlers.kalam.postMessage(JSON)` + fallback `kalam://` iframe + title notify; Rust: `UCM::register_script_message_handler("kalam", None)` + `connect_script_message_received` + `decide_policy`
   - Dictionary: Settings → import StarDict/SQLite/TSV → `dict_entries` → search (exact → prefix → substring) → popup near rect via `kalamShowDict`
 
-## Data dirs (P3 actual)
+## Shelves engine (P4)
+
+Two kinds share one table, separated by `kind`:
+
+- **Manual** — rows in `shelf_books`, hand-ordered by `position`
+- **Smart** — a JSON rule document in `shelves.rules`, compiled at query time
+
+Rule documents are deliberately **flat**: a list of `{field, op, value}` plus a
+single `match: all | any`. `shelf_rules::RuleSet::to_sql()` turns that into a
+parameterised `WHERE` fragment over `books`; tag rules become
+`EXISTS (SELECT 1 FROM book_tags …)`, negations wrap in `NOT`. Unknown fields or
+blank values are skipped rather than failing, and an empty rule set compiles to
+`0 = 1` so a half-built shelf matches nothing instead of the whole library.
+
+Nested boolean groups were considered and deferred — the JSON can gain a
+`groups` key later without a schema migration.
+
+## History & time tracking (P4)
+
+- `reading_events` is append-only: `opened | finished | unfinished | imported`.
+  Repeat opens inside the same hour are collapsed so flipping in and out of the
+  reader doesn't flood the log.
+- `reading_sessions` gets one row per reader mount, closed in `shutdown()`.
+  Durations are clamped to 6h — a suspended laptop must not claim a marathon.
+- Auto-finish fires once at ≥99% progress; `finished_at` guards re-firing.
+
+## Data dirs (P4 actual)
 
 ```text
 ~/.local/share/kalam/
-  catalog.db                 # books, tags, reading_progress, annotations, saved_words, dictionaries, dict_entries
+  catalog.db                 # + P4: shelves, shelf_books, reading_list,
+                             #   reading_events, reading_sessions
   library/<uuid>/            # book.epub + cover.*
   dictionaries/              # (placeholder dir, actual entries in catalog.db)
   cache/reader/<uuid>/       # extracted EPUB for WebView
 ~/Quotes.md                  # exported quotes Markdown
 ~/.config/kalam/config.toml  (future)
 ```
+
+## Theming & CSS
+
+- **`src/theme.rs`** owns every colour. One `Theme` struct per palette, 13 dark
+  themes grouped standard/darker per family. Adding one is a single entry.
+- **`src/style.rs`** owns *shape only* — spacing, radii, type scale, borders. It
+  refers to colours by `@kalam_*` name; a literal hex there is a bug unless it
+  is deliberately theme-independent (highlight markers, reader paper swatches,
+  reader stage).
+- `theme::apply()` prepends the `@define-color` block and re-parses, so a theme
+  switch restyles in place with no widget rebuilt.
+- Reader *page* theming (Light/Sepia/Dark paper) is separate from app chrome, on
+  purpose: a sepia page inside a dark app is a legitimate combination.
+
+> ⚠️ **Before editing `style.rs`, read its module header.** It documents five
+> GTK behaviours that are non-obvious and cost about a dozen debugging rounds on
+> a single scrollbar — provider priority vs specificity, why `opacity` below 1
+> triggers pixman errors, how `margin`/`border`/`padding` are subtracted from
+> allocations, what `scrolledwindow:hover` actually matches, and the
+> `KALAM_NO_CSS=1` diagnostic.
 
 ## Out of scope
 
@@ -72,6 +119,6 @@ Rule engine is **not** implemented in P0 (sample data only).
 | P0 | Shell + nav + sample shelves/books ✅ |
 | P1 | SQLite + EPUB import + covers ✅ |
 | P2 | Reader (chapter scroll, fonts, progress) ✅ |
-| P3 | Highlights, quotes, offline dictionary ✅ ← **you are here** |
-| P4 | Real home / shelves / lists |
+| P3 | Highlights, quotes, offline dictionary ✅ |
+| P4 | Shelves engine, lists, history, tags, analytics ✅ ← **you are here** |
 | P5+ | Sources (AO3, FF), comics, convert |

@@ -87,8 +87,8 @@ P0  Shell ───────────── sidebar, routing, float/detail
 P1  Library core ────── SQLite, import EPUB, cover cards, search  ✅ done
 P2  Text reader ─────── WebKit EPUB, themes, TOC, progress, UI    ✅ done
 P3  Annotations ─────── highlights, quotes, offline dictionary    ✅ done
-P4  Library depth ───── shelves engine, lists, tags, analytics    ← next
-P5  Metadata ────────── edit metadata, cover pick, Open Library
+P4  Library depth ───── shelves engine, lists, tags, analytics    ✅ done
+P5  Metadata ────────── edit metadata, cover pick, Open Library      ✅ done
 P6  Downloads hub ───── unified queue + folder watch
 P7  Fiction sources ─── AO3 first, then other fanfic adapters
 P8  Comics local ────── CBZ/CBR + Moku-style comics reader
@@ -241,39 +241,152 @@ Annotations trustworthy enough you stop using another app for EPUB markup — **
 
 ---
 
-## P4 — Library depth
+## P4 — Library depth  ✅ done
 
 **Goal:** Home, shelves, lists feel like *your* library.
 
-### Scope
+### Shipped
 
-- Home polish: continue, recent, reading-list peek, counts  
-- Reading list (ordered TBR)  
-- History (opened/finished)  
-- **Shelves engine**
-  - Manual shelf (book ids)  
-  - Smart shelf (rules: tag, author, format, progress, series, and/or)  
-  - Shelves grid: 2 columns, live counts (as designed in P0)  
-- Tags browse  
-- Light analytics  
-- Book page / float wired fully to DB  
+- [x] **Schema v4**: `shelves`, `shelf_books`, `reading_list`,
+      `reading_events`, `reading_sessions`, plus `books.last_opened_at` /
+      `books.finished_at` added via an idempotent `ALTER` helper
+- [x] **Shelves engine**
+  - Manual shelf (membership rows, hand-sortable with ↑/↓)
+  - Smart shelf — **flat rule list + one All/Any switch** (decision B)
+  - Fields: tag, author, series, format, progress, title, added
+  - Operators: is / is not / contains / does not contain / in the last N
+    days / more than N days ago
+  - Rules stored as JSON, compiled to a parameterised SQL `WHERE`
+  - Shelves grid: 2 columns, kind badge, live counts, rule summary
+  - Rule editor with **live “N books match”** readout
+- [x] **Reading list** — ordered TBR, ↑/↓ reorder, bulk picker, Read button
+- [x] **History** — append-only event log (opened / finished / unfinished /
+      imported), grouped by day, filterable, same-hour dedupe on opens
+- [x] **Reading time tracking** — a `reading_sessions` row per reader visit,
+      closed on shutdown, clamped at 6h so an idle window can't fake a marathon
+- [x] **Tags browse** — usage-weighted tag cloud → per-tag book grid
+- [x] **Analytics** — books/finished/reading/unread, time read (all time,
+      7d, 30d), current & longest streak, highlights/quotes/words, 14-day
+      reading bar chart, books-added-per-month, most read / top tags / top authors
+- [x] **Home polish** — counts strip, multi-book Continue row driven by
+      `last_opened_at`, Up-next peek from the reading list
+- [x] **Book page** — add/remove reading list, Mark finished / Mark unread,
+      manual-shelf checklist, shelf chips
+- [x] Auto-finish at ≥99% progress (once per book), with manual override
+- [x] Unit tests over an in-memory catalog: rule compilation, membership,
+      reorder, auto-finish, session clamping, stats
+
+### Design decisions locked in P4
+
+- Smart shelves stay **flat** (no nested boolean groups). The stored JSON is
+  forward compatible, so nested groups can arrive later without a migration.
+- An empty smart shelf matches **nothing**, not everything — less surprising.
+- Analytics never invents data: no "hours read" before sessions existed.
+- Deleting a shelf never deletes books.
 
 ### Out
 
 Online sources.
 
+### Arch check
+
+- Create a smart shelf (tag is X **and** progress is unread) → live count moves
+  as you type → save → grid shows the count → open it
+- Create a manual shelf → add books from the book page and the picker → reorder
+- Read a book for a few minutes → History shows "Opened" → Analytics shows time
+- Finish a book → it leaves the reading list and appears as Finished
+
 ---
 
-## P5 — Metadata
+## P5 — Metadata  ✅ done
 
 **Goal:** Fix messy imports without leaving Kalam.
 
-### Scope
+### Shipped
 
-- Edit metadata dialog  
-- Replace cover  
-- Fetch from **Open Library** (user-triggered, confirm before overwrite)  
-- Keep uuid paths by default  
+- [x] Edit metadata dialog: title, authors, series, tags, description
+- [x] Replace cover from disk (PNG/JPEG/WebP/GIF, sniffed by magic bytes)
+- [x] **Open Library** lookup: search, pick a candidate, pull description
+      and cover
+- [x] User-triggered only; results are staged into the form for review and
+      nothing is written until you press Save
+- [x] Sparse matches only fill fields they actually have, so a thin result
+      cannot blank out good local metadata
+- [x] Network on worker threads via async-channel — the dialog never blocks
+- [x] uuid paths unchanged; covers get a fresh file name per replacement
+- [x] Unit tests over captured Open Library payloads
+
+### Notes
+
+- `ureq` with rustls, so there is no OpenSSL system dependency to install
+- Covers are written as `cover-<n>.<ext>` rather than overwritten: GTK caches
+  textures by path, so reuse would show the old image until restart
+- Open Library's `description` is sometimes a string and sometimes
+  `{ "value": … }`; both are handled
+
+### Out
+
+Bulk metadata edit and cover refresh across many books — those live in P11.
+
+---
+
+## P5.5 — UI overhaul  ◀ in progress
+
+**Goal:** Redesign the interface, one window at a time. The app grew screen by
+screen and looks it; this is the pass that makes it feel like one product.
+
+**Working method (agreed):** one window per round. The agent mocks the screen
+up as an image first, the user looks at it, and only then does it become Rust.
+The agent cannot see the GUI, and shipping layout blind has repeatedly wasted
+rounds.
+
+### Done
+- **Colour system** — `src/theme.rs` owns every colour; `style.rs` holds only
+  shape (padding, radii, type scale). Adding a theme is one struct.
+- **13 dark themes**, grouped standard + darker per family: One Dark (default
+  is One Dark Darker), Tokyo Night, Everforest, Catppuccin, Gruvbox, Ayu, and
+  Nord (no darker variant). Light themes are out of scope.
+- **Scrollbars** — invisible until hovered, thin pill, hugging the edge.
+- **Sidebar** — 48px icon-only rail, logo pinned top, nav centred, Settings
+  bottom, circular active state.
+- **Logo** — `assets/logo.png`, embedded with `include_bytes!`.
+
+### Next
+1. **Settings** — currently one long unstructured column; needs grouping.
+2. Home / dashboard — the two-column layout the design references imply.
+3. Library, Book page, Reader chrome, dialogs.
+
+### Hard-won GTK/CSS rules
+
+These are written up properly in the module header of `src/style.rs`. Read that
+before touching the scrollbar block — the summary:
+
+1. **This stylesheet already outranks Adwaita.** `relm4::set_global_css` loads
+   at `APPLICATION` (600), the theme at `THEME` (200), and priority beats
+   specificity. Long `:not()` chains are unnecessary, and GTK drops an entire
+   comma-separated rule when one selector in the group fails to parse.
+2. **Never use `opacity` below 1 on a widget that can collapse.** It forces an
+   offscreen surface; a collapsed overlay scrollbar's is zero-sized and pixman
+   rejects it. Hide with a transparent `background-color` instead.
+3. **`margin`/`border`/`padding` are subtracted from the allocation.** Adwaita's
+   slider carries 16px of them, so resetting only the border still leaves 8px
+   and every `min-width` comes out negative. Zero all three, then set the size.
+4. **`scrolledwindow:hover` matches the whole content area**, not the scrollbar.
+   Use `scrollbar:hover` / `scrollbar.hovering`.
+5. **`KALAM_NO_CSS=1` runs with no custom stylesheet** — use it to confirm a
+   warning is even ours before theorising. `GTK_DEBUG=interactive` shows which
+   rule actually wins on a node.
+
+Cost of learning this the wrong way: about a dozen rounds on one scrollbar.
+Each fix was plausible, none was verified against the toolkit's actual
+behaviour first. When a warning carries a number, do the arithmetic across
+runs — the constant that keeps appearing is the answer.
+
+### Notes
+- Reader *page* theming (Light/Sepia/Dark paper) stays separate from app
+  chrome: a sepia page inside a dark app is a legitimate combination.
+- The images in `docs/design/` are **inspiration the user collected**, not
+  their own designs. Treat them as direction, not specification.
 
 ---
 
@@ -381,16 +494,36 @@ Only sources you’re allowed to use. No unauthorized scraper assistance.
 
 ## Schema (current + planned)
 
+Current `SCHEMA_VERSION` = **7** (`src/db.rs`). Migrations run on open and are
+additive; there is no downgrade path, so take a copy of
+`~/.local/share/kalam/catalog.db` before testing a build that bumps it.
+
 ```text
 books              id, uuid, title, sort_title, authors, series, description,
                    format, file_name, file_hash, cover_name, added_at, progress
+                   + last_opened_at, finished_at                  -- v4
+                   + rating (0..=10 half-stars)                   -- v5
+                   + publisher, published, series_index (REAL)    -- v6
 tags / book_tags
 reading_progress   book_id, chapter_index, fraction, updated_at   -- P2
-annotations        id, book_id, kind, loc, color, body, …         -- P3
-saved_words        …                                              -- P3
-shelves / shelf_books / reading_list                              -- P4
+annotations        id, book_id, kind, loc, color, body, …         -- P3 (v3)
+saved_words        …                                              -- P3 (v3)
+dictionaries       id, name, lang, entry_count, …                 -- P3 (v3)
+shelves            id, name, kind, description, rules(JSON), position  -- P4 (v4)
+shelf_books        shelf_id, book_id, position, added_at             -- P4 (v4)
+reading_list       book_id, position, note, added_at                 -- P4 (v4)
+reading_events     id, book_id, kind, at, detail                     -- P4 (v4)
+reading_sessions   id, book_id, started_at, ended_at, seconds, pct   -- P4 (v4)
+reading_goals      year, target_books                                -- v5
+app_prefs          key, value
+metadata_overrides keyed on file_hash, NOT cascaded from books      -- v7
 sources_state / download_jobs                                     -- P6+
 ```
+
+`metadata_overrides` is deliberately **not** `ON DELETE CASCADE`: surviving a
+book's deletion is the entire point, so edits come back when the same file is
+re-imported. Its cover lives in `covers/<file_hash>.<ext>`, not in
+`library/<uuid>/`, which is removed with the book.
 
 ---
 
@@ -420,11 +553,53 @@ Deps include `webkitgtk-6.0` for P2+.
 
 ---
 
+## Post-P5 work (done, between P5 and P6)
+
+### Performance pass ✅
+- **Query storm**: ~99 SQL queries per Library click with 50 books → ~8.
+  N+1 tag lookups collapsed, `list_books()` no longer loads the whole library
+  to draw 6 covers, prepared-statement cache, `library_stats()` memoised
+  against SQLite's `total_changes()` so no write path has to remember to
+  invalidate. `synchronous=NORMAL`, 64 MB cache, `temp_store=MEMORY`, mmap.
+  Indexes on `progress`, `last_opened_at`, `finished_at`.
+- **Widget rebuilds**: pages cached in `AppModel.cache` keyed by route.
+  Reader/BookPage/ShelfDetail/TagBooks/LibrarySection deliberately excluded
+  (they own a WebView or per-book state). Invalidated via `cache_token`.
+- **Blocking imports**: `Catalog` moved `Rc` → `Arc`; the import loop runs on
+  `spawn_command` and reports per-file progress.
+
+### Hardening pass ✅
+1. **Notifications** (`src/notify.rs`) — toast overlay per
+   `docs/design/notifications.png`; history panel in Settings.
+2. **Library backup** — `VACUUM INTO`, consistent even while running.
+3. **Reader cache pruning** — orphaned + 14-day-stale extracts dropped at
+   startup.
+4. **Poison-safe locks** — 77 `expect("db lock")` → `Catalog::conn()`.
+5. **`db.rs` split** — 3,367 lines → 1,702 + 7 focused modules.
+
+### Bug fixes worth remembering
+- **Metadata overrides** keyed on `file_hash` (schema v7) so edits survive
+  delete → re-import, including the cover, which is stashed in
+  `covers/<hash>.<ext>` because `library/<uuid>/` goes with the book.
+- **EPUB writeback on single-line OPFs** — `rewrite_opf` filtered the
+  metadata block line by line, which only works on pretty-printed files.
+  Real EPUBs often put the whole block on one line, leaving the old
+  `<dc:title>` beside the new one; readers showed the stale one. Now walks
+  elements, not lines.
+- **Notifications only fired on failure** — `notify::report` stayed silent on
+  `Ok`, so every successful action looked broken. Added
+  `notify::outcome`/`outcome_info`.
+
+---
+
 ## Immediate next steps
 
-1. **P4 — Library depth** (shelves engine, real home, tags browse)
-2. Keep refining text-reader polish only if you file specific UX bugs (note editing UI, CFI, dict HTML rendering)
-3. **P8** when you want comics for real (UI target already specified above)  
+1. **UI overhaul** once the Figma designs are final (see `docs/design/`).
+   `library_look.png` shows a two-column dashboard; the app is currently a
+   single vertical stack. Known divergence, deliberately deferred.
+2. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
+3. Keep refining text-reader polish only if you file specific UX bugs (note editing UI, CFI, dict HTML rendering)
+4. **P8** when you want comics for real (UI target already specified above)  
 
 ---
 
@@ -446,4 +621,13 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-26 | Text reader look: sepia default, no blue body/links, no underlines |
 | 2026-07-26 | Comics reader look: Moku-like black stage, top meta + bottom scrub (P8) |
 | 2026-07-26 | P0–P2 treated complete; **next = P3** |
+| 2026-07-27 | P5 shipped: metadata editor, cover replacement, Open Library lookup (staged for review, never auto-applied) |
+| 2026-07-27 | Ratings (half-star), yearly reading goals and quote notes added from the reference designs; social elements deliberately skipped |
+| 2026-07-27 | P4 shipped: shelves engine (manual + flat-rule smart shelves), reading list, event-log history, reading-time sessions, tags browse, analytics with streaks |
+| 2026-07-27 | Smart shelves locked as flat rules + All/Any; nested groups deferred and kept JSON-compatible |
 | 2026-07-26 | P3 annotations & dictionary shipped: highlights (5 colors), quotes, offline dict packs (StarDict/SQLite/TSV), Saved quotes/words real data, export Markdown, annotations list, dictionary popup, Settings import |
+| 2026-07-28 | Performance pass shipped: query batching + stats memoisation, page cache, imports off the UI thread |
+| 2026-07-28 | Hardening pass shipped: toast notifications, `VACUUM INTO` backup, reader-cache pruning, poison-safe locks, `db.rs` split |
+| 2026-07-28 | Metadata overrides keyed on `file_hash` (schema v7) so edits and covers survive delete → re-import |
+| 2026-07-28 | EPUB writeback fixed for single-line OPFs; toast accent restyled to the reference; every user action now confirms |
+| 2026-07-28 | P5.5 opened: UI overhaul, one window at a time, mockup before code. Colour system + 13 dark themes + slim sidebar shipped |

@@ -7,7 +7,7 @@ use crate::widgets::book_row::build_book_grid;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum AllBooksOut {
@@ -23,20 +23,43 @@ pub enum AllBooksMsg {
     FilesChosen(Vec<PathBuf>),
 }
 
+/// Progress from the import worker.
+#[derive(Debug)]
+pub enum ImportProgress {
+    /// One file finished: 1-based index, total, and its title.
+    Step {
+        done: usize,
+        total: usize,
+        title: String,
+    },
+    Finished(ImportTally),
+}
+
+#[derive(Debug, Default)]
+pub struct ImportTally {
+    pub imported: usize,
+    pub dupes: usize,
+    pub errors: usize,
+    pub restored: usize,
+    pub last_title: String,
+}
+
 pub struct AllBooksModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     books: Vec<Book>,
     query: String,
     sort: SortKey,
     status: String,
+    /// True while a background import is running; disables the button.
+    importing: bool,
 }
 
 #[relm4::component(pub)]
 impl Component for AllBooksModel {
-    type Init = Rc<Catalog>;
+    type Init = Arc<Catalog>;
     type Input = AllBooksMsg;
     type Output = AllBooksOut;
-    type CommandOutput = ();
+    type CommandOutput = ImportProgress;
 
     view! {
         #[root]
@@ -71,12 +94,20 @@ impl Component for AllBooksModel {
                 },
 
                 gtk::Button {
-                    set_label: "+ Import EPUB",
+                    #[watch]
+                    set_label: if model.importing {
+                        "Importing…"
+                    } else {
+                        "+ Import EPUB"
+                    },
                     add_css_class: "kalam-primary-btn",
+                    #[watch]
+                    set_sensitive: !model.importing,
                     connect_clicked => AllBooksMsg::PickFiles,
                 },
             },
 
+            #[name = "status_label"]
             gtk::Label {
                 #[watch]
                 set_label: &model.status,
@@ -110,6 +141,7 @@ impl Component for AllBooksModel {
             query: String::new(),
             sort,
             status,
+            importing: false,
         };
         let widgets = view_output!();
 
@@ -133,6 +165,65 @@ impl Component for AllBooksModel {
         rebuild_list(&widgets.list, &model.books, &sender);
 
         ComponentParts { model, widgets }
+    }
+
+    fn update_cmd_with_view(
+        &mut self,
+        widgets: &mut Self::Widgets,
+        msg: Self::CommandOutput,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
+        match msg {
+            ImportProgress::Step { done, total, title } => {
+                // Only the counter moves per file; the list is rebuilt once at
+                // the end so a large import does not thrash the grid.
+                self.status = if title.is_empty() {
+                    format!("Importing {done} of {total}…")
+                } else {
+                    format!("Importing {done} of {total} — {title}")
+                };
+                widgets.status_label.set_label(&self.status);
+                return;
+            }
+            ImportProgress::Finished(tally) => {
+                self.importing = false;
+                self.reload();
+
+                if tally.imported > 0 {
+                    crate::notify::success(
+                        &format!(
+                            "{} book{} imported",
+                            tally.imported,
+                            if tally.imported == 1 { "" } else { "s" }
+                        ),
+                        &tally.last_title,
+                    );
+                }
+
+                // Say when edits came back, so a restored title does not look
+                // like the import ignored the file.
+                let restored_note = if tally.restored > 0 {
+                    format!(" {} kept your earlier metadata edits.", tally.restored)
+                } else {
+                    String::new()
+                };
+                self.status = format!(
+                    "Import done — {} added, {} already in library, {} failed.{restored_note}{}",
+                    tally.imported,
+                    tally.dupes,
+                    tally.errors,
+                    if tally.last_title.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" Last: {}", tally.last_title)
+                    }
+                );
+            }
+        }
+
+        rebuild_list(&widgets.list, &self.books, &sender);
+        self.update_view(widgets, sender);
     }
 
     fn update_with_view(
@@ -199,35 +290,50 @@ impl Component for AllBooksModel {
                 );
             }
             AllBooksMsg::FilesChosen(paths) => {
-                let mut imported = 0usize;
-                let mut dupes = 0usize;
-                let mut errors = 0usize;
-                let mut last_title = String::new();
-                for path in paths {
-                    match epub::import_epub(&self.catalog, &path) {
-                        Ok(r) if r.duplicate => {
-                            dupes += 1;
-                            last_title = r.title;
+                // Importing parses, hashes and copies each file. Doing that
+                // inline froze the window with no sign of progress, so it runs
+                // on a worker thread and reports back per file.
+                let total = paths.len();
+                self.importing = true;
+                self.status = format!("Importing 1 of {total}…");
+
+                let catalog = self.catalog.clone();
+                sender.spawn_command(move |out| {
+                    let mut tally = ImportTally::default();
+                    for (i, path) in paths.iter().enumerate() {
+                        match epub::import_epub(&catalog, path) {
+                            Ok(r) if r.duplicate => {
+                                tally.dupes += 1;
+                                tally.last_title = r.title.clone();
+                            }
+                            Ok(r) => {
+                                tally.imported += 1;
+                                if r.restored {
+                                    tally.restored += 1;
+                                }
+                                tally.last_title = r.title.clone();
+                            }
+                            Err(err) => {
+                                tally.errors += 1;
+                                let name = path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().into_owned())
+                                    .unwrap_or_default();
+                                crate::notify::error(
+                                    &format!("Could not import {name}"),
+                                    &format!("{err:#}"),
+                                );
+                            }
                         }
-                        Ok(r) => {
-                            imported += 1;
-                            last_title = r.title;
-                        }
-                        Err(err) => {
-                            errors += 1;
-                            eprintln!("kalam import error ({}): {err:#}", path.display());
-                        }
+                        out.send(ImportProgress::Step {
+                            done: i + 1,
+                            total,
+                            title: tally.last_title.clone(),
+                        })
+                        .ok();
                     }
-                }
-                self.reload();
-                self.status = format!(
-                    "Import done — {imported} added, {dupes} already in library, {errors} failed.{}",
-                    if last_title.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" Last: {last_title}")
-                    }
-                );
+                    out.send(ImportProgress::Finished(tally)).ok();
+                });
             }
         }
 

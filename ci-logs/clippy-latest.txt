@@ -1,0 +1,5 @@
+src/notify.rs:388:9: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
+src/notify.rs:389:9: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
+src/notify.rs:400:13: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
+--- run 30319141801 ---

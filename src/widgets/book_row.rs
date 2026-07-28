@@ -6,7 +6,28 @@
 use crate::models::Book;
 use gtk::gdk::ModifierType;
 use gtk::prelude::*;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::Path;
+
+thread_local! {
+    /// Decoded cover textures, keyed by path + requested size.
+    ///
+    /// Without this every navigation re-reads and re-scales each cover PNG from
+    /// disk, which is what made scrolling and page switches feel heavy. GDK
+    /// textures are reference-counted and live on the GPU, so re-using them is
+    /// both faster and lighter than holding pixbufs.
+    static COVER_CACHE: RefCell<HashMap<(String, i32, i32), gtk::gdk::Texture>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Drop cached textures for a cover that changed or was deleted.
+pub fn invalidate_cover_cache(path: &Path) {
+    let key = path.to_string_lossy().to_string();
+    COVER_CACHE.with(|c| {
+        c.borrow_mut().retain(|(p, _, _), _| *p != key);
+    });
+}
 
 /// Cover width (px). Height = width × 1.6 (standard ebook portrait).
 pub const COVER_W: i32 = 128;
@@ -190,6 +211,27 @@ pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
 }
 
 fn scaled_cover_picture(path: &Path, w: i32, h: i32) -> Option<gtk::Picture> {
+    let key = (path.to_string_lossy().to_string(), w, h);
+
+    // Serve from cache when we have already decoded this cover at this size.
+    if let Some(texture) = COVER_CACHE.with(|c| c.borrow().get(&key).cloned()) {
+        return Some(build_picture(&texture, w, h));
+    }
+
+    let texture = decode_cover(path, w, h)?;
+    COVER_CACHE.with(|c| {
+        let mut cache = c.borrow_mut();
+        // Crude bound: a few hundred covers is plenty for one session and keeps
+        // memory sane on the 4 GB target machine.
+        if cache.len() > 400 {
+            cache.clear();
+        }
+        cache.insert(key, texture.clone());
+    });
+    Some(build_picture(&texture, w, h))
+}
+
+fn decode_cover(path: &Path, w: i32, h: i32) -> Option<gtk::gdk::Texture> {
     use gdk_pixbuf::{InterpType, Pixbuf};
 
     let pixbuf = Pixbuf::from_file_at_scale(path, w, h, false).ok()?;
@@ -198,9 +240,11 @@ fn scaled_cover_picture(path: &Path, w: i32, h: i32) -> Option<gtk::Picture> {
     } else {
         pixbuf
     };
+    Some(gtk::gdk::Texture::for_pixbuf(&pixbuf))
+}
 
-    let texture = gtk::gdk::Texture::for_pixbuf(&pixbuf);
-    let picture = gtk::Picture::for_paintable(&texture);
+fn build_picture(texture: &gtk::gdk::Texture, w: i32, h: i32) -> gtk::Picture {
+    let picture = gtk::Picture::for_paintable(texture);
     picture.set_content_fit(gtk::ContentFit::Fill);
     picture.set_can_shrink(true);
     picture.set_size_request(w, h);
@@ -209,5 +253,5 @@ fn scaled_cover_picture(path: &Path, w: i32, h: i32) -> Option<gtk::Picture> {
     picture.set_halign(gtk::Align::Fill);
     picture.set_valign(gtk::Align::Fill);
     picture.add_css_class("kalam-cover-img");
-    Some(picture)
+    picture
 }

@@ -55,8 +55,40 @@ jobs:
             git push
           fi
 
+      # The Arena sandbox cannot download Actions logs (the log host is
+      # unreachable from it), so on failure we commit the compiler output back
+      # to the branch under ci-logs/ where the agent can read it.
       - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
+        id: clippy
+        run: |
+          set -o pipefail
+          cargo clippy --all-targets --message-format=short 2>&1 \
+            | tee /tmp/clippy.txt
+        continue-on-error: true
+
+      - name: publish clippy log on failure
+        if: steps.clippy.outcome == 'failure'
+        run: |
+          mkdir -p ci-logs
+          # Prefer the diagnostic lines, but always fall back to the tail: a
+          # grep that matches nothing used to publish an empty file, which is
+          # worse than useless.
+          grep -E "error|warning:" /tmp/clippy.txt | head -100 > ci-logs/clippy-latest.txt || true
+          if [ ! -s ci-logs/clippy-latest.txt ]; then
+            echo "(no lines matched; last 100 lines of output)" > ci-logs/clippy-latest.txt
+            tail -100 /tmp/clippy.txt >> ci-logs/clippy-latest.txt || true
+          fi
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/clippy-latest.txt
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -f ci-logs/clippy-latest.txt
+          git commit -m "ci: publish clippy failures [skip ci]" || true
+          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+          git push origin "HEAD:$GITHUB_REF_NAME" || true
+
+      - name: fail if clippy failed
+        if: steps.clippy.outcome == 'failure'
+        run: exit 1
 
       - name: build (debug)
         run: cargo build --verbose

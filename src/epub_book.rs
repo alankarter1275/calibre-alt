@@ -879,11 +879,75 @@ fn join_zip_path(dir: &str, href: &str) -> String {
 /// link styling. We nuke link chrome entirely for reading. P3 adds highlight
 /// and chip styling.
 pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, margin_em: f32) -> String {
-    let (bg, fg) = match theme {
-        ReadingTheme::Light => ("#faf8f5", "#1c1917"),
-        ReadingTheme::Sepia => ("#f4ecd8", "#3e3226"),
-        ReadingTheme::Dark => ("#1a1b1e", "#e7e5e4"),
+    let (bg, fg) = theme.swatch();
+
+    // Many EPUBs ship chapter headings, ornaments and diagrams as PNG/JPEG with
+    // a baked-in **white** background. CSS cannot repaint pixels inside an
+    // image, so on a themed page those land as mismatched slabs.
+    //
+    // The trick is a blend mode chosen per theme, so the artwork's white
+    // background takes the page colour and the ink stays legible:
+    //
+    // * Light / Sepia — `multiply`. White × cream = cream (background vanishes);
+    //   black ink × cream = black (ink survives).
+    // * Dark — `multiply` alone would be wrong: the white background does go
+    //   dark, but the black lettering goes black-on-black and disappears. So we
+    //   `invert()` first (black ink → white, white background → black) and then
+    //   `screen`, where black is the no-op colour: the background drops out and
+    //   the lettering comes through **white**.
+    //
+    // Photographs must be excluded — inverting a photo produces a colour
+    // negative — so cover/photo/figure images only get a gentle dim.
+    let image_css = match theme {
+        ReadingTheme::Dark => {
+            r#"
+/* Line art / text-as-image: invert then screen so ink renders white and the
+   baked-in white background drops out to the page colour. */
+img, svg, image, picture > img, object[type^="image"] {
+  filter: invert(1) brightness(1.06) contrast(1.04) !important;
+  mix-blend-mode: screen !important;
+  background: transparent !important;
+}
+/* Photographs would become colour negatives — dim them instead. */
+img[class*="cover" i], img[id*="cover" i], img[src*="cover" i],
+img[class*="photo" i], img[class*="figure" i], img[class*="illus" i],
+img[src*="photo" i], figure > img[alt]:not([alt=""]) {
+  filter: brightness(0.86) !important;
+  mix-blend-mode: normal !important;
+}
+"#
+        }
+        _ => {
+            r#"
+/* White artwork background takes the page tint; ink stays dark. */
+img, svg, image, picture > img, object[type^="image"] {
+  mix-blend-mode: multiply !important;
+  background: transparent !important;
+}
+img[class*="cover" i], img[id*="cover" i], img[src*="cover" i],
+img[class*="photo" i], img[src*="photo" i] {
+  mix-blend-mode: normal !important;
+}
+"#
+        }
     };
+
+    // Blending composites against the nearest painted backdrop, so any author
+    // wrapper that paints its own white would swallow the effect.
+    let image_backdrop_css = r#"
+html, body {
+  background-color: %BG% !important;
+}
+div, p, section, article, figure, figcaption, span, td, table, tbody, tr,
+main, header, blockquote {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+"#
+    .replace("%BG%", bg);
+
+    let image_css = format!("{image_css}{image_backdrop_css}");
+
     // Injected at the *end* of <body> so it wins over author stylesheets.
     format!(
         r#"
@@ -1112,12 +1176,16 @@ img, svg {{
   background: #1c1917 !important;
   background-color: #1c1917 !important;
 }}
+
+/* ── theme-specific image handling (appended last so it wins) ── */
+{image_css}
 "#,
         bg = bg,
         fg = fg,
         font_px = font_px,
         lh = line_height,
         margin = margin_em,
+        image_css = image_css,
     )
 }
 
@@ -1126,4 +1194,32 @@ pub enum ReadingTheme {
     Light,
     Sepia,
     Dark,
+}
+
+impl ReadingTheme {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReadingTheme::Light => "light",
+            ReadingTheme::Sepia => "sepia",
+            ReadingTheme::Dark => "dark",
+        }
+    }
+
+    pub fn from_str_lossy(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "light" => ReadingTheme::Light,
+            "dark" => ReadingTheme::Dark,
+            _ => ReadingTheme::Sepia,
+        }
+    }
+
+    /// Page and ink colours — shared by the reading CSS and the theme buttons
+    /// in the typography popover, so a swatch always matches the real page.
+    pub fn swatch(self) -> (&'static str, &'static str) {
+        match self {
+            ReadingTheme::Light => ("#faf8f5", "#1c1917"),
+            ReadingTheme::Sepia => ("#f4ecd8", "#3e3226"),
+            ReadingTheme::Dark => ("#1a1b1e", "#e7e5e4"),
+        }
+    }
 }

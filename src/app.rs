@@ -4,21 +4,25 @@ use crate::db::Catalog;
 use crate::models::{LibrarySection, NavItem, Route};
 use crate::pages::{
     all_books::{AllBooksModel, AllBooksOut},
+    analytics::AnalyticsModel,
     book::{BookPageModel, BookPageOut},
     book_float::{BookFloatModel, BookFloatOut},
+    history::{HistoryModel, HistoryOut},
     home::{HomeOut, HomePageModel},
     library::{LibraryOut, LibraryPageModel},
     placeholder::PlaceholderPageModel,
     reader::{ReaderModel, ReaderOut},
+    reading_list::{ReadingListModel, ReadingListOut},
     saved_quotes::{SavedQuotesModel, SavedQuotesOut},
     saved_words::{SavedWordsModel, SavedWordsOut},
     settings::SettingsPageModel,
     shelf_detail::{ShelfDetailModel, ShelfDetailOut},
     shelves_grid::{ShelvesGridModel, ShelvesOut},
+    tags::{TagBooksModel, TagBooksOut, TagsModel, TagsOut},
 };
 use gtk::prelude::*;
 use relm4::prelude::*;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum AppMsg {
@@ -33,6 +37,8 @@ pub enum AppMsg {
         book_id: i64,
     },
     CloseBookDialog,
+    /// Rebuild the page on screen if the catalog changed under it.
+    RefreshCurrentPage,
     /// Open immersive reader for book_id.
     OpenReader {
         book_id: i64,
@@ -47,11 +53,15 @@ enum PageSlot {
     SavedWords(Controller<SavedWordsModel>),
     Shelves(Controller<ShelvesGridModel>),
     ShelfDetail(Controller<ShelfDetailModel>),
+    ReadingList(Controller<ReadingListModel>),
+    History(Controller<HistoryModel>),
+    Tags(Controller<TagsModel>),
+    TagBooks(Controller<TagBooksModel>),
+    Analytics(Controller<AnalyticsModel>),
     Book(Controller<BookPageModel>),
     Reader(Controller<ReaderModel>),
     Settings(Controller<SettingsPageModel>),
     Placeholder(Controller<PlaceholderPageModel>),
-    Widget(gtk::Box),
 }
 
 impl PageSlot {
@@ -64,11 +74,15 @@ impl PageSlot {
             PageSlot::SavedWords(c) => c.widget().clone().upcast(),
             PageSlot::Shelves(c) => c.widget().clone().upcast(),
             PageSlot::ShelfDetail(c) => c.widget().clone().upcast(),
+            PageSlot::ReadingList(c) => c.widget().clone().upcast(),
+            PageSlot::History(c) => c.widget().clone().upcast(),
+            PageSlot::Tags(c) => c.widget().clone().upcast(),
+            PageSlot::TagBooks(c) => c.widget().clone().upcast(),
+            PageSlot::Analytics(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
             PageSlot::Reader(c) => c.widget().clone().upcast(),
             PageSlot::Settings(c) => c.widget().clone().upcast(),
             PageSlot::Placeholder(c) => c.widget().clone().upcast(),
-            PageSlot::Widget(b) => b.clone().upcast(),
         }
     }
 }
@@ -79,7 +93,7 @@ struct FloatingBook {
 }
 
 pub struct AppModel {
-    catalog: Rc<Catalog>,
+    catalog: Arc<Catalog>,
     route: Route,
     history: Vec<Route>,
     sidebar_override: Option<NavItem>,
@@ -87,6 +101,39 @@ pub struct AppModel {
     floating: Option<FloatingBook>,
     title_override: Option<String>,
     subtitle_override: Option<String>,
+    /// Pages kept alive between visits, keyed by route.
+    ///
+    /// Rebuilding a whole widget tree on every click was the second half of
+    /// the UI lag: revisiting Home or Library reconstructed dozens of widgets
+    /// and re-ran their queries. Cached pages are unparented rather than
+    /// destroyed, so returning to one costs nothing.
+    cache: Vec<(String, PageSlot)>,
+    /// Catalog write counter at the time each cached page was built. A cached
+    /// page is only reused while this matches, so an import, delete or edit
+    /// anywhere automatically forces a rebuild — no write path has to
+    /// remember to invalidate.
+    cache_token: i64,
+}
+
+/// Cache key for a route, or `None` for pages that must always be rebuilt.
+///
+/// Reader is excluded deliberately: it owns a WebView and a reading session,
+/// and must be torn down on leave. Book and shelf pages are excluded because
+/// their content changes as you edit metadata, ratings and membership.
+fn cache_key(route: &Route) -> Option<String> {
+    match route {
+        Route::Module(NavItem::Home) => Some("home".into()),
+        Route::Module(NavItem::Library) => Some("library".into()),
+        Route::Module(NavItem::Shelves) | Route::ShelvesGrid => Some("shelves".into()),
+        Route::Module(NavItem::Settings) => Some("settings".into()),
+        Route::Module(item) => Some(format!("mod:{}", item.label())),
+        // Everything below reflects data the user is actively changing.
+        Route::LibrarySection(_)
+        | Route::ShelfDetail { .. }
+        | Route::TagBooks { .. }
+        | Route::BookPage { .. }
+        | Route::Reader { .. } => None,
+    }
 }
 
 impl AppModel {
@@ -108,7 +155,7 @@ impl AppModel {
     }
 
     fn build_page(
-        catalog: &Rc<Catalog>,
+        catalog: &Arc<Catalog>,
         route: &Route,
         sender: &ComponentSender<Self>,
     ) -> PageSlot {
@@ -127,7 +174,10 @@ impl AppModel {
                 let ctrl = LibraryPageModel::builder().launch(catalog.clone()).forward(
                     sender.input_sender(),
                     |out| match out {
-                        LibraryOut::OpenSection(sec) => AppMsg::Push(Route::LibrarySection(sec)),
+                        LibraryOut::Section(sec) => AppMsg::Push(Route::LibrarySection(sec)),
+                        LibraryOut::Book { book_id } => AppMsg::Push(Route::BookPage { book_id }),
+                        LibraryOut::BookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
+                        LibraryOut::Tag { tag } => AppMsg::Push(Route::TagBooks { tag }),
                     },
                 );
                 PageSlot::Library(ctrl)
@@ -173,31 +223,78 @@ impl AppModel {
                         });
                 PageSlot::SavedWords(ctrl)
             }
-            Route::LibrarySection(section) => PageSlot::Widget(placeholder_section(*section)),
+            Route::LibrarySection(LibrarySection::ReadingList) => {
+                let ctrl = ReadingListModel::builder().launch(catalog.clone()).forward(
+                    sender.input_sender(),
+                    |out| match out {
+                        ReadingListOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                        ReadingListOut::OpenReader { book_id } => AppMsg::OpenReader { book_id },
+                    },
+                );
+                PageSlot::ReadingList(ctrl)
+            }
+            Route::LibrarySection(LibrarySection::History) => {
+                let ctrl = HistoryModel::builder().launch(catalog.clone()).forward(
+                    sender.input_sender(),
+                    |out| match out {
+                        HistoryOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                    },
+                );
+                PageSlot::History(ctrl)
+            }
+            Route::LibrarySection(LibrarySection::Tags) => {
+                let ctrl = TagsModel::builder().launch(catalog.clone()).forward(
+                    sender.input_sender(),
+                    |out| match out {
+                        TagsOut::OpenTag { tag } => AppMsg::Push(Route::TagBooks { tag }),
+                    },
+                );
+                PageSlot::Tags(ctrl)
+            }
+            Route::LibrarySection(LibrarySection::Analytics) => {
+                let ctrl = AnalyticsModel::builder().launch(catalog.clone()).detach();
+                PageSlot::Analytics(ctrl)
+            }
             Route::Module(NavItem::Shelves) | Route::ShelvesGrid => {
-                let ctrl =
-                    ShelvesGridModel::builder()
-                        .launch(())
-                        .forward(sender.input_sender(), |out| match out {
-                            ShelvesOut::OpenShelf { shelf_id } => {
-                                AppMsg::Push(Route::ShelfDetail { shelf_id })
-                            }
-                        });
+                let ctrl = ShelvesGridModel::builder().launch(catalog.clone()).forward(
+                    sender.input_sender(),
+                    |out| match out {
+                        ShelvesOut::OpenShelf { shelf_id } => {
+                            AppMsg::Push(Route::ShelfDetail { shelf_id })
+                        }
+                    },
+                );
                 PageSlot::Shelves(ctrl)
             }
             Route::ShelfDetail { shelf_id } => {
-                let ctrl = ShelfDetailModel::builder().launch(*shelf_id).forward(
-                    sender.input_sender(),
-                    |out| match out {
+                let ctrl = ShelfDetailModel::builder()
+                    .launch((catalog.clone(), *shelf_id))
+                    .forward(sender.input_sender(), |out| match out {
                         ShelfDetailOut::OpenBook { book_id } => {
                             AppMsg::Push(Route::BookPage { book_id })
                         }
                         ShelfDetailOut::OpenBookDialog { book_id } => {
                             AppMsg::OpenBookDialog { book_id }
                         }
-                    },
-                );
+                    });
                 PageSlot::ShelfDetail(ctrl)
+            }
+            Route::TagBooks { tag } => {
+                let ctrl = TagBooksModel::builder()
+                    .launch((catalog.clone(), tag.clone()))
+                    .forward(sender.input_sender(), |out| match out {
+                        TagBooksOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                        TagBooksOut::OpenBookDialog { book_id } => {
+                            AppMsg::OpenBookDialog { book_id }
+                        }
+                    });
+                PageSlot::TagBooks(ctrl)
             }
             Route::BookPage { book_id } => {
                 let id = *book_id;
@@ -253,12 +350,7 @@ impl AppModel {
         self.title_override = None;
         self.subtitle_override = None;
 
-        while let Some(child) = content_host.first_child() {
-            content_host.remove(&child);
-        }
-        // Drop old controller only after unparenting — avoids
-        // gtk_widget_is_ancestor criticals on disposed widgets.
-        self.page = None;
+        self.detach_current(content_host);
 
         if let Route::BookPage { book_id } = &route {
             if let Ok(Some(b)) = self.catalog.get_book(*book_id) {
@@ -272,6 +364,15 @@ impl AppModel {
                 self.subtitle_override = Some("Reading".into());
             }
         }
+        if let Route::ShelfDetail { shelf_id } = &route {
+            if let Ok(Some(shelf)) = self.catalog.get_shelf(*shelf_id) {
+                self.title_override = Some(shelf.name.clone());
+                self.subtitle_override = Some(shelf.summary());
+            }
+        }
+        if let Route::TagBooks { tag } = &route {
+            self.title_override = Some(format!("#{tag}"));
+        }
 
         // Toggle reader padding class without negative margins.
         if route.is_reader() {
@@ -281,9 +382,74 @@ impl AppModel {
         }
 
         self.route = route;
+        let page = self.take_or_build(sender);
+        content_host.append(&page.widget());
+        self.page = Some(page);
+    }
+
+    /// Unparent the current page, parking it in the cache when its route is
+    /// cacheable and dropping it otherwise.
+    fn detach_current(&mut self, content_host: &gtk::Box) {
+        while let Some(child) = content_host.first_child() {
+            content_host.remove(&child);
+        }
+
+        // Only drop the controller *after* unparenting — otherwise GTK probes
+        // a disposed widget and logs gtk_widget_is_ancestor criticals.
+        let Some(page) = self.page.take() else {
+            return;
+        };
+        if let Some(key) = cache_key(&self.route) {
+            if !self.cache.iter().any(|(k, _)| *k == key) {
+                self.cache.push((key, page));
+            }
+        }
+    }
+
+    /// Rebuild the current page if the catalog changed since it was built.
+    ///
+    /// Deleting a book only updated the database; whatever page was on screen
+    /// kept its stale widgets until the next navigation, so a removed book
+    /// lingered on Home until you switched tabs.
+    fn refresh_if_stale(&mut self, content_host: &gtk::Box, sender: &ComponentSender<Self>) {
+        let token = self.catalog.change_token();
+        if token == self.cache_token {
+            return;
+        }
+
+        // Unparent before dropping, as everywhere else, or GTK complains about
+        // a disposed widget. Nothing is cached here: every cached page was
+        // built against the old catalog state.
+        while let Some(child) = content_host.first_child() {
+            content_host.remove(&child);
+        }
+        self.page = None;
+        self.cache.clear();
+        self.cache_token = token;
+
+        // Rebuild the same route in place — no history push.
         let page = Self::build_page(&self.catalog, &self.route, sender);
         content_host.append(&page.widget());
         self.page = Some(page);
+    }
+
+    /// Reuse a cached page for the current route, or build a fresh one.
+    fn take_or_build(&mut self, sender: &ComponentSender<Self>) -> PageSlot {
+        // Any catalog write invalidates every cached page: a stale Home would
+        // happily show a book you just deleted.
+        let token = self.catalog.change_token();
+        if token != self.cache_token {
+            self.cache.clear();
+            self.cache_token = token;
+        }
+
+        if let Some(key) = cache_key(&self.route) {
+            if let Some(idx) = self.cache.iter().position(|(k, _)| *k == key) {
+                let (_, page) = self.cache.remove(idx);
+                return page;
+            }
+        }
+        Self::build_page(&self.catalog, &self.route, sender)
     }
 }
 
@@ -302,7 +468,33 @@ impl Component for AppModel {
             set_default_width: 1100,
             set_default_height: 720,
 
-            gtk::Box {
+            // Overlay so toasts float over the app without displacing it.
+            gtk::Overlay {
+                add_overlay = &gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 8,
+                    set_halign: gtk::Align::End,
+                    set_valign: gtk::Align::End,
+                    add_css_class: "kalam-toast-host",
+                    // Must not swallow clicks meant for the app beneath.
+                    set_can_target: true,
+                    // With no toasts up, this overlay child has no content and
+                    // would be allocated 0x0 — an invalid rectangle as far as
+                    // pixman is concerned. Hiding it until a toast exists keeps
+                    // it out of the layout entirely.
+                    set_visible: false,
+
+                    #[name = "toast_host"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 8,
+                        set_halign: gtk::Align::End,
+                        set_valign: gtk::Align::End,
+                    },
+                },
+
+            #[wrap(Some)]
+            set_child = &gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_hexpand: true,
                 set_vexpand: true,
@@ -320,16 +512,25 @@ impl Component for AppModel {
                         add_css_class: "kalam-sidebar-inner",
                         set_vexpand: true,
 
-                        gtk::Label {
-                            set_label: "KALAM",
+                        #[name = "brand"]
+                        gtk::Box {
                             add_css_class: "kalam-brand",
                             set_halign: gtk::Align::Center,
+                        },
+
+                        // Equal expanding spacers above and below the nav pin
+                        // it to the middle of the rail, with the logo held at
+                        // the top and Settings at the bottom.
+                        gtk::Box {
+                            set_vexpand: true,
+                            add_css_class: "kalam-nav-spacer",
                         },
 
                         #[name = "top_nav"]
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
                             set_spacing: 0,
+                            set_valign: gtk::Align::Center,
                         },
 
                         gtk::Box {
@@ -393,6 +594,11 @@ impl Component for AppModel {
                     gtk::ScrolledWindow {
                         set_hexpand: true,
                         set_vexpand: true,
+                        // GTK4 dropped the global gtk-overlay-scrolling setting;
+                        // it is per-widget now. Without this the scrollbar can be
+                        // a permanent widget that takes layout space and is always
+                        // painted, which no CSS can hide.
+                        set_overlay_scrolling: true,
                         set_hscrollbar_policy: gtk::PolicyType::Never,
                         #[watch]
                         set_vscrollbar_policy: if model.route.is_reader() {
@@ -411,6 +617,7 @@ impl Component for AppModel {
                     },
                 },
             },
+            },
         }
     }
 
@@ -420,16 +627,18 @@ impl Component for AppModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let catalog = match Catalog::open() {
-            Ok(c) => Rc::new(c),
+            Ok(c) => Arc::new(c),
             Err(err) => {
-                eprintln!("kalam: failed to open catalog: {err}");
-                Rc::new(Catalog::open().expect("catalog open"))
+                // Raised before the overlay exists; notify queues it.
+                crate::notify::error("Could not open the library", &err.to_string());
+                Arc::new(Catalog::open().expect("catalog open"))
             }
         };
 
         let initial_route = Route::Module(NavItem::Home);
         let page = Self::build_page(&catalog, &initial_route, &sender);
 
+        let cache_token = catalog.change_token();
         let model = AppModel {
             catalog,
             route: initial_route,
@@ -439,9 +648,30 @@ impl Component for AppModel {
             floating: None,
             title_override: None,
             subtitle_override: None,
+            cache: Vec::new(),
+            cache_token,
         };
 
         let widgets = view_output!();
+
+        // From here on, any notify::* call lands on screen.
+        crate::notify::attach(widgets.toast_host.clone());
+
+        // Extracted-book caches are rebuilt on demand, so anything orphaned or
+        // untouched for a fortnight is pure waste on a small disk.
+        {
+            // `catalog` was moved into the model above; use the model's handle.
+            let uuids = model.catalog.all_uuids().unwrap_or_default();
+            let freed = crate::paths::prune_reader_cache(&uuids, 14);
+            if freed > 1024 * 1024 {
+                crate::notify::info(
+                    "Cleaned up reader cache",
+                    &format!("Freed {}", crate::epub_write::human_size(freed)),
+                );
+            }
+        }
+
+        widgets.brand.append(&brand_logo());
 
         for item in NavItem::ALL {
             let btn = make_nav_button(*item, *item == NavItem::Home);
@@ -495,10 +725,7 @@ impl Component for AppModel {
                     self.title_override = None;
                     self.subtitle_override = None;
 
-                    while let Some(child) = widgets.content_host.first_child() {
-                        widgets.content_host.remove(&child);
-                    }
-                    self.page = None;
+                    self.detach_current(&widgets.content_host);
 
                     if let Route::BookPage { book_id } = &prev {
                         if let Ok(Some(b)) = self.catalog.get_book(*book_id) {
@@ -517,7 +744,7 @@ impl Component for AppModel {
                     }
 
                     self.route = prev;
-                    let page = Self::build_page(&self.catalog, &self.route, &sender);
+                    let page = self.take_or_build(&sender);
                     widgets.content_host.append(&page.widget());
                     self.page = Some(page);
                 }
@@ -602,6 +829,18 @@ impl Component for AppModel {
                     f.window.set_child(None::<&gtk::Widget>);
                     f.window.destroy();
                 }
+                // The float can delete a book, so the page underneath may now
+                // be showing something that no longer exists. Deferred to the
+                // next main-loop turn: rebuilding here would dispose widgets
+                // while GTK is still unwinding the float's close signal, which
+                // is what produced the gtk_widget_is_ancestor criticals.
+                let s = sender.clone();
+                gtk::glib::idle_add_local_once(move || {
+                    s.input(AppMsg::RefreshCurrentPage);
+                });
+            }
+            AppMsg::RefreshCurrentPage => {
+                self.refresh_if_stale(&widgets.content_host, &sender);
             }
             AppMsg::OpenReader { book_id } => {
                 if let Some(f) = self.floating.take() {
@@ -624,25 +863,46 @@ impl Component for AppModel {
     }
 }
 
-fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
-    let inner = gtk::Box::new(gtk::Orientation::Vertical, 2);
-    inner.set_halign(gtk::Align::Center);
+/// The sidebar wordmark: the Kalam logo.
+///
+/// Embedded with `include_bytes!` rather than read from disk so the binary
+/// stays self-contained — there is no install step that would place an asset
+/// directory next to it.
+fn brand_logo() -> gtk::Image {
+    const LOGO: &[u8] = include_bytes!("../assets/logo.png");
+    // Matches the nav glyphs, a shade larger so the mark still leads the rail.
+    const LOGO_PX: i32 = 24;
 
+    let bytes = gtk::glib::Bytes::from_static(LOGO);
+    let image = match gtk::gdk::Texture::from_bytes(&bytes) {
+        Ok(texture) => gtk::Image::from_paintable(Some(&texture)),
+        // A corrupt asset should not stop the app from starting.
+        Err(_) => gtk::Image::new(),
+    };
+    // gtk::Image, not gtk::Picture. A Picture's natural size is the texture's
+    // own size, and both set_size_request and CSS min-width are *floors*, so a
+    // 128px texture drew at 128px and stretched the whole rail. Image with
+    // set_pixel_size is the one widget that treats the number as exact.
+    image.set_pixel_size(LOGO_PX);
+    image.set_halign(gtk::Align::Center);
+    image.set_valign(gtk::Align::Center);
+    image.add_css_class("kalam-brand-logo");
+    image
+}
+
+fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
+    // Icon only. The rail is too narrow for a readable caption, and a 0.6rem
+    // label under every glyph was just noise — the tooltip carries the name.
     let icon = gtk::Label::new(Some(item.icon()));
     icon.add_css_class("kalam-nav-icon");
     icon.set_halign(gtk::Align::Center);
-
-    let label = gtk::Label::new(Some(item.label()));
-    label.set_halign(gtk::Align::Center);
-
-    inner.append(&icon);
-    inner.append(&label);
+    icon.set_valign(gtk::Align::Center);
 
     let btn = gtk::Button::new();
-    btn.set_child(Some(&inner));
+    btn.set_child(Some(&icon));
     btn.add_css_class("kalam-nav-btn");
-    btn.set_halign(gtk::Align::Fill);
-    btn.set_hexpand(true);
+    btn.set_halign(gtk::Align::Center);
+    btn.set_hexpand(false);
     if active {
         btn.add_css_class("active");
     }
@@ -664,23 +924,4 @@ fn update_nav_styles(container: &gtk::Box, active: NavItem) {
         }
         child = widget.next_sibling();
     }
-}
-
-fn placeholder_section(section: LibrarySection) -> gtk::Box {
-    let page = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    let title = gtk::Label::new(Some(section.label()));
-    title.add_css_class("kalam-page-title");
-    title.set_halign(gtk::Align::Start);
-    page.append(&title);
-
-    let sub = gtk::Label::new(Some(section.blurb()));
-    sub.add_css_class("kalam-page-sub");
-    sub.set_halign(gtk::Align::Start);
-    page.append(&sub);
-
-    let ph = gtk::Label::new(Some(&format!("{} — coming soon.", section.label())));
-    ph.add_css_class("kalam-placeholder");
-    ph.set_wrap(true);
-    page.append(&ph);
-    page
 }
