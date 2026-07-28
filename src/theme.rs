@@ -292,25 +292,6 @@ pub const GRUVBOX_DARKER: Theme = Theme {
     info: "#d3869b",
 };
 
-/// Nord Darker — Polar Night deepened below nord0.
-pub const NORD_DARKER: Theme = Theme {
-    id: "nord-darker",
-    label: "Nord Darker",
-    bg: "#242933",
-    sidebar: "#1c2029",
-    surface: "#2e3440",
-    surface_2: "#3b4252",
-    border: "#434c5e",
-    text: "#eceff4",
-    text_dim: "#8f97a6",
-    accent: "#88c0d0",
-    accent_dim: "alpha(#88c0d0, 0.16)",
-    danger: "#bf616a",
-    success: "#a3be8c",
-    warning: "#ebcb8b",
-    info: "#b48ead",
-};
-
 /// Ayu Dark — upstream's darkest Ayu.
 pub const AYU_DARKER: Theme = Theme {
     id: "ayu-darker",
@@ -332,23 +313,22 @@ pub const AYU_DARKER: Theme = Theme {
 
 /// Every theme, in the order Settings lists them.
 pub const ALL: &[Theme] = &[
-    // Darker variants first: the default lives here, and these are what the
-    // interface is designed against.
-    ONEDARK_DARKER,
-    TOKYONIGHT_DARKER,
-    EVERFOREST_DARKER,
-    CATPPUCCIN_DARKER,
-    GRUVBOX_DARKER,
-    NORD_DARKER,
-    AYU_DARKER,
-    // Standard variants.
+    // Grouped by family, standard then darker, so a pair sits side by side in
+    // the picker. Nord has no darker variant: its Polar Night base is already
+    // the darkest of these palettes and a deeper one lost the character.
     ONEDARK,
+    ONEDARK_DARKER,
     TOKYONIGHT,
+    TOKYONIGHT_DARKER,
     EVERFOREST,
+    EVERFOREST_DARKER,
     CATPPUCCIN,
+    CATPPUCCIN_DARKER,
     GRUVBOX,
-    NORD,
+    GRUVBOX_DARKER,
     AYU_MIRAGE,
+    AYU_DARKER,
+    NORD,
 ];
 
 /// The theme used on first run and whenever a stored id is unrecognised.
@@ -438,17 +418,17 @@ mod tests {
     }
 
     #[test]
-    fn every_theme_has_a_darker_or_standard_partner() {
-        // Each family ships a pair; a stray single usually means a new theme
-        // was added without its counterpart. Match on the suffix, not a
-        // substring: "onedark" contains "dark" without being a darker variant.
-        assert_eq!(ALL.len() % 2, 0, "themes should come in pairs");
-        let darker = ALL.iter().filter(|t| t.id.ends_with("-darker")).count();
-        assert_eq!(
-            darker,
-            ALL.len() / 2,
-            "expected one darker variant per family"
-        );
+    fn darker_variants_follow_their_standard() {
+        // The picker relies on this ordering to render each family as a pair.
+        for (i, t) in ALL.iter().enumerate() {
+            if let Some(base) = t.id.strip_suffix("-darker") {
+                let prev = ALL[i - 1].id;
+                // Ayu's darker variant is upstream's "Ayu Dark", whose id does
+                // not share the "ayumirage" stem.
+                let paired = prev.starts_with(base) || (base == "ayu" && prev == "ayumirage");
+                assert!(paired, "{} does not follow its standard ({prev})", t.id);
+            }
+        }
     }
 
     #[test]

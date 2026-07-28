@@ -860,29 +860,29 @@ fn brand_logo() -> gtk::Picture {
     };
     picture.set_content_fit(gtk::ContentFit::Contain);
     picture.set_can_shrink(true);
+    // Pin the size here, not in CSS: min-width is a floor, so a Picture given
+    // a 128px texture would happily draw at 128px and stretch the rail. A
+    // size request plus Center alignment fixes it at exactly this size.
+    picture.set_size_request(20, 20);
+    picture.set_halign(gtk::Align::Center);
+    picture.set_valign(gtk::Align::Center);
     picture.add_css_class("kalam-brand-logo");
     picture
 }
 
 fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
-    let inner = gtk::Box::new(gtk::Orientation::Vertical, 2);
-    inner.set_halign(gtk::Align::Center);
-
+    // Icon only. The rail is too narrow for a readable caption, and a 0.6rem
+    // label under every glyph was just noise — the tooltip carries the name.
     let icon = gtk::Label::new(Some(item.icon()));
     icon.add_css_class("kalam-nav-icon");
     icon.set_halign(gtk::Align::Center);
-
-    let label = gtk::Label::new(Some(item.label()));
-    label.set_halign(gtk::Align::Center);
-
-    inner.append(&icon);
-    inner.append(&label);
+    icon.set_valign(gtk::Align::Center);
 
     let btn = gtk::Button::new();
-    btn.set_child(Some(&inner));
+    btn.set_child(Some(&icon));
     btn.add_css_class("kalam-nav-btn");
-    btn.set_halign(gtk::Align::Fill);
-    btn.set_hexpand(true);
+    btn.set_halign(gtk::Align::Center);
+    btn.set_hexpand(false);
     if active {
         btn.add_css_class("active");
     }

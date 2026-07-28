@@ -394,7 +394,11 @@ fn rebuild_dicts(
     }
 }
 
-/// Theme swatches. Clicking one saves it and restyles the app in place.
+/// Theme swatches, grouped by family.
+///
+/// Each family is one row: the name, then its Normal and Darker variants side
+/// by side, so a pair reads as two takes on the same palette rather than two
+/// unrelated entries in a long list.
 fn build_theme_picker(host: &gtk::Box, catalog: &Arc<Catalog>) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
@@ -402,93 +406,144 @@ fn build_theme_picker(host: &gtk::Box, catalog: &Arc<Catalog>) {
 
     let active = crate::theme::current(catalog).id;
 
-    // Two rows of buttons rather than a dropdown: the whole point of a theme
-    // is what it looks like, so show the colours instead of naming them.
-    let grid = gtk::FlowBox::new();
-    grid.set_selection_mode(gtk::SelectionMode::None);
-    grid.set_max_children_per_line(4);
-    grid.set_min_children_per_line(2);
-    grid.set_row_spacing(8);
-    grid.set_column_spacing(8);
-    grid.set_homogeneous(true);
-
+    // ALL is ordered standard-then-darker, so walking it in order and starting
+    // a new group whenever a non-darker theme appears reproduces the families
+    // without a second list to keep in sync.
+    let mut families: Vec<Vec<&crate::theme::Theme>> = Vec::new();
     for theme in crate::theme::ALL {
-        let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        card.add_css_class("kalam-theme-card");
-        if theme.id == active {
-            card.add_css_class("active");
-        }
-
-        // A miniature of the app: sidebar, surface, accent.
-        let strip = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        strip.add_css_class("kalam-theme-strip");
-        strip.set_height_request(30);
-        // GTK CSS has no `overflow`; clip in code so the swatches follow the
-        // strip's rounded corners instead of squaring them off.
-        strip.set_overflow(gtk::Overflow::Hidden);
-        for (slot, (colour, weight)) in [
-            (theme.sidebar, 1),
-            (theme.surface, 2),
-            (theme.surface_2, 1),
-            (theme.accent, 1),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
-            cell.set_hexpand(true);
-            cell.set_size_request(weight * 14, -1);
-            // A preview must show colours the *current* theme is not using,
-            // so these cannot come from the global sheet. Each swatch gets its
-            // own class and a display-scoped provider; the widget-level
-            // style_context() API is deprecated in GTK 4.10.
-            let class = format!("kalam-swatch-{}-{slot}", theme.id);
-            let provider = gtk::CssProvider::new();
-            // load_from_data is deprecated as of GTK 4.12 in favour of
-            // load_from_string; we build with the v4_12 feature.
-            provider.load_from_string(&format!(".{class} {{ background: {colour}; }}"));
-            if let Some(display) = gtk::gdk::Display::default() {
-                gtk::style_context_add_provider_for_display(
-                    &display,
-                    &provider,
-                    gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-                );
+        if theme.id.ends_with("-darker") {
+            // Belongs to the family opened by the preceding standard variant.
+            if let Some(last) = families.last_mut() {
+                last.push(theme);
+                continue;
             }
-            cell.add_css_class(&class);
-            strip.append(&cell);
         }
-        card.append(&strip);
-
-        let name = gtk::Label::new(Some(theme.label));
-        name.add_css_class("kalam-theme-name");
-        name.set_halign(gtk::Align::Start);
-        name.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        card.append(&name);
-
-        let btn = gtk::Button::new();
-        btn.set_child(Some(&card));
-        btn.add_css_class("kalam-theme-btn");
-        btn.set_tooltip_text(Some(theme.label));
-
-        let catalog = catalog.clone();
-        let host = host.clone();
-        let chosen = *theme;
-        btn.connect_clicked(move |_| {
-            crate::theme::save_and_apply(&catalog, &chosen);
-            crate::notify::success("Theme changed", chosen.label);
-            // Rebuild so the tick moves. Deferred: rebuilding the widget tree
-            // from inside its own click handler upsets GTK.
-            let host = host.clone();
-            let catalog = catalog.clone();
-            gtk::glib::idle_add_local_once(move || {
-                build_theme_picker(&host, &catalog);
-            });
-        });
-
-        grid.append(&btn);
+        families.push(vec![theme]);
     }
 
-    host.append(&grid);
+    for family in &families {
+        host.append(&theme_family_row(family, &active, host, catalog));
+    }
+}
+
+/// One family: a caption plus its variants.
+fn theme_family_row(
+    family: &[&crate::theme::Theme],
+    active: &str,
+    host: &gtk::Box,
+    catalog: &Arc<Catalog>,
+) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Vertical, 5);
+    row.add_css_class("kalam-theme-family");
+
+    // The family name comes from the standard variant, with the parenthetical
+    // ("(Hard)", "(Night)") trimmed so the caption stays short.
+    let title = family[0]
+        .label
+        .split(" (")
+        .next()
+        .unwrap_or(family[0].label);
+    let caption = gtk::Label::new(Some(title));
+    caption.add_css_class("kalam-theme-family-name");
+    caption.set_halign(gtk::Align::Start);
+    row.append(&caption);
+
+    let variants = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    variants.set_homogeneous(true);
+    for theme in family {
+        variants.append(&theme_swatch_button(theme, active, host, catalog));
+    }
+    row.append(&variants);
+    row
+}
+
+/// A single clickable swatch.
+fn theme_swatch_button(
+    theme: &crate::theme::Theme,
+    active: &str,
+    host: &gtk::Box,
+    catalog: &Arc<Catalog>,
+) -> gtk::Button {
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 5);
+    card.add_css_class("kalam-theme-card");
+    if theme.id == active {
+        card.add_css_class("active");
+    }
+
+    // A miniature of the app: sidebar, surface, raised surface, accent.
+    let strip = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    strip.add_css_class("kalam-theme-strip");
+    strip.set_height_request(26);
+    // GTK CSS has no `overflow`; clip in code so the swatches follow the
+    // strip's rounded corners instead of squaring them off.
+    strip.set_overflow(gtk::Overflow::Hidden);
+    for (slot, (colour, weight)) in [
+        (theme.sidebar, 1),
+        (theme.surface, 2),
+        (theme.surface_2, 1),
+        (theme.accent, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        cell.set_hexpand(true);
+        cell.set_size_request(weight * 12, -1);
+        // A preview must show colours the *current* theme is not using, so
+        // these cannot come from the global sheet. Each swatch gets its own
+        // class and a display-scoped provider; the widget-level
+        // style_context() API is deprecated in GTK 4.10.
+        let class = format!("kalam-swatch-{}-{slot}", theme.id);
+        let provider = gtk::CssProvider::new();
+        // load_from_data is deprecated as of GTK 4.12 in favour of
+        // load_from_string; we build with the v4_12 feature.
+        provider.load_from_string(&format!(".{class} {{ background: {colour}; }}"));
+        if let Some(display) = gtk::gdk::Display::default() {
+            gtk::style_context_add_provider_for_display(
+                &display,
+                &provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+        cell.add_css_class(&class);
+        strip.append(&cell);
+    }
+    card.append(&strip);
+
+    // Within a family only the variant matters, so the caption says "Normal" /
+    // "Darker" rather than repeating the theme name twice.
+    let variant = if theme.id.ends_with("-darker") {
+        "Darker"
+    } else {
+        "Normal"
+    };
+    let name = gtk::Label::new(Some(variant));
+    name.add_css_class("kalam-theme-name");
+    name.set_halign(gtk::Align::Start);
+    name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    card.append(&name);
+
+    let btn = gtk::Button::new();
+    btn.set_child(Some(&card));
+    btn.add_css_class("kalam-theme-btn");
+    btn.set_tooltip_text(Some(theme.label));
+
+    let catalog = catalog.clone();
+    let host = host.clone();
+    let chosen = *theme;
+    btn.connect_clicked(move |_| {
+        crate::theme::save_and_apply(&catalog, &chosen);
+        crate::notify::success("Theme changed", chosen.label);
+        // Rebuild so the tick moves. Deferred: rebuilding the widget tree from
+        // inside its own click handler upsets GTK.
+        let host = host.clone();
+        let catalog = catalog.clone();
+        gtk::glib::idle_add_local_once(move || {
+            build_theme_picker(&host, &catalog);
+        });
+    });
+
+    btn
 }
 
 /// Recent notifications, so a toast that faded can still be read.

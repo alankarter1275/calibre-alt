@@ -13,36 +13,40 @@ window.kalam-window {
 }
 
 /* ── scrollbars ─────────────────────────────────────── */
-/* A thin pill that stays out of the way: fully transparent until the pointer
-   nears the edge, and narrow even then. GTK reserves the trough's width in
-   the layout, so keeping the *trough* slim matters as much as the slider —
-   a wide trough would indent the content whether or not it is painted. */
+/* A thin pill that hugs the window edge and stays out of the way.
+ *
+ * Fading is done by making the *slider* transparent, never with `opacity` on
+ * the scrollbar itself. An opacity below 1 makes GTK render the widget through
+ * an offscreen surface, and while an overlay scrollbar is collapsed that
+ * surface can be zero-sized, which pixman rejects:
+ *     *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
+ * Colouring the slider avoids the offscreen entirely. */
 scrollbar {
     background: transparent;
     border: none;
-    transition: opacity 180ms ease, background 180ms ease;
-}
-
-scrollbar.overlay-indicator:not(.hovering):not(.dragging) {
-    opacity: 0.0;
 }
 
 scrollbar slider {
-    background: alpha(@kalam_text_dim, 0.35);
+    background: transparent;
     border: none;
     border-radius: 999px;
     min-width: 3px;
     min-height: 28px;
-    /* Asymmetric: 1px from the window edge, more on the content side, so the
+    /* Asymmetric: 1px at the window edge, more on the content side, so the
        bar hugs the edge instead of floating in a gutter. */
     margin: 3px 1px 3px 4px;
-    transition: background 180ms ease, min-width 180ms ease;
+    transition: background 180ms ease;
 }
 
+/* Visible once the pointer is over the scroll area or the bar itself. */
+scrolledwindow:hover scrollbar slider,
 scrollbar:hover slider,
 scrollbar.hovering slider {
-    background: alpha(@kalam_text_dim, 0.65);
-    min-width: 5px;
+    background: alpha(@kalam_text_dim, 0.45);
+}
+
+scrollbar:hover slider {
+    background: alpha(@kalam_text_dim, 0.7);
 }
 
 scrollbar slider:active,
@@ -68,36 +72,37 @@ scrollbar trough {
 .kalam-sidebar {
     background: @kalam_sidebar;
     border-right: 1px solid @kalam_border;
-    min-width: 64px;
-    padding: 10px 0;
+    /* Icon-only rail: 30px button + 6px padding either side. */
+    min-width: 44px;
+    padding: 8px 0;
 }
 
 .kalam-sidebar-inner {
-    padding: 0 8px;
+    padding: 0 6px;
 }
 
 .kalam-brand {
-    padding: 10px 0 14px 0;
+    padding: 2px 0 10px 0;
 }
 
-/* Sized here rather than in code so the sidebar's eventual width change is a
-   one-line edit. The logo is square with transparent padding baked in. */
+/* Small on purpose: it is a mark at the head of a narrow rail, not a banner.
+   Picture honours this as an exact size because can-shrink is on and the
+   texture is square. */
 .kalam-brand-logo {
-    min-width: 34px;
-    min-height: 34px;
+    min-width: 20px;
+    min-height: 20px;
 }
 
 .kalam-nav-btn {
-    padding: 10px 6px;
-    border-radius: 999px;
-    margin-top: 2px;
-    margin-bottom: 2px;
+    padding: 0;
+    border-radius: 9px;
+    margin-top: 3px;
+    margin-bottom: 3px;
     background: transparent;
     border: none;
     color: @kalam_text_dim;
-    font-size: 0.72rem;
-    font-weight: 500;
-    min-width: 48px;
+    min-width: 30px;
+    min-height: 30px;
 }
 
 .kalam-nav-btn:hover {
@@ -112,8 +117,7 @@ scrollbar trough {
 }
 
 .kalam-nav-icon {
-    font-size: 1.25rem;
-    margin-bottom: 2px;
+    font-size: 1rem;
 }
 
 .kalam-nav-spacer {
@@ -1149,6 +1153,22 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-theme-name {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: @kalam_text_dim;
+}
+
+.kalam-theme-card.active .kalam-theme-name {
+    color: @kalam_text;
+    font-weight: 600;
+}
+
+/* One family per block, with a little air between blocks. */
+.kalam-theme-family {
+    margin-bottom: 6px;
+}
+
+.kalam-theme-family-name {
     font-size: 0.8rem;
     font-weight: 600;
     color: @kalam_text;
