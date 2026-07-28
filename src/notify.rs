@@ -280,7 +280,7 @@ fn build_card(entry: &Entry) -> gtk::Box {
     // space above, three of bar, one below — on a normal single-detail toast.
     let accent = gtk::Box::new(gtk::Orientation::Vertical, 0);
     accent.add_css_class("kalam-toast-accent");
-    accent.set_size_request(6, -1);
+    accent.set_size_request(5, -1);
     accent.set_valign(gtk::Align::Fill);
     card.append(&accent);
 
