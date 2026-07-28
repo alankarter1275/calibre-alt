@@ -1,5 +1,10 @@
-//! Temporary visual system for P0.
-//! Replace / extend once the real Kalam design lands.
+//! The shape of the interface: spacing, radii, type scale, borders.
+//!
+//! Colours are **not** defined here. `theme.rs` prepends an `@define-color`
+//! block at runtime, so every rule below must refer to colours by `@kalam_*`
+//! name. A literal hex here is a bug unless it is deliberately theme-independent
+//! (the highlight marker palette, the reader's paper swatches, and the reader
+//! stage) — those are commented where they appear.
 
 pub const APP_CSS: &str = r#"
 /* ── window ─────────────────────────────────────────── */
@@ -7,17 +12,57 @@ window.kalam-window {
     background: @kalam_bg;
 }
 
-/* ── palette (dark-first draft) ─────────────────────── */
-@define-color kalam_bg           #12141a;
-@define-color kalam_surface      #1a1d27;
-@define-color kalam_surface_2    #222633;
-@define-color kalam_border       #2e3345;
-@define-color kalam_text         #e8eaf0;
-@define-color kalam_text_dim     #9aa3b5;
-@define-color kalam_accent       #7c9cff;
-@define-color kalam_accent_dim   alpha(#7c9cff, 0.18);
-@define-color kalam_danger       #ff7c8a;
-@define-color kalam_sidebar      #0e1016;
+/* ── scrollbars ─────────────────────────────────────── */
+/* A thin pill that stays out of the way: fully transparent until the pointer
+   nears the edge, and narrow even then. GTK reserves the trough's width in
+   the layout, so keeping the *trough* slim matters as much as the slider —
+   a wide trough would indent the content whether or not it is painted. */
+scrollbar {
+    background: transparent;
+    border: none;
+    transition: opacity 180ms ease, background 180ms ease;
+}
+
+scrollbar.overlay-indicator:not(.hovering):not(.dragging) {
+    opacity: 0.0;
+}
+
+scrollbar slider {
+    background: alpha(@kalam_text_dim, 0.35);
+    border: none;
+    border-radius: 999px;
+    min-width: 4px;
+    min-height: 28px;
+    margin: 3px;
+    transition: background 180ms ease, min-width 180ms ease;
+}
+
+scrollbar:hover slider,
+scrollbar.hovering slider {
+    background: alpha(@kalam_text_dim, 0.65);
+    min-width: 7px;
+}
+
+scrollbar slider:active,
+scrollbar.dragging slider {
+    background: @kalam_accent;
+}
+
+/* No stepper buttons, and no trough fill to widen the gutter. */
+scrollbar trough {
+    background: transparent;
+    border: none;
+    margin: 0;
+}
+
+scrollbar button {
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: transparent;
+}
 
 /* ── slim sidebar ───────────────────────────────────── */
 .kalam-sidebar {
@@ -215,7 +260,7 @@ window.kalam-window {
 }
 
 .kalam-cover-placeholder {
-    background: linear-gradient(160deg, #2a3148 0%, #1a1f30 100%);
+    background: linear-gradient(160deg, @kalam_surface_2 0%, @kalam_surface 100%);
     border-radius: 6px;
 }
 
@@ -265,7 +310,7 @@ window.kalam-window {
 
 .kalam-primary-btn {
     background: @kalam_accent;
-    color: #0e1016;
+    color: @kalam_bg;
     font-weight: 700;
     border-radius: 999px;
     padding: 10px 22px;
@@ -365,7 +410,7 @@ window.kalam-float-window {
 }
 
 .kalam-float-cover-col {
-    background: #0c0e14;
+    background: @kalam_sidebar;
     border-right: 1px solid @kalam_border;
     padding: 16px 14px 12px 14px;
 }
@@ -464,8 +509,8 @@ window.kalam-float-window {
     font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.04em;
-    color: #0e1016;
-    background: #7cffc3;
+    color: @kalam_bg;
+    background: @kalam_success;
     border-radius: 999px;
     padding: 3px 8px;
 }
@@ -474,8 +519,8 @@ window.kalam-float-window {
     font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.04em;
-    color: #1a1208;
-    background: #ffc37c;
+    color: @kalam_bg;
+    background: @kalam_warning;
     border-radius: 999px;
     padding: 3px 8px;
 }
@@ -484,7 +529,7 @@ window.kalam-float-window {
     font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.04em;
-    color: #0e1016;
+    color: @kalam_bg;
     background: @kalam_accent;
     border-radius: 999px;
     padding: 3px 8px;
@@ -494,8 +539,8 @@ window.kalam-float-window {
     font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.04em;
-    color: #e8eaf0;
-    background: #3a4560;
+    color: @kalam_text;
+    background: @kalam_surface_2;
     border-radius: 999px;
     padding: 3px 8px;
 }
@@ -505,6 +550,9 @@ window.kalam-float-window {
     padding: 0;
 }
 
+/* The reader stage stays near-black in every theme on purpose: it is the
+   letterbox around the page, and tinting it would fight whichever paper
+   colour (light / sepia / dark) the reader itself is set to. */
 .kalam-reader {
     background: #0a0a0b;
 }
@@ -761,8 +809,8 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-mini-btn-danger:hover {
-    border-color: #f87171;
-    color: #fca5a5;
+    border-color: @kalam_danger;
+    color: @kalam_danger;
 }
 
 /* ── generic list rows (reading list, history) ──────── */
@@ -820,7 +868,7 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-rule-remove:hover {
-    color: #fca5a5;
+    color: @kalam_danger;
 }
 
 .kalam-rule-count {
@@ -830,7 +878,7 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-error-text {
-    color: #fca5a5;
+    color: @kalam_danger;
     font-size: 0.85rem;
 }
 
@@ -850,7 +898,7 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-event-finished {
-    color: #6ee7b7;
+    color: @kalam_success;
 }
 
 .kalam-event-opened {
@@ -858,7 +906,7 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-event-imported {
-    color: #fcd34d;
+    color: @kalam_warning;
 }
 
 /* ── tag cloud ──────────────────────────────────────── */
@@ -966,8 +1014,8 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-toast {
-    background: #16181d;
-    border: 1px solid alpha(#ffffff, 0.07);
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
     border-radius: 12px;
     box-shadow: 0 12px 32px alpha(#000, 0.55);
     min-width: 340px;
@@ -1005,12 +1053,12 @@ popover.kalam-reader-popover > contents {
 .kalam-toast-title {
     font-size: 0.92rem;
     font-weight: 600;
-    color: #e8eaf0;
+    color: @kalam_text;
 }
 
 .kalam-toast-detail {
     font-size: 0.8rem;
-    color: alpha(#e8eaf0, 0.55);
+    color: @kalam_text_dim;
 }
 
 .kalam-toast-icon {
@@ -1037,35 +1085,70 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-toast-success .kalam-toast-accent {
-    background: #a8c4a8;
+    background: @kalam_success;
 }
 
 .kalam-toast-success .kalam-toast-icon {
-    color: #a8c4a8;
+    color: @kalam_success;
 }
 
 .kalam-toast-error .kalam-toast-accent {
-    background: #c47a7a;
+    background: @kalam_danger;
 }
 
 .kalam-toast-error .kalam-toast-icon {
-    color: #c47a7a;
+    color: @kalam_danger;
 }
 
 .kalam-toast-info .kalam-toast-accent {
-    background: #4e4d4a;
+    background: @kalam_border;
 }
 
 .kalam-toast-info .kalam-toast-icon {
-    color: #89877f;
+    color: @kalam_text_dim;
 }
 
 .kalam-toast-progress .kalam-toast-accent {
-    background: #a8c4a8;
+    background: @kalam_info;
 }
 
 .kalam-toast-progress .kalam-toast-icon {
-    color: #a8c4a8;
+    color: @kalam_info;
+}
+
+/* ── theme picker ───────────────────────────────────── */
+.kalam-theme-btn {
+    padding: 0;
+    background: transparent;
+    border: none;
+}
+
+.kalam-theme-card {
+    padding: 8px;
+    border-radius: 10px;
+    border: 1px solid @kalam_border;
+    background: @kalam_surface;
+}
+
+.kalam-theme-card:hover {
+    border-color: @kalam_text_dim;
+}
+
+.kalam-theme-card.active {
+    border-color: @kalam_accent;
+    background: @kalam_accent_dim;
+}
+
+/* The swatch strip previews sidebar / surface / raised / accent. */
+.kalam-theme-strip {
+    border-radius: 6px;
+    border: 1px solid @kalam_border;
+}
+
+.kalam-theme-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: @kalam_text;
 }
 
 /* ── metadata editor ────────────────────────────────── */
@@ -1102,13 +1185,13 @@ popover.kalam-reader-popover > contents {
 
 /* Metadata source badges. */
 .kalam-badge-ol {
-    background: alpha(#6ee7b7, 0.18);
-    color: #6ee7b7;
+    background: alpha(@kalam_success, 0.18);
+    color: @kalam_success;
 }
 
 .kalam-badge-gb {
-    background: alpha(#7c9cff, 0.18);
-    color: #7c9cff;
+    background: alpha(@kalam_accent, 0.18);
+    color: @kalam_accent;
 }
 
 .kalam-cover-choice {
@@ -1150,7 +1233,7 @@ popover.kalam-reader-popover > contents {
 
 /* ── ratings ────────────────────────────────────────── */
 .kalam-stars {
-    color: #fbbf24;
+    color: @kalam_warning;
     font-size: 0.95rem;
 }
 
@@ -1169,12 +1252,12 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-star-on {
-    color: #fbbf24;
+    color: @kalam_warning;
 }
 
 /* Applied by an EventControllerMotion, since Labels do not prelight. */
 .kalam-star-hover {
-    color: #fcd34d;
+    color: @kalam_warning;
 }
 
 .kalam-star-clear {
@@ -1190,7 +1273,7 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-star-clear:hover {
-    color: #fca5a5;
+    color: @kalam_danger;
 }
 
 /* ── streak strip ───────────────────────────────────── */
@@ -1267,15 +1350,15 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-spark-green {
-    color: #6ee7b7;
+    color: @kalam_success;
 }
 
 .kalam-spark-red {
-    color: #fca5a5;
+    color: @kalam_danger;
 }
 
 .kalam-spark-blue {
-    color: #7c9cff;
+    color: @kalam_accent;
 }
 
 .kalam-chart-card {

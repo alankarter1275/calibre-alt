@@ -16,6 +16,7 @@ mod pages;
 mod paths;
 mod shelf_rules;
 mod style;
+mod theme;
 mod widgets;
 
 use app::AppModel;
@@ -29,9 +30,7 @@ fn main() {
     let style = adw::StyleManager::default();
     style.set_color_scheme(adw::ColorScheme::ForceDark);
 
-    relm4::set_global_css(style::APP_CSS);
-
-    // Ensure data dirs exist early so import never races mkdir.
+    // Ensure data dirs exist before the catalog is opened to read the theme.
     if let Err(err) = paths::ensure_data_dirs() {
         // Nothing will work if this failed, so say so on screen rather than
         // only on a terminal the user probably did not launch from. The
@@ -40,7 +39,24 @@ fn main() {
         crate::notify::error("Could not create Kalam's data folders", &err.to_string());
     }
 
+    // Install the saved theme before the first window is drawn, so the app
+    // never flashes the default palette on the way to the chosen one. Read
+    // straight from the prefs table: AppModel opens its own handle a moment
+    // later, and threading one through just for this would be worse.
+    theme::apply(&startup_theme());
+
     app.run::<AppModel>(());
+}
+
+/// The saved theme, or the default if the catalog cannot be read yet.
+///
+/// A failure here is not worth reporting: the catalog is opened again
+/// immediately afterwards by `AppModel`, which surfaces the real error.
+fn startup_theme() -> theme::Theme {
+    match db::Catalog::open() {
+        Ok(catalog) => theme::current(&catalog),
+        Err(_) => theme::DEFAULT,
+    }
 }
 
 // Re-export adw for StyleManager (relm4 enables libadwaita).
