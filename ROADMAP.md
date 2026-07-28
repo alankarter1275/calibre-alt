@@ -330,6 +330,40 @@ Bulk metadata edit and cover refresh across many books — those live in P11.
 
 ---
 
+## P5.5 — UI overhaul  ◀ in progress
+
+**Goal:** Redesign the interface, one window at a time. The app grew screen by
+screen and looks it; this is the pass that makes it feel like one product.
+
+**Working method (agreed):** one window per round. The agent mocks the screen
+up as an image first, the user looks at it, and only then does it become Rust.
+The agent cannot see the GUI, and shipping layout blind has repeatedly wasted
+rounds.
+
+### Done
+- **Colour system** — `src/theme.rs` owns every colour; `style.rs` holds only
+  shape (padding, radii, type scale). Adding a theme is one struct.
+- **13 dark themes**, grouped standard + darker per family: One Dark (default
+  is One Dark Darker), Tokyo Night, Everforest, Catppuccin, Gruvbox, Ayu, and
+  Nord (no darker variant). Light themes are out of scope.
+- **Scrollbars** — invisible until hovered, thin pill, hugging the edge.
+- **Sidebar** — 48px icon-only rail, logo pinned top, nav centred, Settings
+  bottom, circular active state.
+- **Logo** — `assets/logo.png`, embedded with `include_bytes!`.
+
+### Next
+1. **Settings** — currently one long unstructured column; needs grouping.
+2. Home / dashboard — the two-column layout the design references imply.
+3. Library, Book page, Reader chrome, dialogs.
+
+### Notes
+- Reader *page* theming (Light/Sepia/Dark paper) stays separate from app
+  chrome: a sepia page inside a dark app is a legitimate combination.
+- The images in `docs/design/` are **inspiration the user collected**, not
+  their own designs. Treat them as direction, not specification.
+
+---
+
 ## P6 — Downloads hub
 
 **Goal:** One place for inbound files/jobs.
@@ -570,3 +604,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-28 | Hardening pass shipped: toast notifications, `VACUUM INTO` backup, reader-cache pruning, poison-safe locks, `db.rs` split |
 | 2026-07-28 | Metadata overrides keyed on `file_hash` (schema v7) so edits and covers survive delete → re-import |
 | 2026-07-28 | EPUB writeback fixed for single-line OPFs; toast accent restyled to the reference; every user action now confirms |
+| 2026-07-28 | P5.5 opened: UI overhaul, one window at a time, mockup before code. Colour system + 13 dark themes + slim sidebar shipped |

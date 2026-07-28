@@ -24,17 +24,33 @@ window.kalam-window {
 scrollbar {
     background: transparent;
     border: none;
+    /* Vertical inset only; horizontal padding on the scrollbar would shrink
+       the slider's allocation again. */
+    margin-top: 2px;
+    margin-bottom: 2px;
 }
 
+/* No horizontal margin. This is the one that caused the pixman errors.
+ *
+ * A collapsed GTK4 overlay scrollbar is allocated only a few pixels wide, and
+ * the slider gets that width MINUS its margins. With `margin: 3px 1px 3px 4px`
+ * a ~3px scrollbar left the slider 3 - 5 = -2px, and a negative allocation is
+ * what pixman rejects:
+ *     gtk_widget_size_allocate(): ... with width -2 and height -2
+ *     *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
+ * The error count tracked how many scrolled windows were realised, which is
+ * why it kept moving between runs.
+ *
+ * Thickness now comes from min-width alone, and the whole scrollbar is nudged
+ * toward the edge with a margin on `scrollbar` itself, which is allocated the
+ * full gutter and can absorb one safely. */
 scrollbar slider {
     background: transparent;
     border: none;
     border-radius: 999px;
-    min-width: 3px;
+    min-width: 4px;
     min-height: 28px;
-    /* Asymmetric: 1px at the window edge, more on the content side, so the
-       bar hugs the edge instead of floating in a gutter. */
-    margin: 3px 1px 3px 4px;
+    margin: 0;
     transition: background 180ms ease;
 }
 
