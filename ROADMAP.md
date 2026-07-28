@@ -357,13 +357,17 @@ rounds.
 3. Library, Book page, Reader chrome, dialogs.
 
 ### Hard-won rules
-- **Never put `margin` or `padding` on `scrollbar` or `scrollbar slider`.**
-  A collapsed GTK4 overlay scrollbar is allocated ~3px wide and a margin is
-  subtracted from that, giving a negative allocation and a stream of
-  `pixman_region32_init_rect: Invalid rectangle passed` at runtime — one per
-  realised scrolled window, so the count looks random. `min-width`,
-  `min-height`, `background` and `border-radius` are safe, because a floor
-  cannot go negative. Confirmed by testing with `KALAM_NO_CSS=1`.
+- **Never override `border`, `margin`, `padding` or `min-width` on
+  `scrollbar slider`.** Adwaita draws it as a wide widget with a 4px
+  *transparent* border plus `background-clip: padding-box`, so the visible pill
+  is thin while the grab area stays usable. Replacing that geometry makes GTK
+  subtract border/margin from an already ~3px collapsed allocation, and the
+  result goes negative:
+      *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
+      GtkGizmo (slider) reported min width -12, but sizes must be >= 0
+  Style the scrollbar with **colour only** — `background-color` on the slider,
+  transparent at rest, tinted on `scrolledwindow:hover`. That gives the thin
+  hidden-until-hovered bar with none of the breakage.
 - `KALAM_NO_CSS=1` runs the app with no custom stylesheet. Use it first when a
   GTK rendering warning appears, before theorising about causes.
 

@@ -13,19 +13,27 @@ window.kalam-window {
 }
 
 /* ── scrollbars ─────────────────────────────────────── */
-/* Thin, edge-hugging, invisible until the pointer is in the scroll area.
+/* Thin overlay bar, invisible until the pointer nears the right edge.
  *
- * ONE HARD RULE: never put `margin` or `padding` on `scrollbar` or its
- * `slider`. That was the pixman bug, confirmed by testing — removing them took
- * the error count to zero. A collapsed GTK4 overlay scrollbar is allocated only
- * about 3px wide, and a margin is subtracted from that allocation, so
- * `margin: 3px` left the slider at 3 - 6 = -3px. A negative allocation is what
- * pixman rejects:
+ * This works WITH Adwaita's model instead of replacing it, which is what all
+ * the earlier attempts got wrong.
+ *
+ * Adwaita draws the slider as a wide widget with a 4px TRANSPARENT border and
+ * `background-clip: padding-box`, so the visible pill is thin while the grab
+ * area stays finger-sized. The collapsed overlay state then sets
+ * `min-width: 3px` and `margin: 0`.
+ *
+ * Overriding `border: none` or adding a `margin` breaks that arithmetic: GTK
+ * subtracts border and margin from the allocation, and the leftovers went
+ * negative, giving either
  *     *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
- * The count varied per run because it fired once per realised scrolled window.
+ * or
+ *     GtkGizmo (slider) reported min width -12, but sizes must be >= 0
+ * The reported numbers tracked the 4px->7px transition exactly (4-16=-12,
+ * 7-16=-9), which is what finally identified it.
  *
- * `min-width`, `min-height`, `background` and `border-radius` are all safe:
- * a floor can never go negative. Everything below uses only those. */
+ * So: no `border` override, no `margin`, no `padding`, no `min-width`. Colour
+ * and visibility only — Adwaita's geometry is left completely intact. */
 scrollbar {
     background: transparent;
     border: none;
@@ -36,34 +44,28 @@ scrollbar trough {
     border: none;
 }
 
-/* Transparent at rest — the bar is there, just unpainted, so nothing shifts
-   when it appears. */
+/* Hidden at rest. `background-color` is what Adwaita paints the pill with, so
+   making it transparent hides the bar without touching its size. */
 scrollbar slider {
-    background: transparent;
-    border: none;
-    border-radius: 999px;
-    min-width: 4px;
-    min-height: 30px;
-    transition: background 160ms ease, min-width 160ms ease;
+    background-color: transparent;
+    transition: background-color 160ms ease;
 }
 
-/* Pointer anywhere in the scrolling area: a faint hint. */
+/* Pointer inside the scrolling area: the bar fades in. */
 scrolledwindow:hover scrollbar slider {
-    background: alpha(@kalam_text_dim, 0.4);
+    background-color: alpha(@kalam_text_dim, 0.45);
 }
 
-/* Pointer on the bar itself: brighter and a little thicker, so it is easy to
-   grab. Widening is safe; only shrinking risks a negative allocation. */
+/* Pointer on the bar itself: brighter, so it is obvious it can be grabbed.
+   Adwaita already widens the slider in the .hovering state on its own. */
 scrollbar:hover slider,
 scrollbar.hovering slider {
-    background: alpha(@kalam_text_dim, 0.75);
-    min-width: 7px;
+    background-color: alpha(@kalam_text_dim, 0.8);
 }
 
 scrollbar slider:active,
 scrollbar.dragging slider {
-    background: @kalam_accent;
-    min-width: 7px;
+    background-color: @kalam_accent;
 }
 
 /* ── slim sidebar ───────────────────────────────────── */
