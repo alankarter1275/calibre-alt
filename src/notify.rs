@@ -385,8 +385,8 @@ mod tests {
     #[test]
     fn history_keeps_newest_first() {
         clear_history();
-        push(Kind::Info, "first", "");
-        push(Kind::Info, "second", "");
+        push(Kind::Info, "first", "", false);
+        push(Kind::Info, "second", "", false);
         let h = history();
         assert_eq!(h[0].title, "second");
         assert_eq!(h[1].title, "first");
@@ -397,7 +397,7 @@ mod tests {
     fn history_is_bounded() {
         clear_history();
         for i in 0..(MAX_HISTORY + 25) {
-            push(Kind::Info, &format!("n{i}"), "");
+            push(Kind::Info, &format!("n{i}"), "", false);
         }
         assert_eq!(history().len(), MAX_HISTORY);
         clear_history();
