@@ -374,7 +374,13 @@ impl AppModel {
             self.title_override = Some(format!("#{tag}"));
         }
 
-        // Toggle reader padding class without negative margins.
+        // Toggle reader/settings flush class without negative margins.
+        if route.is_reader() || matches!(route, Route::Module(NavItem::Settings)) {
+            content_host.add_css_class("kalam-content-flush");
+        } else {
+            content_host.remove_css_class("kalam-content-flush");
+        }
+
         if route.is_reader() {
             content_host.add_css_class("kalam-content-reader");
         } else {
@@ -734,7 +740,15 @@ impl Component for AppModel {
                         }
                     }
 
-                    // Fix crooked home after reader: ensure reader class is removed when leaving reader
+                    // Fix crooked home after reader: ensure flush/reader classes are removed when leaving reader/settings
+                    if prev.is_reader() || matches!(prev, Route::Module(NavItem::Settings)) {
+                        widgets.content_host.add_css_class("kalam-content-flush");
+                    } else {
+                        widgets
+                            .content_host
+                            .remove_css_class("kalam-content-flush");
+                    }
+
                     if prev.is_reader() {
                         widgets.content_host.add_css_class("kalam-content-reader");
                     } else {

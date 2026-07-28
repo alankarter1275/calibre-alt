@@ -118,13 +118,6 @@ impl Component for SettingsPageModel {
                 set_hexpand: false,
                 set_vexpand: true,
 
-                gtk::Label {
-                    set_label: "SETTINGS",
-                    add_css_class: "kalam-section-label",
-                    set_halign: gtk::Align::Start,
-                    set_margin_bottom: 8,
-                },
-
                 #[name = "nav_list"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
@@ -133,13 +126,6 @@ impl Component for SettingsPageModel {
 
                 gtk::Box {
                     set_vexpand: true,
-                },
-
-                gtk::Label {
-                    set_label: "Kalam v0.1.0 · Linux",
-                    add_css_class: "kalam-muted",
-                    set_halign: gtk::Align::Start,
-                    set_margin_top: 12,
                 },
             },
 
