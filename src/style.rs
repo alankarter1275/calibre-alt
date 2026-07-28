@@ -5,6 +5,55 @@
 //! name. A literal hex here is a bug unless it is deliberately theme-independent
 //! (the highlight marker palette, the reader's paper swatches, and the reader
 //! stage) — those are commented where they appear.
+//!
+//! # GTK styling rules learned the hard way
+//!
+//! These cost roughly a dozen rounds of debugging between them. Please read
+//! before editing, especially the scrollbar block.
+//!
+//! ### 1. This sheet already outranks the system theme
+//! `relm4::set_global_css` installs at `STYLE_PROVIDER_PRIORITY_APPLICATION`
+//! (600); Adwaita loads at `THEME` (200). **Priority beats specificity**, so a
+//! plain `scrollbar slider` already wins against Adwaita's
+//! `scrollbar.overlay-indicator:not(.dragging):not(.hovering) slider`. Do not
+//! write long `:not()` chains to "win" — they are unnecessary, and GTK drops an
+//! *entire* comma-separated rule if any one selector in the group fails to
+//! parse, silently taking working declarations down with it.
+//!
+//! ### 2. Never set `opacity` below 1 on a widget that can collapse
+//! Any opacity < 1 makes GTK render the widget through an offscreen surface. A
+//! collapsed overlay scrollbar's surface is zero-sized, and pixman rejects it:
+//! ```text
+//! *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
+//! ```
+//! One error per affected widget, so the count varies per run and looks random.
+//! To hide something, make its `background-color` transparent instead.
+//!
+//! ### 3. `margin`, `border` and `padding` are subtracted from the allocation
+//! GTK computes the painted box as *size − border − margin − padding*. If the
+//! result is negative you get:
+//! ```text
+//! GtkGizmo (slider) reported min width -12, but sizes must be >= 0
+//! ```
+//! Adwaita's slider ships `margin: 4px` **and** `border: 4px solid transparent`
+//! — 16px in total. Resetting only the border leaves 8px, which is why every
+//! `min-width` set for several rounds still came out negative. **Zero all
+//! three**, then set the size.
+//!
+//! Corollary: to inset something, prefer sizing the parent node over adding a
+//! margin to the child. A margin on a child inside a narrow allocation is the
+//! single most reliable way to reproduce both errors above.
+//!
+//! ### 4. `scrolledwindow:hover` is not "hovering the scrollbar"
+//! A `scrolledwindow` is the whole content area, so that selector matches
+//! whenever the pointer is anywhere in the page. For "pointer is on the bar",
+//! use `scrollbar:hover` or GTK's own `scrollbar.hovering` class.
+//!
+//! ### 5. Diagnostics
+//! `KALAM_NO_CSS=1 cargo run` starts the app with no custom stylesheet. If a
+//! rendering warning still appears, the cause is not in this file. Use it
+//! *before* theorising. `GTK_DEBUG=interactive` shows which rule actually wins
+//! on a given node.
 
 pub const APP_CSS: &str = r#"
 /* ── window ─────────────────────────────────────────── */
@@ -13,41 +62,32 @@ window.kalam-window {
 }
 
 /* ── scrollbars ─────────────────────────────────────── */
-/* Simple on purpose. Every earlier version of this block was elaborate and
- * none of it worked.
+/*  ⚠  READ src/style.rs's header before touching this block.  ⚠
  *
- * What the warnings were saying: a constant 16px was subtracted from whatever
- * min-width I set (4 -> -12, 7 -> -9, 5 -> -11). That 16 is Adwaita's slider,
- * which ships `margin: 4px` AND `border: 4px solid transparent` — 8px each.
- * I kept resetting the border and never the margin, so 8px always remained,
- * and the sizes stayed negative.
+ * A 5px pill, no outline, invisible until the pointer reaches the edge.
+ * Every line here exists because of a specific bug. In short:
  *
- * Why nothing else applied either: GTK resolves conflicts by provider PRIORITY
- * first, and relm4::set_global_css installs at APPLICATION (600) while Adwaita
- * is THEME (200). This sheet already outranks Adwaita, so a plain
- * `scrollbar slider` wins outright. The long :not() selector lists I kept
- * adding were unnecessary, and worse: GTK drops an entire comma-separated rule
- * if one selector in it fails to parse, which is the likely reason the colour
- * rules stopped taking effect too.
+ *   - No `opacity` below 1, ever. It makes GTK render through an offscreen
+ *     surface, and a collapsed overlay scrollbar's surface is zero-sized:
+ *         *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
+ *     Hiding is done by making the slider's BACKGROUND transparent instead,
+ *     which costs nothing and cannot produce an invalid surface.
  *
- * So: shortest possible selectors, and margin/border/padding all explicitly
- * zeroed so nothing can be subtracted from the size. */
-
-/* The gutter. Padding here — not margin on the slider — is what holds the pill
-   off the window edge, because padding on this node is not deducted from the
-   slider's own min-width. */
+ *   - `margin`, `border` and `padding` on the slider are all zeroed. GTK
+ *     subtracts them from the allocation, and Adwaita ships `margin: 4px` plus
+ *     `border: 4px solid transparent` — 16px total, which is exactly what made
+ *     every min-width I tried come out negative.
+ *
+ *   - Short selectors only. This sheet loads at APPLICATION priority (600) and
+ *     Adwaita at THEME (200), so `scrollbar slider` already wins; long
+ *     `:not()` chains are unnecessary and risk GTK dropping the whole rule.
+ *
+ *   - Reveal is driven by `scrollbar:hover`, never `scrolledwindow:hover`.
+ *     A scrolledwindow is the entire content area, so that lights the bar up
+ *     whenever the pointer is anywhere in the page. */
 scrollbar {
     background: transparent;
     border: none;
-    opacity: 0;
-    transition: opacity 130ms ease;
-}
-
-/* Shown only when the pointer is at the edge, never while scrolling. */
-scrollbar:hover,
-scrollbar.hovering,
-scrollbar.dragging {
-    opacity: 1;
 }
 
 scrollbar trough {
@@ -56,8 +96,7 @@ scrollbar trough {
     margin: 0;
 }
 
-/* The pill. Zeroing margin and border is the whole fix: they are what GTK
-   subtracts, and Adwaita sets both. */
+/* Transparent at rest: present and grabbable, simply unpainted. */
 scrollbar slider {
     margin: 0;
     border: none;
@@ -65,7 +104,7 @@ scrollbar slider {
     min-width: 5px;
     min-height: 36px;
     border-radius: 999px;
-    background-color: alpha(@kalam_text_dim, 0.55);
+    background-color: transparent;
     transition: background-color 130ms ease;
 }
 
@@ -74,16 +113,17 @@ scrollbar.horizontal slider {
     min-height: 5px;
 }
 
-/* Dim grey on hover, theme accent while dragging. */
-scrollbar slider:hover {
-    background-color: alpha(@kalam_text_dim, 0.7);
+/* Visible only with the pointer on the bar. `.hovering` is GTK's own class for
+   the pointer being over the scrollbar; scrolling alone never sets it, so a
+   wheel or two-finger scroll shows nothing. */
+scrollbar:hover slider,
+scrollbar.hovering slider {
+    background-color: alpha(@kalam_text_dim, 0.55);
 }
 
+/* Theme accent while actually dragging the bar. */
+scrollbar.dragging slider,
 scrollbar slider:active {
-    background-color: @kalam_accent;
-}
-
-scrollbar.dragging slider {
     background-color: @kalam_accent;
 }
 

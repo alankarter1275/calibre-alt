@@ -356,20 +356,31 @@ rounds.
 2. Home / dashboard — the two-column layout the design references imply.
 3. Library, Book page, Reader chrome, dialogs.
 
-### Hard-won rules
-- **Never override `border`, `margin`, `padding` or `min-width` on
-  `scrollbar slider`.** Adwaita draws it as a wide widget with a 4px
-  *transparent* border plus `background-clip: padding-box`, so the visible pill
-  is thin while the grab area stays usable. Replacing that geometry makes GTK
-  subtract border/margin from an already ~3px collapsed allocation, and the
-  result goes negative:
-      *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
-      GtkGizmo (slider) reported min width -12, but sizes must be >= 0
-  Style the scrollbar with **colour only** — `background-color` on the slider,
-  transparent at rest, tinted on `scrolledwindow:hover`. That gives the thin
-  hidden-until-hovered bar with none of the breakage.
-- `KALAM_NO_CSS=1` runs the app with no custom stylesheet. Use it first when a
-  GTK rendering warning appears, before theorising about causes.
+### Hard-won GTK/CSS rules
+
+These are written up properly in the module header of `src/style.rs`. Read that
+before touching the scrollbar block — the summary:
+
+1. **This stylesheet already outranks Adwaita.** `relm4::set_global_css` loads
+   at `APPLICATION` (600), the theme at `THEME` (200), and priority beats
+   specificity. Long `:not()` chains are unnecessary, and GTK drops an entire
+   comma-separated rule when one selector in the group fails to parse.
+2. **Never use `opacity` below 1 on a widget that can collapse.** It forces an
+   offscreen surface; a collapsed overlay scrollbar's is zero-sized and pixman
+   rejects it. Hide with a transparent `background-color` instead.
+3. **`margin`/`border`/`padding` are subtracted from the allocation.** Adwaita's
+   slider carries 16px of them, so resetting only the border still leaves 8px
+   and every `min-width` comes out negative. Zero all three, then set the size.
+4. **`scrolledwindow:hover` matches the whole content area**, not the scrollbar.
+   Use `scrollbar:hover` / `scrollbar.hovering`.
+5. **`KALAM_NO_CSS=1` runs with no custom stylesheet** — use it to confirm a
+   warning is even ours before theorising. `GTK_DEBUG=interactive` shows which
+   rule actually wins on a node.
+
+Cost of learning this the wrong way: about a dozen rounds on one scrollbar.
+Each fix was plausible, none was verified against the toolkit's actual
+behaviour first. When a warning carries a number, do the arithmetic across
+runs — the constant that keeps appearing is the answer.
 
 ### Notes
 - Reader *page* theming (Light/Sepia/Dark paper) stays separate from app

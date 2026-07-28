@@ -86,6 +86,26 @@ Nested boolean groups were considered and deferred — the JSON can gain a
 ~/.config/kalam/config.toml  (future)
 ```
 
+## Theming & CSS
+
+- **`src/theme.rs`** owns every colour. One `Theme` struct per palette, 13 dark
+  themes grouped standard/darker per family. Adding one is a single entry.
+- **`src/style.rs`** owns *shape only* — spacing, radii, type scale, borders. It
+  refers to colours by `@kalam_*` name; a literal hex there is a bug unless it
+  is deliberately theme-independent (highlight markers, reader paper swatches,
+  reader stage).
+- `theme::apply()` prepends the `@define-color` block and re-parses, so a theme
+  switch restyles in place with no widget rebuilt.
+- Reader *page* theming (Light/Sepia/Dark paper) is separate from app chrome, on
+  purpose: a sepia page inside a dark app is a legitimate combination.
+
+> ⚠️ **Before editing `style.rs`, read its module header.** It documents five
+> GTK behaviours that are non-obvious and cost about a dozen debugging rounds on
+> a single scrollbar — provider priority vs specificity, why `opacity` below 1
+> triggers pixman errors, how `margin`/`border`/`padding` are subtracted from
+> allocations, what `scrolledwindow:hover` actually matches, and the
+> `KALAM_NO_CSS=1` diagnostic.
+
 ## Out of scope
 
 - Z-Library / unauthorized shadow libraries  
