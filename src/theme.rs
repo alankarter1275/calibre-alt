@@ -444,7 +444,11 @@ mod tests {
         // substring: "onedark" contains "dark" without being a darker variant.
         assert_eq!(ALL.len() % 2, 0, "themes should come in pairs");
         let darker = ALL.iter().filter(|t| t.id.ends_with("-darker")).count();
-        assert_eq!(darker, ALL.len() / 2, "expected one darker variant per family");
+        assert_eq!(
+            darker,
+            ALL.len() / 2,
+            "expected one darker variant per family"
+        );
     }
 
     #[test]
