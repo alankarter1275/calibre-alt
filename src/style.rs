@@ -998,7 +998,17 @@ popover.kalam-reader-popover > contents {
    from the card edge, not a full-height bar. */
 .kalam-toast-accent {
     border-radius: 999px;
-    margin-left: 4px;
+    /* Clear of the card's left edge, never welded to it. */
+    margin-left: 10px;
+    /* Vertical inset: leaves the bar at ~3/5 of the card height, centred,
+       and lets it grow with the card instead of being pinned to a pixel
+       height that a taller toast would break. */
+    margin-top: 13px;
+    margin-bottom: 13px;
+    min-width: 6px;
+    /* Floor, so a short title-only toast still shows a real bar rather than
+       a speck once the insets are taken out. */
+    min-height: 18px;
 }
 
 .kalam-toast-success .kalam-toast-accent {

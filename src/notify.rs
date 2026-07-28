@@ -269,14 +269,19 @@ fn build_card(entry: &Entry) -> gtk::Box {
     // rounded corners.
     card.set_overflow(gtk::Overflow::Hidden);
 
-    // The coloured stripe down the left edge. In the reference it is a short
-    // rounded pill floating inside the card, not a full-height bar welded to
-    // the edge: 5px wide, inset from the left, and about 56% of the card's
-    // height. Centring it vertically reproduces the equal top/bottom inset.
+    // The coloured severity stripe. It is a rounded pill floating inside the
+    // card, never touching the left edge.
+    //
+    // Height is done with margins rather than a fixed pixel height so the bar
+    // tracks the card: in a horizontal box a child fills the full height, so
+    // equal top/bottom margins leave a centred bar of (card height - 2*inset).
+    // A hardcoded height would be wrong the moment a two-line detail made the
+    // card taller. The 13px inset gives roughly the 1:3:1 split — one unit of
+    // space above, three of bar, one below — on a normal single-detail toast.
     let accent = gtk::Box::new(gtk::Orientation::Vertical, 0);
     accent.add_css_class("kalam-toast-accent");
-    accent.set_size_request(5, 48);
-    accent.set_valign(gtk::Align::Center);
+    accent.set_size_request(6, -1);
+    accent.set_valign(gtk::Align::Fill);
     card.append(&accent);
 
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 14);
