@@ -518,10 +518,19 @@ impl Component for AppModel {
                             set_halign: gtk::Align::Center,
                         },
 
+                        // Equal expanding spacers above and below the nav pin
+                        // it to the middle of the rail, with the logo held at
+                        // the top and Settings at the bottom.
+                        gtk::Box {
+                            set_vexpand: true,
+                            add_css_class: "kalam-nav-spacer",
+                        },
+
                         #[name = "top_nav"]
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
                             set_spacing: 0,
+                            set_valign: gtk::Align::Center,
                         },
 
                         gtk::Box {

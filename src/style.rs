@@ -1013,8 +1013,15 @@ popover.kalam-reader-popover > contents {
     background: @kalam_border;
 }
 
+/* `min-width` matters here. At fraction 0 the progress node is allocated zero
+   width, and because the rounded corners make GTK clip it, that becomes a
+   zero-area clip rectangle which pixman refuses:
+       *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
+   Giving it a floor means an unread book shows a small dot instead of nothing,
+   which also reads better than an invisible bar. */
 .kalam-mini-progress progress {
     min-height: 4px;
+    min-width: 4px;
     border-radius: 999px;
     background: @kalam_accent;
 }
@@ -1150,10 +1157,14 @@ popover.kalam-reader-popover > contents {
     background: @kalam_accent_dim;
 }
 
-/* The swatch strip previews sidebar / surface / raised / accent. */
+/* The swatch strip previews sidebar / surface / raised / accent. It is clipped
+   to its rounded corners, so it needs a non-zero floor: a clip rectangle with
+   no area is what pixman rejects. */
 .kalam-theme-strip {
     border-radius: 6px;
     border: 1px solid @kalam_border;
+    min-width: 24px;
+    min-height: 18px;
 }
 
 .kalam-theme-name {
