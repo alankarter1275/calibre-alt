@@ -744,9 +744,7 @@ impl Component for AppModel {
                     if prev.is_reader() || matches!(prev, Route::Module(NavItem::Settings)) {
                         widgets.content_host.add_css_class("kalam-content-flush");
                     } else {
-                        widgets
-                            .content_host
-                            .remove_css_class("kalam-content-flush");
+                        widgets.content_host.remove_css_class("kalam-content-flush");
                     }
 
                     if prev.is_reader() {
