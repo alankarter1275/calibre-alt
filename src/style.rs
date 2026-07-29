@@ -610,7 +610,8 @@ window.kalam-float-window {
 }
 
 /* ── reader (immersive tablet-book) ─────────────────── */
-.kalam-content.kalam-content-reader {
+.kalam-content.kalam-content-reader,
+.kalam-content.kalam-content-flush {
     padding: 0;
 }
 
@@ -1537,5 +1538,51 @@ popover.kalam-reader-popover > contents {
 
 .kalam-dict-row {
     padding: 10px 12px;
+}
+
+/* ── P5.5 settings page ─────────────────────────────── */
+.kalam-settings-nav {
+    background: @kalam_surface;
+    border-right: 1px solid @kalam_border;
+    min-width: 220px;
+    padding: 16px 14px;
+}
+
+.kalam-settings-tab {
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: transparent;
+    border: none;
+    color: @kalam_text_dim;
+    font-size: 0.95rem;
+}
+
+.kalam-settings-tab:hover {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+}
+
+.kalam-settings-tab.active {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    font-weight: 600;
+}
+
+.kalam-settings-content {
+    padding: 24px 32px;
+    background: @kalam_bg;
+}
+
+.kalam-settings-row {
+    padding: 14px 0;
+}
+
+.kalam-settings-path-box {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    color: @kalam_text_dim;
 }
 "#;
