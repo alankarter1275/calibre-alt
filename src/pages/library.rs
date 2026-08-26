@@ -371,11 +371,8 @@ fn section(
         header.append(&spacer);
     }
 
-    let arrow = crate::icons::symbolic_with_classes(
-        "go-next-symbolic",
-        16,
-        &["kalam-section-arrow"],
-    );
+    let arrow =
+        crate::icons::symbolic_with_classes("go-next-symbolic", 16, &["kalam-section-arrow"]);
     header.append(&arrow);
 
     // The whole header is the affordance — no separate "Show all" button.

@@ -673,11 +673,7 @@ impl Component for AppModel {
                     let page = self.take_or_build(&sender);
                     widgets.content_host.append(&page.widget());
                     self.page = Some(page);
-                    sync_content_classes(
-                        &widgets.content_host,
-                        &self.route,
-                        self.show_back_chip(),
-                    );
+                    sync_content_classes(&widgets.content_host, &self.route, self.show_back_chip());
                 }
             }
             AppMsg::OpenBookDialog { book_id } => {

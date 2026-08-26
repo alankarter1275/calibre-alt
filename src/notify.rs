@@ -329,11 +329,7 @@ fn build_card(entry: &Entry) -> gtk::Box {
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 14);
     body.add_css_class("kalam-toast-body");
 
-    let icon = crate::icons::symbolic_with_classes(
-        entry.kind.icon(),
-        17,
-        &["kalam-toast-icon"],
-    );
+    let icon = crate::icons::symbolic_with_classes(entry.kind.icon(), 17, &["kalam-toast-icon"]);
     icon.set_valign(gtk::Align::Center);
     body.append(&icon);
 
