@@ -336,9 +336,7 @@ fn rebuild(
 pub fn export_all_quotes_markdown(
     catalog: &Arc<Catalog>,
 ) -> Result<(usize, std::path::PathBuf), String> {
-    let annos = catalog
-        .list_all_quotes("")
-        .map_err(|e| format!("{e}"))?;
+    let annos = catalog.list_all_quotes("").map_err(|e| format!("{e}"))?;
     let mut quotes = Vec::with_capacity(annos.len());
     for a in annos {
         let book = catalog.get_book(a.book_id).ok().flatten();
