@@ -370,6 +370,9 @@ impl Component for SettingsPageModel {
                 widgets.tab_title.set_label(tab.label());
                 widgets.tab_subtitle.set_label(tab.subtitle());
                 update_tab_styles(&widgets.nav_list, tab);
+                if tab == SettingsTab::Notifications {
+                    build_notifications(&widgets.notify_list, &sender);
+                }
                 widgets.scroller.vadjustment().set_value(0.0);
             }
             SettingsMsg::ClearNotifications => {
@@ -607,16 +610,55 @@ fn build_theme_picker(host: &gtk::Grid, catalog: &Arc<Catalog>) {
         host.remove(&child);
     }
     let active = crate::theme::current(catalog).id;
-    for (index, (base, name, desc, prefix)) in THEME_FAMILIES.iter().enumerate() {
-        let family: Vec<&crate::theme::Theme> = crate::theme::ALL
-            .iter()
-            .filter(|t| t.id == *base || t.id.starts_with(&format!("{base}-")))
-            .collect();
+    let mut slot = 0;
+    for (family_key, name, desc, prefix) in THEME_FAMILIES.iter() {
+        let family = themes_for_family(family_key);
         if family.is_empty() {
             continue;
         }
         let block = theme_family_block(&family, name, desc, prefix, active, host, catalog);
-        host.attach(&block, (index % 2) as i32, (index / 2) as i32, 1, 1);
+        host.attach(&block, (slot % 2) as i32, (slot / 2) as i32, 1, 1);
+        slot += 1;
+    }
+}
+
+/// Group theme ids into the families shown in Settings.
+///
+/// Most families are `base` + `base-darker`, but Ayu's shipped ids are
+/// `ayumirage` and `ayu-darker`, so this cannot rely on a simple `base-`
+/// prefix match.
+fn themes_for_family(family_key: &str) -> Vec<&'static crate::theme::Theme> {
+    crate::theme::ALL
+        .iter()
+        .filter(|theme| theme_family_key(theme) == family_key)
+        .collect()
+}
+
+fn theme_family_key(theme: &crate::theme::Theme) -> &'static str {
+    if theme.id.starts_with("onedark") {
+        "onedark"
+    } else if theme.id.starts_with("tokyonight") {
+        "tokyonight"
+    } else if theme.id.starts_with("everforest") {
+        "everforest"
+    } else if theme.id.starts_with("catppuccin") {
+        "catppuccin"
+    } else if theme.id.starts_with("gruvbox") {
+        "gruvbox"
+    } else if theme.id.starts_with("ayu") {
+        "ayu"
+    } else if theme.id == "nord" {
+        "nord"
+    } else {
+        theme.id
+    }
+}
+
+fn active_theme_badge(theme: &crate::theme::Theme) -> &'static str {
+    if theme.id == crate::theme::DEFAULT.id {
+        "default"
+    } else {
+        "current"
     }
 }
 
@@ -688,14 +730,14 @@ fn theme_variant_button(
         &format!("background-color: {card_bg};"),
     );
 
-    // Name row: variant name, "default" tag, spacer, ✓ seal.
+    // Name row: variant name, current/default tag, spacer, ✓ seal.
     let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     let name_label = gtk::Label::new(Some(variant));
     name_label.add_css_class("kalam-theme-name");
     name_label.set_halign(gtk::Align::Start);
     name_row.append(&name_label);
     if is_active {
-        let tag = gtk::Label::new(Some("default"));
+        let tag = gtk::Label::new(Some(active_theme_badge(theme)));
         tag.add_css_class("kalam-theme-variant");
         tag.set_valign(gtk::Align::Center);
         name_row.append(&tag);
@@ -939,8 +981,16 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
     {
         let cache_badge = cache_badge.clone();
         clear.connect_clicked(move |btn| {
-            let (_, freed) = crate::paths::clear_reader_cache();
+            let (files, freed) = crate::paths::clear_reader_cache();
             cache_badge.set_label(&format!("Freed {}", crate::epub_write::human_size(freed)));
+            crate::notify::info(
+                "Reader cache cleared",
+                &format!(
+                    "Removed {files} file{} · freed {}",
+                    if files == 1 { "" } else { "s" },
+                    crate::epub_write::human_size(freed)
+                ),
+            );
             btn.set_sensitive(false);
         });
     }
@@ -1125,6 +1175,14 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
                 if count == 1 { "" } else { "s" },
                 crate::epub_write::human_size(freed)
             ));
+            crate::notify::info(
+                "Original backups deleted",
+                &format!(
+                    "Removed {count} backup{} · freed {}",
+                    if count == 1 { "" } else { "s" },
+                    crate::epub_write::human_size(freed)
+                ),
+            );
             btn.set_sensitive(false);
         });
     }
@@ -1350,4 +1408,21 @@ fn build_notifications(host: &gtk::Box, sender: &ComponentSender<SettingsPageMod
     }
     footer.append(&clear);
     body.append(&footer);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ayu_family_collects_both_variants() {
+        let ids: Vec<&str> = themes_for_family("ayu").into_iter().map(|t| t.id).collect();
+        assert_eq!(ids, vec!["ayumirage", "ayu-darker"]);
+    }
+
+    #[test]
+    fn selected_badge_marks_only_the_default_theme_as_default() {
+        assert_eq!(active_theme_badge(&crate::theme::DEFAULT), "default");
+        assert_eq!(active_theme_badge(&crate::theme::TOKYONIGHT), "current");
+    }
 }
