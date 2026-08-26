@@ -800,7 +800,7 @@ popover.kalam-reader-popover > contents {
 }
 
 /* ── P3: annotations, quotes, words, dict ──────────── */
-.kalam-quote-row, .kalam-word-row, .kalam-dict-row {
+.kalam-quote-row, .kalam-word-row {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 12px;
@@ -1353,59 +1353,80 @@ popover.kalam-reader-popover > contents {
     color: @kalam_info;
 }
 
-/* ── theme picker ───────────────────────────────────── */
+/* ── theme picker (P5.5 v2: family blocks + mini UI previews) ── */
 .kalam-theme-btn {
     padding: 0;
     background: transparent;
     border: none;
 }
 
-.kalam-theme-card {
-    padding: 8px;
-    border-radius: 10px;
+.kalam-theme-family-card {
+    background: @kalam_surface_2;
     border: 1px solid @kalam_border;
-    background: @kalam_surface;
+    border-radius: 12px;
+    padding: 14px;
 }
 
-.kalam-theme-card:hover {
-    border-color: @kalam_text_dim;
+.kalam-theme-family-name {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-theme-family-desc {
+    font-size: 0.7rem;
+    color: @kalam_text_dim;
+}
+
+/* Card background is per-theme: a dynamic class from settings.rs paints the
+   theme's own bg (tinted with the accent when selected). Shape only here. */
+.kalam-theme-card {
+    background: transparent;
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
+    padding: 10px;
 }
 
 .kalam-theme-card.active {
     border-color: @kalam_accent;
-    background: @kalam_accent_dim;
-}
-
-/* The swatch strip previews sidebar / surface / raised / accent. It is clipped
-   to its rounded corners, so it needs a non-zero floor: a clip rectangle with
-   no area is what pixman rejects. */
-.kalam-theme-strip {
-    border-radius: 6px;
-    border: 1px solid @kalam_border;
-    min-width: 24px;
-    min-height: 18px;
 }
 
 .kalam-theme-name {
     font-size: 0.72rem;
-    font-weight: 500;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-theme-variant {
+    font-size: 0.62rem;
     color: @kalam_text_dim;
 }
 
-.kalam-theme-card.active .kalam-theme-name {
-    color: @kalam_text;
-    font-weight: 600;
+/* The ✓ seal on the active card. Its ink is the theme's own bg (dynamic
+   class) so it stays readable on every accent. */
+.kalam-theme-check {
+    background: @kalam_accent;
+    border-radius: 999px;
+    padding: 0 5px;
+    min-height: 14px;
+    font-size: 0.62rem;
+    font-weight: 700;
 }
 
-/* One family per block, with a little air between blocks. */
-.kalam-theme-family {
-    margin-bottom: 6px;
+/* Mini preview. The dark outline is deliberately theme-independent: it
+   letterboxes whatever palette is being previewed. */
+.kalam-theme-preview {
+    border: 1px solid alpha(#000, 0.35);
+    border-radius: 6px;
 }
 
-.kalam-theme-family-name {
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: @kalam_text;
+.kalam-theme-preview-main {
+    padding: 5px 6px;
+}
+
+.kalam-theme-swatch {
+    min-height: 5px;
+    border-radius: 999px;
 }
 
 /* ── metadata editor ────────────────────────────────── */
@@ -1696,25 +1717,51 @@ popover.kalam-reader-popover > contents {
     border: 1px solid @kalam_border;
 }
 
-.kalam-dict-row {
-    padding: 10px 12px;
+/* ── dictionary rows (P5.5 settings) ────────────────── */
+.kalam-dict-icon {
+    background: alpha(@kalam_info, 0.14);
+    color: @kalam_info;
+    border-radius: 8px;
+    font-size: 0.9rem;
 }
 
-/* ── P5.5 settings page ─────────────────────────────── */
+.kalam-dict-meta {
+    font-family: monospace;
+    font-size: 0.7rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-card-footer {
+    margin-top: 14px;
+}
+
+/* ── P5.5 settings page v2 ──────────────────────────── */
 .kalam-settings-nav {
     background: @kalam_surface;
     border-right: 1px solid @kalam_border;
     min-width: 220px;
-    padding: 16px 14px;
+    padding: 14px 14px 16px 14px;
+}
+
+.kalam-settings-group {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: @kalam_text_dim;
+    margin: 12px 10px 4px 10px;
+}
+
+.kalam-settings-group:first-child {
+    margin-top: 0;
 }
 
 .kalam-settings-tab {
-    padding: 10px 14px;
-    border-radius: 10px;
+    padding: 9px 12px;
+    border-radius: 12px;
     background: transparent;
     border: none;
     color: @kalam_text_dim;
-    font-size: 0.95rem;
+    font-size: 0.85rem;
 }
 
 .kalam-settings-tab:hover {
@@ -1729,20 +1776,128 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-settings-content {
-    padding: 24px 32px;
+    padding: 24px 32px 32px 32px;
     background: @kalam_bg;
 }
 
-.kalam-settings-row {
-    padding: 14px 0;
+/* ── section cards ── */
+.kalam-section-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 16px;
+}
+
+.kalam-section-head {
+    padding: 16px 20px 14px 20px;
+}
+
+.kalam-section-icon {
+    color: @kalam_accent;
+    font-size: 1rem;
+}
+
+.kalam-section-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-section-desc {
+    font-size: 0.76rem;
+    color: @kalam_text_dim;
+    padding-left: 24px;
+    margin-top: 2px;
+}
+
+separator.kalam-section-divider {
+    background: @kalam_border;
+    min-height: 1px;
+    margin: 0 20px;
+}
+
+.kalam-section-body {
+    padding: 14px 20px 16px 20px;
+}
+
+/* ── setting rows: hairline between rows, none above the first ── */
+.kalam-setting-row {
+    padding: 12px 0;
+    border-top: 1px solid @kalam_border;
+}
+
+.kalam-setting-row:first-child {
+    border-top: none;
+    padding-top: 0;
+}
+
+.kalam-setting-label {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: @kalam_text;
+}
+
+.kalam-setting-desc {
+    font-size: 0.74rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-setting-entry {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 0.8rem;
 }
 
 .kalam-settings-path-box {
     background: @kalam_surface_2;
     border: 1px solid @kalam_border;
     border-radius: 8px;
-    padding: 6px 12px;
-    font-size: 0.85rem;
+    padding: 7px 12px;
+    font-family: monospace;
+    font-size: 0.72rem;
     color: @kalam_text_dim;
+}
+
+/* The app's switch, Material-You style: 40x22 pill, accent when on.
+   Margins and borders zeroed per the house rules before sizing. */
+switch.kalam-switch {
+    margin: 0;
+    border: none;
+    min-width: 40px;
+    min-height: 22px;
+    border-radius: 999px;
+    background: @kalam_border;
+}
+
+switch.kalam-switch:checked {
+    background: @kalam_accent;
+}
+
+/* The knob is white in every theme on purpose: all 13 palettes are dark, so
+   white is the one knob colour that reads on every accent. */
+switch.kalam-switch slider {
+    margin: 0;
+    border: none;
+    min-width: 16px;
+    min-height: 16px;
+    border-radius: 999px;
+    background: #ffffff;
+}
+
+/* Small modifier for the P5.5 button hierarchy (row-level actions). */
+.kalam-btn-sm {
+    padding: 6px 14px;
+    font-size: 0.8rem;
+}
+
+.kalam-chip-success {
+    background: alpha(@kalam_success, 0.16);
+    color: @kalam_success;
+}
+
+.kalam-chip-danger {
+    background: alpha(@kalam_danger, 0.16);
+    color: @kalam_danger;
 }
 "#;

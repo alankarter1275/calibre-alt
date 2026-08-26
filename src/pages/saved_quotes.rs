@@ -331,6 +331,25 @@ fn rebuild(
     }
 }
 
+/// Export every saved quote to `~/Quotes.md`. Shared between this page and
+/// the Settings → Export card, so both always use the same format.
+pub fn export_all_quotes_markdown(
+    catalog: &Arc<Catalog>,
+) -> Result<(usize, std::path::PathBuf), String> {
+    let annos = catalog.list_all_quotes("").map_err(|e| e.to_string())?;
+    let mut quotes = Vec::with_capacity(annos.len());
+    for a in annos {
+        let book = catalog.get_book(a.book_id).ok().flatten();
+        quotes.push((a, book));
+    }
+    let markdown = export_quotes_markdown(&quotes);
+    let out_path = dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("Quotes.md");
+    std::fs::write(&out_path, markdown).map_err(|e| e.to_string())?;
+    Ok((quotes.len(), out_path))
+}
+
 fn export_quotes_markdown(quotes: &[(Annotation, Option<Book>)]) -> String {
     let mut md = String::new();
     md.push_str("# Kalam — Saved Quotes\n\n");
