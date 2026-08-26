@@ -860,6 +860,164 @@ popover.kalam-reader-popover > contents {
     color: @kalam_text_dim;
 }
 
+/* ── P5.5 button hierarchy ──────────────────────────── */
+/* Filled → Tonal → Outlined → Danger-outlined → Ghost. Exactly one filled
+   button per screen — that is what "primary action" means. Destructive
+   actions are ALWAYS danger-outlined, never filled, so Remove can never
+   read as the same weight as Read.
+
+   Shape scale used throughout this file, for reference:
+     4px   chips / tags
+     8px   inputs, small controls
+     12px  cards
+     16px  panels, hero / chart cards
+     999px pills — buttons, badges, nav, icon buttons */
+
+.kalam-btn-filled {
+    background: @kalam_accent;
+    color: @kalam_bg;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-weight: 700;
+    transition: background 150ms ease;
+}
+
+.kalam-btn-filled:hover {
+    background: alpha(@kalam_accent, 0.85);
+}
+
+.kalam-btn-filled:active {
+    background: alpha(@kalam_accent, 0.7);
+}
+
+.kalam-btn-filled:disabled {
+    background: @kalam_surface_2;
+    color: @kalam_text_dim;
+}
+
+.kalam-btn-tonal {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-weight: 600;
+    transition: background 150ms ease;
+}
+
+.kalam-btn-tonal:hover {
+    background: alpha(@kalam_accent, 0.24);
+}
+
+.kalam-btn-outlined {
+    background: transparent;
+    color: @kalam_text;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-weight: 600;
+    transition: background 150ms ease, border-color 150ms ease;
+}
+
+.kalam-btn-outlined:hover {
+    background: alpha(@kalam_text, 0.06);
+    border-color: @kalam_text_dim;
+}
+
+.kalam-btn-danger {
+    background: transparent;
+    color: @kalam_danger;
+    border: 1px solid @kalam_danger;
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-weight: 600;
+    transition: background 150ms ease;
+}
+
+.kalam-btn-danger:hover {
+    background: alpha(@kalam_danger, 0.1);
+}
+
+.kalam-btn-ghost {
+    background: transparent;
+    color: @kalam_text_dim;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-weight: 500;
+    transition: background 150ms ease, color 150ms ease;
+}
+
+.kalam-btn-ghost:hover {
+    background: alpha(@kalam_text, 0.05);
+    color: @kalam_text;
+}
+
+/* Icon-only variant — a plain circle, no label. For a secondary-actions
+   row (bookmark / shelve / edit) sitting beside one kalam-btn-filled. */
+.kalam-btn-icon {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+    transition: background 150ms ease, border-color 150ms ease;
+}
+
+.kalam-btn-icon:hover {
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+.kalam-btn-icon.danger {
+    color: @kalam_danger;
+    border-color: alpha(@kalam_danger, 0.4);
+}
+
+.kalam-btn-icon.danger:hover {
+    background: alpha(@kalam_danger, 0.1);
+    border-color: @kalam_danger;
+}
+
+/* Generic tag / filter chip — a labelled pill. Prefer this over a one-off
+   badge class for anything that is just "a tag surfaced on a card". */
+.kalam-chip {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    border-radius: 999px;
+    padding: 3px 11px;
+    font-size: 0.72rem;
+}
+
+.kalam-chip-info {
+    background: alpha(@kalam_info, 0.16);
+    color: @kalam_info;
+}
+
+.kalam-chip-neutral {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    color: @kalam_text_dim;
+}
+
+/* ── literary display type ──────────────────────────── */
+/* Book titles only — everywhere else stays on the system UI font. Bundle
+   Fraunces as an app resource before shipping; this degrades to the system
+   serif if it isn't installed, so nothing breaks in the meantime. */
+.kalam-title-serif {
+    font-family: "Fraunces", serif;
+    font-weight: 600;
+}
+
+.kalam-title-serif-italic {
+    font-family: "Fraunces", serif;
+    font-style: italic;
+    font-weight: 500;
+}
+
 /* ── compact row buttons (reorder, remove, read) ────── */
 .kalam-mini-btn {
     padding: 4px 10px;
@@ -876,7 +1034,8 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-mini-btn:disabled {
-    opacity: 0.35;
+    color: alpha(@kalam_text_dim, 0.5);
+    border-color: alpha(@kalam_border, 0.6);
 }
 
 .kalam-mini-btn-danger:hover {
@@ -1396,7 +1555,8 @@ popover.kalam-reader-popover > contents {
 
 /* Inactive days keep their slot but recede. */
 .kalam-streak-off {
-    opacity: 0.22;
+    background: transparent;
+    color: alpha(@kalam_text_dim, 0.35);
 }
 
 .kalam-mini-btn-active {
