@@ -1,7 +1,6 @@
 use crate::db::Catalog;
 use crate::dict;
 use crate::paths::{catalog_db, data_dir, dictionaries_dir, library_dir};
-use gtk::glib::IsA;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
