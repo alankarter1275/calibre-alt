@@ -95,7 +95,7 @@ pub struct ReaderModel {
     /// Typography popover widgets we need to update as state changes.
     /// Held directly because they are built outside the `view!` tree.
     font_size_label: Option<gtk::Label>,
-    theme_ticks: Vec<(ReadingTheme, gtk::Label)>,
+    theme_ticks: Vec<(ReadingTheme, gtk::Image)>,
 }
 
 #[relm4::component(pub)]
@@ -139,7 +139,11 @@ impl Component for ReaderModel {
                     set_spacing: 6,
 
                     gtk::Button {
-                        set_label: "✕",
+                        set_child: Some(&crate::icons::symbolic_with_classes(
+                            "go-previous-symbolic",
+                            16,
+                            &["kalam-inline-icon"],
+                        )),
                         add_css_class: "kalam-reader-pill-btn",
                         set_tooltip_text: Some("Back (Esc)"),
                         connect_clicked => ReaderMsg::Close,
@@ -165,7 +169,11 @@ impl Component for ReaderModel {
                     set_spacing: 2,
 
                     gtk::Button {
-                        set_label: "‹",
+                        set_child: Some(&crate::icons::symbolic_with_classes(
+                            "go-previous-symbolic",
+                            16,
+                            &["kalam-inline-icon"],
+                        )),
                         add_css_class: "kalam-reader-pill-btn",
                         set_tooltip_text: Some("Previous chapter (P)"),
                         connect_clicked => ReaderMsg::PrevChapter,
@@ -173,7 +181,7 @@ impl Component for ReaderModel {
 
                     #[name = "toc_btn"]
                     gtk::MenuButton {
-                        set_label: "☰",
+                        set_icon_name: "view-list-bullet-symbolic",
                         add_css_class: "kalam-reader-pill-btn",
                         set_tooltip_text: Some("Contents (T)"),
                         set_direction: gtk::ArrowType::Up,
@@ -181,7 +189,7 @@ impl Component for ReaderModel {
 
                     #[name = "anno_btn"]
                     gtk::MenuButton {
-                        set_label: "✎",
+                        set_icon_name: "document-edit-symbolic",
                         add_css_class: "kalam-reader-pill-btn",
                         set_tooltip_text: Some("Highlights & quotes"),
                         set_direction: gtk::ArrowType::Up,
@@ -195,14 +203,18 @@ impl Component for ReaderModel {
 
                     #[name = "dict_btn"]
                     gtk::MenuButton {
-                        set_label: "Aa",
+                        set_icon_name: "insert-text-symbolic",
                         add_css_class: "kalam-reader-pill-btn",
                         set_tooltip_text: Some("Dictionary & typography (D)"),
                         set_direction: gtk::ArrowType::Up,
                     },
 
                     gtk::Button {
-                        set_label: "›",
+                        set_child: Some(&crate::icons::symbolic_with_classes(
+                            "go-next-symbolic",
+                            16,
+                            &["kalam-inline-icon"],
+                        )),
                         add_css_class: "kalam-reader-pill-btn",
                         set_tooltip_text: Some("Next chapter (N)"),
                         connect_clicked => ReaderMsg::NextChapter,
@@ -423,9 +435,11 @@ color:#3e3226;font-family:Georgia,serif'>\
             let b = gtk::Button::new();
 
             let inner = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            let tick = gtk::Label::new(Some("✓"));
-            tick.add_css_class("kalam-theme-tick");
-            tick.set_width_chars(1);
+            let tick = crate::icons::symbolic_with_classes(
+                "object-select-symbolic",
+                14,
+                &["kalam-theme-tick"],
+            );
             let name = gtk::Label::new(Some(label));
             name.set_halign(gtk::Align::Start);
             name.set_hexpand(true);
@@ -1256,7 +1270,12 @@ fn rebuild_anno_list(list: &gtk::Box, annos: &[Annotation], sender: &ComponentSe
         chap_l.set_halign(gtk::Align::Start);
         chap_l.set_hexpand(true);
         header.append(&chap_l);
-        let del = gtk::Button::with_label("✕");
+        let del = gtk::Button::new();
+        del.set_child(Some(&crate::icons::symbolic_with_classes(
+            "window-close-symbolic",
+            16,
+            &["kalam-inline-icon"],
+        )));
         del.add_css_class("kalam-secondary-btn");
         let id = a.id;
         let s = sender.clone();

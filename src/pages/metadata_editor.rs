@@ -187,7 +187,7 @@ fn open_editor_inner(
     let cover_label = section_label("COVER");
     cover_label.set_hexpand(true);
     cover_head.append(&cover_label);
-    let cover_search = icon_button("\u{f002}", "Search Open Library for a cover");
+    let cover_search = icon_button("system-search-symbolic", "Search Open Library for a cover");
     cover_head.append(&cover_search);
     cover_block.append(&cover_head);
 
@@ -262,7 +262,12 @@ fn open_editor_inner(
     panel_title.set_halign(gtk::Align::Start);
     panel_title.set_hexpand(true);
     panel_head.append(&panel_title);
-    let panel_close = gtk::Button::with_label("✕");
+    let panel_close = gtk::Button::new();
+    panel_close.set_child(Some(&crate::icons::symbolic_with_classes(
+        "window-close-symbolic",
+        16,
+        &["kalam-inline-icon"],
+    )));
     panel_close.add_css_class("kalam-rule-remove");
     panel_close.set_tooltip_text(Some("Close search"));
     panel_head.append(&panel_close);
@@ -323,9 +328,21 @@ fn open_editor_inner(
         .unwrap_or_default();
     let position = neighbours.iter().position(|b| b.id == book_id);
 
-    let prev_btn = gtk::Button::with_label("← Previous");
+    let prev_btn = gtk::Button::new();
+    prev_btn.set_child(Some(&crate::icons::labelled(
+        "go-previous-symbolic",
+        16,
+        "Previous",
+        6,
+    )));
     prev_btn.add_css_class("kalam-secondary-btn");
-    let next_btn = gtk::Button::with_label("Next →");
+    let next_btn = gtk::Button::new();
+    next_btn.set_child(Some(&crate::icons::labelled(
+        "go-next-symbolic",
+        16,
+        "Next",
+        6,
+    )));
     next_btn.add_css_class("kalam-secondary-btn");
     prev_btn.set_sensitive(matches!(position, Some(i) if i > 0));
     next_btn.set_sensitive(matches!(position, Some(i) if i + 1 < neighbours.len()));
@@ -1034,9 +1051,14 @@ fn section_label(text: &str) -> gtk::Label {
     label
 }
 
-/// Small flat button carrying a Nerd Font glyph.
-fn icon_button(glyph: &str, tooltip: &str) -> gtk::Button {
-    let btn = gtk::Button::with_label(glyph);
+/// Small flat button carrying one symbolic icon.
+fn icon_button(icon_name: &str, tooltip: &str) -> gtk::Button {
+    let btn = gtk::Button::new();
+    btn.set_child(Some(&crate::icons::symbolic_with_classes(
+        icon_name,
+        16,
+        &["kalam-inline-icon"],
+    )));
     btn.add_css_class("kalam-icon-btn");
     btn.set_tooltip_text(Some(tooltip));
     btn.set_valign(gtk::Align::Center);
@@ -1056,8 +1078,7 @@ fn labelled_entry_with_search(
     entry.set_text(value);
     entry.set_hexpand(true);
     row.append(&entry);
-    // U+F002 is the Nerd Font / Font Awesome magnifying glass.
-    let btn = icon_button("\u{f002}", tooltip);
+    let btn = icon_button("system-search-symbolic", tooltip);
     row.append(&btn);
     parent.append(&row);
     (entry, btn)

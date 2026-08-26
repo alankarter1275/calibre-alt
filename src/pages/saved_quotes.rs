@@ -58,7 +58,11 @@ impl Component for SavedQuotesModel {
                     connect_clicked => SavedQuotesMsg::Export,
                 },
                 gtk::Button {
-                    set_label: "↻",
+                    set_child: Some(&crate::icons::symbolic_with_classes(
+                        "view-refresh-symbolic",
+                        16,
+                        &["kalam-inline-icon"],
+                    )),
                     add_css_class: "kalam-secondary-btn",
                     set_tooltip_text: Some("Refresh"),
                     connect_clicked => SavedQuotesMsg::Refresh,
@@ -256,7 +260,12 @@ fn rebuild(
         color_badge.add_css_class(&format!("kalam-badge-{}", anno.color));
         header.append(&color_badge);
 
-        let del_btn = gtk::Button::with_label("✕");
+        let del_btn = gtk::Button::new();
+        del_btn.set_child(Some(&crate::icons::symbolic_with_classes(
+            "window-close-symbolic",
+            16,
+            &["kalam-inline-icon"],
+        )));
         del_btn.add_css_class("kalam-secondary-btn");
         let id = anno.id;
         let s = sender.clone();

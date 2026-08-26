@@ -47,7 +47,11 @@ impl Component for SavedWordsModel {
                     set_hexpand: true,
                 },
                 gtk::Button {
-                    set_label: "↻",
+                    set_child: Some(&crate::icons::symbolic_with_classes(
+                        "view-refresh-symbolic",
+                        16,
+                        &["kalam-inline-icon"],
+                    )),
                     add_css_class: "kalam-secondary-btn",
                     connect_clicked => SavedWordsMsg::Refresh,
                 },
@@ -200,7 +204,12 @@ fn rebuild(list: &gtk::Box, words: &[SavedWord], sender: &ComponentSender<SavedW
             header.append(&badge);
         }
 
-        let del = gtk::Button::with_label("✕");
+        let del = gtk::Button::new();
+        del.set_child(Some(&crate::icons::symbolic_with_classes(
+            "window-close-symbolic",
+            16,
+            &["kalam-inline-icon"],
+        )));
         del.add_css_class("kalam-secondary-btn");
         let id = w.id;
         let s = sender.clone();

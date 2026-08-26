@@ -116,7 +116,11 @@ impl Component for BookFloatModel {
                     },
 
                     gtk::Button {
-                        set_label: "✕",
+                        set_child: Some(&crate::icons::symbolic_with_classes(
+                            "window-close-symbolic",
+                            16,
+                            &["kalam-inline-icon"],
+                        )),
                         add_css_class: "kalam-float-close",
                         set_tooltip_text: Some("Close (Q)"),
                         connect_clicked => BookFloatMsg::Close,
@@ -236,7 +240,12 @@ impl Component for BookFloatModel {
                     },
 
                     gtk::Button {
-                        set_label: "▶  Read",
+                        set_child: Some(&crate::icons::labelled(
+                            "media-playback-start-symbolic",
+                            16,
+                            "Read",
+                            6,
+                        )),
                         add_css_class: "kalam-primary-btn",
                         add_css_class: "kalam-float-read",
                         set_halign: gtk::Align::End,

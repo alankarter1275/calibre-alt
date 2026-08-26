@@ -99,8 +99,6 @@ pub struct AppModel {
     sidebar_override: Option<NavItem>,
     page: Option<PageSlot>,
     floating: Option<FloatingBook>,
-    title_override: Option<String>,
-    subtitle_override: Option<String>,
     /// Pages kept alive between visits, keyed by route.
     ///
     /// Rebuilding a whole widget tree on every click was the second half of
@@ -142,16 +140,8 @@ impl AppModel {
             .unwrap_or_else(|| self.route.sidebar_item())
     }
 
-    fn top_title(&self) -> String {
-        self.title_override
-            .clone()
-            .unwrap_or_else(|| self.route.title())
-    }
-
-    fn top_subtitle(&self) -> Option<String> {
-        self.subtitle_override
-            .clone()
-            .or_else(|| self.route.subtitle())
+    fn show_back_chip(&self) -> bool {
+        !self.history.is_empty() && !self.route.is_reader()
     }
 
     fn build_page(
@@ -347,50 +337,13 @@ impl AppModel {
             _ => None,
         };
 
-        self.title_override = None;
-        self.subtitle_override = None;
-
         self.detach_current(content_host);
-
-        if let Route::BookPage { book_id } = &route {
-            if let Ok(Some(b)) = self.catalog.get_book(*book_id) {
-                self.title_override = Some(b.title.clone());
-                self.subtitle_override = Some(b.authors_display().to_string());
-            }
-        }
-        if let Route::Reader { book_id } = &route {
-            if let Ok(Some(b)) = self.catalog.get_book(*book_id) {
-                self.title_override = Some(b.title.clone());
-                self.subtitle_override = Some("Reading".into());
-            }
-        }
-        if let Route::ShelfDetail { shelf_id } = &route {
-            if let Ok(Some(shelf)) = self.catalog.get_shelf(*shelf_id) {
-                self.title_override = Some(shelf.name.clone());
-                self.subtitle_override = Some(shelf.summary());
-            }
-        }
-        if let Route::TagBooks { tag } = &route {
-            self.title_override = Some(format!("#{tag}"));
-        }
-
-        // Toggle reader/settings flush class without negative margins.
-        if route.is_reader() || matches!(route, Route::Module(NavItem::Settings)) {
-            content_host.add_css_class("kalam-content-flush");
-        } else {
-            content_host.remove_css_class("kalam-content-flush");
-        }
-
-        if route.is_reader() {
-            content_host.add_css_class("kalam-content-reader");
-        } else {
-            content_host.remove_css_class("kalam-content-reader");
-        }
 
         self.route = route;
         let page = self.take_or_build(sender);
         content_host.append(&page.widget());
         self.page = Some(page);
+        sync_content_classes(content_host, &self.route, self.show_back_chip());
     }
 
     /// Unparent the current page, parking it in the cache when its route is
@@ -558,67 +511,53 @@ impl Component for AppModel {
                     set_hexpand: true,
                     set_vexpand: true,
 
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        add_css_class: "kalam-topbar",
-                        set_spacing: 12,
-                        set_hexpand: true,
-                        #[watch]
-                        set_visible: !model.route.is_reader(),
-
-                        #[name = "back_btn"]
-                        gtk::Button {
-                            set_label: "← Back",
-                            add_css_class: "kalam-back-btn",
+                    gtk::Overlay {
+                        add_overlay = &gtk::Box {
+                            set_halign: gtk::Align::Start,
+                            set_valign: gtk::Align::Start,
+                            set_margin_top: 16,
+                            set_margin_start: 16,
                             #[watch]
-                            set_visible: !model.history.is_empty(),
-                            connect_clicked => AppMsg::Back,
-                        },
+                            set_visible: model.show_back_chip(),
 
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            set_valign: gtk::Align::Center,
-                            set_hexpand: true,
-
-                            gtk::Label {
-                                #[watch]
-                                set_label: &model.top_title(),
-                                add_css_class: "kalam-topbar-title",
-                                set_halign: gtk::Align::Start,
-                            },
-                            gtk::Label {
-                                #[watch]
-                                set_label: model.top_subtitle().as_deref().unwrap_or(""),
-                                #[watch]
-                                set_visible: model.top_subtitle().is_some(),
-                                add_css_class: "kalam-topbar-subtitle",
-                                set_halign: gtk::Align::Start,
+                            gtk::Button {
+                                add_css_class: "kalam-back-btn",
+                                add_css_class: "kalam-back-float",
+                                set_focus_on_click: false,
+                                set_child: Some(&crate::icons::labelled(
+                                    "go-previous-symbolic",
+                                    16,
+                                    "Back",
+                                    6,
+                                )),
+                                connect_clicked => AppMsg::Back,
                             },
                         },
-                    },
 
-                    gtk::ScrolledWindow {
-                        set_hexpand: true,
-                        set_vexpand: true,
-                        // GTK4 dropped the global gtk-overlay-scrolling setting;
-                        // it is per-widget now. Without this the scrollbar can be
-                        // a permanent widget that takes layout space and is always
-                        // painted, which no CSS can hide.
-                        set_overlay_scrolling: true,
-                        set_hscrollbar_policy: gtk::PolicyType::Never,
-                        #[watch]
-                        set_vscrollbar_policy: if model.route.is_reader() {
-                            gtk::PolicyType::Never
-                        } else {
-                            gtk::PolicyType::Automatic
-                        },
-
-                        #[name = "content_host"]
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            add_css_class: "kalam-content",
+                        #[wrap(Some)]
+                        set_child = &gtk::ScrolledWindow {
                             set_hexpand: true,
                             set_vexpand: true,
+                            // GTK4 dropped the global gtk-overlay-scrolling setting;
+                            // it is per-widget now. Without this the scrollbar can be
+                            // a permanent widget that takes layout space and is always
+                            // painted, which no CSS can hide.
+                            set_overlay_scrolling: true,
+                            set_hscrollbar_policy: gtk::PolicyType::Never,
+                            #[watch]
+                            set_vscrollbar_policy: if model.route.is_reader() {
+                                gtk::PolicyType::Never
+                            } else {
+                                gtk::PolicyType::Automatic
+                            },
+
+                            #[name = "content_host"]
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                add_css_class: "kalam-content",
+                                set_hexpand: true,
+                                set_vexpand: true,
+                            },
                         },
                     },
                 },
@@ -652,8 +591,6 @@ impl Component for AppModel {
             sidebar_override: None,
             page: Some(page),
             floating: None,
-            title_override: None,
-            subtitle_override: None,
             cache: Vec::new(),
             cache_token,
         };
@@ -695,6 +632,7 @@ impl Component for AppModel {
         if let Some(page) = &model.page {
             widgets.content_host.append(&page.widget());
         }
+        sync_content_classes(&widgets.content_host, &model.route, model.show_back_chip());
 
         let _ = root;
         ComponentParts { model, widgets }
@@ -728,37 +666,18 @@ impl Component for AppModel {
                         Route::BookPage { .. } => self.sidebar_override,
                         _ => None,
                     };
-                    self.title_override = None;
-                    self.subtitle_override = None;
 
                     self.detach_current(&widgets.content_host);
-
-                    if let Route::BookPage { book_id } = &prev {
-                        if let Ok(Some(b)) = self.catalog.get_book(*book_id) {
-                            self.title_override = Some(b.title.clone());
-                            self.subtitle_override = Some(b.authors_display().to_string());
-                        }
-                    }
-
-                    // Fix crooked home after reader: ensure flush/reader classes are removed when leaving reader/settings
-                    if prev.is_reader() || matches!(prev, Route::Module(NavItem::Settings)) {
-                        widgets.content_host.add_css_class("kalam-content-flush");
-                    } else {
-                        widgets.content_host.remove_css_class("kalam-content-flush");
-                    }
-
-                    if prev.is_reader() {
-                        widgets.content_host.add_css_class("kalam-content-reader");
-                    } else {
-                        widgets
-                            .content_host
-                            .remove_css_class("kalam-content-reader");
-                    }
 
                     self.route = prev;
                     let page = self.take_or_build(&sender);
                     widgets.content_host.append(&page.widget());
                     self.page = Some(page);
+                    sync_content_classes(
+                        &widgets.content_host,
+                        &self.route,
+                        self.show_back_chip(),
+                    );
                 }
             }
             AppMsg::OpenBookDialog { book_id } => {
@@ -903,10 +822,9 @@ fn brand_logo() -> gtk::Image {
 }
 
 fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
-    // Icon only. The rail is too narrow for a readable caption, and a 0.6rem
-    // label under every glyph was just noise — the tooltip carries the name.
-    let icon = gtk::Label::new(Some(item.icon()));
-    icon.add_css_class("kalam-nav-icon");
+    // Icon only. The rail is too narrow for a readable caption, and the
+    // tooltip already carries the page name.
+    let icon = crate::icons::symbolic_with_classes(item.icon(), 18, &["kalam-nav-icon"]);
     icon.set_halign(gtk::Align::Center);
     icon.set_valign(gtk::Align::Center);
 
@@ -921,6 +839,26 @@ fn make_nav_button(item: NavItem, active: bool) -> gtk::Button {
     btn.set_tooltip_text(Some(item.label()));
     btn.set_focus_on_click(false);
     btn
+}
+
+fn sync_content_classes(content_host: &gtk::Box, route: &Route, show_back_chip: bool) {
+    if route.is_reader() || matches!(route, Route::Module(NavItem::Settings)) {
+        content_host.add_css_class("kalam-content-flush");
+    } else {
+        content_host.remove_css_class("kalam-content-flush");
+    }
+
+    if route.is_reader() {
+        content_host.add_css_class("kalam-content-reader");
+    } else {
+        content_host.remove_css_class("kalam-content-reader");
+    }
+
+    if show_back_chip {
+        content_host.add_css_class("kalam-content-with-back");
+    } else {
+        content_host.remove_css_class("kalam-content-with-back");
+    }
 }
 
 fn update_nav_styles(container: &gtk::Box, active: NavItem) {

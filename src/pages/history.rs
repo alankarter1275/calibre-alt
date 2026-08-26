@@ -63,7 +63,11 @@ impl Component for HistoryModel {
                 },
 
                 gtk::Button {
-                    set_label: "↻",
+                    set_child: Some(&crate::icons::symbolic_with_classes(
+                        "view-refresh-symbolic",
+                        16,
+                        &["kalam-inline-icon"],
+                    )),
                     add_css_class: "kalam-secondary-btn",
                     set_valign: gtk::Align::Center,
                     set_tooltip_text: Some("Reload history"),
@@ -254,15 +258,19 @@ fn build_row(event: &ReadingEvent, sender: &ComponentSender<HistoryModel>) -> gt
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     row.add_css_class("kalam-list-row");
 
-    let icon = gtk::Label::new(Some(event.kind.icon()));
-    icon.add_css_class("kalam-event-icon");
-    icon.add_css_class(match event.kind {
-        EventKind::Finished => "kalam-event-finished",
-        EventKind::Imported => "kalam-event-imported",
-        _ => "kalam-event-opened",
-    });
+    let icon = crate::icons::symbolic_with_classes(
+        event.kind.icon(),
+        16,
+        &[
+            "kalam-event-icon",
+            match event.kind {
+                EventKind::Finished => "kalam-event-finished",
+                EventKind::Imported => "kalam-event-imported",
+                _ => "kalam-event-opened",
+            },
+        ],
+    );
     icon.set_valign(gtk::Align::Center);
-    icon.set_width_chars(2);
     row.append(&icon);
 
     let text = gtk::Box::new(gtk::Orientation::Vertical, 2);

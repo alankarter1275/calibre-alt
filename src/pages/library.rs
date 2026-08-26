@@ -371,8 +371,11 @@ fn section(
         header.append(&spacer);
     }
 
-    let arrow = gtk::Label::new(Some("›"));
-    arrow.add_css_class("kalam-section-arrow");
+    let arrow = crate::icons::symbolic_with_classes(
+        "go-next-symbolic",
+        16,
+        &["kalam-section-arrow"],
+    );
     header.append(&arrow);
 
     // The whole header is the affordance — no separate "Show all" button.

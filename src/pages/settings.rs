@@ -38,12 +38,12 @@ impl SettingsTab {
 
     pub fn icon(self) -> &'static str {
         match self {
-            Self::Appearance => "◎",
-            Self::Storage => "☷",
-            Self::Dictionaries => "✎",
-            Self::BookFiles => "☰",
-            Self::Metadata => "★",
-            Self::Notifications => "●",
+            Self::Appearance => "applications-graphics-symbolic",
+            Self::Storage => "drive-harddisk-symbolic",
+            Self::Dictionaries => "book-open-symbolic",
+            Self::BookFiles => "text-x-generic-symbolic",
+            Self::Metadata => "system-search-symbolic",
+            Self::Notifications => "preferences-system-notifications-symbolic",
         }
     }
 
@@ -458,8 +458,7 @@ impl SettingsPageModel {
 fn make_tab_button(tab: SettingsTab, active: bool) -> gtk::Button {
     let box_content = gtk::Box::new(gtk::Orientation::Horizontal, 10);
 
-    let icon = gtk::Label::new(Some(tab.icon()));
-    icon.set_width_chars(2);
+    let icon = crate::icons::symbolic_with_classes(tab.icon(), 16, &["kalam-settings-tab-icon"]);
     icon.set_halign(gtk::Align::Center);
     box_content.append(&icon);
 
@@ -492,17 +491,16 @@ fn update_tab_styles(container: &gtk::Box, active: SettingsTab) {
     }
 }
 
-/// One card with an accent glyph, a title, an optional description, a hairline
+/// One card with an accent icon, a title, an optional description, a hairline
 /// divider, and a body host the caller fills with rows. Appended to `host`.
-fn section_card(host: &gtk::Box, glyph: &str, title: &str, desc: Option<&str>) -> gtk::Box {
+fn section_card(host: &gtk::Box, icon_name: &str, title: &str, desc: Option<&str>) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
     card.add_css_class("kalam-section-card");
 
     let head = gtk::Box::new(gtk::Orientation::Vertical, 3);
     head.add_css_class("kalam-section-head");
     let title_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    let icon = gtk::Label::new(Some(glyph));
-    icon.add_css_class("kalam-section-icon");
+    let icon = crate::icons::symbolic_with_classes(icon_name, 16, &["kalam-section-icon"]);
     title_row.append(&icon);
     let title_label = gtk::Label::new(Some(title));
     title_label.add_css_class("kalam-section-title");
@@ -599,9 +597,10 @@ fn blend_hex(fg: &str, bg: &str, t: f32) -> String {
 fn add_styled_class(widget: &impl IsA<gtk::Widget>, class: &str, decls: &str) {
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&format!(".{class} {{ {decls} }}"));
-    widget
-        .style_context()
-        .add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+    widget.style_context().add_provider(
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
     widget.add_css_class(class);
 }
 
@@ -701,18 +700,18 @@ fn update_theme_picker_state(host: &gtk::Grid, active: &crate::theme::Theme) {
             return;
         }
 
-        if let Ok(label) = widget.clone().downcast::<gtk::Label>() {
-            let name = label.widget_name();
-            if let Some(theme_id) = name.strip_prefix(THEME_BADGE_PREFIX) {
+        let name = widget.widget_name();
+        if let Some(theme_id) = name.strip_prefix(THEME_BADGE_PREFIX) {
+            if let Ok(label) = widget.clone().downcast::<gtk::Label>() {
                 if theme_id == active.id {
                     label.set_label(active_theme_badge(active));
                     label.set_visible(true);
                 } else {
                     label.set_visible(false);
                 }
-            } else if let Some(theme_id) = name.strip_prefix(THEME_CHECK_PREFIX) {
-                label.set_visible(theme_id == active.id);
             }
+        } else if let Some(theme_id) = name.strip_prefix(THEME_CHECK_PREFIX) {
+            widget.set_visible(theme_id == active.id);
         }
     });
 }
@@ -776,10 +775,7 @@ fn theme_variant_button(
     add_styled_class(
         &card,
         &format!("kalam-tc-bg-{}", theme.id),
-        &format!(
-            "background-color: {}; border-color: {};",
-            theme.bg, theme.border
-        ),
+        &format!("background-color: {}; border-color: {};", theme.bg, theme.border),
     );
     let active_bg_class = format!("{THEME_ACTIVE_BG_PREFIX}{}", theme.id);
     add_styled_class(
@@ -820,9 +816,12 @@ fn theme_variant_button(
     let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
     name_row.append(&spacer);
-    let check = gtk::Label::new(Some("✓"));
+    let check = crate::icons::symbolic_with_classes(
+        "object-select-symbolic",
+        12,
+        &["kalam-theme-check"],
+    );
     check.set_widget_name(&format!("{THEME_CHECK_PREFIX}{}", theme.id));
-    check.add_css_class("kalam-theme-check");
     check.set_valign(gtk::Align::Center);
     check.set_visible(is_active);
     add_styled_class(
@@ -951,7 +950,7 @@ fn build_paths(host: &gtk::Box) {
     }
     let body = section_card(
         host,
-        "☷",
+        "folder-symbolic",
         "Data locations",
         Some("These paths are set at first run. Moving data requires copying the files manually."),
     );
@@ -1001,7 +1000,7 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    let body = section_card(host, "↓", "Backup & cache", None);
+    let body = section_card(host, "folder-download-symbolic", "Backup & cache", None);
 
     let backup_btn = gtk::Button::with_label("Back up library…");
     backup_btn.add_css_class("kalam-btn-outlined");
@@ -1080,7 +1079,7 @@ fn build_export(host: &gtk::Box, catalog: &Arc<Catalog>) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    let body = section_card(host, "⧉", "Export", None);
+    let body = section_card(host, "document-save-symbolic", "Export", None);
 
     let export_btn = gtk::Button::with_label("Export quotes");
     export_btn.add_css_class("kalam-btn-outlined");
@@ -1120,7 +1119,7 @@ fn rebuild_dicts(
     }
     let body = section_card(
         host,
-        "✎",
+        "book-open-symbolic",
         "Installed packs",
         Some("StarDict (.ifo/.idx/.dict), SQLite (.db), and TSV formats are supported."),
     );
@@ -1138,11 +1137,16 @@ fn rebuild_dicts(
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
             row.add_css_class("kalam-setting-row");
 
-            let icon = gtk::Label::new(Some("✎"));
+            let icon = gtk::Box::new(gtk::Orientation::Vertical, 0);
             icon.add_css_class("kalam-dict-icon");
             icon.set_size_request(32, 32);
             icon.set_halign(gtk::Align::Center);
             icon.set_valign(gtk::Align::Center);
+            icon.append(&crate::icons::symbolic_with_classes(
+                "book-open-symbolic",
+                16,
+                &["kalam-dict-icon-glyph"],
+            ));
             row.append(&icon);
 
             let info = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -1179,14 +1183,25 @@ fn rebuild_dicts(
 
     let footer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     footer.add_css_class("kalam-card-footer");
-    let import_btn = gtk::Button::with_label("+ Import dictionary");
+    let import_btn = gtk::Button::new();
+    import_btn.set_child(Some(&crate::icons::labelled(
+        "list-add-symbolic",
+        16,
+        "Import dictionary",
+        6,
+    )));
     import_btn.add_css_class("kalam-btn-filled");
     {
         let s = sender.clone();
         import_btn.connect_clicked(move |_| s.input(SettingsMsg::ImportDict));
     }
     footer.append(&import_btn);
-    let refresh_btn = gtk::Button::with_label("↻");
+    let refresh_btn = gtk::Button::new();
+    refresh_btn.set_child(Some(&crate::icons::symbolic_with_classes(
+        "view-refresh-symbolic",
+        16,
+        &["kalam-inline-icon"],
+    )));
     refresh_btn.add_css_class("kalam-btn-ghost");
     refresh_btn.set_tooltip_text(Some("Rescan dictionary packs"));
     {
@@ -1204,7 +1219,7 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    let body = section_card(host, "☰", "EPUB writeback", None);
+    let body = section_card(host, "text-x-generic-symbolic", "EPUB writeback", None);
 
     {
         let catalog = catalog.clone();
@@ -1297,7 +1312,7 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
 
     let ol_body = section_card(
         host,
-        "★",
+        "system-search-symbolic",
         "Open Library",
         Some("Internet Archive. No key needed. Strong on older and public-domain titles."),
     );
@@ -1316,7 +1331,7 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
 
     let gb_body = section_card(
         host,
-        "★",
+        "system-search-symbolic",
         "Google Books",
         Some(
             "Broad coverage, good for recent and non-English books. Works without a key, but anonymous requests share a global quota and can be rate limited.",
@@ -1416,7 +1431,7 @@ fn build_notifications(host: &gtk::Box, sender: &ComponentSender<SettingsPageMod
     }
     let body = section_card(
         host,
-        "●",
+        "preferences-system-notifications-symbolic",
         "Activity log",
         Some("The last 25 events this session. Toasts fade; this keeps the record."),
     );

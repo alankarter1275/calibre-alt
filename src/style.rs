@@ -174,7 +174,8 @@ scrollbar slider:active {
 }
 
 .kalam-nav-icon {
-    font-size: 1.25rem;
+    color: inherit;
+    -gtk-icon-size: 18px;
 }
 
 .kalam-nav-spacer {
@@ -210,6 +211,10 @@ scrollbar slider:active {
     min-width: 0;
 }
 
+.kalam-content.kalam-content-with-back {
+    padding-top: 72px;
+}
+
 /* ── breadcrumbs / back ─────────────────────────────── */
 .kalam-back-btn {
     padding: 6px 14px;
@@ -222,6 +227,16 @@ scrollbar slider:active {
 
 .kalam-back-btn:hover {
     background: @kalam_border;
+}
+
+.kalam-back-float {
+    background: alpha(@kalam_surface, 0.92);
+    box-shadow: 0 10px 26px alpha(#000, 0.28);
+}
+
+.kalam-back-float image {
+    color: inherit;
+    -gtk-icon-size: 16px;
 }
 
 /* ── page headings ──────────────────────────────────── */
@@ -665,6 +680,12 @@ window.kalam-float-window {
     background: rgba(255, 255, 255, 0.12);
 }
 
+.kalam-reader-pill-btn image,
+.kalam-reader-pill menubutton.kalam-reader-pill-btn > button image {
+    color: inherit;
+    -gtk-icon-size: 16px;
+}
+
 /* ensure MenuButton inner button is also capsule and hover is tight — same size as button */
 .kalam-reader-pill menubutton.kalam-reader-pill-btn {
     min-width: 0;
@@ -744,7 +765,8 @@ popover.kalam-reader-popover > contents {
    Hidden with a transparent colour, not `opacity`, which would force GTK to
    render through an offscreen surface (see the scrollbar note above). */
 .kalam-theme-tick {
-    font-weight: 700;
+    color: @kalam_accent;
+    -gtk-icon-size: 14px;
 }
 
 .kalam-theme-tick-off {
@@ -954,6 +976,11 @@ popover.kalam-reader-popover > contents {
     color: @kalam_text;
 }
 
+.kalam-inline-icon {
+    color: inherit;
+    -gtk-icon-size: 16px;
+}
+
 /* Icon-only variant — a plain circle, no label. For a secondary-actions
    row (bookmark / shelve / edit) sitting beside one kalam-btn-filled. */
 .kalam-btn-icon {
@@ -1123,8 +1150,8 @@ popover.kalam-reader-popover > contents {
 
 /* ── history event icons ────────────────────────────── */
 .kalam-event-icon {
-    font-size: 0.95rem;
-    font-weight: 700;
+    color: inherit;
+    -gtk-icon-size: 16px;
 }
 
 .kalam-event-finished {
@@ -1188,8 +1215,8 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-section-arrow {
-    font-size: 1.1rem;
     color: @kalam_text_dim;
+    -gtk-icon-size: 16px;
 }
 
 .kalam-shelf-mini {
@@ -1299,7 +1326,8 @@ popover.kalam-reader-popover > contents {
 }
 
 .kalam-toast-icon {
-    font-size: 1.05rem;
+    color: inherit;
+    -gtk-icon-size: 17px;
 }
 
 /* The accent stripe carries the severity. Colours sampled straight out of
@@ -1406,11 +1434,12 @@ popover.kalam-reader-popover > contents {
    class) so it stays readable on every accent. */
 .kalam-theme-check {
     background: @kalam_accent;
+    color: @kalam_bg;
     border-radius: 999px;
-    padding: 0 5px;
-    min-height: 14px;
-    font-size: 0.62rem;
-    font-weight: 700;
+    min-width: 16px;
+    min-height: 16px;
+    padding: 2px;
+    -gtk-icon-size: 10px;
 }
 
 /* Mini preview. The dark outline is deliberately theme-independent: it
@@ -1720,9 +1749,12 @@ popover.kalam-reader-popover > contents {
 /* ── dictionary rows (P5.5 settings) ────────────────── */
 .kalam-dict-icon {
     background: alpha(@kalam_info, 0.14);
-    color: @kalam_info;
     border-radius: 8px;
-    font-size: 0.9rem;
+}
+
+.kalam-dict-icon-glyph {
+    color: @kalam_info;
+    -gtk-icon-size: 16px;
 }
 
 .kalam-dict-meta {
@@ -1775,6 +1807,11 @@ popover.kalam-reader-popover > contents {
     font-weight: 600;
 }
 
+.kalam-settings-tab-icon {
+    color: inherit;
+    -gtk-icon-size: 16px;
+}
+
 .kalam-settings-content {
     padding: 24px 32px 32px 32px;
     background: @kalam_bg;
@@ -1793,7 +1830,7 @@ popover.kalam-reader-popover > contents {
 
 .kalam-section-icon {
     color: @kalam_accent;
-    font-size: 1rem;
+    -gtk-icon-size: 16px;
 }
 
 .kalam-section-title {
