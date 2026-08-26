@@ -336,7 +336,7 @@ fn rebuild(
 pub fn export_all_quotes_markdown(
     catalog: &Arc<Catalog>,
 ) -> Result<(usize, std::path::PathBuf), String> {
-    let annos = catalog.list_all_quotes("").map_err(|e| e.to_string())?;
+    let annos = catalog.list_all_quotes("").map_err(ToString::to_string)?;
     let mut quotes = Vec::with_capacity(annos.len());
     for a in annos {
         let book = catalog.get_book(a.book_id).ok().flatten();
@@ -346,7 +346,7 @@ pub fn export_all_quotes_markdown(
     let out_path = dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("Quotes.md");
-    std::fs::write(&out_path, markdown).map_err(|e| e.to_string())?;
+    std::fs::write(&out_path, markdown).map_err(ToString::to_string)?;
     Ok((quotes.len(), out_path))
 }
 

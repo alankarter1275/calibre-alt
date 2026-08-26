@@ -1,6 +1,7 @@
 use crate::db::Catalog;
 use crate::dict;
 use crate::paths::{catalog_db, data_dir, dictionaries_dir, library_dir};
+use gtk::glib::IsA;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -525,7 +526,7 @@ fn section_card(host: &gtk::Box, glyph: &str, title: &str, desc: Option<&str>) -
 
 /// Label + description on the left, one control on the right. Hairlines
 /// between rows come from CSS, so rows simply stack.
-fn setting_row(body: &gtk::Box, label: &str, desc: &str, right: &gtk::Widget) {
+fn setting_row(body: &gtk::Box, label: &str, desc: &str, right: &impl IsA<gtk::Widget>) {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
     row.add_css_class("kalam-setting-row");
 
@@ -587,7 +588,7 @@ fn blend_hex(fg: &str, bg: &str, t: f32) -> String {
 /// Attach a widget-local CSS class carrying literal per-theme colours.
 /// Providers load at APPLICATION priority, like the global sheet, and later
 /// providers win at equal priority — the same trick as the old swatch strip.
-fn add_styled_class(widget: &gtk::Widget, class: &str, decls: &str) {
+fn add_styled_class(widget: &impl IsA<gtk::Widget>, class: &str, decls: &str) {
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&format!(".{class} {{ {decls} }}"));
     if let Some(display) = gtk::gdk::Display::default() {
