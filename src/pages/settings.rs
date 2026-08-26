@@ -16,15 +16,6 @@ pub enum SettingsTab {
 }
 
 impl SettingsTab {
-    pub const ALL: &'static [Self] = &[
-        Self::Appearance,
-        Self::Storage,
-        Self::Dictionaries,
-        Self::BookFiles,
-        Self::Metadata,
-        Self::Notifications,
-    ];
-
     pub fn label(self) -> &'static str {
         match self {
             Self::Appearance => "Appearance",
@@ -590,16 +581,21 @@ fn blend_hex(fg: &str, bg: &str, t: f32) -> String {
     format!("#{:02x}{:02x}{:02x}", mix(16), mix(8), mix(0))
 }
 
-/// Attach a widget-local CSS class carrying literal per-theme colours.
+/// Attach a generated CSS class carrying literal per-theme colours.
 ///
-/// A local provider keeps the theme picker previews stable even after the app's
-/// global stylesheet is re-parsed for a newly selected theme.
+/// The provider is registered on the display rather than on a widget-local
+/// StyleContext so it survives theme switches without using the deprecated
+/// widget style-context API.
 fn add_styled_class(widget: &impl IsA<gtk::Widget>, class: &str, decls: &str) {
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&format!(".{class} {{ {decls} }}"));
-    widget
-        .style_context()
-        .add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
     widget.add_css_class(class);
 }
 

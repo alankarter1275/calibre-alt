@@ -80,31 +80,6 @@ pub enum Route {
 }
 
 impl Route {
-    pub fn title(&self) -> String {
-        match self {
-            Route::Module(item) => item.label().to_string(),
-            Route::LibrarySection(s) => s.label().to_string(),
-            Route::ShelvesGrid => "Shelves".into(),
-            Route::ShelfDetail { .. } => "Shelf".into(),
-            Route::TagBooks { tag } => tag.clone(),
-            Route::BookPage { .. } => "Book".into(),
-            Route::Reader { .. } => "Reading".into(),
-        }
-    }
-
-    pub fn subtitle(&self) -> Option<String> {
-        match self {
-            Route::Module(NavItem::Home) => Some("Continue where you left off".into()),
-            Route::Module(NavItem::Library) => Some("Catalog, lists, quotes & more".into()),
-            Route::ShelvesGrid => Some("Smart and manual collections".into()),
-            Route::LibrarySection(s) => Some(s.blurb().into()),
-            Route::Module(NavItem::Settings) => Some("Paths and preferences".into()),
-            Route::TagBooks { .. } => Some("Every book with this tag".into()),
-            Route::Reader { .. } => Some("Esc back · T TOC · N/P chapter · A+/A−".into()),
-            _ => None,
-        }
-    }
-
     pub fn sidebar_item(&self) -> NavItem {
         match self {
             Route::Module(item) => *item,
@@ -146,18 +121,6 @@ impl LibrarySection {
         LibrarySection::Analytics,
     ];
 
-    pub fn label(self) -> &'static str {
-        match self {
-            LibrarySection::AllBooks => "All books",
-            LibrarySection::ReadingList => "Reading list",
-            LibrarySection::History => "History",
-            LibrarySection::SavedQuotes => "Saved quotes",
-            LibrarySection::SavedWords => "Saved words",
-            LibrarySection::Tags => "Tags",
-            LibrarySection::Analytics => "Analytics",
-        }
-    }
-
     #[allow(dead_code)]
     pub fn icon(self) -> &'static str {
         match self {
@@ -171,17 +134,6 @@ impl LibrarySection {
         }
     }
 
-    pub fn blurb(self) -> &'static str {
-        match self {
-            LibrarySection::AllBooks => "Everything in your library",
-            LibrarySection::ReadingList => "Up next / to be read",
-            LibrarySection::History => "Recently opened and finished",
-            LibrarySection::SavedQuotes => "Lines you saved while reading",
-            LibrarySection::SavedWords => "Vocabulary from the dictionary",
-            LibrarySection::Tags => "Browse by tag",
-            LibrarySection::Analytics => "Light reading stats",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
