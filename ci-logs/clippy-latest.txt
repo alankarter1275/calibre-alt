@@ -1,22 +1,6 @@
-src/pages/settings.rs:686:9: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/settings.rs:711:13: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Label`
-src/pages/settings.rs:728:9: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/settings.rs:737:9: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/settings.rs:746:9: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/settings.rs:760:9: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/settings.rs:769:9: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/settings.rs:781:9: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/settings.rs:805:13: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/settings.rs:867:40: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/settings.rs:928:9: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Button`
-src/pages/settings.rs:952:9: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/settings.rs:985:9: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Button`
-src/pages/settings.rs:1096:13: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Switch`
-src/pages/settings.rs:1136:9: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/settings.rs:1183:13: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Switch`
-src/pages/settings.rs:1204:13: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Switch`
-src/pages/settings.rs:1239:13: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-src/pages/settings.rs:1277:13: [1m[91merror[E0308][0m: mismatched types: expected `&Widget`, found `&Box`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 19 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 19 previous errors
---- run 32967857111 ---
+src/pages/settings.rs:4:5: [1m[91merror[E0432][0m: unresolved import `gtk::glib::IsA`
+src/pages/saved_quotes.rs:339:53: [1m[91merror[E0631][0m: type mismatch in function arguments: expected due to this, found signature defined here
+src/pages/saved_quotes.rs:349:49: [1m[91merror[E0631][0m: type mismatch in function arguments: expected due to this, found signature defined here
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
+--- run 32968543098 ---
