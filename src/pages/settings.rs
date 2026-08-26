@@ -593,18 +593,16 @@ fn blend_hex(fg: &str, bg: &str, t: f32) -> String {
 }
 
 /// Attach a widget-local CSS class carrying literal per-theme colours.
-/// Providers load at APPLICATION priority, like the global sheet, and later
-/// providers win at equal priority — the same trick as the old swatch strip.
+///
+/// A local provider keeps the theme picker previews stable even after the app's
+/// global stylesheet is re-parsed for a newly selected theme.
 fn add_styled_class(widget: &impl IsA<gtk::Widget>, class: &str, decls: &str) {
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&format!(".{class} {{ {decls} }}"));
-    if let Some(display) = gtk::gdk::Display::default() {
-        gtk::style_context_add_provider_for_display(
-            &display,
-            &provider,
-            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-        );
-    }
+    widget.style_context().add_provider(
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
     widget.add_css_class(class);
 }
 
@@ -779,15 +777,16 @@ fn theme_variant_button(
     add_styled_class(
         &card,
         &format!("kalam-tc-bg-{}", theme.id),
-        &format!("background-color: {};", theme.bg),
+        &format!("background-color: {}; border-color: {};", theme.bg, theme.border),
     );
     let active_bg_class = format!("{THEME_ACTIVE_BG_PREFIX}{}", theme.id);
     add_styled_class(
         &card,
         &active_bg_class,
         &format!(
-            "background-color: {};",
-            blend_hex(theme.accent, theme.bg, 0.06)
+            "background-color: {}; border-color: {};",
+            blend_hex(theme.accent, theme.bg, 0.06),
+            theme.accent
         ),
     );
     if !is_active {
@@ -798,11 +797,21 @@ fn theme_variant_button(
     let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     let name_label = gtk::Label::new(Some(variant));
     name_label.add_css_class("kalam-theme-name");
+    add_styled_class(
+        &name_label,
+        &format!("kalam-tc-name-{}", theme.id),
+        &format!("color: {};", theme.text),
+    );
     name_label.set_halign(gtk::Align::Start);
     name_row.append(&name_label);
     let tag = gtk::Label::new(Some(active_theme_badge(theme)));
     tag.set_widget_name(&format!("{THEME_BADGE_PREFIX}{}", theme.id));
     tag.add_css_class("kalam-theme-variant");
+    add_styled_class(
+        &tag,
+        &format!("kalam-tc-variant-{}", theme.id),
+        &format!("color: {};", theme.text_dim),
+    );
     tag.set_valign(gtk::Align::Center);
     tag.set_visible(is_active);
     name_row.append(&tag);
@@ -817,7 +826,7 @@ fn theme_variant_button(
     add_styled_class(
         &check,
         &format!("kalam-tc-chk-{}", theme.id),
-        &format!("color: {};", theme.bg),
+        &format!("background-color: {}; color: {};", theme.accent, theme.bg),
     );
     name_row.append(&check);
     card.append(&name_row);
