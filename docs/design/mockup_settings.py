@@ -490,12 +490,6 @@ def notif_panel(d, x, y, w):
     y = section_card(d, x, y, w, "●", "Activity log",
                      "The last 25 events this session. Toasts fade; this keeps the record.",
                      rows, footer=clear_footer)
-    def toast_row(d, x, y, w):
-        def control(d, cx, cy):
-            return switch(d, cx-40, cy+2)
-        return row(d, x, y, w, "Import success toast",
-                   "Show a confirmation when a book is imported.", control, 40)
-    y = section_card(d, x, y, w, "●", "Toasts", None, [toast_row])
     return y
 
 # ── chrome: app rail + settings nav ──────────────────────────────────
