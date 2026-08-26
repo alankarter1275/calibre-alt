@@ -968,7 +968,10 @@ fn build_export(host: &gtk::Box, catalog: &Arc<Catalog>) {
         export_btn.connect_clicked(move |_| {
             match crate::pages::saved_quotes::export_all_quotes_markdown(&catalog) {
                 Ok((count, path)) => crate::notify::success(
-                    &format!("{count} quote{} exported", if count == 1 { "" } else { "s" }),
+                    &format!(
+                        "{count} quote{} exported",
+                        if count == 1 { "" } else { "s" }
+                    ),
                     &path.display().to_string(),
                 ),
                 Err(err) => crate::notify::error("Could not export quotes", &err),
