@@ -785,7 +785,10 @@ fn theme_variant_button(
     add_styled_class(
         &card,
         &active_bg_class,
-        &format!("background-color: {};", blend_hex(theme.accent, theme.bg, 0.06)),
+        &format!(
+            "background-color: {};",
+            blend_hex(theme.accent, theme.bg, 0.06)
+        ),
     );
     if !is_active {
         card.remove_css_class(&active_bg_class);
