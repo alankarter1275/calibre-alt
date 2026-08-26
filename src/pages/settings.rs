@@ -599,10 +599,9 @@ fn blend_hex(fg: &str, bg: &str, t: f32) -> String {
 fn add_styled_class(widget: &impl IsA<gtk::Widget>, class: &str, decls: &str) {
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&format!(".{class} {{ {decls} }}"));
-    widget.style_context().add_provider(
-        &provider,
-        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
+    widget
+        .style_context()
+        .add_provider(&provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
     widget.add_css_class(class);
 }
 
@@ -777,7 +776,10 @@ fn theme_variant_button(
     add_styled_class(
         &card,
         &format!("kalam-tc-bg-{}", theme.id),
-        &format!("background-color: {}; border-color: {};", theme.bg, theme.border),
+        &format!(
+            "background-color: {}; border-color: {};",
+            theme.bg, theme.border
+        ),
     );
     let active_bg_class = format!("{THEME_ACTIVE_BG_PREFIX}{}", theme.id);
     add_styled_class(
