@@ -131,6 +131,11 @@ const THEME_FAMILIES: &[(&str, &str, &str, &str)] = &[
     ),
 ];
 
+const THEME_BUTTON_PREFIX: &str = "theme-btn-";
+const THEME_BADGE_PREFIX: &str = "theme-badge-";
+const THEME_CHECK_PREFIX: &str = "theme-check-";
+const THEME_ACTIVE_BG_PREFIX: &str = "kalam-tc-bg-active-";
+
 #[derive(Debug)]
 pub enum SettingsMsg {
     SelectTab(SettingsTab),
@@ -662,6 +667,59 @@ fn active_theme_badge(theme: &crate::theme::Theme) -> &'static str {
     }
 }
 
+fn visit_widget_tree(widget: &gtk::Widget, visit: &mut impl FnMut(&gtk::Widget)) {
+    visit(widget);
+    let mut child = widget.first_child();
+    while let Some(node) = child {
+        let next = node.next_sibling();
+        visit_widget_tree(&node, visit);
+        child = next;
+    }
+}
+
+/// Update the picker in place after a theme change.
+///
+/// Rebuilding the entire grid after every click caused the Appearance tab to
+/// visibly blink. The preview cards are static samples, so only the selected
+/// state needs to change.
+fn update_theme_picker_state(host: &gtk::Grid, active: &crate::theme::Theme) {
+    let root: gtk::Widget = host.clone().upcast();
+    visit_widget_tree(&root, &mut |widget| {
+        if let Ok(btn) = widget.clone().downcast::<gtk::Button>() {
+            let name = btn.widget_name();
+            let Some(theme_id) = name.strip_prefix(THEME_BUTTON_PREFIX) else {
+                return;
+            };
+            let is_active = theme_id == active.id;
+            if let Some(card) = btn.child().and_then(|w| w.downcast::<gtk::Box>().ok()) {
+                let active_bg_class = format!("{THEME_ACTIVE_BG_PREFIX}{theme_id}");
+                if is_active {
+                    card.add_css_class("active");
+                    card.add_css_class(&active_bg_class);
+                } else {
+                    card.remove_css_class("active");
+                    card.remove_css_class(&active_bg_class);
+                }
+            }
+            return;
+        }
+
+        if let Ok(label) = widget.clone().downcast::<gtk::Label>() {
+            let name = label.widget_name();
+            if let Some(theme_id) = name.strip_prefix(THEME_BADGE_PREFIX) {
+                if theme_id == active.id {
+                    label.set_label(active_theme_badge(active));
+                    label.set_visible(true);
+                } else {
+                    label.set_visible(false);
+                }
+            } else if let Some(theme_id) = name.strip_prefix(THEME_CHECK_PREFIX) {
+                label.set_visible(theme_id == active.id);
+            }
+        }
+    });
+}
+
 fn theme_family_block(
     family: &[&crate::theme::Theme],
     name: &str,
@@ -718,17 +776,20 @@ fn theme_variant_button(
     if is_active {
         card.add_css_class("active");
     }
-    // Card background: the theme's own bg, tinted with the accent when active.
-    let card_bg = if is_active {
-        blend_hex(theme.accent, theme.bg, 0.06)
-    } else {
-        theme.bg.to_string()
-    };
     add_styled_class(
         &card,
         &format!("kalam-tc-bg-{}", theme.id),
-        &format!("background-color: {card_bg};"),
+        &format!("background-color: {};", theme.bg),
     );
+    let active_bg_class = format!("{THEME_ACTIVE_BG_PREFIX}{}", theme.id);
+    add_styled_class(
+        &card,
+        &active_bg_class,
+        &format!("background-color: {};", blend_hex(theme.accent, theme.bg, 0.06)),
+    );
+    if !is_active {
+        card.remove_css_class(&active_bg_class);
+    }
 
     // Name row: variant name, current/default tag, spacer, ✓ seal.
     let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
@@ -736,26 +797,26 @@ fn theme_variant_button(
     name_label.add_css_class("kalam-theme-name");
     name_label.set_halign(gtk::Align::Start);
     name_row.append(&name_label);
-    if is_active {
-        let tag = gtk::Label::new(Some(active_theme_badge(theme)));
-        tag.add_css_class("kalam-theme-variant");
-        tag.set_valign(gtk::Align::Center);
-        name_row.append(&tag);
-    }
+    let tag = gtk::Label::new(Some(active_theme_badge(theme)));
+    tag.set_widget_name(&format!("{THEME_BADGE_PREFIX}{}", theme.id));
+    tag.add_css_class("kalam-theme-variant");
+    tag.set_valign(gtk::Align::Center);
+    tag.set_visible(is_active);
+    name_row.append(&tag);
     let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
     name_row.append(&spacer);
-    if is_active {
-        let check = gtk::Label::new(Some("✓"));
-        check.add_css_class("kalam-theme-check");
-        check.set_valign(gtk::Align::Center);
-        add_styled_class(
-            &check,
-            &format!("kalam-tc-chk-{}", theme.id),
-            &format!("color: {};", theme.bg),
-        );
-        name_row.append(&check);
-    }
+    let check = gtk::Label::new(Some("✓"));
+    check.set_widget_name(&format!("{THEME_CHECK_PREFIX}{}", theme.id));
+    check.add_css_class("kalam-theme-check");
+    check.set_valign(gtk::Align::Center);
+    check.set_visible(is_active);
+    add_styled_class(
+        &check,
+        &format!("kalam-tc-chk-{}", theme.id),
+        &format!("color: {};", theme.bg),
+    );
+    name_row.append(&check);
     card.append(&name_row);
 
     // Mini preview: sidebar rail with two dots + main bars and a card.
@@ -854,6 +915,7 @@ fn theme_variant_button(
 
     let btn = gtk::Button::new();
     btn.set_child(Some(&card));
+    btn.set_widget_name(&format!("{THEME_BUTTON_PREFIX}{}", theme.id));
     btn.add_css_class("kalam-theme-btn");
     btn.set_tooltip_text(Some(theme.label));
 
@@ -862,12 +924,8 @@ fn theme_variant_button(
     let chosen = *theme;
     btn.connect_clicked(move |_| {
         crate::theme::save_and_apply(&catalog, &chosen);
+        update_theme_picker_state(&host, &chosen);
         crate::notify::success("Theme changed", chosen.label);
-        let host = host.clone();
-        let catalog = catalog.clone();
-        gtk::glib::idle_add_local_once(move || {
-            build_theme_picker(&host, &catalog);
-        });
     });
     btn
 }
