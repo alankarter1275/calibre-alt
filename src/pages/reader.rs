@@ -9,7 +9,9 @@ use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use serde::Deserialize;
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 use webkit6::prelude::*;
@@ -92,8 +94,13 @@ pub(crate) enum ReaderUiSetting {
     LeftSidebarWidth,
     RightSidebarWidth,
     SidebarRadius,
+    SidebarPadding,
+    SidebarShadow,
     BottomPillSize,
+    BottomPillGap,
     BackChipSize,
+    BackTopGap,
+    BackSideGap,
     DimStrength,
 }
 
@@ -103,13 +110,19 @@ struct ReaderUiPrefs {
     left_sidebar_width: i32,
     right_sidebar_width: i32,
     sidebar_radius: i32,
+    sidebar_padding: i32,
+    sidebar_shadow: i32,
     bottom_pill_size: i32,
+    bottom_pill_gap: i32,
     back_chip_size: i32,
+    back_top_gap: i32,
+    back_side_gap: i32,
     dim_strength: i32,
 }
 
 struct ReaderUiSettingControls {
-    value_label: gtk::Label,
+    value_entry: gtk::Entry,
+    last_value: Rc<RefCell<i32>>,
     preset_buttons: Vec<(i32, gtk::Button)>,
     custom_button: gtk::Button,
 }
@@ -127,10 +140,15 @@ struct ReaderSettingsControls {
 
 const UI_PRESETS_SIDEBAR_GAP: [(&str, i32); 3] = [("Tight", 8), ("Normal", 14), ("Airy", 20)];
 const UI_PRESETS_LEFT_WIDTH: [(&str, i32); 3] = [("Narrow", 220), ("Normal", 248), ("Wide", 280)];
-const UI_PRESETS_RIGHT_WIDTH: [(&str, i32); 3] = [("Narrow", 196), ("Normal", 212), ("Wide", 236)];
+const UI_PRESETS_RIGHT_WIDTH: [(&str, i32); 3] = [("Narrow", 180), ("Normal", 212), ("Wide", 252)];
 const UI_PRESETS_RADIUS: [(&str, i32); 3] = [("Soft", 14), ("Round", 20), ("Full", 26)];
+const UI_PRESETS_PADDING: [(&str, i32); 3] = [("Tight", 0), ("Normal", 4), ("Airy", 8)];
+const UI_PRESETS_SHADOW: [(&str, i32); 3] = [("Low", 18), ("Normal", 22), ("Deep", 28)];
 const UI_PRESETS_PILL_SIZE: [(&str, i32); 3] = [("Compact", 30), ("Normal", 34), ("Large", 40)];
+const UI_PRESETS_PILL_GAP: [(&str, i32); 3] = [("Tight", 12), ("Normal", 18), ("Airy", 26)];
 const UI_PRESETS_BACK_SIZE: [(&str, i32); 3] = [("Compact", 28), ("Normal", 32), ("Large", 38)];
+const UI_PRESETS_BACK_TOP: [(&str, i32); 3] = [("Tight", 10), ("Normal", 14), ("Airy", 20)];
+const UI_PRESETS_BACK_SIDE: [(&str, i32); 3] = [("Tight", 12), ("Normal", 16), ("Airy", 22)];
 const UI_PRESETS_DIM: [(&str, i32); 3] = [("Light", 12), ("Medium", 22), ("Strong", 32)];
 
 #[derive(Debug, Clone)]
@@ -223,6 +241,8 @@ pub struct ReaderModel {
     right_sidebar_shell: Option<gtk::Revealer>,
     left_sidebar_box: Option<gtk::Box>,
     right_sidebar_box: Option<gtk::Box>,
+    back_dock: Option<gtk::Box>,
+    bottom_dock: Option<gtk::Box>,
     left_stack: gtk::Stack,
     right_stack: gtk::Stack,
     toc_scroll: gtk::ScrolledWindow,
@@ -309,12 +329,12 @@ impl Component for ReaderModel {
             },
 
             add_overlay = &gtk::Box {
+                #[name = "back_dock"]
+                add_css_class: "kalam-reader-back-dock",
                 #[watch]
                 set_visible: model.show_back_button,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Start,
-                set_margin_top: 14,
-                set_margin_start: 16,
 
                 gtk::Button {
                     set_child: Some(&crate::icons::labelled("go-previous-symbolic", 16, "Library", 6)),
@@ -324,12 +344,12 @@ impl Component for ReaderModel {
             },
 
             add_overlay = &gtk::Box {
+                #[name = "bottom_dock"]
                 #[watch]
                 set_visible: model.show_bottom_pill,
                 add_css_class: "kalam-reader-bottom-dock",
                 set_halign: gtk::Align::Center,
                 set_valign: gtk::Align::End,
-                set_margin_bottom: 18,
 
                 gtk::Box {
                     add_css_class: "kalam-reader-bottom-pill",
@@ -722,6 +742,8 @@ impl Component for ReaderModel {
             right_sidebar_shell: None,
             left_sidebar_box: None,
             right_sidebar_box: None,
+            back_dock: None,
+            bottom_dock: None,
             left_stack,
             right_stack,
             toc_scroll,
@@ -768,6 +790,8 @@ impl Component for ReaderModel {
             .right_panel_host
             .parent()
             .and_then(|w| w.downcast::<gtk::Box>().ok());
+        model.back_dock = Some(widgets.back_dock.clone());
+        model.bottom_dock = Some(widgets.bottom_dock.clone());
         model.left_sidebar_shell = left_sidebar_box
             .as_ref()
             .and_then(|sidebar| sidebar.parent())
@@ -1794,6 +1818,7 @@ impl ReaderModel {
 fn reader_sidebar_tab_content(icon: &str, label: &str) -> gtk::Box {
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 3);
     box_.set_halign(gtk::Align::Center);
+    box_.set_hexpand(true);
     box_.append(&crate::icons::symbolic_with_classes(
         icon,
         17,
@@ -1801,6 +1826,9 @@ fn reader_sidebar_tab_content(icon: &str, label: &str) -> gtk::Box {
     ));
     let label_widget = gtk::Label::new(Some(label));
     label_widget.set_halign(gtk::Align::Center);
+    label_widget.set_width_chars(1);
+    label_widget.set_max_width_chars(8);
+    label_widget.set_ellipsize(gtk::pango::EllipsizeMode::End);
     box_.append(&label_widget);
     box_
 }
@@ -1838,8 +1866,13 @@ impl ReaderUiPrefs {
             left_sidebar_width: reader_ui_default(ReaderUiSetting::LeftSidebarWidth),
             right_sidebar_width: reader_ui_default(ReaderUiSetting::RightSidebarWidth),
             sidebar_radius: reader_ui_default(ReaderUiSetting::SidebarRadius),
+            sidebar_padding: reader_ui_default(ReaderUiSetting::SidebarPadding),
+            sidebar_shadow: reader_ui_default(ReaderUiSetting::SidebarShadow),
             bottom_pill_size: reader_ui_default(ReaderUiSetting::BottomPillSize),
+            bottom_pill_gap: reader_ui_default(ReaderUiSetting::BottomPillGap),
             back_chip_size: reader_ui_default(ReaderUiSetting::BackChipSize),
+            back_top_gap: reader_ui_default(ReaderUiSetting::BackTopGap),
+            back_side_gap: reader_ui_default(ReaderUiSetting::BackSideGap),
             dim_strength: reader_ui_default(ReaderUiSetting::DimStrength),
         };
         for setting in [
@@ -1847,8 +1880,13 @@ impl ReaderUiPrefs {
             ReaderUiSetting::LeftSidebarWidth,
             ReaderUiSetting::RightSidebarWidth,
             ReaderUiSetting::SidebarRadius,
+            ReaderUiSetting::SidebarPadding,
+            ReaderUiSetting::SidebarShadow,
             ReaderUiSetting::BottomPillSize,
+            ReaderUiSetting::BottomPillGap,
             ReaderUiSetting::BackChipSize,
+            ReaderUiSetting::BackTopGap,
+            ReaderUiSetting::BackSideGap,
             ReaderUiSetting::DimStrength,
         ] {
             let saved =
@@ -1864,8 +1902,13 @@ impl ReaderUiPrefs {
             ReaderUiSetting::LeftSidebarWidth => self.left_sidebar_width,
             ReaderUiSetting::RightSidebarWidth => self.right_sidebar_width,
             ReaderUiSetting::SidebarRadius => self.sidebar_radius,
+            ReaderUiSetting::SidebarPadding => self.sidebar_padding,
+            ReaderUiSetting::SidebarShadow => self.sidebar_shadow,
             ReaderUiSetting::BottomPillSize => self.bottom_pill_size,
+            ReaderUiSetting::BottomPillGap => self.bottom_pill_gap,
             ReaderUiSetting::BackChipSize => self.back_chip_size,
+            ReaderUiSetting::BackTopGap => self.back_top_gap,
+            ReaderUiSetting::BackSideGap => self.back_side_gap,
             ReaderUiSetting::DimStrength => self.dim_strength,
         }
     }
@@ -1877,8 +1920,13 @@ impl ReaderUiPrefs {
             ReaderUiSetting::LeftSidebarWidth => &mut self.left_sidebar_width,
             ReaderUiSetting::RightSidebarWidth => &mut self.right_sidebar_width,
             ReaderUiSetting::SidebarRadius => &mut self.sidebar_radius,
+            ReaderUiSetting::SidebarPadding => &mut self.sidebar_padding,
+            ReaderUiSetting::SidebarShadow => &mut self.sidebar_shadow,
             ReaderUiSetting::BottomPillSize => &mut self.bottom_pill_size,
+            ReaderUiSetting::BottomPillGap => &mut self.bottom_pill_gap,
             ReaderUiSetting::BackChipSize => &mut self.back_chip_size,
+            ReaderUiSetting::BackTopGap => &mut self.back_top_gap,
+            ReaderUiSetting::BackSideGap => &mut self.back_side_gap,
             ReaderUiSetting::DimStrength => &mut self.dim_strength,
         };
         if *slot == next {
@@ -1902,8 +1950,13 @@ fn reader_ui_pref_key(setting: ReaderUiSetting) -> &'static str {
         ReaderUiSetting::LeftSidebarWidth => "reader.ui.left_sidebar_width_px",
         ReaderUiSetting::RightSidebarWidth => "reader.ui.right_sidebar_width_px",
         ReaderUiSetting::SidebarRadius => "reader.ui.sidebar_radius_px",
+        ReaderUiSetting::SidebarPadding => "reader.ui.sidebar_padding_px",
+        ReaderUiSetting::SidebarShadow => "reader.ui.sidebar_shadow_px",
         ReaderUiSetting::BottomPillSize => "reader.ui.bottom_pill_size_px",
+        ReaderUiSetting::BottomPillGap => "reader.ui.bottom_pill_gap_px",
         ReaderUiSetting::BackChipSize => "reader.ui.back_chip_size_px",
+        ReaderUiSetting::BackTopGap => "reader.ui.back_top_gap_px",
+        ReaderUiSetting::BackSideGap => "reader.ui.back_side_gap_px",
         ReaderUiSetting::DimStrength => "reader.ui.dim_strength_pct",
     }
 }
@@ -1914,8 +1967,13 @@ fn reader_ui_default(setting: ReaderUiSetting) -> i32 {
         ReaderUiSetting::LeftSidebarWidth => 248,
         ReaderUiSetting::RightSidebarWidth => 212,
         ReaderUiSetting::SidebarRadius => 20,
+        ReaderUiSetting::SidebarPadding => 0,
+        ReaderUiSetting::SidebarShadow => 22,
         ReaderUiSetting::BottomPillSize => 34,
+        ReaderUiSetting::BottomPillGap => 18,
         ReaderUiSetting::BackChipSize => 32,
+        ReaderUiSetting::BackTopGap => 14,
+        ReaderUiSetting::BackSideGap => 16,
         ReaderUiSetting::DimStrength => 22,
     }
 }
@@ -1926,8 +1984,13 @@ fn reader_ui_presets(setting: ReaderUiSetting) -> &'static [(&'static str, i32)]
         ReaderUiSetting::LeftSidebarWidth => &UI_PRESETS_LEFT_WIDTH,
         ReaderUiSetting::RightSidebarWidth => &UI_PRESETS_RIGHT_WIDTH,
         ReaderUiSetting::SidebarRadius => &UI_PRESETS_RADIUS,
+        ReaderUiSetting::SidebarPadding => &UI_PRESETS_PADDING,
+        ReaderUiSetting::SidebarShadow => &UI_PRESETS_SHADOW,
         ReaderUiSetting::BottomPillSize => &UI_PRESETS_PILL_SIZE,
+        ReaderUiSetting::BottomPillGap => &UI_PRESETS_PILL_GAP,
         ReaderUiSetting::BackChipSize => &UI_PRESETS_BACK_SIZE,
+        ReaderUiSetting::BackTopGap => &UI_PRESETS_BACK_TOP,
+        ReaderUiSetting::BackSideGap => &UI_PRESETS_BACK_SIDE,
         ReaderUiSetting::DimStrength => &UI_PRESETS_DIM,
     }
 }
@@ -1938,8 +2001,13 @@ fn clamp_reader_ui_value(setting: ReaderUiSetting, value: i32) -> i32 {
         ReaderUiSetting::LeftSidebarWidth => value.clamp(180, 340),
         ReaderUiSetting::RightSidebarWidth => value.clamp(160, 320),
         ReaderUiSetting::SidebarRadius => value.clamp(0, 36),
+        ReaderUiSetting::SidebarPadding => value.clamp(0, 18),
+        ReaderUiSetting::SidebarShadow => value.clamp(8, 40),
         ReaderUiSetting::BottomPillSize => value.clamp(26, 52),
+        ReaderUiSetting::BottomPillGap => value.clamp(0, 40),
         ReaderUiSetting::BackChipSize => value.clamp(24, 48),
+        ReaderUiSetting::BackTopGap => value.clamp(0, 40),
+        ReaderUiSetting::BackSideGap => value.clamp(0, 40),
         ReaderUiSetting::DimStrength => value.clamp(0, 50),
     }
 }
@@ -1950,16 +2018,34 @@ fn reader_ui_step(setting: ReaderUiSetting) -> i32 {
         ReaderUiSetting::LeftSidebarWidth => 4,
         ReaderUiSetting::RightSidebarWidth => 4,
         ReaderUiSetting::SidebarRadius => 2,
+        ReaderUiSetting::SidebarPadding => 2,
+        ReaderUiSetting::SidebarShadow => 2,
         ReaderUiSetting::BottomPillSize => 2,
+        ReaderUiSetting::BottomPillGap => 2,
         ReaderUiSetting::BackChipSize => 2,
+        ReaderUiSetting::BackTopGap => 2,
+        ReaderUiSetting::BackSideGap => 2,
         ReaderUiSetting::DimStrength => 2,
     }
 }
 
-fn reader_ui_value_text(setting: ReaderUiSetting, value: i32) -> String {
+fn reader_ui_unit(setting: ReaderUiSetting) -> &'static str {
     match setting {
-        ReaderUiSetting::DimStrength => format!("{value}%"),
-        _ => format!("{value}px"),
+        ReaderUiSetting::DimStrength => "%",
+        _ => "px",
+    }
+}
+
+fn reader_ui_value_text(setting: ReaderUiSetting, value: i32) -> String {
+    format!("{}{}", value, reader_ui_unit(setting))
+}
+
+fn parse_reader_ui_input(text: &str) -> Option<i32> {
+    let digits: String = text.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse().ok()
     }
 }
 
@@ -1974,6 +2060,29 @@ fn register_reader_ui_provider(provider: &gtk::CssProvider) {
 }
 
 fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
+    let pad = prefs.sidebar_padding;
+    let header_top = 22 + pad;
+    let header_side = 18 + pad;
+    let header_bottom = 16 + (pad / 2);
+    let section_top = 14 + (pad / 2);
+    let section_side = 16 + pad;
+    let section_bottom = 8 + (pad / 2);
+    let divider_side = 16 + pad;
+    let tab_top = 10 + (pad / 2);
+    let tab_side = 10 + (pad / 2);
+    let tab_bottom = 12 + (pad / 2);
+    let filter_top = 10 + (pad / 2);
+    let filter_side = 12 + pad;
+    let filter_bottom = 10 + (pad / 2);
+    let toc_side = 16 + pad;
+    let toc_top = 9 + (pad / 2);
+    let list_side = 14 + pad;
+    let list_top = 12 + (pad / 2);
+    let shadow = prefs.sidebar_shadow;
+    let shadow_y = (shadow / 2).clamp(6, 18);
+    let shadow_blur = (shadow * 2 + 8).clamp(24, 88);
+    let shadow_alpha = (0.20 + shadow as f32 / 100.0).clamp(0.22, 0.55);
+
     let pill = prefs.bottom_pill_size;
     let pill_pad_y = ((pill - 22) / 4).clamp(4, 8);
     let pill_pad_x = ((pill - 14) / 3).clamp(6, 12);
@@ -1981,21 +2090,61 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
     let pill_icon = (pill / 2).clamp(14, 20);
     let pill_pages_font = ((pill as f32 * 0.44).round() as i32).clamp(12, 16);
     let pill_chapter_font = ((pill as f32 * 0.48).round() as i32).clamp(14, 18);
+
     let back = prefs.back_chip_size;
     let back_pad_y = ((back - 18) / 2).clamp(5, 10);
     let back_pad_left = (back_pad_y + 3).clamp(8, 14);
     let back_pad_right = (back_pad_y + 6).clamp(11, 17);
     let back_icon = (back / 2).clamp(14, 18);
     let dim_alpha = prefs.dim_strength as f32 / 100.0;
+
     format!(
         r#"
 .kalam-reader-ui-live .kalam-reader-sidebar {{
     border-radius: {radius}px;
+    box-shadow: 0 {shadow_y}px {shadow_blur}px alpha(#000, {shadow_alpha:.2});
 }}
 
-.kalam-reader-ui-live .kalam-reader-sidebar-left,
-.kalam-reader-ui-live .kalam-reader-sidebar-right {{
+.kalam-reader-ui-live .kalam-reader-sidebar-left {{
+    min-width: {left_width}px;
     border-radius: {radius}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-sidebar-right {{
+    min-width: {right_width}px;
+    border-radius: {radius}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-book-head {{
+    padding: {header_top}px {header_side}px {header_bottom}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-section {{
+    padding: {section_top}px {section_side}px {section_bottom}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-panel-divider {{
+    margin-left: {divider_side}px;
+    margin-right: {divider_side}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-tabbar {{
+    padding: {tab_top}px {tab_side}px {tab_bottom}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-filter-row,
+.kalam-reader-ui-live .kalam-reader-search-row {{
+    padding: {filter_top}px {filter_side}px {filter_bottom}px;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-toc-item {{
+    padding: {toc_top}px {toc_side}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-row,
+.kalam-reader-ui-live .kalam-reader-bookmark-row,
+.kalam-reader-ui-live .kalam-reader-word-row {{
+    padding: {list_top}px {list_side}px;
 }}
 
 .kalam-reader-ui-live button.kalam-reader-dim {{
@@ -2038,6 +2187,28 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
 }}
 "#,
         radius = prefs.sidebar_radius,
+        shadow_y = shadow_y,
+        shadow_blur = shadow_blur,
+        shadow_alpha = shadow_alpha,
+        left_width = prefs.left_sidebar_width,
+        right_width = prefs.right_sidebar_width,
+        header_top = header_top,
+        header_side = header_side,
+        header_bottom = header_bottom,
+        section_top = section_top,
+        section_side = section_side,
+        section_bottom = section_bottom,
+        divider_side = divider_side,
+        tab_top = tab_top,
+        tab_side = tab_side,
+        tab_bottom = tab_bottom,
+        filter_top = filter_top,
+        filter_side = filter_side,
+        filter_bottom = filter_bottom,
+        toc_top = toc_top,
+        toc_side = toc_side,
+        list_top = list_top,
+        list_side = list_side,
         dim_alpha = dim_alpha,
         pill_pad_y = pill_pad_y,
         pill_pad_x = pill_pad_x,
@@ -2055,23 +2226,33 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
 }
 
 fn apply_reader_ui_prefs(model: &ReaderModel) {
+    let gap = model.ui_prefs.sidebar_gap;
     if let Some(shell) = &model.left_sidebar_shell {
-        let gap = model.ui_prefs.sidebar_gap;
         shell.set_margin_start(gap);
         shell.set_margin_top(gap);
         shell.set_margin_bottom(gap);
+        shell.set_width_request(model.ui_prefs.left_sidebar_width + gap);
     }
     if let Some(shell) = &model.right_sidebar_shell {
-        let gap = model.ui_prefs.sidebar_gap;
         shell.set_margin_end(gap);
         shell.set_margin_top(gap);
         shell.set_margin_bottom(gap);
+        shell.set_width_request(model.ui_prefs.right_sidebar_width + gap);
     }
     if let Some(sidebar) = &model.left_sidebar_box {
         sidebar.set_size_request(model.ui_prefs.left_sidebar_width, -1);
+        sidebar.set_width_request(model.ui_prefs.left_sidebar_width);
     }
     if let Some(sidebar) = &model.right_sidebar_box {
         sidebar.set_size_request(model.ui_prefs.right_sidebar_width, -1);
+        sidebar.set_width_request(model.ui_prefs.right_sidebar_width);
+    }
+    if let Some(back_dock) = &model.back_dock {
+        back_dock.set_margin_top(model.ui_prefs.back_top_gap);
+        back_dock.set_margin_start(model.ui_prefs.back_side_gap);
+    }
+    if let Some(bottom_dock) = &model.bottom_dock {
+        bottom_dock.set_margin_bottom(model.ui_prefs.bottom_pill_gap);
     }
     model
         .ui_css_provider
@@ -2110,8 +2291,10 @@ fn build_reader_settings_panel(
     ] {
         let btn = gtk::Button::with_label(label);
         btn.add_css_class("kalam-reader-settings-switch");
-        let s = sender.clone();
-        btn.connect_clicked(move |_| s.input(ReaderMsg::SwitchSettingsPane(pane)));
+        let tx = sender.input_sender().clone();
+        btn.connect_clicked(move |_| {
+            let _ = tx.send(ReaderMsg::SwitchSettingsPane(pane));
+        });
         switcher.append(&btn);
         pane_buttons.push((pane, btn));
     }
@@ -2136,8 +2319,10 @@ fn build_reader_settings_panel(
         btn.add_css_class("kalam-reader-theme-dot");
         btn.add_css_class(class_name);
         btn.set_tooltip_text(Some(label));
-        let s = sender.clone();
-        btn.connect_clicked(move |_| s.input(ReaderMsg::Theme(value)));
+        let tx = sender.input_sender().clone();
+        btn.connect_clicked(move |_| {
+            let _ = tx.send(ReaderMsg::Theme(value));
+        });
         dots_row.append(&btn);
         dots.push((value, btn));
     }
@@ -2192,6 +2377,8 @@ fn build_reader_settings_panel(
         ("Left width", ReaderUiSetting::LeftSidebarWidth),
         ("Right width", ReaderUiSetting::RightSidebarWidth),
         ("Corner radius", ReaderUiSetting::SidebarRadius),
+        ("Inner padding", ReaderUiSetting::SidebarPadding),
+        ("Shadow depth", ReaderUiSetting::SidebarShadow),
     ] {
         let (row, controls) =
             reader_ui_setting_block(title, setting, ui_prefs.get(setting), sender);
@@ -2203,8 +2390,11 @@ fn build_reader_settings_panel(
 
     let controls_section = reader_settings_section("Floating controls");
     for (title, setting) in [
-        ("Bottom pill", ReaderUiSetting::BottomPillSize),
-        ("Back chip", ReaderUiSetting::BackChipSize),
+        ("Bottom pill size", ReaderUiSetting::BottomPillSize),
+        ("Bottom gap", ReaderUiSetting::BottomPillGap),
+        ("Back chip size", ReaderUiSetting::BackChipSize),
+        ("Back top gap", ReaderUiSetting::BackTopGap),
+        ("Back side gap", ReaderUiSetting::BackSideGap),
     ] {
         let (row, controls) =
             reader_ui_setting_block(title, setting, ui_prefs.get(setting), sender);
@@ -2265,11 +2455,6 @@ fn reader_ui_setting_block(
     label_widget.set_hexpand(true);
     label_widget.set_halign(gtk::Align::Start);
     head.append(&label_widget);
-    let value_label = gtk::Label::new(Some(&reader_ui_value_text(setting, value)));
-    value_label.add_css_class("kalam-reader-ui-setting-value");
-    value_label.add_css_class("kalam-reader-stepper-value");
-    value_label.set_halign(gtk::Align::End);
-    head.append(&value_label);
     wrap.append(&head);
 
     let presets = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -2280,22 +2465,37 @@ fn reader_ui_setting_block(
         let btn = gtk::Button::with_label(preset_label);
         btn.add_css_class("kalam-reader-filter-chip");
         btn.add_css_class("kalam-reader-ui-preset");
-        let s = sender.clone();
-        btn.connect_clicked(move |_| s.input(ReaderMsg::SetUiSetting(setting, preset_value)));
+        let tx = sender.input_sender().clone();
+        btn.connect_clicked(move |_| {
+            let _ = tx.send(ReaderMsg::SetUiSetting(setting, preset_value));
+        });
         presets.append(&btn);
         preset_buttons.push((preset_value, btn));
     }
+    wrap.append(&presets);
+
+    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    controls.add_css_class("kalam-reader-ui-control-row");
+
+    let value_entry = gtk::Entry::new();
+    value_entry.add_css_class("kalam-reader-ui-value-entry");
+    value_entry.set_input_purpose(gtk::InputPurpose::Digits);
+    value_entry.set_width_chars(4);
+    value_entry.set_max_length(4);
+    value_entry.set_text(&value.to_string());
+    let last_value = Rc::new(RefCell::new(value));
+
     let custom_button = gtk::Button::with_label("Custom");
     custom_button.add_css_class("kalam-reader-filter-chip");
     custom_button.add_css_class("kalam-reader-ui-preset");
     custom_button.add_css_class("kalam-reader-ui-preset-custom");
     custom_button.set_focus_on_click(false);
-    presets.append(&custom_button);
-    wrap.append(&presets);
+    let value_entry_for_focus = value_entry.clone();
+    custom_button.connect_clicked(move |_| {
+        value_entry_for_focus.grab_focus();
+    });
+    controls.append(&custom_button);
 
-    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    actions.add_css_class("kalam-reader-ui-stepper-row");
-    actions.set_halign(gtk::Align::End);
     let minus = gtk::Button::new();
     minus.add_css_class("kalam-reader-stepper-btn");
     minus.set_child(Some(&crate::icons::symbolic_with_classes(
@@ -2303,14 +2503,20 @@ fn reader_ui_setting_block(
         14,
         &["kalam-inline-icon"],
     )));
-    let s = sender.clone();
+    let tx = sender.input_sender().clone();
     minus.connect_clicked(move |_| {
-        s.input(ReaderMsg::AdjustUiSetting(
-            setting,
-            -reader_ui_step(setting),
-        ))
+        let _ = tx.send(ReaderMsg::AdjustUiSetting(setting, -reader_ui_step(setting)));
     });
-    actions.append(&minus);
+    controls.append(&minus);
+
+    let value_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    value_box.add_css_class("kalam-reader-ui-value-box");
+    value_box.append(&value_entry);
+    let unit_label = gtk::Label::new(Some(reader_ui_unit(setting)));
+    unit_label.add_css_class("kalam-reader-ui-unit");
+    value_box.append(&unit_label);
+    controls.append(&value_box);
+
     let plus = gtk::Button::new();
     plus.add_css_class("kalam-reader-stepper-btn");
     plus.set_child(Some(&crate::icons::symbolic_with_classes(
@@ -2318,17 +2524,41 @@ fn reader_ui_setting_block(
         14,
         &["kalam-inline-icon"],
     )));
-    let s = sender.clone();
+    let tx = sender.input_sender().clone();
     plus.connect_clicked(move |_| {
-        s.input(ReaderMsg::AdjustUiSetting(setting, reader_ui_step(setting)))
+        let _ = tx.send(ReaderMsg::AdjustUiSetting(setting, reader_ui_step(setting)));
     });
-    actions.append(&plus);
-    wrap.append(&actions);
+    controls.append(&plus);
+    wrap.append(&controls);
+
+    let tx = sender.input_sender().clone();
+    let last_value_for_activate = last_value.clone();
+    value_entry.connect_activate(move |entry| {
+        if let Some(next) = parse_reader_ui_input(entry.text().as_str()) {
+            let _ = tx.send(ReaderMsg::SetUiSetting(setting, next));
+        } else {
+            entry.set_text(&last_value_for_activate.borrow().to_string());
+        }
+    });
+
+    let tx = sender.input_sender().clone();
+    let last_value_for_focus = last_value.clone();
+    value_entry.connect_has_focus_notify(move |entry| {
+        if entry.has_focus() {
+            return;
+        }
+        if let Some(next) = parse_reader_ui_input(entry.text().as_str()) {
+            let _ = tx.send(ReaderMsg::SetUiSetting(setting, next));
+        } else {
+            entry.set_text(&last_value_for_focus.borrow().to_string());
+        }
+    });
 
     (
         wrap,
         ReaderUiSettingControls {
-            value_label,
+            value_entry,
+            last_value,
             preset_buttons,
             custom_button,
         },
@@ -2585,9 +2815,14 @@ fn sync_reader_controls(model: &ReaderModel) {
     }
     for (setting, controls) in &model.ui_controls {
         let value = model.ui_prefs.get(*setting);
+        *controls.last_value.borrow_mut() = value;
         controls
-            .value_label
-            .set_label(&reader_ui_value_text(*setting, value));
+            .value_entry
+            .set_tooltip_text(Some(&reader_ui_value_text(*setting, value)));
+        let desired_text = value.to_string();
+        if !controls.value_entry.has_focus() && controls.value_entry.text().as_str() != desired_text {
+            controls.value_entry.set_text(&desired_text);
+        }
         let mut matched_preset = false;
         for (preset_value, btn) in &controls.preset_buttons {
             let active = *preset_value == value;
