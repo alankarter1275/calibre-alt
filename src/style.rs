@@ -754,18 +754,21 @@ button.kalam-reader-back:hover {
     background: transparent;
 }
 
-button.kalam-reader-pill-nav,
-.kalam-reader-pill-info {
+.kalam-reader-bottom-pill {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 999px;
+    padding: 5px 6px;
     box-shadow: 0 8px 24px alpha(#000, 0.26);
 }
 
 button.kalam-reader-pill-nav {
-    min-width: 32px;
-    min-height: 32px;
-    padding: 0 10px;
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0 11px;
+    background: transparent;
+    border: none;
+    border-radius: 999px;
     color: @kalam_text;
 }
 
@@ -775,11 +778,14 @@ button.kalam-reader-pill-nav:hover {
 }
 
 .kalam-reader-pill-nav image {
-    -gtk-icon-size: 14px;
+    -gtk-icon-size: 15px;
 }
 
 .kalam-reader-pill-info {
-    padding: 7px 14px;
+    padding: 0 12px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
 }
 
 .kalam-reader-pill-pages {

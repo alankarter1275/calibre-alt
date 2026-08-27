@@ -239,6 +239,72 @@ impl Component for ReaderModel {
                 set_valign: gtk::Align::Fill,
             },
 
+            add_overlay = &gtk::Box {
+                #[watch]
+                set_visible: model.show_back_button,
+                set_halign: gtk::Align::Start,
+                set_valign: gtk::Align::Start,
+                set_margin_top: 14,
+                set_margin_start: 16,
+
+                gtk::Button {
+                    set_child: Some(&crate::icons::labelled("go-previous-symbolic", 16, "Library", 6)),
+                    add_css_class: "kalam-reader-back",
+                    connect_clicked => ReaderMsg::Close,
+                },
+            },
+
+            add_overlay = &gtk::Box {
+                #[watch]
+                set_visible: model.show_bottom_pill,
+                add_css_class: "kalam-reader-bottom-dock",
+                set_halign: gtk::Align::Center,
+                set_valign: gtk::Align::End,
+                set_margin_bottom: 18,
+
+                gtk::Box {
+                    add_css_class: "kalam-reader-bottom-pill",
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 4,
+                    set_valign: gtk::Align::Center,
+
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes("go-previous-symbolic", 15, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-pill-nav",
+                        set_tooltip_text: Some("Previous chapter (P)"),
+                        connect_clicked => ReaderMsg::PrevChapter,
+                    },
+
+                    gtk::Box {
+                        add_css_class: "kalam-reader-pill-info",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 10,
+                        set_valign: gtk::Align::Center,
+
+                        #[name = "progress_label"]
+                        gtk::Label {
+                            add_css_class: "kalam-reader-pill-pages",
+                            set_valign: gtk::Align::Center,
+                        },
+
+                        #[name = "pill_chapter_label"]
+                        gtk::Label {
+                            add_css_class: "kalam-reader-pill-chapter",
+                            set_max_width_chars: 36,
+                            set_ellipsize: gtk::pango::EllipsizeMode::End,
+                            set_valign: gtk::Align::Center,
+                        },
+                    },
+
+                    gtk::Button {
+                        set_child: Some(&crate::icons::symbolic_with_classes("go-next-symbolic", 15, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-pill-nav",
+                        set_tooltip_text: Some("Next chapter (N)"),
+                        connect_clicked => ReaderMsg::NextChapter,
+                    },
+                },
+            },
+
             add_overlay = &gtk::Revealer {
                 #[watch]
                 set_reveal_child: model.left_sidebar_open,
@@ -384,67 +450,6 @@ impl Component for ReaderModel {
                             connect_clicked => ReaderMsg::SwitchRightTab(RightSidebarTab::Words),
                         },
                     },
-                },
-            },
-
-            add_overlay = &gtk::Box {
-                #[watch]
-                set_visible: model.show_back_button,
-                set_halign: gtk::Align::Start,
-                set_valign: gtk::Align::Start,
-                set_margin_top: 14,
-                set_margin_start: 16,
-
-                gtk::Button {
-                    set_child: Some(&crate::icons::labelled("go-previous-symbolic", 16, "Library", 6)),
-                    add_css_class: "kalam-reader-back",
-                    connect_clicked => ReaderMsg::Close,
-                },
-            },
-
-            add_overlay = &gtk::Box {
-                #[watch]
-                set_visible: model.show_bottom_pill,
-                add_css_class: "kalam-reader-bottom-dock",
-                set_halign: gtk::Align::Center,
-                set_valign: gtk::Align::End,
-                set_margin_bottom: 18,
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 8,
-
-                gtk::Button {
-                    set_child: Some(&crate::icons::symbolic_with_classes("go-previous-symbolic", 14, &["kalam-inline-icon"])),
-                    add_css_class: "kalam-reader-pill-nav",
-                    set_tooltip_text: Some("Previous chapter (P)"),
-                    connect_clicked => ReaderMsg::PrevChapter,
-                },
-
-                gtk::Box {
-                    add_css_class: "kalam-reader-pill-info",
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_spacing: 10,
-                    set_valign: gtk::Align::Center,
-
-                    #[name = "progress_label"]
-                    gtk::Label {
-                        add_css_class: "kalam-reader-pill-pages",
-                        set_valign: gtk::Align::Center,
-                    },
-
-                    #[name = "pill_chapter_label"]
-                    gtk::Label {
-                        add_css_class: "kalam-reader-pill-chapter",
-                        set_max_width_chars: 36,
-                        set_ellipsize: gtk::pango::EllipsizeMode::End,
-                        set_valign: gtk::Align::Center,
-                    },
-                },
-
-                gtk::Button {
-                    set_child: Some(&crate::icons::symbolic_with_classes("go-next-symbolic", 14, &["kalam-inline-icon"])),
-                    add_css_class: "kalam-reader-pill-nav",
-                    set_tooltip_text: Some("Next chapter (N)"),
-                    connect_clicked => ReaderMsg::NextChapter,
                 },
             },
         }
