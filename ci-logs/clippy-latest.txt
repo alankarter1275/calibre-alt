@@ -1,11 +1,4 @@
-src/pages/reader.rs:224:19: [1m[91merror[0m: Properties can only have `watch`, `track` or `iterative` as attribute.
-src/pages/reader.rs:234:19: [1m[91merror[0m: Properties can only have `watch`, `track` or `iterative` as attribute.
-src/pages/reader.rs:252:23: [1m[91merror[0m: Properties can only have `watch`, `track` or `iterative` as attribute.
-src/pages/reader.rs:338:23: [1m[91merror[0m: Properties can only have `watch`, `track` or `iterative` as attribute.
-src/pages/reader.rs:672:22: [1m[91merror[E0609][0m: no field `left_hover` on type `pages::reader::ReaderModelWidgets`: unknown field
-src/pages/reader.rs:678:22: [1m[91merror[E0609][0m: no field `right_hover` on type `pages::reader::ReaderModelWidgets`: unknown field
-src/pages/reader.rs:684:22: [1m[91merror[E0609][0m: no field `left_sidebar` on type `pages::reader::ReaderModelWidgets`: unknown field
-src/pages/reader.rs:690:22: [1m[91merror[E0609][0m: no field `right_sidebar` on type `pages::reader::ReaderModelWidgets`: unknown field
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 8 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 8 previous errors
---- run 33031460747 ---
+src/pages/reader.rs:744:48: [1m[91merror[E0596][0m: cannot borrow `nav_action` as mutable, as it is not declared as mutable: cannot borrow as mutable
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+--- run 33031820659 ---
