@@ -70,6 +70,9 @@ pub enum Route {
     TagBooks {
         tag: String,
     },
+    AuthorPage {
+        author: String,
+    },
     BookPage {
         book_id: i64,
     },
@@ -85,7 +88,7 @@ impl Route {
             Route::Module(item) => *item,
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
-            Route::TagBooks { .. } => NavItem::Library,
+            Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,
             Route::BookPage { .. } | Route::Reader { .. } => NavItem::Library,
         }
     }

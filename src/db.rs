@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use thiserror::Error;
 
 mod annotations;
+mod authors;
 mod dictionaries;
 mod history;
 mod metadata;
@@ -30,8 +31,9 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// Bumped whenever `migrate()` learns new tables/columns.
 /// v3 = P3 annotations & dictionary · v4 = P4 shelves, lists, history, sessions
 /// · v5 = ratings + reading goals · v6 = publisher/published/series index
-/// · v7 = remembered metadata edits, keyed by file hash · v8 = reader bookmarks.
-pub const SCHEMA_VERSION: i64 = 8;
+/// · v7 = remembered metadata edits, keyed by file hash · v8 = reader bookmarks
+/// · v9 = cached author profiles and aliases.
+pub const SCHEMA_VERSION: i64 = 9;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -95,6 +97,36 @@ pub struct ReadingBookmark {
     pub fraction: f64,
     pub label: String,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct AuthorWork {
+    pub title: String,
+    pub first_publish_year: Option<i64>,
+    pub subjects: Vec<String>,
+    pub cover_id: Option<i64>,
+    pub work_key: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AuthorProfile {
+    pub id: i64,
+    pub canonical_name: String,
+    pub sort_name: String,
+    pub normalized_name: String,
+    pub bio: String,
+    pub birth_date: String,
+    pub death_date: String,
+    pub top_work: String,
+    pub top_subjects: Vec<String>,
+    pub openlibrary_key: String,
+    pub photo_file: Option<String>,
+    pub photo_path: Option<PathBuf>,
+    pub work_count: i64,
+    pub works: Vec<AuthorWork>,
+    pub aliases: Vec<String>,
+    pub fetched_at: String,
+    pub source_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -563,6 +595,35 @@ impl Catalog {
                 cover_name   TEXT,
                 updated_at   TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS author_profiles (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                canonical_name    TEXT NOT NULL,
+                sort_name         TEXT NOT NULL DEFAULT '',
+                normalized_name   TEXT NOT NULL UNIQUE,
+                bio               TEXT NOT NULL DEFAULT '',
+                birth_date        TEXT NOT NULL DEFAULT '',
+                death_date        TEXT NOT NULL DEFAULT '',
+                top_work          TEXT NOT NULL DEFAULT '',
+                top_subjects_json TEXT NOT NULL DEFAULT '[]',
+                openlibrary_key   TEXT NOT NULL DEFAULT '',
+                photo_file        TEXT,
+                work_count        INTEGER NOT NULL DEFAULT 0,
+                works_json        TEXT NOT NULL DEFAULT '[]',
+                fetched_at        TEXT NOT NULL DEFAULT '',
+                source_url        TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_author_profiles_name
+                ON author_profiles(canonical_name COLLATE NOCASE);
+
+            CREATE TABLE IF NOT EXISTS author_aliases (
+                author_id         INTEGER NOT NULL REFERENCES author_profiles(id) ON DELETE CASCADE,
+                alias             TEXT NOT NULL,
+                normalized_alias  TEXT NOT NULL UNIQUE,
+                PRIMARY KEY (author_id, normalized_alias)
+            );
+            CREATE INDEX IF NOT EXISTS idx_author_aliases_author
+                ON author_aliases(author_id);
             "#,
         )?;
 

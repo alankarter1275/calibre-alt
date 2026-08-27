@@ -5,6 +5,7 @@ use crate::models::{LibrarySection, NavItem, Route};
 use crate::pages::{
     all_books::{AllBooksModel, AllBooksOut},
     analytics::AnalyticsModel,
+    author::{AuthorPageModel, AuthorPageOut},
     book::{BookPageModel, BookPageOut},
     book_float::{BookFloatModel, BookFloatOut},
     history::{HistoryModel, HistoryOut},
@@ -58,6 +59,7 @@ enum PageSlot {
     Tags(Controller<TagsModel>),
     TagBooks(Controller<TagBooksModel>),
     Analytics(Controller<AnalyticsModel>),
+    Author(Controller<AuthorPageModel>),
     Book(Controller<BookPageModel>),
     Reader(Controller<ReaderModel>),
     Settings(Controller<SettingsPageModel>),
@@ -79,6 +81,7 @@ impl PageSlot {
             PageSlot::Tags(c) => c.widget().clone().upcast(),
             PageSlot::TagBooks(c) => c.widget().clone().upcast(),
             PageSlot::Analytics(c) => c.widget().clone().upcast(),
+            PageSlot::Author(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
             PageSlot::Reader(c) => c.widget().clone().upcast(),
             PageSlot::Settings(c) => c.widget().clone().upcast(),
@@ -129,6 +132,7 @@ fn cache_key(route: &Route) -> Option<String> {
         Route::LibrarySection(_)
         | Route::ShelfDetail { .. }
         | Route::TagBooks { .. }
+        | Route::AuthorPage { .. }
         | Route::BookPage { .. }
         | Route::Reader { .. } => None,
     }
@@ -286,6 +290,19 @@ impl AppModel {
                     });
                 PageSlot::TagBooks(ctrl)
             }
+            Route::AuthorPage { author } => {
+                let ctrl = AuthorPageModel::builder()
+                    .launch((catalog.clone(), author.clone()))
+                    .forward(sender.input_sender(), |out| match out {
+                        AuthorPageOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::BookPage { book_id })
+                        }
+                        AuthorPageOut::OpenBookDialog { book_id } => {
+                            AppMsg::OpenBookDialog { book_id }
+                        }
+                    });
+                PageSlot::Author(ctrl)
+            }
             Route::BookPage { book_id } => {
                 let id = *book_id;
                 let ctrl = BookPageModel::builder()
@@ -293,6 +310,9 @@ impl AppModel {
                     .forward(sender.input_sender(), move |out| match out {
                         BookPageOut::Back => AppMsg::Back,
                         BookPageOut::OpenReader => AppMsg::OpenReader { book_id: id },
+                        BookPageOut::OpenAuthor { name } => {
+                            AppMsg::Push(Route::AuthorPage { author: name })
+                        }
                         BookPageOut::Deleted { .. } => AppMsg::Back,
                     });
                 PageSlot::Book(ctrl)
@@ -303,6 +323,9 @@ impl AppModel {
                     .launch((catalog.clone(), id))
                     .forward(sender.input_sender(), |out| match out {
                         ReaderOut::Close => AppMsg::Back,
+                        ReaderOut::OpenAuthor { name } => {
+                            AppMsg::Push(Route::AuthorPage { author: name })
+                        }
                     });
                 PageSlot::Reader(ctrl)
             }
@@ -658,6 +681,10 @@ impl Component for AppModel {
                 self.swap_page(&widgets.content_host, route, false, &sender);
             }
             AppMsg::Push(route) => {
+                if let Some(f) = self.floating.take() {
+                    f.window.set_child(None::<&gtk::Widget>);
+                    f.window.destroy();
+                }
                 self.swap_page(&widgets.content_host, route, true, &sender);
             }
             AppMsg::Back => {
@@ -690,6 +717,9 @@ impl Component for AppModel {
                         }
                         BookFloatOut::OpenReader { book_id } => AppMsg::OpenReader { book_id },
                         BookFloatOut::OpenFullPage { book_id } => AppMsg::FloatOpenFull { book_id },
+                        BookFloatOut::OpenAuthor { name } => {
+                            AppMsg::Push(Route::AuthorPage { author: name })
+                        }
                     });
 
                 let title = self

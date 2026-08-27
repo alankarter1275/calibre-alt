@@ -4,6 +4,7 @@
 //! top of the P1 catalog, P2 reader, P3 annotations and P4 library depth.
 
 mod app;
+mod author;
 mod db;
 mod dict;
 mod epub;

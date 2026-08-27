@@ -19,6 +19,9 @@ use webkit6::prelude::*;
 #[derive(Debug)]
 pub enum ReaderOut {
     Close,
+    OpenAuthor {
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -177,6 +180,7 @@ pub enum ReaderMsg {
     SaveCurrentWord,
     ClearDict,
     AddBookmark,
+    OpenAuthor(String),
     OpenLeftSidebar,
     OpenRightSidebar,
     SwitchLeftTab(LeftSidebarTab),
@@ -434,10 +438,9 @@ impl Component for ReaderModel {
                             },
 
                             #[name = "sidebar_book_author"]
-                            gtk::Label {
-                                add_css_class: "kalam-reader-book-author",
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
                                 set_halign: gtk::Align::Start,
-                                set_xalign: 0.0,
                             },
 
                             #[name = "sidebar_progress"]
@@ -803,7 +806,7 @@ impl Component for ReaderModel {
         rebuild_cover_host(&widgets.left_cover_host, model.book_cover_path.as_deref());
         sync_reader_stage_theme(&widgets.reader_stage, model.theme);
         update_chrome_labels(&widgets, &model);
-        update_sidebar_header(&widgets, &model);
+        update_sidebar_header(&widgets, &model, &sender);
         sync_sidebar_tabs(&widgets, &model);
         apply_reader_ui_prefs(&model);
         sync_reader_stacks(&model);
@@ -1261,6 +1264,9 @@ impl Component for ReaderModel {
                 }
                 refresh_tabs = true;
             }
+            ReaderMsg::OpenAuthor(name) => {
+                sender.output(ReaderOut::OpenAuthor { name }).ok();
+            }
             ReaderMsg::OpenLeftSidebar => {
                 self.cancel_left_close();
                 self.right_sidebar_open = false;
@@ -1363,7 +1369,7 @@ impl Component for ReaderModel {
             sync_reader_stage_theme(&widgets.reader_stage, self.theme);
         }
         if refresh_sidebar_header {
-            update_sidebar_header(widgets, self);
+            update_sidebar_header(widgets, self, &sender);
         }
         if refresh_chrome {
             update_chrome_labels(widgets, self);
@@ -2894,9 +2900,21 @@ fn rebuild_cover_host(host: &gtk::Box, cover_path: Option<&std::path::Path>) {
     host.append(&cover_widget(cover_path, 48, 70));
 }
 
-fn update_sidebar_header(widgets: &ReaderModelWidgets, model: &ReaderModel) {
+fn update_sidebar_header(
+    widgets: &ReaderModelWidgets,
+    model: &ReaderModel,
+    sender: &ComponentSender<ReaderModel>,
+) {
     widgets.sidebar_book_title.set_label(&model.book_title);
-    widgets.sidebar_book_author.set_label(&model.book_authors);
+    let tx = sender.input_sender().clone();
+    crate::widgets::author_links::replace_author_links(
+        &widgets.sidebar_book_author,
+        &model.book_authors,
+        "kalam-author-link-reader",
+        std::rc::Rc::new(move |name| {
+            let _ = tx.send(ReaderMsg::OpenAuthor(name));
+        }),
+    );
     widgets
         .sidebar_progress
         .set_fraction(model.progress_pct() as f64 / 100.0);

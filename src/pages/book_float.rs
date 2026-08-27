@@ -19,6 +19,9 @@ pub enum BookFloatOut {
     OpenReader {
         book_id: i64,
     },
+    OpenAuthor {
+        name: String,
+    },
     Deleted {
         #[allow(dead_code)]
         book_id: i64,
@@ -30,6 +33,7 @@ pub enum BookFloatMsg {
     Close,
     OpenFull,
     Read,
+    OpenAuthor(String),
     Remove,
 }
 
@@ -186,11 +190,9 @@ impl Component for BookFloatModel {
                                 set_halign: gtk::Align::Start,
                             },
                             #[name = "author_val"]
-                            attach[3, 0, 1, 1] = &gtk::Label {
-                                add_css_class: "kalam-float-meta-val",
+                            attach[3, 0, 1, 1] = &gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
                                 set_halign: gtk::Align::Start,
-                                set_ellipsize: gtk::pango::EllipsizeMode::End,
-                                set_max_width_chars: 28,
                             },
 
                             attach[0, 1, 1, 1] = &gtk::Label {
@@ -267,7 +269,7 @@ impl Component for BookFloatModel {
         // Pin left rail width so the cover never stretches with the window.
         widgets.cover_col.set_size_request(228, -1);
         widgets.cover_col.set_hexpand(false);
-        fill(&widgets, model.book.as_ref());
+        fill(&widgets, model.book.as_ref(), &sender);
 
         let key = gtk::EventControllerKey::new();
         let s = sender.clone();
@@ -311,6 +313,9 @@ impl Component for BookFloatModel {
                     sender.output(BookFloatOut::OpenReader { book_id: id }).ok();
                 }
             }
+            BookFloatMsg::OpenAuthor(name) => {
+                sender.output(BookFloatOut::OpenAuthor { name }).ok();
+            }
             BookFloatMsg::Remove => {
                 if let Some(b) = &self.book {
                     let id = b.id;
@@ -329,12 +334,16 @@ impl Component for BookFloatModel {
                 }
             }
         }
-        fill(widgets, self.book.as_ref());
+        fill(widgets, self.book.as_ref(), &sender);
         self.update_view(widgets, sender);
     }
 }
 
-fn fill(widgets: &BookFloatModelWidgets, book: Option<&Book>) {
+fn fill(
+    widgets: &BookFloatModelWidgets,
+    book: Option<&Book>,
+    sender: &ComponentSender<BookFloatModel>,
+) {
     while let Some(c) = widgets.cover_host.first_child() {
         widgets.cover_host.remove(&c);
     }
@@ -343,6 +352,9 @@ fn fill(widgets: &BookFloatModelWidgets, book: Option<&Book>) {
     }
     while let Some(c) = widgets.tags.first_child() {
         widgets.tags.remove(&c);
+    }
+    while let Some(c) = widgets.author_val.first_child() {
+        widgets.author_val.remove(&c);
     }
 
     let Some(book) = book else {
@@ -396,7 +408,15 @@ fn fill(widgets: &BookFloatModelWidgets, book: Option<&Book>) {
         "Unread"
     };
     widgets.status_val.set_label(status);
-    widgets.author_val.set_label(book.authors_display());
+    let tx = sender.input_sender().clone();
+    crate::widgets::author_links::replace_author_links(
+        &widgets.author_val,
+        book.authors_display(),
+        "kalam-author-link-float",
+        std::rc::Rc::new(move |name| {
+            let _ = tx.send(BookFloatMsg::OpenAuthor(name));
+        }),
+    );
     widgets
         .series_val
         .set_label(book.series.as_deref().unwrap_or("—"));

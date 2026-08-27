@@ -369,6 +369,47 @@ scrollbar slider:active {
     margin-bottom: 8px;
 }
 
+.kalam-author-links {
+    min-width: 0;
+}
+
+button.kalam-author-link {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    color: @kalam_accent;
+    padding: 0;
+    min-width: 0;
+    min-height: 0;
+}
+
+button.kalam-author-link:hover {
+    background: transparent;
+    color: @kalam_text;
+}
+
+button.kalam-author-link-detail {
+    font-size: 1.05rem;
+}
+
+button.kalam-author-link-float {
+    font-size: 0.92rem;
+}
+
+button.kalam-author-link-reader {
+    font-size: 0.84rem;
+    color: @kalam_text_dim;
+}
+
+button.kalam-author-link-reader:hover {
+    color: @kalam_text;
+}
+
+.kalam-author-sep {
+    color: @kalam_text_dim;
+}
+
 .kalam-detail-section-title {
     font-size: 0.78rem;
     font-weight: 700;
@@ -440,6 +481,88 @@ scrollbar slider:active {
     color: @kalam_text_dim;
     margin-bottom: 10px;
     margin-top: 8px;
+}
+
+.kalam-author-hero {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 18px;
+    padding: 20px;
+}
+
+.kalam-author-name {
+    font-size: 2.1rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-author-meta {
+    font-size: 0.9rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-author-bio {
+    font-size: 0.95rem;
+    color: @kalam_text;
+    line-height: 1.55;
+}
+
+.kalam-author-stat {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 12px 14px;
+}
+
+.kalam-author-stat-value {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-author-stat-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    color: @kalam_text_dim;
+}
+
+.kalam-author-side-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 18px;
+    padding: 14px;
+}
+
+.kalam-author-side-note {
+    font-size: 0.82rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-author-photo {
+    border-radius: 14px;
+}
+
+.kalam-author-photo-placeholder {
+    background: linear-gradient(160deg, @kalam_surface_2 0%, @kalam_surface 100%);
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 88px 0;
+}
+
+.kalam-author-photo-initials {
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-author-work-card {
+    min-width: 220px;
+}
+
+.kalam-author-quote {
+    font-size: 0.95rem;
+    color: @kalam_text;
+    font-style: italic;
 }
 
 /* ── cover cards (Goodreads-style bookshelf grid) ───── */
