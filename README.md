@@ -110,6 +110,7 @@ cargo run
 
 - The first start can take a few minutes.
 - Port **6080** is the browser view for the app.
+- If you only see a file list in the browser, run `./scripts/codespaces-desktop.sh` again and refresh the page.
 - If the desktop opens but Kalam is not running yet, go back to the terminal and run `cargo run`.
 - You can also use `cargo run --release` if you want the faster build.
 
