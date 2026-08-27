@@ -443,9 +443,31 @@ fn inject_reading_shell(
     }
   }
   var scrollT = null;
+  var uiShowT = null;
+  var lastScrollTop = 0;
   window.addEventListener('scroll', function() {
     if (scrollT) cancelAnimationFrame(scrollT);
-    scrollT = requestAnimationFrame(function(){ pingProgress(); maybeNext(); });
+    scrollT = requestAnimationFrame(function(){
+      pingProgress();
+      maybeNext();
+      var se = document.scrollingElement || document.documentElement;
+      var cur = se.scrollTop || 0;
+      if (cur > lastScrollTop + 8 && cur > 24) {
+        kalamBridge({type:'reader-ui-hide'});
+      }
+      lastScrollTop = cur;
+      if (uiShowT) clearTimeout(uiShowT);
+      uiShowT = setTimeout(function(){ kalamBridge({type:'reader-ui-show-all'}); }, 1100);
+    });
+  }, {passive:true});
+
+  document.addEventListener('mousemove', function(e) {
+    if (e.clientY < 72) {
+      kalamBridge({type:'reader-ui-show-back'});
+    }
+    if (window.innerHeight - e.clientY < 92) {
+      kalamBridge({type:'reader-ui-show-pill'});
+    }
   }, {passive:true});
 
   function tryRestore() {
@@ -567,28 +589,38 @@ fn inject_reading_shell(
     });
   };
 
-  // ---- UI: selection chip ----
+  // ---- UI: selection toolbar ----
   function ensureChip() {
     var chip = document.getElementById('kalam-chip');
     if (chip) return chip;
     chip = document.createElement('div');
     chip.id = 'kalam-chip';
     chip.style.display = 'none';
-    chip.innerHTML = '<button class=\"kalam-chip-btn\" data-color=\"yellow\" title=\"Highlight yellow\" style=\"background:#fef08a\"></button>'
+    chip.innerHTML = '<button class=\"kalam-chip-action kalam-chip-action-accent\" id=\"kalam-chip-highlight\" title=\"Highlight\">Highlight</button>'
+      + '<div class=\"kalam-chip-colors\" id=\"kalam-chip-colors\">'
+      + '<button class=\"kalam-chip-btn\" data-color=\"yellow\" title=\"Highlight yellow\" style=\"background:#fef08a\"></button>'
       + '<button class=\"kalam-chip-btn\" data-color=\"green\" title=\"Highlight green\" style=\"background:#bbf7d0\"></button>'
       + '<button class=\"kalam-chip-btn\" data-color=\"blue\" title=\"Highlight blue\" style=\"background:#bfdbfe\"></button>'
       + '<button class=\"kalam-chip-btn\" data-color=\"pink\" title=\"Highlight pink\" style=\"background:#fbcfe8\"></button>'
       + '<button class=\"kalam-chip-btn\" data-color=\"orange\" title=\"Highlight orange\" style=\"background:#fed7aa\"></button>'
+      + '</div>'
       + '<div class=\"kalam-chip-sep\"></div>'
-      + '<button class=\"kalam-chip-action\" id=\"kalam-chip-quote\" title=\"Save quote\">❝</button>'
-      + '<button class=\"kalam-chip-action\" id=\"kalam-chip-dict\" title=\"Dictionary (D)\">Aa</button>'
-      + '<button class=\"kalam-chip-action\" id=\"kalam-chip-copy\" title=\"Copy\">⧉</button>';
+      + '<button class=\"kalam-chip-action\" id=\"kalam-chip-quote\" title=\"Save quote\">Quote</button>'
+      + '<div class=\"kalam-chip-sep\"></div>'
+      + '<button class=\"kalam-chip-action\" id=\"kalam-chip-dict\" title=\"Dictionary (D)\">Define</button>'
+      + '<div class=\"kalam-chip-sep\"></div>'
+      + '<button class=\"kalam-chip-action\" id=\"kalam-chip-copy\" title=\"Copy\">Copy</button>';
     document.body.appendChild(chip);
     chip.querySelectorAll('.kalam-chip-btn').forEach(function(b){
       b.addEventListener('click', function(){
         var color = b.dataset.color;
         kalamHandleHighlight(color);
       });
+    });
+    var highlight = document.getElementById('kalam-chip-highlight');
+    if (highlight) highlight.addEventListener('click', function(){
+      var colors = document.getElementById('kalam-chip-colors');
+      if (colors) colors.classList.toggle('visible');
     });
     var q = document.getElementById('kalam-chip-quote');
     if (q) q.addEventListener('click', function(){ kalamHandleQuote(); });
@@ -603,19 +635,19 @@ fn inject_reading_shell(
   }
   function showChipAt(rect) {
     var chip = ensureChip();
+    var colors = document.getElementById('kalam-chip-colors');
+    if (colors) colors.classList.remove('visible');
     var top, left;
     if (rect) {
-      top = (window.scrollY + rect.y - 52);
-      left = (window.scrollX + rect.x);
-      // keep in viewport
+      top = (window.scrollY + rect.y - 58);
+      left = (window.scrollX + rect.x + (rect.w || 0) / 2 - 180);
       if (left < 12) left = 12;
-      if (top < 12) top = window.scrollY + rect.y + rect.h + 8;
+      if (top < 12) top = window.scrollY + rect.y + rect.h + 12;
     } else {
       top = window.scrollY + 120;
       left = window.scrollX + 80;
     }
-    // clamp
-    var maxLeft = window.scrollX + window.innerWidth - 260;
+    var maxLeft = window.scrollX + window.innerWidth - 360;
     if (left > maxLeft) left = maxLeft;
     chip.style.top = top + 'px';
     chip.style.left = left + 'px';
@@ -624,6 +656,8 @@ fn inject_reading_shell(
   function hideChip() {
     var chip = document.getElementById('kalam-chip');
     if (chip) chip.style.display = 'none';
+    var colors = document.getElementById('kalam-chip-colors');
+    if (colors) colors.classList.remove('visible');
   }
   window.kalamHideChip = hideChip;
   window.kalamShowChipAt = showChipAt;
@@ -678,7 +712,7 @@ fn inject_reading_shell(
   function showDictPopup(word, definition, rect) {
     var p = ensureDictPopup();
     function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-    p.innerHTML = '<div class=\"kalam-dict-head\"><span class=\"kalam-dict-word\">'+esc(word)+'</span><button class=\"kalam-dict-close\" onclick=\"window.kalamHideDict()\">✕</button></div>'
+    p.innerHTML = '<div class=\"kalam-dict-head\"><div><div class=\"kalam-dict-word\">'+esc(word)+'</div><div class=\"kalam-dict-sub\">Dictionary</div></div><button class=\"kalam-dict-close\" onclick=\"window.kalamHideDict()\">Close</button></div>'
       + '<div class=\"kalam-dict-body\">'+esc(definition)+'</div>'
       + '<div class=\"kalam-dict-actions\"><button id=\"kalam-dict-save\" class=\"kalam-dict-save\">Save word</button><button id=\"kalam-dict-copy\" class=\"kalam-dict-copy\">Copy</button></div>';
     p.dataset.word = word;
@@ -690,8 +724,8 @@ fn inject_reading_shell(
       if (left < 8) left = 8;
       var maxLeft = window.scrollX + window.innerWidth - 320;
       if (left > maxLeft) left = maxLeft;
-      if (top + 180 > window.scrollY + window.innerHeight) {
-        top = window.scrollY + rect.y - 200;
+      if (top + 220 > window.scrollY + window.innerHeight) {
+        top = window.scrollY + rect.y - 220;
       }
     } else {
       top = window.scrollY + 180;
@@ -878,7 +912,7 @@ fn join_zip_path(dir: &str, href: &str) -> String {
 /// Many commercial EPUBs wrap almost every paragraph in `<a>` with blue
 /// link styling. We nuke link chrome entirely for reading. P3 adds highlight
 /// and chip styling.
-pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, margin_em: f32) -> String {
+pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, column_px: u32) -> String {
     let (bg, fg) = theme.swatch();
 
     // Many EPUBs ship chapter headings, ornaments and diagrams as PNG/JPEG with
@@ -899,7 +933,7 @@ pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, margin_e
     // Photographs must be excluded — inverting a photo produces a colour
     // negative — so cover/photo/figure images only get a gentle dim.
     let image_css = match theme {
-        ReadingTheme::Dark => {
+        ReadingTheme::Dark | ReadingTheme::Ink => {
             r#"
 /* Line art / text-as-image: invert then screen so ink renders white and the
    baked-in white background drops out to the page colour. */
@@ -971,10 +1005,10 @@ html, body {{
   padding: 0 !important;
 }}
 body {{
-  max-width: 38rem;
+  max-width: {column_px}px;
   margin-left: auto !important;
   margin-right: auto !important;
-  padding: {margin}em {margin}em 6em {margin}em !important;
+  padding: 56px 28px 96px 28px !important;
   font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
     "Literata", Georgia, "Times New Roman", serif !important;
   -webkit-font-smoothing: antialiased;
@@ -1047,54 +1081,80 @@ img, svg {{
   filter: brightness(0.98) !important;
 }}
 
-/* ── selection chip (inside WebView) ── */
+/* ── selection toolbar (inside WebView) ── */
 #kalam-chip {{
   position: absolute !important;
   z-index: 999999 !important;
-  background: rgba(28, 25, 23, 0.92) !important;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  background: rgba(22, 24, 30, 0.96) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
   border-radius: 999px !important;
-  padding: 6px 8px !important;
+  padding: 5px 6px !important;
   display: none;
   flex-direction: row !important;
   align-items: center !important;
-  gap: 6px !important;
-  box-shadow: 0 10px 28px rgba(0,0,0,0.45) !important;
+  gap: 2px !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.40) !important;
   font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif !important;
-  backdrop-filter: blur(8px) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+}}
+#kalam-chip::after {{
+  content: '' !important;
+  position: absolute !important;
+  bottom: -6px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 10px !important;
+  height: 6px !important;
+  background: rgba(22, 24, 30, 0.96) !important;
+  clip-path: polygon(0 0, 100% 0, 50% 100%) !important;
+}}
+.kalam-chip-colors {{
+  display: none !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 0 4px !important;
+}}
+.kalam-chip-colors.visible {{
+  display: flex !important;
 }}
 .kalam-chip-btn {{
-  width: 22px !important;
-  height: 22px !important;
+  width: 20px !important;
+  height: 20px !important;
   border-radius: 999px !important;
-  border: 1.5px solid rgba(255,255,255,0.85) !important;
+  border: 2px solid rgba(255,255,255,0.20) !important;
   cursor: pointer !important;
   padding: 0 !important;
   margin: 0 !important;
 }}
 .kalam-chip-btn:hover {{
-  transform: scale(1.12) !important;
+  transform: scale(1.18) !important;
+  border-color: rgba(255,255,255,0.65) !important;
 }}
 .kalam-chip-sep {{
   width: 1px !important;
   height: 18px !important;
-  background: rgba(255,255,255,0.15) !important;
-  margin: 0 4px !important;
+  background: rgba(255,255,255,0.12) !important;
+  margin: 0 2px !important;
 }}
 .kalam-chip-action {{
-  min-width: 22px !important;
-  height: 22px !important;
+  height: 28px !important;
   border-radius: 999px !important;
   border: none !important;
-  background: rgba(255,255,255,0.10) !important;
-  color: #f5f5f4 !important;
+  background: transparent !important;
+  color: rgba(255,255,255,0.82) !important;
   font-size: 12px !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   cursor: pointer !important;
-  padding: 0 6px !important;
+  padding: 0 12px !important;
+  white-space: nowrap !important;
 }}
 .kalam-chip-action:hover {{
-  background: rgba(255,255,255,0.20) !important;
+  background: rgba(255,255,255,0.10) !important;
+  color: #ffffff !important;
+}}
+.kalam-chip-action-accent {{
+  color: #61afef !important;
 }}
 
 /* ── dictionary popup inside WebView ── */
@@ -1103,54 +1163,70 @@ img, svg {{
   z-index: 999998 !important;
   width: 300px !important;
   max-width: 84vw !important;
-  background: #1c1917 !important;
+  background: rgba(22,24,30,0.97) !important;
   color: #fafaf9 !important;
-  border: 1px solid rgba(255,255,255,0.12) !important;
-  border-radius: 14px !important;
+  border: 1px solid rgba(255,255,255,0.10) !important;
+  border-radius: 16px !important;
   box-shadow: 0 18px 48px rgba(0,0,0,0.45) !important;
   padding: 0 !important;
   overflow: hidden !important;
   font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif !important;
+  backdrop-filter: blur(22px) !important;
+  -webkit-backdrop-filter: blur(22px) !important;
 }}
 .kalam-dict-head {{
   display: flex !important;
   justify-content: space-between !important;
-  align-items: center !important;
-  padding: 10px 12px 6px 12px !important;
-  font-weight: 700 !important;
-  font-size: 0.92rem !important;
+  align-items: flex-start !important;
+  padding: 12px 14px 8px 14px !important;
   background: rgba(255,255,255,0.04) !important;
 }}
 .kalam-dict-word {{
   color: #fafaf9 !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+}}
+.kalam-dict-sub {{
+  color: rgba(255,255,255,0.45) !important;
+  font-size: 10px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  margin-top: 2px !important;
 }}
 .kalam-dict-close {{
   background: transparent !important;
   border: none !important;
-  color: rgba(250,250,249,0.6) !important;
+  color: rgba(250,250,249,0.62) !important;
   cursor: pointer !important;
-  font-size: 0.9rem !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  border-radius: 999px !important;
+  padding: 4px 8px !important;
+}}
+.kalam-dict-close:hover {{
+  background: rgba(255,255,255,0.08) !important;
+  color: #ffffff !important;
 }}
 .kalam-dict-body {{
-  padding: 10px 12px !important;
-  font-size: 0.86rem !important;
-  line-height: 1.45 !important;
+  padding: 12px 14px !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
   color: rgba(231,229,228,0.92) !important;
-  max-height: 180px !important;
+  max-height: 190px !important;
   overflow-y: auto !important;
   white-space: pre-wrap !important;
 }}
 .kalam-dict-actions {{
   display: flex !important;
   gap: 8px !important;
-  padding: 8px 12px 10px 12px !important;
+  padding: 8px 14px 14px 14px !important;
   border-top: 1px solid rgba(255,255,255,0.08) !important;
 }}
 .kalam-dict-save, .kalam-dict-copy {{
   border: none !important;
   border-radius: 999px !important;
-  padding: 6px 12px !important;
-  font-size: 0.78rem !important;
+  padding: 7px 12px !important;
+  font-size: 12px !important;
   font-weight: 600 !important;
   cursor: pointer !important;
   background: rgba(255,255,255,0.12) !important;
@@ -1184,7 +1260,7 @@ img, svg {{
         fg = fg,
         font_px = font_px,
         lh = line_height,
-        margin = margin_em,
+        column_px = column_px,
         image_css = image_css,
     )
 }
@@ -1194,6 +1270,7 @@ pub enum ReadingTheme {
     Light,
     Sepia,
     Dark,
+    Ink,
 }
 
 impl ReadingTheme {
@@ -1202,6 +1279,7 @@ impl ReadingTheme {
             ReadingTheme::Light => "light",
             ReadingTheme::Sepia => "sepia",
             ReadingTheme::Dark => "dark",
+            ReadingTheme::Ink => "ink",
         }
     }
 
@@ -1209,6 +1287,7 @@ impl ReadingTheme {
         match s.trim().to_ascii_lowercase().as_str() {
             "light" => ReadingTheme::Light,
             "dark" => ReadingTheme::Dark,
+            "ink" => ReadingTheme::Ink,
             _ => ReadingTheme::Sepia,
         }
     }
@@ -1218,8 +1297,9 @@ impl ReadingTheme {
     pub fn swatch(self) -> (&'static str, &'static str) {
         match self {
             ReadingTheme::Light => ("#faf8f5", "#1c1917"),
-            ReadingTheme::Sepia => ("#f4ecd8", "#3e3226"),
-            ReadingTheme::Dark => ("#1a1b1e", "#e7e5e4"),
+            ReadingTheme::Sepia => ("#f5f0e8", "#2c2820"),
+            ReadingTheme::Dark => ("#1b1e24", "#abb2bf"),
+            ReadingTheme::Ink => ("#0d0d0d", "#c8c8c8"),
         }
     }
 }

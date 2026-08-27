@@ -30,8 +30,8 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// Bumped whenever `migrate()` learns new tables/columns.
 /// v3 = P3 annotations & dictionary · v4 = P4 shelves, lists, history, sessions
 /// · v5 = ratings + reading goals · v6 = publisher/published/series index
-/// · v7 = remembered metadata edits, keyed by file hash.
-pub const SCHEMA_VERSION: i64 = 7;
+/// · v7 = remembered metadata edits, keyed by file hash · v8 = reader bookmarks.
+pub const SCHEMA_VERSION: i64 = 8;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -83,6 +83,17 @@ pub struct SavedWord {
     pub book_id: Option<i64>,
     pub chapter_index: Option<i64>,
     pub context_text: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct ReadingBookmark {
+    pub id: i64,
+    pub book_id: i64,
+    pub chapter_index: i64,
+    pub fraction: f64,
+    pub label: String,
     pub created_at: String,
 }
 
@@ -442,6 +453,17 @@ impl Catalog {
                 created_at    TEXT    NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_saved_words_word ON saved_words(word COLLATE NOCASE);
+
+            CREATE TABLE IF NOT EXISTS reading_bookmarks (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                chapter_index INTEGER NOT NULL,
+                fraction      REAL    NOT NULL DEFAULT 0.0,
+                label         TEXT    NOT NULL DEFAULT '',
+                created_at    TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_reading_bookmarks_book
+                ON reading_bookmarks(book_id, chapter_index, created_at DESC);
 
             CREATE TABLE IF NOT EXISTS dictionaries (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1043,6 +1065,17 @@ fn row_to_saved_word(row: &rusqlite::Row<'_>) -> rusqlite::Result<SavedWord> {
     })
 }
 
+fn row_to_reading_bookmark(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReadingBookmark> {
+    Ok(ReadingBookmark {
+        id: row.get(0)?,
+        book_id: row.get(1)?,
+        chapter_index: row.get(2)?,
+        fraction: row.get(3)?,
+        label: row.get(4)?,
+        created_at: row.get(5)?,
+    })
+}
+
 fn tags_for_book(conn: &Connection, book_id: i64) -> Result<Vec<String>> {
     let mut stmt = conn.prepare_cached(
         "SELECT t.name FROM tags t
@@ -1616,6 +1649,21 @@ mod tests {
         assert_eq!(quotes.len(), 1);
         assert_eq!(quotes[0].1, "Dune");
         assert_eq!(cat.count_quotes().unwrap(), 1);
+    }
+
+    #[test]
+    fn reading_bookmarks_round_trip() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "Dune", "Herbert", &[]);
+        let mark = cat.insert_reading_bookmark(id, 2, 0.35, "The doors of stone").unwrap();
+        let all = cat.list_reading_bookmarks(id).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, mark);
+        assert_eq!(all[0].chapter_index, 2);
+        assert!((all[0].fraction - 0.35).abs() < f64::EPSILON);
+        assert_eq!(all[0].label, "The doors of stone");
+        cat.delete_reading_bookmark(mark).unwrap();
+        assert!(cat.list_reading_bookmarks(id).unwrap().is_empty());
     }
 
     #[test]

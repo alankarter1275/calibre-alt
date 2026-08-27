@@ -624,157 +624,471 @@ window.kalam-float-window {
     padding: 3px 8px;
 }
 
-/* ── reader (immersive tablet-book) ─────────────────── */
+/* ── reader (mockup shell) ───────────────────────────── */
 .kalam-content.kalam-content-reader,
 .kalam-content.kalam-content-flush {
     padding: 0;
 }
 
-/* The reader stage stays near-black in every theme on purpose: it is the
-   letterbox around the page, and tinting it would fight whichever paper
-   colour (light / sepia / dark) the reader itself is set to. */
 .kalam-reader {
-    background: #0a0a0b;
+    background: #0d0f12;
 }
 
 .kalam-reader-stage {
-    background: #0a0a0b;
+    background: #0d0f12;
 }
 
-.kalam-reader-top-float {
-    background: rgba(28, 25, 23, 0.72);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 999px;
-    padding: 4px 10px 4px 4px;
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+.kalam-reader-stage.kalam-reader-paper-light {
+    background: #101216;
 }
 
-.kalam-reader-crumb {
-    font-size: 0.8rem;
-    font-weight: 500;
-    color: rgba(250, 250, 249, 0.88);
-    padding-right: 6px;
+.kalam-reader-stage.kalam-reader-paper-sepia {
+    background: #12110f;
 }
 
-.kalam-reader-pill {
-    background: rgba(28, 25, 23, 0.88);
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 999px;
-    padding: 6px 10px;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+.kalam-reader-stage.kalam-reader-paper-dark {
+    background: #08090b;
 }
 
-.kalam-reader-pill-btn {
-    min-width: 36px;
-    min-height: 36px;
-    padding: 0 12px;
-    border-radius: 999px;
+.kalam-reader-stage.kalam-reader-paper-ink {
+    background: #060708;
+}
+
+button.kalam-reader-dim {
+    background: alpha(#000, 0.22);
     border: none;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.kalam-reader-hover-edge {
     background: transparent;
-    color: #f5f5f4;
-    font-weight: 600;
-    font-size: 0.95rem;
 }
 
-.kalam-reader-pill-btn:hover {
-    background: rgba(255, 255, 255, 0.12);
+.kalam-reader-sidebar {
+    background: alpha(#16181e, 0.97);
+    border: 1px solid alpha(#fff, 0.07);
+    box-shadow: 0 18px 48px alpha(#000, 0.45);
+    padding: 0;
 }
 
-.kalam-reader-pill-btn image,
-.kalam-reader-pill menubutton.kalam-reader-pill-btn > button image {
-    color: inherit;
+.kalam-reader-sidebar-left {
+    border-left: none;
+    border-radius: 0 20px 20px 0;
+}
+
+.kalam-reader-sidebar-right {
+    border-right: none;
+    border-radius: 20px 0 0 20px;
+}
+
+.kalam-reader-book-head {
+    padding: 20px 16px 14px;
+    border-bottom: 1px solid alpha(#fff, 0.07);
+}
+
+.kalam-reader-cover-slot {
+    min-width: 36px;
+}
+
+.kalam-reader-book-title {
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: #f1efe8;
+}
+
+.kalam-reader-book-author {
+    font-size: 0.78rem;
+    color: #9ba3b2;
+}
+
+progressbar.kalam-reader-progress {
+    min-height: 4px;
+    margin-top: 4px;
+}
+
+progressbar.kalam-reader-progress trough {
+    background: alpha(#fff, 0.08);
+    border: none;
+    min-height: 4px;
+    border-radius: 999px;
+}
+
+progressbar.kalam-reader-progress progress {
+    background: #b28f63;
+    min-height: 4px;
+    border-radius: 999px;
+}
+
+.kalam-reader-tabbar {
+    padding: 8px 10px 10px;
+    gap: 2px;
+    border-top: 1px solid alpha(#fff, 0.07);
+}
+
+button.kalam-reader-tab {
+    background: transparent;
+    border: none;
+    border-radius: 12px;
+    color: #8f97a7;
+    padding: 8px 4px;
+}
+
+button.kalam-reader-tab:hover {
+    background: alpha(#fff, 0.06);
+    color: #eceff5;
+}
+
+button.kalam-reader-tab.active {
+    background: alpha(#b28f63, 0.18);
+    color: #e8c48f;
+}
+
+.kalam-reader-tab image {
+    -gtk-icon-size: 17px;
+}
+
+button.kalam-reader-back {
+    background: alpha(#000, 0.02);
+    border: none;
+    border-radius: 999px;
+    color: alpha(#2c2820, 0.55);
+    padding: 8px 12px 8px 8px;
+    box-shadow: none;
+}
+
+button.kalam-reader-back:hover {
+    background: alpha(#16181e, 0.86);
+    color: #eceff5;
+    box-shadow: 0 10px 28px alpha(#000, 0.35);
+}
+
+.kalam-reader-back image {
     -gtk-icon-size: 16px;
 }
 
-/* ensure MenuButton inner button is also capsule and hover is tight — same size as button */
-.kalam-reader-pill menubutton.kalam-reader-pill-btn {
-    min-width: 0;
-    min-height: 0;
-    padding: 0;
+.kalam-reader-bottom-pill {
+    background: alpha(#1c1e24, 0.88);
+    border: 1px solid alpha(#fff, 0.08);
     border-radius: 999px;
-    background: transparent;
+    padding: 6px;
+    box-shadow: 0 12px 40px alpha(#000, 0.45);
 }
 
-.kalam-reader-pill menubutton.kalam-reader-pill-btn > button {
+button.kalam-reader-pill-btn {
     min-width: 36px;
     min-height: 36px;
     padding: 0 12px;
+    background: transparent;
+    border: none;
     border-radius: 999px;
+    color: #f5f5f4;
 }
 
-.kalam-reader-pill menubutton.kalam-reader-pill-btn:hover {
+button.kalam-reader-pill-btn:hover {
+    background: alpha(#fff, 0.11);
+}
+
+.kalam-reader-pill-btn image {
+    -gtk-icon-size: 16px;
+}
+
+.kalam-reader-pill-divider {
+    background: alpha(#fff, 0.08);
+    margin: 6px 2px;
+}
+
+.kalam-reader-pill-info {
+    padding: 0 12px;
+    min-width: 220px;
+}
+
+.kalam-reader-pill-pages {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #d6c4a8;
+}
+
+.kalam-reader-pill-chapter {
+    font-size: 0.8rem;
+    color: #d4dae5;
+}
+
+.kalam-reader-panel-scroll,
+.kalam-reader-panel-scroll viewport {
     background: transparent;
 }
 
-.kalam-reader-pill menubutton.kalam-reader-pill-btn > button:hover {
-    background: rgba(255, 255, 255, 0.12);
+.kalam-reader-section {
+    padding: 14px 16px 8px;
 }
 
-.kalam-reader-pill-meta {
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: rgba(231, 229, 228, 0.75);
-    padding: 0 6px;
-    min-width: 3.5rem;
+.kalam-reader-section-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8f97a7;
 }
 
-/* Popovers — no thick borders */
-.kalam-reader-popover {
-    padding: 4px;
-    background: @kalam_surface;
-    border: none;
-    outline: none;
-    border-radius: 14px;
-    box-shadow: 0 16px 40px alpha(#000, 0.45);
+.kalam-reader-panel-divider {
+    background: alpha(#fff, 0.07);
+    margin: 4px 16px;
 }
 
-popover.kalam-reader-popover {
-    border: none;
+.kalam-reader-setting-row {
+    min-height: 36px;
+}
+
+.kalam-reader-setting-name {
+    font-size: 0.84rem;
+    color: #eceff5;
+}
+
+.kalam-reader-stepper {
+    background: transparent;
+}
+
+button.kalam-reader-stepper-btn {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0;
+    background: #232833;
+    border: 1px solid alpha(#fff, 0.08);
+    border-radius: 999px;
+    color: #eceff5;
+}
+
+button.kalam-reader-stepper-btn:hover {
+    background: #2d3442;
+}
+
+.kalam-reader-stepper-value {
+    min-width: 34px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #eceff5;
+}
+
+button.kalam-reader-theme-dot {
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 999px;
     box-shadow: none;
+}
+
+button.kalam-reader-theme-dot.active {
+    border-color: #e8c48f;
+}
+
+button.kalam-reader-theme-dot.kalam-reader-theme-dot-light {
+    background: #faf8f5;
+}
+
+button.kalam-reader-theme-dot.kalam-reader-theme-dot-sepia {
+    background: #f4ecd8;
+}
+
+button.kalam-reader-theme-dot.kalam-reader-theme-dot-dark {
+    background: #1a1b1e;
+}
+
+button.kalam-reader-theme-dot.kalam-reader-theme-dot-ink {
+    background: #0d0d0d;
+}
+
+.kalam-reader-filter-row {
+    padding: 10px 12px;
+    border-bottom: 1px solid alpha(#fff, 0.07);
+}
+
+button.kalam-reader-filter-chip {
     background: transparent;
+    border: 1px solid alpha(#fff, 0.12);
+    border-radius: 999px;
+    color: #8f97a7;
+    padding: 3px 10px;
+    font-size: 0.72rem;
+}
+
+button.kalam-reader-filter-chip:hover {
+    color: #eceff5;
+}
+
+button.kalam-reader-filter-chip.active {
+    background: alpha(#b28f63, 0.18);
+    border-color: #b28f63;
+    color: #e8c48f;
+}
+
+button.kalam-reader-filter-chip.kalam-reader-filter-yellow.active {
+    background: alpha(#e5c07b, 0.18);
+    border-color: #e5c07b;
+    color: #e5c07b;
+}
+
+button.kalam-reader-filter-chip.kalam-reader-filter-green.active {
+    background: alpha(#98c379, 0.18);
+    border-color: #98c379;
+    color: #98c379;
+}
+
+button.kalam-reader-filter-chip.kalam-reader-filter-blue.active {
+    background: alpha(#61afef, 0.18);
+    border-color: #61afef;
+    color: #61afef;
+}
+
+button.kalam-reader-filter-chip.kalam-reader-filter-pink.active {
+    background: alpha(#e06c75, 0.18);
+    border-color: #e06c75;
+    color: #e06c75;
+}
+
+button.kalam-reader-filter-chip.kalam-reader-filter-orange.active {
+    background: alpha(#d19a66, 0.18);
+    border-color: #d19a66;
+    color: #d19a66;
+}
+
+button.kalam-reader-toc-item {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    color: #8f97a7;
+    padding: 9px 16px;
+}
+
+button.kalam-reader-toc-item:hover {
+    background: alpha(#fff, 0.04);
+    color: #eceff5;
+}
+
+button.kalam-reader-toc-item.active {
+    background: alpha(#b28f63, 0.18);
+    color: #e8c48f;
+}
+
+.kalam-reader-toc-num {
+    font-family: monospace;
+    font-size: 0.7rem;
+    color: #8f97a7;
+    min-width: 20px;
+}
+
+.kalam-reader-annotation-row,
+.kalam-reader-bookmark-row {
+    padding: 12px 14px;
+    border-bottom: 1px solid alpha(#fff, 0.05);
+}
+
+button.kalam-reader-list-hit {
+    background: transparent;
+    border: none;
+    border-radius: 12px;
     padding: 0;
 }
 
-popover.kalam-reader-popover > contents {
-    border: none;
-    border-radius: 14px;
-    box-shadow: 0 16px 40px alpha(#000, 0.55);
-    background: @kalam_surface;
-    padding: 4px;
+button.kalam-reader-list-hit:hover {
+    background: alpha(#fff, 0.03);
 }
 
-.kalam-reader-popover-title {
+.kalam-reader-annotation-bar {
+    min-width: 3px;
+    border-radius: 99px;
+}
+
+.kalam-reader-bar-yellow {
+    background: #e5c07b;
+}
+
+.kalam-reader-bar-green {
+    background: #98c379;
+}
+
+.kalam-reader-bar-blue {
+    background: #61afef;
+}
+
+.kalam-reader-bar-pink {
+    background: #e06c75;
+}
+
+.kalam-reader-bar-orange {
+    background: #d19a66;
+}
+
+.kalam-reader-annotation-text,
+.kalam-reader-bookmark-title,
+.kalam-reader-word-name {
+    color: #e6e9ef;
+}
+
+.kalam-reader-annotation-text {
+    font-size: 0.84rem;
+    line-height: 1.55;
+    font-style: italic;
+}
+
+.kalam-reader-bookmark-title {
+    font-size: 0.84rem;
+    font-weight: 600;
+}
+
+.kalam-reader-annotation-meta,
+.kalam-reader-word-meta {
     font-size: 0.72rem;
+    color: #8f97a7;
+    font-family: monospace;
+}
+
+.kalam-reader-bookmark-icon {
+    color: #d6ab52;
+    -gtk-icon-size: 15px;
+}
+
+.kalam-reader-search-row {
+    padding: 10px 12px;
+    border-bottom: 1px solid alpha(#fff, 0.07);
+}
+
+entry.kalam-reader-search {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: #eceff5;
+}
+
+entry.kalam-reader-search > text {
+    color: #eceff5;
+}
+
+.kalam-reader-word-row {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 12px 14px;
+}
+
+.kalam-reader-word-row:hover {
+    background: alpha(#fff, 0.03);
+}
+
+.kalam-reader-word-name {
+    font-size: 0.92rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    color: @kalam_text_dim;
 }
 
-.kalam-reader-theme-btn {
-    border-radius: 10px;
-    padding: 10px 14px;
-    font-size: 0.9rem;
-    border: 1px solid @kalam_border;
+.kalam-reader-word-def {
+    font-size: 0.8rem;
+    line-height: 1.55;
+    color: #b5bdcc;
 }
 
-.kalam-reader-theme-btn:hover {
-    border-color: @kalam_accent;
-}
-
-/* The tick keeps its space even when inactive so the row never reflows.
-   Hidden with a transparent colour, not `opacity`, which would force GTK to
-   render through an offscreen surface (see the scrollbar note above). */
-.kalam-theme-tick {
-    color: @kalam_accent;
-    -gtk-icon-size: 14px;
-}
-
-.kalam-theme-tick-off {
-    color: transparent;
-}
-
-/* Theme swatches — these MUST match ReadingTheme::swatch() in epub_book.rs so
-   the button previews the page it produces. */
+/* Theme swatches — these must match ReadingTheme::swatch() in epub_book.rs. */
 .kalam-theme-light {
     background: #faf8f5;
     color: #1c1917;
@@ -802,23 +1116,13 @@ popover.kalam-reader-popover > contents {
     color: #e7e5e4;
 }
 
-.kalam-reader-size-value {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: @kalam_text;
+.kalam-theme-ink {
+    background: #0d0d0d;
+    color: #c8c8c8;
 }
 
-.kalam-toc-item {
-    background: transparent;
-    border: none;
-    border-radius: 999px;
-    color: @kalam_text;
-    padding: 8px 14px;
-    font-size: 0.88rem;
-}
-
-.kalam-toc-item:hover {
-    background: @kalam_surface_2;
+.kalam-theme-ink label {
+    color: #c8c8c8;
 }
 
 /* ── P3: annotations, quotes, words, dict ──────────── */
