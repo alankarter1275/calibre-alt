@@ -837,13 +837,22 @@ button.kalam-reader-pill-nav:hover {
 }
 
 button.kalam-reader-stepper-btn {
-    min-width: 28px;
-    min-height: 28px;
+    min-width: 30px;
+    min-height: 30px;
     padding: 0;
     background: @kalam_surface_2;
     border: 1px solid @kalam_border;
     border-radius: 999px;
     color: @kalam_text;
+}
+
+button.kalam-reader-stepper-btn image {
+    -gtk-icon-size: 14px;
+}
+
+button.kalam-reader-stepper-btn > box {
+    min-width: 0;
+    min-height: 0;
 }
 
 button.kalam-reader-stepper-btn:hover {

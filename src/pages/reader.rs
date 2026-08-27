@@ -2497,6 +2497,9 @@ fn reader_ui_setting_block(
 
     let minus = gtk::Button::new();
     minus.add_css_class("kalam-reader-stepper-btn");
+    minus.set_size_request(30, 30);
+    minus.set_halign(gtk::Align::Center);
+    minus.set_valign(gtk::Align::Center);
     minus.set_child(Some(&crate::icons::symbolic_with_classes(
         "list-remove-symbolic",
         14,
@@ -2520,6 +2523,9 @@ fn reader_ui_setting_block(
 
     let plus = gtk::Button::new();
     plus.add_css_class("kalam-reader-stepper-btn");
+    plus.set_size_request(30, 30);
+    plus.set_halign(gtk::Align::Center);
+    plus.set_valign(gtk::Align::Center);
     plus.set_child(Some(&crate::icons::symbolic_with_classes(
         "list-add-symbolic",
         14,
@@ -2597,6 +2603,9 @@ fn reader_stepper_row(
 
     let minus = gtk::Button::new();
     minus.add_css_class("kalam-reader-stepper-btn");
+    minus.set_size_request(30, 30);
+    minus.set_halign(gtk::Align::Center);
+    minus.set_valign(gtk::Align::Center);
     minus.set_child(Some(&crate::icons::symbolic_with_classes(
         "list-remove-symbolic",
         14,
@@ -2610,6 +2619,9 @@ fn reader_stepper_row(
 
     let plus = gtk::Button::new();
     plus.add_css_class("kalam-reader-stepper-btn");
+    plus.set_size_request(30, 30);
+    plus.set_halign(gtk::Align::Center);
+    plus.set_valign(gtk::Align::Center);
     plus.set_child(Some(&crate::icons::symbolic_with_classes(
         "list-add-symbolic",
         14,
