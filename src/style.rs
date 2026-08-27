@@ -1785,8 +1785,8 @@ entry.kalam-reader-search > text {
     color: @kalam_text_dim;
 }
 
-/* Card background is per-theme: a dynamic class from settings.rs paints the
-   theme's own bg (tinted with the accent when selected). Shape only here. */
+/* Card background is part of the preview itself and stays fixed per theme.
+   The selected state only adds an outline, so the sample does not repaint. */
 .kalam-theme-card {
     background: transparent;
     border: 1px solid @kalam_border;
@@ -1796,6 +1796,7 @@ entry.kalam-reader-search > text {
 
 .kalam-theme-card.active {
     border-color: @kalam_accent;
+    box-shadow: inset 0 0 0 1px alpha(@kalam_accent, 0.18);
 }
 
 .kalam-theme-name {
@@ -1809,8 +1810,12 @@ entry.kalam-reader-search > text {
     color: @kalam_text_dim;
 }
 
-/* The ✓ seal on the active card. Its ink is the theme's own bg (dynamic
-   class) so it stays readable on every accent. */
+.kalam-theme-variant.kalam-theme-variant-off {
+    color: transparent;
+}
+
+/* The ✓ seal always keeps its slot, then only its paint turns on/off.
+   That keeps the card size steady while changing themes. */
 .kalam-theme-check {
     background: @kalam_accent;
     color: @kalam_bg;
@@ -1819,6 +1824,11 @@ entry.kalam-reader-search > text {
     min-height: 16px;
     padding: 2px;
     -gtk-icon-size: 10px;
+}
+
+.kalam-theme-check.kalam-theme-check-off {
+    background: transparent;
+    color: transparent;
 }
 
 /* Mini preview. The dark outline is deliberately theme-independent: it

@@ -125,7 +125,6 @@ const THEME_FAMILIES: &[(&str, &str, &str, &str)] = &[
 const THEME_BUTTON_PREFIX: &str = "theme-btn-";
 const THEME_BADGE_PREFIX: &str = "theme-badge-";
 const THEME_CHECK_PREFIX: &str = "theme-check-";
-const THEME_ACTIVE_BG_PREFIX: &str = "kalam-tc-bg-active-";
 
 #[derive(Debug)]
 pub enum SettingsMsg {
@@ -569,18 +568,6 @@ fn chip_label(text: &str, class: &str) -> gtk::Label {
     label
 }
 
-/// Mix `fg` over `bg` at fraction `t`; both are #rrggbb.
-fn blend_hex(fg: &str, bg: &str, t: f32) -> String {
-    let parse = |s: &str| u32::from_str_radix(s.trim_start_matches('#'), 16).unwrap_or(0);
-    let (f, b) = (parse(fg), parse(bg));
-    let mix = |shift: u32| {
-        let fc = ((f >> shift) & 0xff) as f32;
-        let bc = ((b >> shift) & 0xff) as f32;
-        (fc * t + bc * (1.0 - t)).round() as u32
-    };
-    format!("#{:02x}{:02x}{:02x}", mix(16), mix(8), mix(0))
-}
-
 /// Attach a generated CSS class carrying literal per-theme colours.
 ///
 /// The provider is registered on the display rather than on a widget-local
@@ -683,13 +670,10 @@ fn update_theme_picker_state(host: &gtk::Grid, active: &crate::theme::Theme) {
             };
             let is_active = theme_id == active.id;
             if let Some(card) = btn.child().and_then(|w| w.downcast::<gtk::Box>().ok()) {
-                let active_bg_class = format!("{THEME_ACTIVE_BG_PREFIX}{theme_id}");
                 if is_active {
                     card.add_css_class("active");
-                    card.add_css_class(&active_bg_class);
                 } else {
                     card.remove_css_class("active");
-                    card.remove_css_class(&active_bg_class);
                 }
             }
             return;
@@ -700,13 +684,18 @@ fn update_theme_picker_state(host: &gtk::Grid, active: &crate::theme::Theme) {
             if let Ok(label) = widget.clone().downcast::<gtk::Label>() {
                 if theme_id == active.id {
                     label.set_label(active_theme_badge(active));
-                    label.set_visible(true);
+                    label.remove_css_class("kalam-theme-variant-off");
                 } else {
-                    label.set_visible(false);
+                    label.set_label("");
+                    label.add_css_class("kalam-theme-variant-off");
                 }
             }
         } else if let Some(theme_id) = name.strip_prefix(THEME_CHECK_PREFIX) {
-            widget.set_visible(theme_id == active.id);
+            if theme_id == active.id {
+                widget.remove_css_class("kalam-theme-check-off");
+            } else {
+                widget.add_css_class("kalam-theme-check-off");
+            }
         }
     });
 }
@@ -775,19 +764,6 @@ fn theme_variant_button(
             theme.bg, theme.border
         ),
     );
-    let active_bg_class = format!("{THEME_ACTIVE_BG_PREFIX}{}", theme.id);
-    add_styled_class(
-        &card,
-        &active_bg_class,
-        &format!(
-            "background-color: {}; border-color: {};",
-            blend_hex(theme.accent, theme.bg, 0.06),
-            theme.accent
-        ),
-    );
-    if !is_active {
-        card.remove_css_class(&active_bg_class);
-    }
 
     // Name row: variant name, current/default tag, spacer, ✓ seal.
     let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
@@ -800,16 +776,21 @@ fn theme_variant_button(
     );
     name_label.set_halign(gtk::Align::Start);
     name_row.append(&name_label);
-    let tag = gtk::Label::new(Some(active_theme_badge(theme)));
+    let tag = gtk::Label::new(Some(if is_active { active_theme_badge(theme) } else { "" }));
     tag.set_widget_name(&format!("{THEME_BADGE_PREFIX}{}", theme.id));
     tag.add_css_class("kalam-theme-variant");
+    if !is_active {
+        tag.add_css_class("kalam-theme-variant-off");
+    }
     add_styled_class(
         &tag,
         &format!("kalam-tc-variant-{}", theme.id),
         &format!("color: {};", theme.text_dim),
     );
+    tag.set_width_chars(7);
+    tag.set_max_width_chars(7);
+    tag.set_xalign(0.0);
     tag.set_valign(gtk::Align::Center);
-    tag.set_visible(is_active);
     name_row.append(&tag);
     let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
@@ -817,8 +798,10 @@ fn theme_variant_button(
     let check =
         crate::icons::symbolic_with_classes("object-select-symbolic", 12, &["kalam-theme-check"]);
     check.set_widget_name(&format!("{THEME_CHECK_PREFIX}{}", theme.id));
+    if !is_active {
+        check.add_css_class("kalam-theme-check-off");
+    }
     check.set_valign(gtk::Align::Center);
-    check.set_visible(is_active);
     add_styled_class(
         &check,
         &format!("kalam-tc-chk-{}", theme.id),
