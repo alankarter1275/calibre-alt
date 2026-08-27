@@ -50,20 +50,20 @@ struct JsPayload {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LeftSidebarTab {
+pub(crate) enum LeftSidebarTab {
     Toc,
     Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RightSidebarTab {
+pub(crate) enum RightSidebarTab {
     Highlights,
     Bookmarks,
     Words,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HighlightFilter {
+pub(crate) enum HighlightFilter {
     All,
     Yellow,
     Green,
@@ -74,7 +74,7 @@ enum HighlightFilter {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WordScope {
+pub(crate) enum WordScope {
     Chapter,
     Book,
     All,
@@ -244,11 +244,14 @@ impl Component for ReaderModel {
                 set_transition_type: gtk::RevealerTransitionType::SlideRight,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Fill,
+                set_margin_start: 14,
+                set_margin_top: 14,
+                set_margin_bottom: 14,
 
                 #[wrap(Some)]
                 set_child = &gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    set_width_request: 272,
+                    set_width_request: 248,
                     add_css_class: "kalam-reader-sidebar",
                     add_css_class: "kalam-reader-sidebar-left",
 
@@ -261,7 +264,7 @@ impl Component for ReaderModel {
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
                             add_css_class: "kalam-reader-cover-slot",
-                            set_width_request: 36,
+                            set_width_request: 48,
                         },
 
                         gtk::Box {
@@ -305,11 +308,13 @@ impl Component for ReaderModel {
                         add_css_class: "kalam-reader-tabbar",
                         set_orientation: gtk::Orientation::Horizontal,
                         set_spacing: 2,
+                        set_homogeneous: true,
 
                         #[name = "left_toc_tab"]
                         gtk::Button {
                             set_child: Some(&reader_sidebar_tab_content("view-list-bullet-symbolic", "TOC")),
                             add_css_class: "kalam-reader-tab",
+                            set_hexpand: true,
                             connect_clicked => ReaderMsg::SwitchLeftTab(LeftSidebarTab::Toc),
                         },
 
@@ -317,6 +322,7 @@ impl Component for ReaderModel {
                         gtk::Button {
                             set_child: Some(&reader_sidebar_tab_content("preferences-system-symbolic", "Settings")),
                             add_css_class: "kalam-reader-tab",
+                            set_hexpand: true,
                             connect_clicked => ReaderMsg::SwitchLeftTab(LeftSidebarTab::Settings),
                         },
                     },
@@ -329,11 +335,14 @@ impl Component for ReaderModel {
                 set_transition_type: gtk::RevealerTransitionType::SlideLeft,
                 set_halign: gtk::Align::End,
                 set_valign: gtk::Align::Fill,
+                set_margin_end: 14,
+                set_margin_top: 14,
+                set_margin_bottom: 14,
 
                 #[wrap(Some)]
                 set_child = &gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    set_width_request: 272,
+                    set_width_request: 248,
                     add_css_class: "kalam-reader-sidebar",
                     add_css_class: "kalam-reader-sidebar-right",
 
@@ -348,11 +357,13 @@ impl Component for ReaderModel {
                         add_css_class: "kalam-reader-tabbar",
                         set_orientation: gtk::Orientation::Horizontal,
                         set_spacing: 2,
+                        set_homogeneous: true,
 
                         #[name = "right_highlights_tab"]
                         gtk::Button {
                             set_child: Some(&reader_sidebar_tab_content("highlight-symbolic", "Highlights")),
                             add_css_class: "kalam-reader-tab",
+                            set_hexpand: true,
                             connect_clicked => ReaderMsg::SwitchRightTab(RightSidebarTab::Highlights),
                         },
 
@@ -360,6 +371,7 @@ impl Component for ReaderModel {
                         gtk::Button {
                             set_child: Some(&reader_sidebar_tab_content("bookmark-new-symbolic", "Marks")),
                             add_css_class: "kalam-reader-tab",
+                            set_hexpand: true,
                             connect_clicked => ReaderMsg::SwitchRightTab(RightSidebarTab::Bookmarks),
                         },
 
@@ -367,6 +379,7 @@ impl Component for ReaderModel {
                         gtk::Button {
                             set_child: Some(&reader_sidebar_tab_content("accessories-dictionary-symbolic", "Words")),
                             add_css_class: "kalam-reader-tab",
+                            set_hexpand: true,
                             connect_clicked => ReaderMsg::SwitchRightTab(RightSidebarTab::Words),
                         },
                     },
@@ -414,19 +427,22 @@ impl Component for ReaderModel {
 
                     gtk::Box {
                         add_css_class: "kalam-reader-pill-info",
-                        set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 0,
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 12,
+                        set_valign: gtk::Align::Center,
 
                         #[name = "progress_label"]
                         gtk::Label {
                             add_css_class: "kalam-reader-pill-pages",
+                            set_valign: gtk::Align::Center,
                         },
 
                         #[name = "pill_chapter_label"]
                         gtk::Label {
                             add_css_class: "kalam-reader-pill-chapter",
-                            set_max_width_chars: 30,
+                            set_max_width_chars: 34,
                             set_ellipsize: gtk::pango::EllipsizeMode::End,
+                            set_valign: gtk::Align::Center,
                         },
                     },
 
@@ -659,7 +675,7 @@ impl Component for ReaderModel {
         update_sidebar_header(&widgets, &model);
         sync_sidebar_tabs(&widgets, &model);
         sync_reader_controls(&model);
-        rebuild_toc(&model.toc_list, &model.open, model.chapter, &sender);
+        let _ = rebuild_toc(&model.toc_list, &model.open, model.chapter, &sender);
         rebuild_highlights_list(&model, &sender);
         rebuild_bookmarks_list(&model, &sender);
         rebuild_words_list(&model, &sender);
@@ -1105,6 +1121,9 @@ impl Component for ReaderModel {
                 self.cancel_left_close();
                 self.left_sidebar_open = true;
                 refresh_tabs = true;
+                if self.left_tab == LeftSidebarTab::Toc {
+                    refresh_toc = true;
+                }
             }
             ReaderMsg::OpenRightSidebar => {
                 self.cancel_right_close();
@@ -1200,7 +1219,10 @@ impl Component for ReaderModel {
             sync_sidebar_tabs(widgets, self);
         }
         if refresh_toc {
-            rebuild_toc(&self.toc_list, &self.open, self.chapter, &sender);
+            let active_toc = rebuild_toc(&self.toc_list, &self.open, self.chapter, &sender);
+            if self.left_sidebar_open && self.left_tab == LeftSidebarTab::Toc {
+                reveal_toc_button(active_toc.as_ref());
+            }
         }
         if refresh_highlights {
             rebuild_highlights_list(self, &sender);
@@ -2007,7 +2029,16 @@ fn rebuild_cover_host(host: &gtk::Box, cover_path: Option<&std::path::Path>) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    host.append(&cover_widget(cover_path, 36, 52));
+    host.append(&cover_widget(cover_path, 48, 70));
+}
+
+fn reveal_toc_button(button: Option<&gtk::Button>) {
+    let Some(button) = button.cloned() else {
+        return;
+    };
+    gtk::glib::idle_add_local_once(move || {
+        let _ = button.grab_focus();
+    });
 }
 
 fn update_sidebar_header(widgets: &ReaderModelWidgets, model: &ReaderModel) {
@@ -2056,21 +2087,30 @@ fn rebuild_toc(
     open: &OpenBook,
     current: usize,
     sender: &ComponentSender<ReaderModel>,
-) {
+) -> Option<gtk::Button> {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
+
+    let mut active = None;
     if open.toc.is_empty() {
         for (idx, item) in open.spine.iter().enumerate() {
-            append_toc_btn(list, &item.title, idx, current, sender);
+            let btn = append_toc_btn(list, &item.title, idx, current, sender);
+            if idx == current {
+                active = Some(btn);
+            }
         }
     } else {
         for entry in &open.toc {
             if let Some(idx) = entry.spine_index {
-                append_toc_btn(list, &entry.label, idx, current, sender);
+                let btn = append_toc_btn(list, &entry.label, idx, current, sender);
+                if idx == current {
+                    active = Some(btn);
+                }
             }
         }
     }
+    active
 }
 
 fn append_toc_btn(
@@ -2079,7 +2119,7 @@ fn append_toc_btn(
     idx: usize,
     current: usize,
     sender: &ComponentSender<ReaderModel>,
-) {
+) -> gtk::Button {
     let btn = gtk::Button::new();
     btn.add_css_class("kalam-reader-toc-item");
     if idx == current {
@@ -2098,6 +2138,7 @@ fn append_toc_btn(
     let s = sender.clone();
     btn.connect_clicked(move |_| s.input(ReaderMsg::TocSelect(idx)));
     list.append(&btn);
+    btn
 }
 
 fn toc_slot_label(label: &str, idx: usize) -> String {

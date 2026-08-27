@@ -667,38 +667,34 @@ button.kalam-reader-dim {
 
 .kalam-reader-sidebar {
     background: alpha(#16181e, 0.97);
-    border: 1px solid alpha(#fff, 0.07);
-    box-shadow: 0 18px 48px alpha(#000, 0.45);
+    border: 1px solid alpha(#fff, 0.09);
+    border-radius: 20px;
+    box-shadow: 0 22px 52px alpha(#000, 0.48);
     padding: 0;
 }
 
-.kalam-reader-sidebar-left {
-    border-left: none;
-    border-radius: 0 20px 20px 0;
-}
-
+.kalam-reader-sidebar-left,
 .kalam-reader-sidebar-right {
-    border-right: none;
-    border-radius: 20px 0 0 20px;
+    border-radius: 20px;
 }
 
 .kalam-reader-book-head {
-    padding: 20px 16px 14px;
+    padding: 22px 18px 16px;
     border-bottom: 1px solid alpha(#fff, 0.07);
 }
 
 .kalam-reader-cover-slot {
-    min-width: 36px;
+    min-width: 48px;
 }
 
 .kalam-reader-book-title {
-    font-size: 0.98rem;
+    font-size: 1.08rem;
     font-weight: 700;
     color: #f1efe8;
 }
 
 .kalam-reader-book-author {
-    font-size: 0.78rem;
+    font-size: 0.84rem;
     color: #9ba3b2;
 }
 
@@ -721,8 +717,8 @@ progressbar.kalam-reader-progress progress {
 }
 
 .kalam-reader-tabbar {
-    padding: 8px 10px 10px;
-    gap: 2px;
+    padding: 10px 10px 12px;
+    gap: 4px;
     border-top: 1px solid alpha(#fff, 0.07);
 }
 
@@ -731,7 +727,7 @@ button.kalam-reader-tab {
     border: none;
     border-radius: 12px;
     color: #8f97a7;
-    padding: 8px 4px;
+    padding: 10px 4px;
 }
 
 button.kalam-reader-tab:hover {
@@ -746,6 +742,10 @@ button.kalam-reader-tab.active {
 
 .kalam-reader-tab image {
     -gtk-icon-size: 17px;
+}
+
+button.kalam-reader-tab > box {
+    min-width: 0;
 }
 
 button.kalam-reader-back {
@@ -799,19 +799,20 @@ button.kalam-reader-pill-btn:hover {
 }
 
 .kalam-reader-pill-info {
-    padding: 0 12px;
-    min-width: 220px;
+    padding: 0 14px;
+    min-width: 300px;
 }
 
 .kalam-reader-pill-pages {
-    font-size: 0.72rem;
+    font-size: 0.94rem;
     font-weight: 700;
-    color: #d6c4a8;
+    color: #e8c48f;
 }
 
 .kalam-reader-pill-chapter {
-    font-size: 0.8rem;
-    color: #d4dae5;
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: #eef2f9;
 }
 
 .kalam-reader-panel-scroll,
