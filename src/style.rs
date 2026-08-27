@@ -698,6 +698,7 @@ progressbar.kalam-reader-progress trough {
 progressbar.kalam-reader-progress progress {
     background: @kalam_accent;
     min-height: 4px;
+    min-width: 4px;
     border-radius: 999px;
 }
 
@@ -1746,6 +1747,7 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-theme-swatch {
+    min-width: 5px;
     min-height: 5px;
     border-radius: 999px;
 }
