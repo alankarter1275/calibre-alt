@@ -125,20 +125,13 @@ struct ReaderSettingsControls {
     ui_controls: Vec<(ReaderUiSetting, ReaderUiSettingControls)>,
 }
 
-const UI_PRESETS_SIDEBAR_GAP: [(&str, i32); 3] =
-    [("Tight", 8), ("Normal", 14), ("Airy", 20)];
-const UI_PRESETS_LEFT_WIDTH: [(&str, i32); 3] =
-    [("Narrow", 220), ("Normal", 248), ("Wide", 280)];
-const UI_PRESETS_RIGHT_WIDTH: [(&str, i32); 3] =
-    [("Narrow", 196), ("Normal", 212), ("Wide", 236)];
-const UI_PRESETS_RADIUS: [(&str, i32); 3] =
-    [("Soft", 14), ("Round", 20), ("Full", 26)];
-const UI_PRESETS_PILL_SIZE: [(&str, i32); 3] =
-    [("Compact", 30), ("Normal", 34), ("Large", 40)];
-const UI_PRESETS_BACK_SIZE: [(&str, i32); 3] =
-    [("Compact", 28), ("Normal", 32), ("Large", 38)];
-const UI_PRESETS_DIM: [(&str, i32); 3] =
-    [("Light", 12), ("Medium", 22), ("Strong", 32)];
+const UI_PRESETS_SIDEBAR_GAP: [(&str, i32); 3] = [("Tight", 8), ("Normal", 14), ("Airy", 20)];
+const UI_PRESETS_LEFT_WIDTH: [(&str, i32); 3] = [("Narrow", 220), ("Normal", 248), ("Wide", 280)];
+const UI_PRESETS_RIGHT_WIDTH: [(&str, i32); 3] = [("Narrow", 196), ("Normal", 212), ("Wide", 236)];
+const UI_PRESETS_RADIUS: [(&str, i32); 3] = [("Soft", 14), ("Round", 20), ("Full", 26)];
+const UI_PRESETS_PILL_SIZE: [(&str, i32); 3] = [("Compact", 30), ("Normal", 34), ("Large", 40)];
+const UI_PRESETS_BACK_SIZE: [(&str, i32); 3] = [("Compact", 28), ("Normal", 32), ("Large", 38)];
+const UI_PRESETS_DIM: [(&str, i32); 3] = [("Light", 12), ("Medium", 22), ("Strong", 32)];
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -1844,7 +1837,8 @@ impl ReaderUiPrefs {
             ReaderUiSetting::BackChipSize,
             ReaderUiSetting::DimStrength,
         ] {
-            let saved = catalog.get_pref_i64(reader_ui_pref_key(setting), prefs.get(setting) as i64) as i32;
+            let saved =
+                catalog.get_pref_i64(reader_ui_pref_key(setting), prefs.get(setting) as i64) as i32;
             let _ = prefs.set(setting, saved);
         }
         prefs
@@ -2070,17 +2064,14 @@ fn apply_reader_ui_prefs(model: &ReaderModel) {
         .load_from_string(&reader_ui_css(model.ui_prefs));
 }
 
-fn update_reader_ui_setting(
-    model: &mut ReaderModel,
-    setting: ReaderUiSetting,
-    value: i32,
-) -> bool {
+fn update_reader_ui_setting(model: &mut ReaderModel, setting: ReaderUiSetting, value: i32) -> bool {
     if !model.ui_prefs.set(setting, value) {
         return false;
     }
-    model
-        .catalog
-        .set_pref(reader_ui_pref_key(setting), &model.ui_prefs.get(setting).to_string());
+    model.catalog.set_pref(
+        reader_ui_pref_key(setting),
+        &model.ui_prefs.get(setting).to_string(),
+    );
     true
 }
 
@@ -2173,7 +2164,10 @@ fn build_reader_settings_panel(
         ReaderMsg::ColumnWidthDelta(20),
     ));
     reading_page.append(&width_section);
-    stack.add_named(&reading_page, Some(reader_settings_pane_name(ReaderSettingsPane::Reading)));
+    stack.add_named(
+        &reading_page,
+        Some(reader_settings_pane_name(ReaderSettingsPane::Reading)),
+    );
 
     let ui_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let mut ui_controls = Vec::new();
@@ -2185,12 +2179,8 @@ fn build_reader_settings_panel(
         ("Right width", ReaderUiSetting::RightSidebarWidth),
         ("Corner radius", ReaderUiSetting::SidebarRadius),
     ] {
-        let (row, controls) = reader_ui_setting_block(
-            title,
-            setting,
-            ui_prefs.get(setting),
-            sender,
-        );
+        let (row, controls) =
+            reader_ui_setting_block(title, setting, ui_prefs.get(setting), sender);
         sidebar_section.append(&row);
         ui_controls.push((setting, controls));
     }
@@ -2202,12 +2192,8 @@ fn build_reader_settings_panel(
         ("Bottom pill", ReaderUiSetting::BottomPillSize),
         ("Back chip", ReaderUiSetting::BackChipSize),
     ] {
-        let (row, controls) = reader_ui_setting_block(
-            title,
-            setting,
-            ui_prefs.get(setting),
-            sender,
-        );
+        let (row, controls) =
+            reader_ui_setting_block(title, setting, ui_prefs.get(setting), sender);
         controls_section.append(&row);
         ui_controls.push((setting, controls));
     }
@@ -2224,7 +2210,10 @@ fn build_reader_settings_panel(
     overlay_section.append(&dim_row);
     ui_controls.push((ReaderUiSetting::DimStrength, dim_controls));
     ui_page.append(&overlay_section);
-    stack.add_named(&ui_page, Some(reader_settings_pane_name(ReaderSettingsPane::Ui)));
+    stack.add_named(
+        &ui_page,
+        Some(reader_settings_pane_name(ReaderSettingsPane::Ui)),
+    );
 
     if theme == ReadingTheme::Sepia {
         for (_, dot) in &dots {
@@ -2302,7 +2291,10 @@ fn reader_ui_setting_block(
     )));
     let s = sender.clone();
     minus.connect_clicked(move |_| {
-        s.input(ReaderMsg::AdjustUiSetting(setting, -reader_ui_step(setting)))
+        s.input(ReaderMsg::AdjustUiSetting(
+            setting,
+            -reader_ui_step(setting),
+        ))
     });
     actions.append(&minus);
     let plus = gtk::Button::new();
@@ -2579,7 +2571,9 @@ fn sync_reader_controls(model: &ReaderModel) {
     }
     for (setting, controls) in &model.ui_controls {
         let value = model.ui_prefs.get(*setting);
-        controls.value_label.set_label(&reader_ui_value_text(*setting, value));
+        controls
+            .value_label
+            .set_label(&reader_ui_value_text(*setting, value));
         let mut matched_preset = false;
         for (preset_value, btn) in &controls.preset_buttons {
             let active = *preset_value == value;
