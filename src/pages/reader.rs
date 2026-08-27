@@ -221,7 +221,6 @@ impl Component for ReaderModel {
             },
 
             add_overlay = &gtk::Box {
-                #[name = "left_hover"]
                 add_css_class: "kalam-reader-hover-edge",
                 set_width_request: 28,
                 set_hexpand: false,
@@ -231,7 +230,6 @@ impl Component for ReaderModel {
             },
 
             add_overlay = &gtk::Box {
-                #[name = "right_hover"]
                 add_css_class: "kalam-reader-hover-edge",
                 set_width_request: 28,
                 set_hexpand: false,
@@ -249,7 +247,6 @@ impl Component for ReaderModel {
 
                 #[wrap(Some)]
                 set_child = &gtk::Box {
-                    #[name = "left_sidebar"]
                     set_orientation: gtk::Orientation::Vertical,
                     set_width_request: 272,
                     add_css_class: "kalam-reader-sidebar",
@@ -335,7 +332,6 @@ impl Component for ReaderModel {
 
                 #[wrap(Some)]
                 set_child = &gtk::Box {
-                    #[name = "right_sidebar"]
                     set_orientation: gtk::Orientation::Vertical,
                     set_width_request: 272,
                     add_css_class: "kalam-reader-sidebar",
@@ -668,30 +664,46 @@ impl Component for ReaderModel {
         rebuild_bookmarks_list(&model, &sender);
         rebuild_words_list(&model, &sender);
 
-        connect_hover_zone(
-            &widgets.left_hover,
-            &sender,
-            ReaderMsg::OpenLeftSidebar,
-            ReaderMsg::ScheduleCloseLeft,
-        );
-        connect_hover_zone(
-            &widgets.right_hover,
-            &sender,
-            ReaderMsg::OpenRightSidebar,
-            ReaderMsg::ScheduleCloseRight,
-        );
-        connect_hover_zone(
-            &widgets.left_sidebar,
-            &sender,
-            ReaderMsg::OpenLeftSidebar,
-            ReaderMsg::ScheduleCloseLeft,
-        );
-        connect_hover_zone(
-            &widgets.right_sidebar,
-            &sender,
-            ReaderMsg::OpenRightSidebar,
-            ReaderMsg::ScheduleCloseRight,
-        );
+        if let Some(left_hover) = overlay_child_box(&root, 2) {
+            connect_hover_zone(
+                &left_hover,
+                &sender,
+                ReaderMsg::OpenLeftSidebar,
+                ReaderMsg::ScheduleCloseLeft,
+            );
+        }
+        if let Some(right_hover) = overlay_child_box(&root, 3) {
+            connect_hover_zone(
+                &right_hover,
+                &sender,
+                ReaderMsg::OpenRightSidebar,
+                ReaderMsg::ScheduleCloseRight,
+            );
+        }
+        if let Some(left_sidebar) = widgets
+            .left_panel_host
+            .parent()
+            .and_then(|w| w.downcast::<gtk::Box>().ok())
+        {
+            connect_hover_zone(
+                &left_sidebar,
+                &sender,
+                ReaderMsg::OpenLeftSidebar,
+                ReaderMsg::ScheduleCloseLeft,
+            );
+        }
+        if let Some(right_sidebar) = widgets
+            .right_panel_host
+            .parent()
+            .and_then(|w| w.downcast::<gtk::Box>().ok())
+        {
+            connect_hover_zone(
+                &right_sidebar,
+                &sender,
+                ReaderMsg::OpenRightSidebar,
+                ReaderMsg::ScheduleCloseRight,
+            );
+        }
 
         let s = sender.clone();
         webview.connect_title_notify(move |wv| {
@@ -1596,6 +1608,14 @@ fn reader_sidebar_tab_content(icon: &str, label: &str) -> gtk::Box {
     label_widget.set_halign(gtk::Align::Center);
     box_.append(&label_widget);
     box_
+}
+
+fn overlay_child_box(overlay: &gtk::Overlay, index: usize) -> Option<gtk::Box> {
+    let mut child = overlay.first_child()?;
+    for _ in 0..index {
+        child = child.next_sibling()?;
+    }
+    child.downcast::<gtk::Box>().ok()
 }
 
 fn connect_hover_zone(
