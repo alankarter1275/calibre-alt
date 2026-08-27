@@ -973,13 +973,6 @@ button.kalam-reader-toc-item.active {
     color: #e8c48f;
 }
 
-.kalam-reader-toc-num {
-    font-family: monospace;
-    font-size: 0.7rem;
-    color: #8f97a7;
-    min-width: 20px;
-}
-
 .kalam-reader-annotation-row,
 .kalam-reader-bookmark-row {
     padding: 12px 14px;

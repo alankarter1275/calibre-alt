@@ -161,6 +161,7 @@ pub struct ReaderModel {
     right_close_timer: Option<glib::SourceId>,
     left_stack: gtk::Stack,
     right_stack: gtk::Stack,
+    toc_scroll: gtk::ScrolledWindow,
     toc_list: gtk::Box,
     highlights_list: gtk::Box,
     bookmarks_list: gtk::Box,
@@ -638,6 +639,7 @@ impl Component for ReaderModel {
             right_close_timer: None,
             left_stack,
             right_stack,
+            toc_scroll,
             toc_list,
             highlights_list,
             bookmarks_list,
@@ -675,7 +677,7 @@ impl Component for ReaderModel {
         update_sidebar_header(&widgets, &model);
         sync_sidebar_tabs(&widgets, &model);
         sync_reader_controls(&model);
-        let _ = rebuild_toc(&model.toc_list, &model.open, model.chapter, &sender);
+        rebuild_toc(&model.toc_list, &model.open, model.chapter, &sender);
         rebuild_highlights_list(&model, &sender);
         rebuild_bookmarks_list(&model, &sender);
         rebuild_words_list(&model, &sender);
@@ -1119,11 +1121,11 @@ impl Component for ReaderModel {
             }
             ReaderMsg::OpenLeftSidebar => {
                 self.cancel_left_close();
+                if self.left_tab == LeftSidebarTab::Toc {
+                    self.position_toc_scroll();
+                }
                 self.left_sidebar_open = true;
                 refresh_tabs = true;
-                if self.left_tab == LeftSidebarTab::Toc {
-                    refresh_toc = true;
-                }
             }
             ReaderMsg::OpenRightSidebar => {
                 self.cancel_right_close();
@@ -1132,12 +1134,12 @@ impl Component for ReaderModel {
             }
             ReaderMsg::SwitchLeftTab(tab) => {
                 self.left_tab = tab;
-                self.left_sidebar_open = true;
                 self.cancel_left_close();
-                refresh_tabs = true;
                 if matches!(tab, LeftSidebarTab::Toc) {
-                    refresh_toc = true;
+                    self.position_toc_scroll();
                 }
+                self.left_sidebar_open = true;
+                refresh_tabs = true;
                 if matches!(tab, LeftSidebarTab::Settings) {
                     refresh_controls = true;
                 }
@@ -1219,9 +1221,9 @@ impl Component for ReaderModel {
             sync_sidebar_tabs(widgets, self);
         }
         if refresh_toc {
-            let active_toc = rebuild_toc(&self.toc_list, &self.open, self.chapter, &sender);
+            rebuild_toc(&self.toc_list, &self.open, self.chapter, &sender);
             if self.left_sidebar_open && self.left_tab == LeftSidebarTab::Toc {
-                reveal_toc_button(active_toc.as_ref());
+                self.position_toc_scroll();
             }
         }
         if refresh_highlights {
@@ -1325,6 +1327,50 @@ impl ReaderModel {
 
     fn reload_saved_words(&mut self) {
         self.saved_words = self.catalog.list_saved_words("").unwrap_or_default();
+    }
+
+    fn toc_display_position(&self) -> Option<(usize, usize)> {
+        let active_spine = toc_active_spine_index(&self.open, self.chapter)?;
+        if self.open.toc.is_empty() {
+            let total = self.open.spine.len();
+            if total == 0 {
+                None
+            } else {
+                Some((active_spine.min(total.saturating_sub(1)), total))
+            }
+        } else {
+            let visible: Vec<usize> = self
+                .open
+                .toc
+                .iter()
+                .filter_map(|entry| entry.spine_index)
+                .collect();
+            let total = visible.len();
+            if total == 0 {
+                None
+            } else {
+                visible
+                    .iter()
+                    .position(|idx| *idx == active_spine)
+                    .map(|current| (current, total))
+            }
+        }
+    }
+
+    fn position_toc_scroll(&self) {
+        let Some((current, total)) = self.toc_display_position() else {
+            return;
+        };
+        let adj = self.toc_scroll.vadjustment();
+        let max = (adj.upper() - adj.page_size()).max(0.0);
+        if max <= 0.0 || total <= 1 {
+            adj.set_value(0.0);
+            return;
+        }
+        let content_span = adj.upper().max(adj.page_size());
+        let target_center = content_span * ((current as f64 + 0.5) / total as f64);
+        let target = (target_center - (adj.page_size() / 2.0)).clamp(0.0, max);
+        adj.set_value(target);
     }
 
     fn close_sidebars(&mut self) {
@@ -2032,15 +2078,6 @@ fn rebuild_cover_host(host: &gtk::Box, cover_path: Option<&std::path::Path>) {
     host.append(&cover_widget(cover_path, 48, 70));
 }
 
-fn reveal_toc_button(button: Option<&gtk::Button>) {
-    let Some(button) = button.cloned() else {
-        return;
-    };
-    gtk::glib::idle_add_local_once(move || {
-        let _ = button.grab_focus();
-    });
-}
-
 fn update_sidebar_header(widgets: &ReaderModelWidgets, model: &ReaderModel) {
     widgets.sidebar_book_title.set_label(&model.book_title);
     widgets.sidebar_book_author.set_label(&model.book_authors);
@@ -2087,65 +2124,72 @@ fn rebuild_toc(
     open: &OpenBook,
     current: usize,
     sender: &ComponentSender<ReaderModel>,
-) -> Option<gtk::Button> {
+) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
 
-    let mut active = None;
+    let active_spine = toc_active_spine_index(open, current);
     if open.toc.is_empty() {
         for (idx, item) in open.spine.iter().enumerate() {
-            let btn = append_toc_btn(list, &item.title, idx, current, sender);
-            if idx == current {
-                active = Some(btn);
-            }
+            append_toc_btn(list, &item.title, idx, active_spine, sender);
         }
     } else {
         for entry in &open.toc {
             if let Some(idx) = entry.spine_index {
-                let btn = append_toc_btn(list, &entry.label, idx, current, sender);
-                if idx == current {
-                    active = Some(btn);
-                }
+                append_toc_btn(list, &entry.label, idx, active_spine, sender);
             }
         }
     }
-    active
 }
 
 fn append_toc_btn(
     list: &gtk::Box,
     label: &str,
     idx: usize,
-    current: usize,
+    active_spine: Option<usize>,
     sender: &ComponentSender<ReaderModel>,
-) -> gtk::Button {
+) {
     let btn = gtk::Button::new();
     btn.add_css_class("kalam-reader-toc-item");
-    if idx == current {
+    if Some(idx) == active_spine {
         btn.add_css_class("active");
     }
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    let num = gtk::Label::new(Some(&toc_slot_label(label, idx)));
-    num.add_css_class("kalam-reader-toc-num");
-    row.append(&num);
     let title = gtk::Label::new(Some(label));
     title.set_halign(gtk::Align::Start);
     title.set_hexpand(true);
+    title.set_wrap(true);
     title.set_xalign(0.0);
-    row.append(&title);
-    btn.set_child(Some(&row));
+    btn.set_child(Some(&title));
     let s = sender.clone();
     btn.connect_clicked(move |_| s.input(ReaderMsg::TocSelect(idx)));
     list.append(&btn);
-    btn
 }
 
-fn toc_slot_label(label: &str, idx: usize) -> String {
-    if label.trim().eq_ignore_ascii_case("prologue") {
-        "P".into()
+fn toc_active_spine_index(open: &OpenBook, current: usize) -> Option<usize> {
+    if open.toc.is_empty() {
+        if open.spine.is_empty() {
+            None
+        } else {
+            Some(current.min(open.spine.len().saturating_sub(1)))
+        }
     } else {
-        (idx + 1).to_string()
+        let visible: Vec<usize> = open
+            .toc
+            .iter()
+            .filter_map(|entry| entry.spine_index)
+            .collect();
+        if visible.is_empty() {
+            None
+        } else {
+            Some(
+                visible
+                    .iter()
+                    .copied()
+                    .rfind(|idx| *idx <= current)
+                    .unwrap_or(visible[0]),
+            )
+        }
     }
 }
 
