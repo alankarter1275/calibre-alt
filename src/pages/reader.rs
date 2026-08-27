@@ -1262,6 +1262,8 @@ impl Component for ReaderModel {
             }
             ReaderMsg::OpenLeftSidebar => {
                 self.cancel_left_close();
+                self.right_sidebar_open = false;
+                self.cancel_right_close();
                 if self.left_tab == LeftSidebarTab::Toc {
                     self.position_toc_scroll();
                 }
@@ -1270,12 +1272,16 @@ impl Component for ReaderModel {
             }
             ReaderMsg::OpenRightSidebar => {
                 self.cancel_right_close();
+                self.left_sidebar_open = false;
+                self.cancel_left_close();
                 self.right_sidebar_open = true;
                 refresh_tabs = true;
             }
             ReaderMsg::SwitchLeftTab(tab) => {
                 self.left_tab = tab;
                 self.cancel_left_close();
+                self.right_sidebar_open = false;
+                self.cancel_right_close();
                 if matches!(tab, LeftSidebarTab::Toc) {
                     self.position_toc_scroll();
                 }
@@ -1289,6 +1295,8 @@ impl Component for ReaderModel {
                 self.right_tab = tab;
                 self.right_sidebar_open = true;
                 self.cancel_right_close();
+                self.left_sidebar_open = false;
+                self.cancel_left_close();
                 refresh_tabs = true;
                 match tab {
                     RightSidebarTab::Highlights => refresh_highlights = true,
@@ -2229,21 +2237,11 @@ fn apply_reader_ui_prefs(model: &ReaderModel) {
         shell.set_margin_start(gap);
         shell.set_margin_top(gap);
         shell.set_margin_bottom(gap);
-        shell.set_width_request(model.ui_prefs.left_sidebar_width + gap);
     }
     if let Some(shell) = &model.right_sidebar_shell {
         shell.set_margin_end(gap);
         shell.set_margin_top(gap);
         shell.set_margin_bottom(gap);
-        shell.set_width_request(model.ui_prefs.right_sidebar_width + gap);
-    }
-    if let Some(sidebar) = &model.left_sidebar_box {
-        sidebar.set_size_request(model.ui_prefs.left_sidebar_width, -1);
-        sidebar.set_width_request(model.ui_prefs.left_sidebar_width);
-    }
-    if let Some(sidebar) = &model.right_sidebar_box {
-        sidebar.set_size_request(model.ui_prefs.right_sidebar_width, -1);
-        sidebar.set_width_request(model.ui_prefs.right_sidebar_width);
     }
     if let Some(back_dock) = &model.back_dock {
         back_dock.set_margin_top(model.ui_prefs.back_top_gap);
@@ -2859,7 +2857,6 @@ fn sync_sidebar_tabs(widgets: &ReaderModelWidgets, model: &ReaderModel) {
         &widgets.right_words_tab,
         model.right_tab == RightSidebarTab::Words,
     );
-    sync_reader_controls(model);
 }
 
 fn toggle_active(widget: &impl IsA<gtk::Widget>, active: bool) {
