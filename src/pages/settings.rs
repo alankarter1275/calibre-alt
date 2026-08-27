@@ -776,7 +776,11 @@ fn theme_variant_button(
     );
     name_label.set_halign(gtk::Align::Start);
     name_row.append(&name_label);
-    let tag = gtk::Label::new(Some(if is_active { active_theme_badge(theme) } else { "" }));
+    let tag = gtk::Label::new(Some(if is_active {
+        active_theme_badge(theme)
+    } else {
+        ""
+    }));
     tag.set_widget_name(&format!("{THEME_BADGE_PREFIX}{}", theme.id));
     tag.add_css_class("kalam-theme-variant");
     if !is_active {
