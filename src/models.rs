@@ -133,7 +133,6 @@ impl LibrarySection {
             LibrarySection::Analytics => "view-bar-symbolic",
         }
     }
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
