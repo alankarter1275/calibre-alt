@@ -311,9 +311,9 @@ impl Component for ReaderModel {
                 set_transition_type: gtk::RevealerTransitionType::SlideRight,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Fill,
-                set_margin_start: 14,
-                set_margin_top: 14,
-                set_margin_bottom: 14,
+                set_margin_start: 8,
+                set_margin_top: 8,
+                set_margin_bottom: 8,
 
                 #[wrap(Some)]
                 set_child = &gtk::Box {
@@ -402,9 +402,9 @@ impl Component for ReaderModel {
                 set_transition_type: gtk::RevealerTransitionType::SlideLeft,
                 set_halign: gtk::Align::End,
                 set_valign: gtk::Align::Fill,
-                set_margin_end: 14,
-                set_margin_top: 14,
-                set_margin_bottom: 14,
+                set_margin_end: 8,
+                set_margin_top: 8,
+                set_margin_bottom: 8,
 
                 #[wrap(Some)]
                 set_child = &gtk::Box {
@@ -1961,11 +1961,6 @@ fn build_words_panel(
     let search_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     search_row.add_css_class("kalam-reader-search-row");
     search_row.set_margin_all(12);
-    search_row.append(&crate::icons::symbolic_with_classes(
-        "system-search-symbolic",
-        15,
-        &["kalam-inline-icon"],
-    ));
     let search = gtk::SearchEntry::new();
     search.set_placeholder_text(Some("Look up a word…"));
     search.set_hexpand(true);
