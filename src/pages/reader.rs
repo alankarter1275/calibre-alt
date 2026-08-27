@@ -167,8 +167,8 @@ pub enum ReaderMsg {
     SetWordScope(WordScope),
     ScheduleCloseLeft,
     ScheduleCloseRight,
-    ForceCloseLeft,
-    ForceCloseRight,
+    ForceCloseLeft(u64),
+    ForceCloseRight(u64),
     CloseSidebars,
     HideChrome,
     ShowBackChrome,
@@ -217,6 +217,8 @@ pub struct ReaderModel {
     show_bottom_pill: bool,
     left_close_timer: Option<glib::SourceId>,
     right_close_timer: Option<glib::SourceId>,
+    left_close_token: u64,
+    right_close_token: u64,
     left_sidebar_shell: Option<gtk::Revealer>,
     right_sidebar_shell: Option<gtk::Revealer>,
     left_sidebar_box: Option<gtk::Box>,
@@ -714,6 +716,8 @@ impl Component for ReaderModel {
             show_bottom_pill: true,
             left_close_timer: None,
             right_close_timer: None,
+            left_close_token: 0,
+            right_close_token: 0,
             left_sidebar_shell: None,
             right_sidebar_shell: None,
             left_sidebar_box: None,
@@ -1286,15 +1290,19 @@ impl Component for ReaderModel {
             ReaderMsg::ScheduleCloseRight => {
                 self.schedule_right_close(sender.clone());
             }
-            ReaderMsg::ForceCloseLeft => {
-                self.left_sidebar_open = false;
-                self.left_close_timer = None;
-                refresh_tabs = true;
+            ReaderMsg::ForceCloseLeft(token) => {
+                if token == self.left_close_token {
+                    self.left_sidebar_open = false;
+                    self.left_close_timer = None;
+                    refresh_tabs = true;
+                }
             }
-            ReaderMsg::ForceCloseRight => {
-                self.right_sidebar_open = false;
-                self.right_close_timer = None;
-                refresh_tabs = true;
+            ReaderMsg::ForceCloseRight(token) => {
+                if token == self.right_close_token {
+                    self.right_sidebar_open = false;
+                    self.right_close_timer = None;
+                    refresh_tabs = true;
+                }
             }
             ReaderMsg::CloseSidebars => {
                 self.close_sidebars();
@@ -1496,23 +1504,23 @@ impl ReaderModel {
     }
 
     fn cancel_left_close(&mut self) {
-        if let Some(id) = self.left_close_timer.take() {
-            id.remove();
-        }
+        self.left_close_token = self.left_close_token.wrapping_add(1);
+        self.left_close_timer = None;
     }
 
     fn cancel_right_close(&mut self) {
-        if let Some(id) = self.right_close_timer.take() {
-            id.remove();
-        }
+        self.right_close_token = self.right_close_token.wrapping_add(1);
+        self.right_close_timer = None;
     }
 
     fn schedule_left_close(&mut self, sender: ComponentSender<Self>) {
         self.cancel_left_close();
+        let token = self.left_close_token;
+        let tx = sender.input_sender().clone();
         self.left_close_timer = Some(glib::timeout_add_local(
             Duration::from_millis(320),
             move || {
-                sender.input(ReaderMsg::ForceCloseLeft);
+                let _ = tx.send(ReaderMsg::ForceCloseLeft(token));
                 glib::ControlFlow::Break
             },
         ));
@@ -1520,10 +1528,12 @@ impl ReaderModel {
 
     fn schedule_right_close(&mut self, sender: ComponentSender<Self>) {
         self.cancel_right_close();
+        let token = self.right_close_token;
+        let tx = sender.input_sender().clone();
         self.right_close_timer = Some(glib::timeout_add_local(
             Duration::from_millis(320),
             move || {
-                sender.input(ReaderMsg::ForceCloseRight);
+                let _ = tx.send(ReaderMsg::ForceCloseRight(token));
                 glib::ControlFlow::Break
             },
         ));
@@ -1810,10 +1820,14 @@ fn connect_hover_zone(
     close_msg: ReaderMsg,
 ) {
     let motion = gtk::EventControllerMotion::new();
-    let s = sender.clone();
-    motion.connect_enter(move |_, _, _| s.input(open_msg.clone()));
-    let s = sender.clone();
-    motion.connect_leave(move |_| s.input(close_msg.clone()));
+    let tx = sender.input_sender().clone();
+    motion.connect_enter(move |_, _, _| {
+        let _ = tx.send(open_msg.clone());
+    });
+    let tx = sender.input_sender().clone();
+    motion.connect_leave(move |_| {
+        let _ = tx.send(close_msg.clone());
+    });
     widget.add_controller(motion);
 }
 
