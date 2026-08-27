@@ -470,6 +470,8 @@ fn fetch_author_profile(doc: &AuthorSearchDoc) -> Result<AuthorProfile, String> 
     aliases.push(canonical_name.clone());
     aliases.push(sort_author_name(&canonical_name));
     aliases.push(display_author_name(&doc.name));
+    let top_subjects = doc.top_subjects.iter().take(8).cloned().collect();
+    let source_url = format!("https://openlibrary.org{author_key}");
 
     Ok(AuthorProfile {
         id: 0,
@@ -488,7 +490,7 @@ fn fetch_author_profile(doc: &AuthorSearchDoc) -> Result<AuthorProfile, String> 
             parsed.death_date.trim().to_string()
         },
         top_work: doc.top_work.trim().to_string(),
-        top_subjects: doc.top_subjects.into_iter().take(8).collect(),
+        top_subjects,
         openlibrary_key: author_key,
         photo_file: None,
         photo_path: None,
@@ -496,7 +498,7 @@ fn fetch_author_profile(doc: &AuthorSearchDoc) -> Result<AuthorProfile, String> 
         works,
         aliases: dedup_names(aliases),
         fetched_at: String::new(),
-        source_url: format!("https://openlibrary.org{author_key}"),
+        source_url,
     })
 }
 
