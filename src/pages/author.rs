@@ -1,12 +1,14 @@
-use crate::author::{
-    self, display_author_name, initials, line_text, status_counts, works_not_in_library,
-    AuthorQuote, SeriesProgress,
-};
-use crate::db::{AuthorProfile, Catalog};
+use crate::author::{self, display_author_name, initials, status_counts, works_not_in_library, SeriesProgress};
+use crate::db::{AuthorProfile, AuthorWork, Catalog};
 use crate::models::Book;
-use crate::widgets::book_row::build_book_grid;
+use crate::widgets::{
+    book_row::{build_book_card, cover_widget},
+    charts::stars_label,
+};
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -27,9 +29,38 @@ pub struct AuthorPageModel {
     profile: Option<AuthorProfile>,
     owned_books: Vec<Book>,
     series: Vec<SeriesProgress>,
-    quotes: Vec<AuthorQuote>,
     loading: bool,
     error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct WorkGroup {
+    title: String,
+    work_count: usize,
+    first_year: Option<i64>,
+    last_year: Option<i64>,
+    cover_path: Option<PathBuf>,
+    rating_average: Option<f32>,
+    rating_count: i64,
+    is_series: bool,
+}
+
+#[derive(Default)]
+struct WorkGroupBuilder {
+    title: String,
+    work_count: usize,
+    years: Vec<i64>,
+    cover_path: Option<PathBuf>,
+    rating_weight: f64,
+    rating_count: i64,
+    is_series: bool,
+}
+
+#[derive(Default)]
+struct OnlineSeriesSummary {
+    known_count: usize,
+    first_year: Option<i64>,
+    last_year: Option<i64>,
 }
 
 #[relm4::component(pub)]
@@ -43,79 +74,31 @@ impl Component for AuthorPageModel {
         #[root]
         gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
-            set_spacing: 16,
+            set_spacing: 22,
             set_hexpand: true,
             set_vexpand: false,
 
-            #[name = "page_title"]
-            gtk::Label {
-                add_css_class: "kalam-page-title",
-                set_halign: gtk::Align::Start,
-                set_wrap: true,
-                set_xalign: 0.0,
-            },
-
-            #[name = "page_sub"]
-            gtk::Label {
-                add_css_class: "kalam-page-sub",
-                set_halign: gtk::Align::Start,
-                set_wrap: true,
-                set_xalign: 0.0,
-            },
-
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 12,
-                set_halign: gtk::Align::Start,
-
-                #[name = "refresh_btn"]
-                gtk::Button {
-                    set_label: "Refresh author info",
-                    add_css_class: "kalam-secondary-btn",
-                    connect_clicked => AuthorPageMsg::Refresh,
-                },
-
-                #[name = "status_label"]
-                gtk::Label {
-                    add_css_class: "kalam-muted",
-                    set_halign: gtk::Align::Start,
-                    set_valign: gtk::Align::Center,
-                    set_wrap: true,
-                    set_xalign: 0.0,
-                },
-            },
-
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 16,
+                set_spacing: 24,
                 set_hexpand: true,
 
                 #[name = "hero_main"]
                 gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
                     add_css_class: "kalam-author-hero",
-                    set_spacing: 10,
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 12,
                     set_hexpand: true,
                 },
 
                 #[name = "hero_side"]
                 gtk::Box {
+                    add_css_class: "kalam-author-side",
                     set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 12,
+                    set_spacing: 14,
                     set_hexpand: false,
+                    set_halign: gtk::Align::End,
                 },
-            },
-
-            gtk::Label {
-                set_label: "YOUR BOOKS",
-                add_css_class: "kalam-section-label",
-                set_halign: gtk::Align::Start,
-            },
-
-            #[name = "owned_host"]
-            gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 8,
             },
 
             gtk::Label {
@@ -131,24 +114,24 @@ impl Component for AuthorPageModel {
             },
 
             gtk::Label {
-                set_label: "MORE BY THIS AUTHOR",
+                set_label: "YOUR BOOKS",
                 add_css_class: "kalam-section-label",
                 set_halign: gtk::Align::Start,
             },
 
-            #[name = "works_host"]
+            #[name = "owned_host"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 8,
             },
 
             gtk::Label {
-                set_label: "YOUR SAVED QUOTES",
+                set_label: "MORE BY THIS AUTHOR",
                 add_css_class: "kalam-section-label",
                 set_halign: gtk::Align::Start,
             },
 
-            #[name = "quotes_host"]
+            #[name = "works_host"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 set_spacing: 8,
@@ -167,7 +150,6 @@ impl Component for AuthorPageModel {
             .get_author_profile_by_name(&author_name)
             .ok()
             .flatten();
-        let quotes = author::saved_quotes_for_books(&catalog, &owned_books, 6);
         let series = author::series_progress(&owned_books);
         let loading = profile.is_none();
 
@@ -177,7 +159,6 @@ impl Component for AuthorPageModel {
             profile,
             owned_books,
             series,
-            quotes,
             loading,
             error: None,
         };
@@ -226,7 +207,6 @@ impl Component for AuthorPageModel {
                 self.owned_books =
                     author::owned_books_for_author(&self.catalog, &self.requested_name);
                 self.series = author::series_progress(&self.owned_books);
-                self.quotes = author::saved_quotes_for_books(&self.catalog, &self.owned_books, 6);
             }
         }
 
@@ -253,46 +233,18 @@ fn fill_author_page(
     model: &AuthorPageModel,
     sender: &ComponentSender<AuthorPageModel>,
 ) {
-    let display_name = model
-        .profile
-        .as_ref()
-        .map(|profile| profile.canonical_name.clone())
-        .unwrap_or_else(|| display_author_name(&model.requested_name));
-    widgets.page_title.set_label(&display_name);
-    widgets
-        .page_sub
-        .set_label("Books you own, saved quotes, and more works kept offline after fetch.");
-    widgets.refresh_btn.set_sensitive(!model.loading);
-
-    let mut status_bits = Vec::new();
-    if model.loading {
-        status_bits.push("Loading online author info…".to_string());
-    } else if let Some(profile) = &model.profile {
-        if !profile.fetched_at.trim().is_empty() {
-            let day = profile
-                .fetched_at
-                .split('T')
-                .next()
-                .unwrap_or(profile.fetched_at.as_str());
-            status_bits.push(format!("Last updated {day}"));
-        }
-        if !profile.source_url.trim().is_empty() {
-            status_bits.push("Source: Open Library".to_string());
-        }
-    }
-    if let Some(err) = &model.error {
-        status_bits.push(err.clone());
-    }
-    widgets.status_label.set_label(&line_text(&status_bits));
-
-    rebuild_hero(&widgets.hero_main, &widgets.hero_side, model);
+    rebuild_hero(&widgets.hero_main, &widgets.hero_side, model, sender);
+    rebuild_series(&widgets.series_host, model);
     rebuild_owned_books(&widgets.owned_host, &model.owned_books, sender);
-    rebuild_series(&widgets.series_host, &model.series);
     rebuild_works(&widgets.works_host, model);
-    rebuild_quotes(&widgets.quotes_host, &model.quotes);
 }
 
-fn rebuild_hero(main_host: &gtk::Box, side_host: &gtk::Box, model: &AuthorPageModel) {
+fn rebuild_hero(
+    main_host: &gtk::Box,
+    side_host: &gtk::Box,
+    model: &AuthorPageModel,
+    sender: &ComponentSender<AuthorPageModel>,
+) {
     clear_box(main_host);
     clear_box(side_host);
 
@@ -301,6 +253,7 @@ fn rebuild_hero(main_host: &gtk::Box, side_host: &gtk::Box, model: &AuthorPageMo
         .as_ref()
         .map(|profile| profile.canonical_name.clone())
         .unwrap_or_else(|| display_author_name(&model.requested_name));
+
     let title = gtk::Label::new(Some(&display_name));
     title.add_css_class("kalam-author-name");
     title.set_halign(gtk::Align::Start);
@@ -308,22 +261,19 @@ fn rebuild_hero(main_host: &gtk::Box, side_host: &gtk::Box, model: &AuthorPageMo
     title.set_xalign(0.0);
     main_host.append(&title);
 
-    let facts = hero_facts(model);
-    if !facts.is_empty() {
-        let meta = gtk::Label::new(Some(&facts));
-        meta.add_css_class("kalam-author-meta");
-        meta.set_halign(gtk::Align::Start);
-        meta.set_wrap(true);
-        meta.set_xalign(0.0);
-        main_host.append(&meta);
+    let facts = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    facts.add_css_class("kalam-author-facts");
+    for (label, value) in hero_fact_rows(model, &display_name) {
+        facts.append(&fact_row(&label, &value));
     }
+    main_host.append(&facts);
 
     let bio = model
         .profile
         .as_ref()
         .map(|profile| profile.bio.trim())
         .filter(|bio| !bio.is_empty())
-        .unwrap_or("No online bio yet. You can still browse your books and saved quotes below.");
+        .unwrap_or("No bio has been loaded yet for this author.");
     let bio_label = gtk::Label::new(Some(bio));
     bio_label.add_css_class("kalam-author-bio");
     bio_label.set_halign(gtk::Align::Start);
@@ -331,286 +281,287 @@ fn rebuild_hero(main_host: &gtk::Box, side_host: &gtk::Box, model: &AuthorPageMo
     bio_label.set_xalign(0.0);
     main_host.append(&bio_label);
 
-    if let Some(profile) = &model.profile {
-        if !profile.top_subjects.is_empty() {
-            let chips = gtk::FlowBox::builder()
-                .selection_mode(gtk::SelectionMode::None)
-                .column_spacing(6)
-                .row_spacing(6)
-                .halign(gtk::Align::Start)
-                .build();
-            for subject in profile.top_subjects.iter().take(8) {
-                let chip = gtk::Label::new(Some(subject));
-                chip.add_css_class("kalam-chip");
-                chips.insert(&chip, -1);
-            }
-            main_host.append(&chips);
-        }
+    if let Some(err) = &model.error {
+        let error = gtk::Label::new(Some(err));
+        error.add_css_class("kalam-error-text");
+        error.set_halign(gtk::Align::Start);
+        error.set_wrap(true);
+        error.set_xalign(0.0);
+        main_host.append(&error);
     }
 
-    let stats = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-    stats.set_homogeneous(true);
-    let (owned, finished, reading) = status_counts(&model.owned_books);
-    for (label, value) in [
-        ("Owned", owned.to_string()),
-        ("Finished", finished.to_string()),
-        ("Reading", reading.to_string()),
-        ("Quotes", model.quotes.len().to_string()),
-    ] {
-        let tile = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        tile.add_css_class("kalam-author-stat");
-        let value_label = gtk::Label::new(Some(&value));
-        value_label.add_css_class("kalam-author-stat-value");
-        value_label.set_halign(gtk::Align::Start);
-        tile.append(&value_label);
-        let label_widget = gtk::Label::new(Some(label));
-        label_widget.add_css_class("kalam-author-stat-label");
-        label_widget.set_halign(gtk::Align::Start);
-        tile.append(&label_widget);
-        stats.append(&tile);
-    }
-    main_host.append(&stats);
-
-    let photo_card = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    photo_card.add_css_class("kalam-author-side-card");
-    photo_card.set_size_request(220, -1);
-    let photo = author_photo(model);
-    photo_card.append(&photo);
-
-    if let Some(profile) = &model.profile {
-        if !profile.top_work.trim().is_empty() {
-            let top_work_title = gtk::Label::new(Some("Top work"));
-            top_work_title.add_css_class("kalam-detail-section-title");
-            top_work_title.set_halign(gtk::Align::Start);
-            photo_card.append(&top_work_title);
-
-            let top_work = gtk::Label::new(Some(&profile.top_work));
-            top_work.add_css_class("kalam-card-title");
-            top_work.set_halign(gtk::Align::Start);
-            top_work.set_wrap(true);
-            top_work.set_xalign(0.0);
-            photo_card.append(&top_work);
-        }
-    }
-
-    let side_note = gtk::Label::new(Some(side_note_text(model)));
-    side_note.add_css_class("kalam-author-side-note");
-    side_note.set_halign(gtk::Align::Start);
-    side_note.set_wrap(true);
-    side_note.set_xalign(0.0);
-    photo_card.append(&side_note);
-
-    side_host.append(&photo_card);
+    side_host.append(&author_photo_overlay(model, sender));
+    side_host.append(&author_stats(model));
 }
 
-fn rebuild_owned_books(host: &gtk::Box, books: &[Book], sender: &ComponentSender<AuthorPageModel>) {
+fn rebuild_series(host: &gtk::Box, model: &AuthorPageModel) {
     clear_box(host);
-    if books.is_empty() {
-        host.append(&placeholder(
-            "No books by this author are in your library yet.",
-        ));
-        return;
-    }
-    let summary = gtk::Label::new(Some(&format!(
-        "{} book{} in your library. Click for the floating details panel. Ctrl+click for the full page.",
-        books.len(),
-        if books.len() == 1 { "" } else { "s" }
-    )));
-    summary.add_css_class("kalam-muted");
-    summary.set_halign(gtk::Align::Start);
-    host.append(&summary);
-
-    let s1 = sender.clone();
-    let s2 = sender.clone();
-    host.append(&build_book_grid(
-        books,
-        move |book_id| {
-            s1.output(AuthorPageOut::OpenBook { book_id }).ok();
-        },
-        move |book_id| {
-            s2.output(AuthorPageOut::OpenBookDialog { book_id }).ok();
-        },
-    ));
-}
-
-fn rebuild_series(host: &gtk::Box, series: &[SeriesProgress]) {
-    clear_box(host);
-    if series.is_empty() {
-        host.append(&placeholder(
-            "No series info yet from the books you own by this author.",
-        ));
-        return;
-    }
-
-    for entry in series {
-        let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        card.add_css_class("kalam-card");
-
-        let name = gtk::Label::new(Some(&entry.name));
-        name.add_css_class("kalam-card-title");
-        name.set_halign(gtk::Align::Start);
-        card.append(&name);
-
-        let owned = entry
-            .owned
-            .iter()
-            .map(|book| {
-                if book.series_index > 0.0 {
-                    format!("#{} {}", trim_series_index(book.series_index), book.title)
-                } else {
-                    book.title.clone()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        let owned_label = gtk::Label::new(Some(&owned));
-        owned_label.add_css_class("kalam-muted");
-        owned_label.set_halign(gtk::Align::Start);
-        owned_label.set_wrap(true);
-        owned_label.set_xalign(0.0);
-        card.append(&owned_label);
-
-        if entry.missing.is_empty() {
-            let ok = gtk::Label::new(Some("No gap seen in the series numbers you already own."));
-            ok.add_css_class("kalam-card-meta");
-            ok.set_halign(gtk::Align::Start);
-            card.append(&ok);
-        } else {
-            let chips = gtk::FlowBox::builder()
-                .selection_mode(gtk::SelectionMode::None)
-                .column_spacing(6)
-                .row_spacing(6)
-                .halign(gtk::Align::Start)
-                .build();
-            for missing in &entry.missing {
-                let chip = gtk::Label::new(Some(missing));
-                chip.add_css_class("kalam-card-badge");
-                chips.insert(&chip, -1);
-            }
-            card.append(&chips);
-        }
-
-        host.append(&card);
-    }
-}
-
-fn rebuild_works(host: &gtk::Box, model: &AuthorPageModel) {
-    clear_box(host);
-    let Some(profile) = &model.profile else {
-        host.append(&placeholder("No online works have been loaded yet."));
-        return;
-    };
-    let works = works_not_in_library(profile, &model.owned_books);
-    if works.is_empty() {
-        host.append(&placeholder(
-            "No extra works to show yet, or all fetched works are already in your library.",
+    if model.series.is_empty() {
+        host.append(&simple_note(
+            "No series showed up from the books you already own by this author.",
         ));
         return;
     }
 
     let flow = gtk::FlowBox::builder()
         .selection_mode(gtk::SelectionMode::None)
-        .column_spacing(12)
-        .row_spacing(12)
+        .column_spacing(14)
+        .row_spacing(14)
         .halign(gtk::Align::Start)
         .build();
 
-    for work in works {
-        let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        card.add_css_class("kalam-card");
-        card.add_css_class("kalam-author-work-card");
-
-        let title = gtk::Label::new(Some(&work.title));
-        title.add_css_class("kalam-card-title");
-        title.set_halign(gtk::Align::Start);
-        title.set_wrap(true);
-        title.set_xalign(0.0);
-        card.append(&title);
-
-        let mut bits = Vec::new();
-        if let Some(year) = work.first_publish_year {
-            bits.push(year.to_string());
-        }
-        if !work.subjects.is_empty() {
-            bits.push(work.subjects.join(" · "));
-        }
-        let meta = gtk::Label::new(Some(&line_text(&bits)));
-        meta.add_css_class("kalam-card-meta");
-        meta.set_halign(gtk::Align::Start);
-        meta.set_wrap(true);
-        meta.set_xalign(0.0);
-        card.append(&meta);
-
-        flow.insert(&card, -1);
+    for entry in &model.series {
+        flow.insert(&series_card(entry, model.profile.as_ref()), -1);
     }
 
     host.append(&flow);
 }
 
-fn rebuild_quotes(host: &gtk::Box, quotes: &[AuthorQuote]) {
+fn rebuild_owned_books(host: &gtk::Box, books: &[Book], sender: &ComponentSender<AuthorPageModel>) {
     clear_box(host);
-    if quotes.is_empty() {
-        host.append(&placeholder(
-            "No saved quotes yet from the books you own by this author.",
+    if books.is_empty() {
+        host.append(&simple_note(
+            "No books by this author are in your library yet.",
         ));
         return;
     }
 
-    for quote in quotes {
-        let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        card.add_css_class("kalam-card");
+    let mut books = books.to_vec();
+    books.sort_by(|a, b| {
+        a.series
+            .as_deref()
+            .unwrap_or("")
+            .cmp(b.series.as_deref().unwrap_or(""))
+            .then_with(|| {
+                a.series_index
+                    .partial_cmp(&b.series_index)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| a.title.cmp(&b.title))
+    });
 
-        let text = gtk::Label::new(Some(&format!("“{}”", quote.excerpt)));
-        text.add_css_class("kalam-author-quote");
-        text.set_halign(gtk::Align::Start);
-        text.set_wrap(true);
-        text.set_xalign(0.0);
-        card.append(&text);
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 24);
+    row.add_css_class("kalam-author-books-strip");
+    row.set_halign(gtk::Align::Start);
 
-        let meta = gtk::Label::new(Some(&quote.book_title));
-        meta.add_css_class("kalam-card-meta");
-        meta.set_halign(gtk::Align::Start);
-        meta.set_xalign(0.0);
-        card.append(&meta);
-
-        host.append(&card);
+    for book in books {
+        let book_id = book.id;
+        let full_sender = sender.clone();
+        let float_sender = sender.clone();
+        row.append(&build_book_card(
+            &book,
+            move || {
+                full_sender
+                    .output(AuthorPageOut::OpenBook { book_id })
+                    .ok();
+            },
+            move || {
+                float_sender
+                    .output(AuthorPageOut::OpenBookDialog { book_id })
+                    .ok();
+            },
+        ));
     }
+
+    let rail = gtk::ScrolledWindow::new();
+    rail.add_css_class("kalam-author-books-rail");
+    rail.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
+    rail.set_hexpand(true);
+    rail.set_vexpand(false);
+    rail.set_child(Some(&row));
+    host.append(&rail);
 }
 
-fn hero_facts(model: &AuthorPageModel) -> String {
-    let Some(profile) = &model.profile else {
-        return String::new();
-    };
-    let mut bits = Vec::new();
-    match (profile.birth_date.trim(), profile.death_date.trim()) {
-        ("", "") => {}
-        (birth, "") => bits.push(format!("Born {birth}")),
-        ("", death) => bits.push(format!("Died {death}")),
-        (birth, death) => bits.push(format!("{birth}–{death}")),
+fn rebuild_works(host: &gtk::Box, model: &AuthorPageModel) {
+    clear_box(host);
+    if model.profile.is_none() {
+        let text = if model.loading {
+            "Loading more books by this author…"
+        } else {
+            "No online author data has been loaded yet."
+        };
+        host.append(&simple_note(text));
+        return;
     }
-    if profile.work_count > 0 {
-        bits.push(format!("{} works found", profile.work_count));
+
+    let groups = more_work_groups(model);
+    if groups.is_empty() {
+        host.append(&simple_note(
+            "No extra books are ready to show yet, or you already own the fetched ones.",
+        ));
+        return;
     }
-    if !profile.aliases.is_empty() {
-        bits.push(format!("{} known name forms", profile.aliases.len()));
+
+    let flow = gtk::FlowBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .column_spacing(16)
+        .row_spacing(16)
+        .halign(gtk::Align::Start)
+        .build();
+
+    for group in groups {
+        flow.insert(&work_group_card(&group), -1);
     }
-    line_text(&bits)
+
+    host.append(&flow);
 }
 
-fn side_note_text(model: &AuthorPageModel) -> &'static str {
-    if model.quotes.is_empty() {
-        "When you save quotes from this author’s books, they will show up here too."
-    } else {
-        "This page mixes your own library with fetched author info and keeps it locally for later."
+fn hero_fact_rows(model: &AuthorPageModel, display_name: &str) -> Vec<(String, String)> {
+    let mut rows = vec![("Name".to_string(), display_name.to_string())];
+
+    if let Some(profile) = &model.profile {
+        if !profile.birth_date.trim().is_empty() {
+            rows.push((
+                "Date of birth".to_string(),
+                profile.birth_date.trim().to_string(),
+            ));
+        }
+        if !profile.death_date.trim().is_empty() {
+            rows.push((
+                "Date of death".to_string(),
+                profile.death_date.trim().to_string(),
+            ));
+        }
+        if profile.work_count > 0 {
+            rows.push((
+                "Works found".to_string(),
+                profile.work_count.to_string(),
+            ));
+        }
+        let aliases = profile
+            .aliases
+            .iter()
+            .filter(|name| normalize_key(name) != normalize_key(display_name))
+            .take(3)
+            .cloned()
+            .collect::<Vec<_>>();
+        if !aliases.is_empty() {
+            rows.push(("Also written as".to_string(), aliases.join(" · ")));
+        }
+        if !profile.fetched_at.trim().is_empty() {
+            rows.push((
+                "Last updated".to_string(),
+                profile
+                    .fetched_at
+                    .split('T')
+                    .next()
+                    .unwrap_or(profile.fetched_at.as_str())
+                    .to_string(),
+            ));
+        }
     }
+
+    if model.loading {
+        rows.push(("Status".to_string(), "Loading author info…".to_string()));
+    }
+
+    rows
+}
+
+fn fact_row(label: &str, value: &str) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+    row.add_css_class("kalam-author-fact-row");
+
+    let key = gtk::Label::new(Some(label));
+    key.add_css_class("kalam-author-fact-key");
+    key.set_halign(gtk::Align::Start);
+    key.set_valign(gtk::Align::Start);
+    key.set_xalign(0.0);
+    row.append(&key);
+
+    let val = gtk::Label::new(Some(value));
+    val.add_css_class("kalam-author-fact-val");
+    val.set_halign(gtk::Align::Start);
+    val.set_wrap(true);
+    val.set_xalign(0.0);
+    row.append(&val);
+
+    row
+}
+
+fn author_photo_overlay(
+    model: &AuthorPageModel,
+    sender: &ComponentSender<AuthorPageModel>,
+) -> gtk::Overlay {
+    let overlay = gtk::Overlay::new();
+    overlay.add_css_class("kalam-author-photo-wrap");
+    overlay.set_halign(gtk::Align::Center);
+    overlay.set_child(Some(&author_photo(model)));
+
+    let refresh = gtk::Button::new();
+    refresh.add_css_class("kalam-author-photo-refresh");
+    refresh.set_tooltip_text(Some("Refresh author info"));
+    refresh.set_halign(gtk::Align::End);
+    refresh.set_valign(gtk::Align::End);
+    refresh.set_sensitive(!model.loading);
+    let icon = gtk::Image::from_icon_name("view-refresh-symbolic");
+    refresh.set_child(Some(&icon));
+    let tx = sender.input_sender().clone();
+    refresh.connect_clicked(move |_| {
+        let _ = tx.send(AuthorPageMsg::Refresh);
+    });
+    overlay.add_overlay(&refresh);
+
+    overlay
+}
+
+fn author_stats(model: &AuthorPageModel) -> gtk::Grid {
+    let (owned, finished, reading) = status_counts(&model.owned_books);
+    let unread = owned.saturating_sub(finished + reading);
+
+    let grid = gtk::Grid::new();
+    grid.add_css_class("kalam-author-stats-grid");
+    grid.set_row_spacing(10);
+    grid.set_column_spacing(10);
+    grid.set_halign(gtk::Align::Center);
+
+    for (idx, (label, value, css)) in [
+        ("Owned", owned.to_string(), "kalam-author-stat-owned"),
+        ("Finished", finished.to_string(), "kalam-author-stat-finished"),
+        ("Reading", reading.to_string(), "kalam-author-stat-reading"),
+        ("Unread", unread.to_string(), "kalam-author-stat-unread"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let disc = stat_disc(label, &value, css);
+        grid.attach(&disc, (idx % 2) as i32, (idx / 2) as i32, 1, 1);
+    }
+
+    grid
+}
+
+fn stat_disc(label: &str, value: &str, css: &str) -> gtk::Box {
+    let disc = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    disc.add_css_class("kalam-author-stat-disc");
+    disc.add_css_class(css);
+    disc.set_halign(gtk::Align::Center);
+    disc.set_valign(gtk::Align::Center);
+    disc.set_size_request(92, 92);
+
+    let value_label = gtk::Label::new(Some(value));
+    value_label.add_css_class("kalam-author-stat-disc-value");
+    value_label.set_halign(gtk::Align::Center);
+    disc.append(&value_label);
+
+    let label_widget = gtk::Label::new(Some(label));
+    label_widget.add_css_class("kalam-author-stat-disc-label");
+    label_widget.set_halign(gtk::Align::Center);
+    disc.append(&label_widget);
+
+    disc
 }
 
 fn author_photo(model: &AuthorPageModel) -> gtk::Widget {
     if let Some(profile) = &model.profile {
         if let Some(path) = profile.photo_path.as_deref() {
             if path.is_file() {
-                let photo = crate::widgets::book_row::cover_widget(Some(path), 220, 260);
+                let photo = cover_widget(Some(path), 220, 220);
+                photo.remove_css_class("kalam-cover-frame");
+                photo.add_css_class("kalam-author-photo-shell");
                 photo.add_css_class("kalam-author-photo");
+                photo.set_overflow(gtk::Overflow::Hidden);
+                photo.set_size_request(220, 220);
                 return photo;
             }
         }
@@ -618,7 +569,7 @@ fn author_photo(model: &AuthorPageModel) -> gtk::Widget {
 
     let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
     placeholder.add_css_class("kalam-author-photo-placeholder");
-    placeholder.set_size_request(220, 260);
+    placeholder.set_size_request(220, 220);
     placeholder.set_halign(gtk::Align::Center);
     placeholder.set_valign(gtk::Align::Start);
 
@@ -632,26 +583,298 @@ fn author_photo(model: &AuthorPageModel) -> gtk::Widget {
     label.add_css_class("kalam-author-photo-initials");
     label.set_halign(gtk::Align::Center);
     label.set_valign(gtk::Align::Center);
-    placeholder.set_vexpand(false);
     placeholder.append(&label);
     placeholder.upcast()
 }
 
-fn trim_series_index(value: f32) -> String {
-    if value.fract().abs() < f32::EPSILON {
-        format!("{}", value as i64)
+fn series_card(entry: &SeriesProgress, profile: Option<&AuthorProfile>) -> gtk::Box {
+    let card = gtk::Box::new(gtk::Orientation::Horizontal, 14);
+    card.add_css_class("kalam-author-series-card");
+    card.set_size_request(480, -1);
+    card.set_halign(gtk::Align::Start);
+
+    let first_book = entry.owned.first();
+    let cover = cover_widget(
+        first_book.and_then(|book| book.cover_path.as_deref()),
+        72,
+        112,
+    );
+    card.append(&cover);
+
+    let body = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    body.set_hexpand(true);
+
+    let title = gtk::Label::new(Some(&entry.name));
+    title.add_css_class("kalam-author-series-title");
+    title.set_halign(gtk::Align::Start);
+    title.set_wrap(true);
+    title.set_xalign(0.0);
+    body.append(&title);
+
+    let summary = online_series_summary(profile, &entry.name).unwrap_or_default();
+    let known_count = summary.known_count.max(entry.owned.len());
+    let counts = gtk::Label::new(Some(&format!(
+        "{} book{} · you own {}",
+        known_count,
+        if known_count == 1 { "" } else { "s" },
+        entry.owned.len()
+    )));
+    counts.add_css_class("kalam-author-series-meta");
+    counts.set_halign(gtk::Align::Start);
+    counts.set_xalign(0.0);
+    body.append(&counts);
+
+    if let Some(years) = series_year_text(entry, &summary) {
+        let years_label = gtk::Label::new(Some(&years));
+        years_label.add_css_class("kalam-author-series-meta");
+        years_label.set_halign(gtk::Align::Start);
+        years_label.set_xalign(0.0);
+        body.append(&years_label);
+    }
+
+    let status_text = if entry.missing.is_empty() {
+        "Your shelf has no missing numbered books so far.".to_string()
     } else {
-        format!("{value}")
+        format!("Missing from your shelf: {}", entry.missing.join(" · "))
+    };
+    let status = gtk::Label::new(Some(&status_text));
+    status.add_css_class("kalam-author-series-status");
+    status.set_halign(gtk::Align::Start);
+    status.set_wrap(true);
+    status.set_xalign(0.0);
+    body.append(&status);
+
+    card.append(&body);
+    card
+}
+
+fn online_series_summary(profile: Option<&AuthorProfile>, series_name: &str) -> Option<OnlineSeriesSummary> {
+    let profile = profile?;
+    let target = normalize_key(series_name);
+    if target.is_empty() {
+        return None;
+    }
+
+    let mut years = Vec::new();
+    let mut count = 0usize;
+    for work in &profile.works {
+        if normalize_key(&work.series_name) == target {
+            count += 1;
+            if let Some(year) = work.first_publish_year {
+                years.push(year);
+            }
+        }
+    }
+    if count == 0 {
+        return None;
+    }
+
+    years.sort_unstable();
+    Some(OnlineSeriesSummary {
+        known_count: count,
+        first_year: years.first().copied(),
+        last_year: years.last().copied(),
+    })
+}
+
+fn series_year_text(entry: &SeriesProgress, summary: &OnlineSeriesSummary) -> Option<String> {
+    if let Some(text) = year_range_text(summary.first_year, summary.last_year) {
+        return Some(format!("Release: {text}"));
+    }
+
+    let mut years = entry.owned.iter().filter_map(book_year).collect::<Vec<_>>();
+    years.sort_unstable();
+    year_range_text(years.first().copied(), years.last().copied()).map(|text| format!("Release: {text}"))
+}
+
+fn book_year(book: &Book) -> Option<i64> {
+    let digits = book
+        .published
+        .chars()
+        .filter(|ch| ch.is_ascii_digit())
+        .collect::<String>();
+    if digits.len() < 4 {
+        None
+    } else {
+        digits[..4].parse().ok()
     }
 }
 
-fn placeholder(text: &str) -> gtk::Label {
+fn more_work_groups(model: &AuthorPageModel) -> Vec<WorkGroup> {
+    let Some(profile) = &model.profile else {
+        return Vec::new();
+    };
+
+    let works = works_not_in_library(profile, &model.owned_books);
+    let mut grouped: BTreeMap<String, WorkGroupBuilder> = BTreeMap::new();
+
+    for work in works {
+        let series_name = work.series_name.trim();
+        let (key, title, is_series) = if series_name.is_empty() {
+            (
+                format!(
+                    "work:{}",
+                    if work.work_key.trim().is_empty() {
+                        normalize_key(&work.title)
+                    } else {
+                        normalize_key(&work.work_key)
+                    }
+                ),
+                work.title.clone(),
+                false,
+            )
+        } else {
+            (
+                format!("series:{}", normalize_key(series_name)),
+                series_name.to_string(),
+                true,
+            )
+        };
+
+        let entry = grouped.entry(key).or_insert_with(|| WorkGroupBuilder {
+            title,
+            is_series,
+            ..WorkGroupBuilder::default()
+        });
+        entry.work_count += 1;
+        if entry.cover_path.is_none() {
+            entry.cover_path = work_cover_path(&work);
+        }
+        if let Some(year) = work.first_publish_year {
+            entry.years.push(year);
+        }
+        if let Some(avg) = work.rating_average {
+            if work.rating_count > 0 {
+                let count = work.rating_count as f64;
+                entry.rating_weight += (avg as f64) * count;
+                entry.rating_count += work.rating_count;
+            }
+        }
+    }
+
+    let mut groups = grouped
+        .into_values()
+        .map(|mut entry| {
+            entry.years.sort_unstable();
+            WorkGroup {
+                title: entry.title,
+                work_count: entry.work_count,
+                first_year: entry.years.first().copied(),
+                last_year: entry.years.last().copied(),
+                cover_path: entry.cover_path,
+                rating_average: if entry.rating_count > 0 {
+                    Some((entry.rating_weight / entry.rating_count as f64) as f32)
+                } else {
+                    None
+                },
+                rating_count: entry.rating_count,
+                is_series: entry.is_series,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    groups.sort_by(|a, b| {
+        a.first_year
+            .unwrap_or(i64::MAX)
+            .cmp(&b.first_year.unwrap_or(i64::MAX))
+            .then_with(|| a.title.cmp(&b.title))
+    });
+    groups.truncate(18);
+    groups
+}
+
+fn work_group_card(group: &WorkGroup) -> gtk::Box {
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    card.add_css_class("kalam-author-discovery-card");
+    card.set_size_request(210, -1);
+    card.set_halign(gtk::Align::Start);
+
+    card.append(&work_group_cover(group));
+
+    let title = gtk::Label::new(Some(&group.title));
+    title.add_css_class("kalam-author-discovery-title");
+    title.set_halign(gtk::Align::Start);
+    title.set_wrap(true);
+    title.set_xalign(0.0);
+    card.append(&title);
+
+    let kind = if group.is_series {
+        format!(
+            "Series · {} book{}",
+            group.work_count,
+            if group.work_count == 1 { "" } else { "s" }
+        )
+    } else {
+        "Standalone".to_string()
+    };
+    let meta = gtk::Label::new(Some(&kind));
+    meta.add_css_class("kalam-author-discovery-meta");
+    meta.set_halign(gtk::Align::Start);
+    meta.set_xalign(0.0);
+    card.append(&meta);
+
+    if let Some(years) = year_range_text(group.first_year, group.last_year) {
+        let years_label = gtk::Label::new(Some(&years));
+        years_label.add_css_class("kalam-author-discovery-meta");
+        years_label.set_halign(gtk::Align::Start);
+        years_label.set_xalign(0.0);
+        card.append(&years_label);
+    }
+
+    if let Some(avg) = group.rating_average {
+        let rating_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        rating_box.set_halign(gtk::Align::Start);
+        rating_box.append(&stars_label(rating_half_stars(avg)));
+        if group.rating_count > 0 {
+            let count = gtk::Label::new(Some(&format!("{} ratings", group.rating_count)));
+            count.add_css_class("kalam-author-discovery-meta");
+            count.set_halign(gtk::Align::Start);
+            rating_box.append(&count);
+        }
+        card.append(&rating_box);
+    }
+
+    card
+}
+
+fn work_group_cover(group: &WorkGroup) -> gtk::Widget {
+    cover_widget(group.cover_path.as_deref(), 136, 204)
+}
+
+fn work_cover_path(work: &AuthorWork) -> Option<PathBuf> {
+    let file = work.cover_file.as_deref()?;
+    let path = crate::paths::authors_dir().join(file);
+    path.is_file().then_some(path)
+}
+
+fn rating_half_stars(value: f32) -> u8 {
+    (value * 2.0).round().clamp(0.0, 10.0) as u8
+}
+
+fn year_range_text(first: Option<i64>, last: Option<i64>) -> Option<String> {
+    match (first, last) {
+        (Some(a), Some(b)) if a == b => Some(a.to_string()),
+        (Some(a), Some(b)) => Some(format!("{a}–{b}")),
+        (Some(a), None) => Some(a.to_string()),
+        (None, Some(b)) => Some(b.to_string()),
+        (None, None) => None,
+    }
+}
+
+fn simple_note(text: &str) -> gtk::Label {
     let label = gtk::Label::new(Some(text));
-    label.add_css_class("kalam-placeholder");
+    label.add_css_class("kalam-author-empty");
     label.set_halign(gtk::Align::Start);
     label.set_wrap(true);
     label.set_xalign(0.0);
     label
+}
+
+fn normalize_key(text: &str) -> String {
+    text.to_lowercase()
+        .chars()
+        .filter(|ch| ch.is_alphanumeric())
+        .collect()
 }
 
 fn clear_box(host: &gtk::Box) {

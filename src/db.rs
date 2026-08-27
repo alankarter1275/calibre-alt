@@ -105,7 +105,19 @@ pub struct AuthorWork {
     pub first_publish_year: Option<i64>,
     pub subjects: Vec<String>,
     pub cover_id: Option<i64>,
+    #[serde(default)]
+    pub cover_file: Option<String>,
     pub work_key: String,
+    #[serde(default)]
+    pub series_key: String,
+    #[serde(default)]
+    pub series_name: String,
+    #[serde(default)]
+    pub series_position: String,
+    #[serde(default)]
+    pub rating_average: Option<f32>,
+    #[serde(default)]
+    pub rating_count: i64,
 }
 
 #[derive(Debug, Clone, Default)]

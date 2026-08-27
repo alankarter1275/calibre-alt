@@ -486,67 +486,66 @@ button.kalam-author-link-reader:hover {
 .kalam-author-hero {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
-    border-radius: 18px;
-    padding: 20px;
+    border-radius: 22px;
+    padding: 24px 26px;
+}
+
+.kalam-author-side {
+    min-width: 240px;
 }
 
 .kalam-author-name {
-    font-size: 2.1rem;
+    font-size: 2.25rem;
     font-weight: 700;
     color: @kalam_text;
 }
 
-.kalam-author-meta {
-    font-size: 0.9rem;
-    color: @kalam_text_dim;
+.kalam-author-facts {
+    margin-top: 2px;
 }
 
-.kalam-author-bio {
-    font-size: 0.95rem;
-    color: @kalam_text;
-    line-height: 1.55;
+.kalam-author-fact-row {
+    min-height: 22px;
 }
 
-.kalam-author-stat {
-    background: @kalam_surface_2;
-    border: 1px solid @kalam_border;
-    border-radius: 12px;
-    padding: 12px 14px;
-}
-
-.kalam-author-stat-value {
-    font-size: 1.35rem;
+.kalam-author-fact-key {
+    min-width: 108px;
+    font-size: 0.76rem;
     font-weight: 700;
-    color: @kalam_text;
-}
-
-.kalam-author-stat-label {
-    font-size: 0.72rem;
     letter-spacing: 0.05em;
     color: @kalam_text_dim;
 }
 
-.kalam-author-side-card {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 18px;
-    padding: 14px;
+.kalam-author-fact-val {
+    font-size: 0.92rem;
+    color: @kalam_text;
 }
 
-.kalam-author-side-note {
-    font-size: 0.82rem;
-    color: @kalam_text_dim;
+.kalam-author-bio {
+    margin-top: 8px;
+    font-size: 0.96rem;
+    color: @kalam_text;
+    line-height: 1.6;
 }
 
-.kalam-author-photo {
-    border-radius: 14px;
+.kalam-author-photo-wrap {
+    min-width: 220px;
+    min-height: 220px;
+}
+
+.kalam-author-photo-shell,
+.kalam-author-photo,
+.kalam-author-photo-shell .kalam-cover-img {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    border-radius: 999px;
 }
 
 .kalam-author-photo-placeholder {
     background: linear-gradient(160deg, @kalam_surface_2 0%, @kalam_surface 100%);
-    border: 1px solid @kalam_border;
-    border-radius: 14px;
-    padding: 88px 0;
+    border: none;
+    border-radius: 999px;
 }
 
 .kalam-author-photo-initials {
@@ -555,14 +554,124 @@ button.kalam-author-link-reader:hover {
     color: @kalam_text;
 }
 
-.kalam-author-work-card {
-    min-width: 220px;
+button.kalam-author-photo-refresh {
+    min-width: 38px;
+    min-height: 38px;
+    padding: 0;
+    margin: 0 10px 10px 0;
+    border: none;
+    border-radius: 999px;
+    background: alpha(@kalam_surface, 0.94);
+    color: @kalam_text;
+    box-shadow: 0 10px 20px alpha(#000, 0.28);
 }
 
-.kalam-author-quote {
-    font-size: 0.95rem;
+button.kalam-author-photo-refresh:hover {
+    background: @kalam_surface;
+    color: @kalam_accent;
+}
+
+.kalam-author-photo-refresh image {
+    -gtk-icon-size: 16px;
+}
+
+.kalam-author-stats-grid {
+    margin-top: 2px;
+}
+
+.kalam-author-stat-disc {
+    border-radius: 999px;
+    padding: 0;
+}
+
+.kalam-author-stat-disc-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: inherit;
+}
+
+.kalam-author-stat-disc-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: inherit;
+}
+
+.kalam-author-stat-owned {
+    background: alpha(@kalam_accent, 0.18);
+    color: @kalam_accent;
+}
+
+.kalam-author-stat-finished {
+    background: alpha(@kalam_success, 0.18);
+    color: @kalam_success;
+}
+
+.kalam-author-stat-reading {
+    background: alpha(@kalam_warning, 0.18);
+    color: @kalam_warning;
+}
+
+.kalam-author-stat-unread {
+    background: alpha(@kalam_text_dim, 0.14);
+    color: @kalam_text_dim;
+}
+
+.kalam-author-series-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 18px;
+    padding: 14px;
+}
+
+.kalam-author-series-title {
+    font-size: 1.02rem;
+    font-weight: 700;
     color: @kalam_text;
-    font-style: italic;
+}
+
+.kalam-author-series-meta {
+    font-size: 0.8rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-author-series-status {
+    margin-top: 2px;
+    font-size: 0.86rem;
+    color: @kalam_text;
+}
+
+.kalam-author-books-rail,
+.kalam-author-books-rail viewport {
+    background: transparent;
+}
+
+.kalam-author-books-strip {
+    padding-bottom: 4px;
+}
+
+.kalam-author-discovery-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 18px;
+    padding: 14px;
+}
+
+.kalam-author-discovery-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-author-discovery-meta {
+    font-size: 0.76rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-author-empty {
+    font-size: 0.9rem;
+    color: @kalam_text_dim;
+    padding-left: 2px;
 }
 
 /* ── cover cards (Goodreads-style bookshelf grid) ───── */

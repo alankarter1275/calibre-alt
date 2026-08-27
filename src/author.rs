@@ -3,10 +3,11 @@ use crate::metadata::{self, CoverRef};
 use crate::models::Book;
 use crate::paths::authors_dir;
 use serde::Deserialize;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct AuthorQuote {
     pub book_title: String,
     pub excerpt: String,
@@ -91,6 +92,46 @@ struct AuthorWorkDoc {
     first_publish_date: String,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct WorkDetailsResponse {
+    #[serde(default)]
+    series: Vec<WorkSeriesRef>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct WorkSeriesRef {
+    #[serde(default)]
+    series: WorkKeyRef,
+    #[serde(default)]
+    position: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct WorkKeyRef {
+    #[serde(default)]
+    key: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SeriesResponse {
+    #[serde(default)]
+    name: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RatingsResponse {
+    #[serde(default)]
+    summary: RatingsSummary,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RatingsSummary {
+    #[serde(default)]
+    average: f32,
+    #[serde(default)]
+    count: i64,
+}
+
 pub fn split_author_names(text: &str) -> Vec<String> {
     let text = collapse_ws(text);
     if text.is_empty() {
@@ -159,6 +200,7 @@ pub fn owned_books_for_author(catalog: &Catalog, author_name: &str) -> Vec<Book>
     books
 }
 
+#[allow(dead_code)]
 pub fn saved_quotes_for_books(catalog: &Catalog, books: &[Book], limit: usize) -> Vec<AuthorQuote> {
     let mut quotes = Vec::new();
     for book in books {
@@ -284,7 +326,6 @@ pub fn works_not_in_library(profile: &AuthorProfile, owned_books: &[Book]) -> Ve
             .cmp(&b.first_publish_year.unwrap_or(i64::MAX))
             .then_with(|| a.title.cmp(&b.title))
     });
-    works.truncate(24);
     works
 }
 
@@ -303,6 +344,7 @@ pub fn initials(name: &str) -> String {
     }
 }
 
+#[allow(dead_code)]
 pub fn line_text(parts: &[String]) -> String {
     parts
         .iter()
@@ -321,6 +363,7 @@ pub fn status_counts(books: &[Book]) -> (usize, usize, usize) {
     (books.len(), finished, reading)
 }
 
+#[allow(dead_code)]
 fn is_saved_quote(ann: &Annotation) -> bool {
     matches!(ann.kind.as_str(), "quote" | "highlight") && !ann.text_excerpt.trim().is_empty()
 }
@@ -446,7 +489,7 @@ fn fetch_author_profile(doc: &AuthorSearchDoc) -> Result<AuthorProfile, String> 
         Some(OpenLibraryText::Object { value }) => value,
         None => String::new(),
     };
-    let works = works_parsed
+    let mut works = works_parsed
         .entries
         .into_iter()
         .filter(|entry| !entry.title.trim().is_empty())
@@ -462,9 +505,19 @@ fn fetch_author_profile(doc: &AuthorSearchDoc) -> Result<AuthorProfile, String> 
                 .take(4)
                 .collect(),
             cover_id: entry.covers.into_iter().next(),
+            cover_file: None,
             work_key: entry.key,
+            series_key: String::new(),
+            series_name: String::new(),
+            series_position: String::new(),
+            rating_average: None,
+            rating_count: 0,
         })
         .collect::<Vec<_>>();
+    let mut series_names = HashMap::new();
+    for work in &mut works {
+        enrich_author_work(work, &mut series_names);
+    }
 
     let mut aliases = parsed.alternate_names;
     aliases.push(canonical_name.clone());
@@ -502,6 +555,114 @@ fn fetch_author_profile(doc: &AuthorSearchDoc) -> Result<AuthorProfile, String> 
     })
 }
 
+fn enrich_author_work(work: &mut AuthorWork, series_names: &mut HashMap<String, String>) {
+    if let Some(cover_id) = work.cover_id {
+        if let Ok(photo_file) = fetch_work_cover(&work.work_key, cover_id) {
+            work.cover_file = photo_file;
+        }
+    }
+
+    if !work.work_key.trim().is_empty() {
+        if let Ok(details) = fetch_work_details(&work.work_key) {
+            if let Some(series) = details.series.into_iter().next() {
+                let series_key = series_path(&series.series.key);
+                if !series_key.is_empty() {
+                    work.series_key = series_key.clone();
+                    work.series_position = collapse_ws(&series.position);
+                    let name = load_series_name(series_names, &series_key);
+                    if !name.is_empty() {
+                        work.series_name = name;
+                    }
+                }
+            }
+        }
+
+        if let Ok((average, count)) = fetch_work_rating(&work.work_key) {
+            if count > 0 {
+                work.rating_average = Some(average.clamp(0.0, 5.0));
+                work.rating_count = count;
+            }
+        }
+    }
+
+    if work.series_name.trim().is_empty() {
+        if let Some(name) = series_name_from_subjects(&work.subjects) {
+            work.series_name = name;
+        }
+    }
+}
+
+fn fetch_work_details(work_key: &str) -> Result<WorkDetailsResponse, String> {
+    let body = metadata::agent()
+        .get(&format!("https://openlibrary.org{}.json", work_path(work_key)))
+        .call()
+        .map_err(|e| e.to_string())?
+        .into_string()
+        .map_err(|e| e.to_string())?;
+    serde_json::from_str(&body).map_err(|e| e.to_string())
+}
+
+fn fetch_work_rating(work_key: &str) -> Result<(f32, i64), String> {
+    let body = metadata::agent()
+        .get(&format!(
+            "https://openlibrary.org{}/ratings.json",
+            work_path(work_key)
+        ))
+        .call()
+        .map_err(|e| e.to_string())?
+        .into_string()
+        .map_err(|e| e.to_string())?;
+    let parsed: RatingsResponse = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    Ok((parsed.summary.average, parsed.summary.count))
+}
+
+fn fetch_work_cover(work_key: &str, cover_id: i64) -> Result<Option<String>, String> {
+    if cover_id <= 0 {
+        return Ok(None);
+    }
+    let stem = work_key.rsplit('/').next().unwrap_or("work").trim();
+    let file_name = format!("{stem}-{cover_id}.jpg");
+    let path = authors_dir().join(&file_name);
+    if path.is_file() {
+        return Ok(Some(file_name));
+    }
+
+    let bytes = match metadata::fetch_cover(&CoverRef::OpenLibraryId(cover_id)) {
+        Ok(bytes) if !bytes.is_empty() => bytes,
+        Ok(_) => return Ok(None),
+        Err(_) => return Ok(None),
+    };
+    fs::create_dir_all(authors_dir()).map_err(|e| e.to_string())?;
+    fs::write(path, bytes).map_err(|e| e.to_string())?;
+    Ok(Some(file_name))
+}
+
+fn load_series_name(cache: &mut HashMap<String, String>, series_key: &str) -> String {
+    if let Some(name) = cache.get(series_key) {
+        return name.clone();
+    }
+
+    let name = metadata::agent()
+        .get(&format!("https://openlibrary.org{}.json", series_path(series_key)))
+        .call()
+        .map_err(|e| e.to_string())
+        .and_then(|resp| resp.into_string().map_err(|e| e.to_string()))
+        .and_then(|body| serde_json::from_str::<SeriesResponse>(&body).map_err(|e| e.to_string()))
+        .map(|series| collapse_ws(&series.name))
+        .unwrap_or_default();
+
+    cache.insert(series_key.to_string(), name.clone());
+    name
+}
+
+fn series_name_from_subjects(subjects: &[String]) -> Option<String> {
+    subjects
+        .iter()
+        .find_map(|subject| subject.strip_prefix("series:"))
+        .map(|name| collapse_ws(&name.replace('_', " ")))
+        .filter(|name| !name.is_empty())
+}
+
 fn fetch_author_photo(author_key: &str) -> Result<Option<String>, String> {
     let olid = author_key.rsplit('/').next().unwrap_or(author_key).trim();
     if olid.is_empty() {
@@ -529,6 +690,28 @@ fn author_path(key: &str) -> String {
         format!("/authors/{key}")
     } else {
         format!("/authors/{}", key.trim_start_matches('/'))
+    }
+}
+
+fn work_path(key: &str) -> String {
+    let key = key.trim();
+    if key.starts_with("/works/") {
+        key.to_string()
+    } else if key.starts_with("OL") {
+        format!("/works/{key}")
+    } else {
+        format!("/works/{}", key.trim_start_matches('/'))
+    }
+}
+
+fn series_path(key: &str) -> String {
+    let key = key.trim();
+    if key.starts_with("/series/") {
+        key.to_string()
+    } else if key.starts_with("OL") {
+        format!("/series/{key}")
+    } else {
+        format!("/series/{}", key.trim_start_matches('/'))
     }
 }
 
