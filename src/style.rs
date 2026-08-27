@@ -860,6 +860,63 @@ button.kalam-reader-stepper-btn:hover {
     color: @kalam_text;
 }
 
+.kalam-reader-settings-switcher {
+    padding-bottom: 2px;
+}
+
+button.kalam-reader-settings-switch {
+    background: transparent;
+    border: 1px solid alpha(@kalam_border, 0.95);
+    border-radius: 999px;
+    color: @kalam_text_dim;
+    padding: 7px 10px;
+    font-size: 0.76rem;
+}
+
+button.kalam-reader-settings-switch:hover {
+    background: alpha(@kalam_surface_2, 0.85);
+    color: @kalam_text;
+}
+
+button.kalam-reader-settings-switch.active {
+    background: @kalam_accent_dim;
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+.kalam-reader-ui-setting {
+    padding-top: 2px;
+}
+
+.kalam-reader-ui-setting-head {
+    min-height: 20px;
+}
+
+.kalam-reader-ui-setting-label {
+    font-size: 0.82rem;
+    color: @kalam_text;
+}
+
+.kalam-reader-ui-setting-value {
+    min-width: 58px;
+    color: @kalam_accent;
+}
+
+button.kalam-reader-ui-preset {
+    min-width: 0;
+    min-height: 28px;
+    padding: 4px 0;
+    font-size: 0.68rem;
+}
+
+button.kalam-reader-ui-preset.kalam-reader-ui-preset-custom.active {
+    color: @kalam_text;
+}
+
+.kalam-reader-ui-stepper-row {
+    padding-top: 2px;
+}
+
 button.kalam-reader-theme-dot {
     min-width: 24px;
     min-height: 24px;
