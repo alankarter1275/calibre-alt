@@ -2505,7 +2505,10 @@ fn reader_ui_setting_block(
     )));
     let tx = sender.input_sender().clone();
     minus.connect_clicked(move |_| {
-        let _ = tx.send(ReaderMsg::AdjustUiSetting(setting, -reader_ui_step(setting)));
+        let _ = tx.send(ReaderMsg::AdjustUiSetting(
+            setting,
+            -reader_ui_step(setting),
+        ));
     });
     controls.append(&minus);
 
@@ -2820,7 +2823,8 @@ fn sync_reader_controls(model: &ReaderModel) {
             .value_entry
             .set_tooltip_text(Some(&reader_ui_value_text(*setting, value)));
         let desired_text = value.to_string();
-        if !controls.value_entry.has_focus() && controls.value_entry.text().as_str() != desired_text {
+        if !controls.value_entry.has_focus() && controls.value_entry.text().as_str() != desired_text
+        {
             controls.value_entry.set_text(&desired_text);
         }
         let mut matched_preset = false;
