@@ -806,6 +806,7 @@ impl Component for ReaderModel {
         update_sidebar_header(&widgets, &model);
         sync_sidebar_tabs(&widgets, &model);
         apply_reader_ui_prefs(&model);
+        sync_reader_stacks(&model);
         sync_reader_controls(&model);
         rebuild_toc(&model.toc_list, &model.open, model.chapter, &sender);
         rebuild_highlights_list(&model, &sender);
@@ -1366,6 +1367,9 @@ impl Component for ReaderModel {
         }
         if refresh_chrome {
             update_chrome_labels(widgets, self);
+        }
+        if refresh_controls || refresh_tabs {
+            sync_reader_stacks(self);
         }
         if refresh_controls {
             sync_reader_controls(self);
@@ -2794,7 +2798,7 @@ fn build_words_panel(
     (wrap, buttons, search)
 }
 
-fn sync_reader_controls(model: &ReaderModel) {
+fn sync_reader_stacks(model: &ReaderModel) {
     model
         .left_stack
         .set_visible_child_name(match model.left_tab {
@@ -2811,7 +2815,9 @@ fn sync_reader_controls(model: &ReaderModel) {
     model
         .settings_stack
         .set_visible_child_name(reader_settings_pane_name(model.settings_pane));
+}
 
+fn sync_reader_controls(model: &ReaderModel) {
     model.font_size_label.set_label(&model.font_px.to_string());
     model
         .line_height_label
