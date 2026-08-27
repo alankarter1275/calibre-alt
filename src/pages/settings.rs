@@ -691,11 +691,7 @@ fn update_theme_picker_state(host: &gtk::Grid, active: &crate::theme::Theme) {
                 }
             }
         } else if let Some(theme_id) = name.strip_prefix(THEME_CHECK_PREFIX) {
-            if theme_id == active.id {
-                widget.remove_css_class("kalam-theme-check-off");
-            } else {
-                widget.add_css_class("kalam-theme-check-off");
-            }
+            widget.set_opacity(if theme_id == active.id { 1.0 } else { 0.0 });
         }
     });
 }
@@ -802,9 +798,7 @@ fn theme_variant_button(
     let check =
         crate::icons::symbolic_with_classes("object-select-symbolic", 12, &["kalam-theme-check"]);
     check.set_widget_name(&format!("{THEME_CHECK_PREFIX}{}", theme.id));
-    if !is_active {
-        check.add_css_class("kalam-theme-check-off");
-    }
+    check.set_opacity(if is_active { 1.0 } else { 0.0 });
     check.set_valign(gtk::Align::Center);
     add_styled_class(
         &check,

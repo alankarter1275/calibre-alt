@@ -1785,11 +1785,11 @@ entry.kalam-reader-search > text {
     color: @kalam_text_dim;
 }
 
-/* Card background is part of the preview itself and stays fixed per theme.
+/* Each small theme card keeps its own theme background all the time.
    The selected state only adds an outline, so the sample does not repaint. */
 .kalam-theme-card {
-    background: transparent;
-    border: 1px solid @kalam_border;
+    border-width: 1px;
+    border-style: solid;
     border-radius: 8px;
     padding: 10px;
 }
@@ -1814,8 +1814,8 @@ entry.kalam-reader-search > text {
     color: transparent;
 }
 
-/* The ✓ seal always keeps its slot, then only its paint turns on/off.
-   That keeps the card size steady while changing themes. */
+/* The ✓ seal always keeps its slot.
+   We fade it in and out from Rust so the card size never changes. */
 .kalam-theme-check {
     background: @kalam_accent;
     color: @kalam_bg;
@@ -1824,11 +1824,6 @@ entry.kalam-reader-search > text {
     min-height: 16px;
     padding: 2px;
     -gtk-icon-size: 10px;
-}
-
-.kalam-theme-check.kalam-theme-check-off {
-    background: transparent;
-    color: transparent;
 }
 
 /* Mini preview. The dark outline is deliberately theme-independent: it
