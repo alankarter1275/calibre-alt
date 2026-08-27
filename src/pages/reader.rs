@@ -343,7 +343,7 @@ impl Component for ReaderModel {
                 #[wrap(Some)]
                 set_child = &gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
-                    set_width_request: 224,
+                    set_width_request: 212,
                     add_css_class: "kalam-reader-sidebar",
                     add_css_class: "kalam-reader-sidebar-right",
 
@@ -538,6 +538,8 @@ impl Component for ReaderModel {
             .clamp(400, 860) as u32;
 
         let toc_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        toc_list.set_hexpand(true);
+        toc_list.set_vexpand(true);
         let left_stack = gtk::Stack::new();
         left_stack.set_hexpand(true);
         left_stack.set_vexpand(true);
@@ -570,11 +572,17 @@ impl Component for ReaderModel {
         left_stack.add_named(&settings_scroll, Some("settings"));
 
         let highlights_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        highlights_list.set_hexpand(true);
+        highlights_list.set_vexpand(true);
         let (highlights_panel, highlight_filter_buttons) =
             build_highlights_panel(&sender, HighlightFilter::All, &highlights_list);
         let bookmarks_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        bookmarks_list.set_hexpand(true);
+        bookmarks_list.set_vexpand(true);
         let bookmarks_panel = build_bookmarks_panel(&sender, &bookmarks_list);
         let words_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        words_list.set_hexpand(true);
+        words_list.set_vexpand(true);
         let (words_panel, word_scope_buttons, _words_search_entry) =
             build_words_panel(&sender, WordScope::Chapter, &words_list);
 
@@ -1599,9 +1607,11 @@ impl ReaderModel {
             }
             "reader-ui-show-back" => {
                 self.show_back_button = true;
+                self.show_bottom_pill = false;
             }
             "reader-ui-show-pill" => {
                 self.show_bottom_pill = true;
+                self.show_back_button = false;
             }
             "reader-ui-show-all" => {
                 self.show_back_button = true;
@@ -2180,17 +2190,37 @@ fn toc_active_spine_index(open: &OpenBook, current: usize) -> Option<usize> {
     }
 }
 
+fn append_reader_empty(list: &gtk::Box, text: &str) {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    wrap.set_hexpand(true);
+    wrap.set_vexpand(true);
+
+    let top_spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    top_spacer.set_vexpand(true);
+    wrap.append(&top_spacer);
+
+    let label = gtk::Label::new(Some(text));
+    label.add_css_class("kalam-reader-empty");
+    label.set_wrap(true);
+    label.set_halign(gtk::Align::Center);
+    label.set_justify(gtk::Justification::Center);
+    label.set_xalign(0.5);
+    wrap.append(&label);
+
+    let bottom_spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    bottom_spacer.set_vexpand(true);
+    wrap.append(&bottom_spacer);
+
+    list.append(&wrap);
+}
+
 fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>) {
     while let Some(child) = model.highlights_list.first_child() {
         model.highlights_list.remove(&child);
     }
     let annos = model.filtered_annotations();
     if annos.is_empty() {
-        let empty = gtk::Label::new(Some("No highlights yet in this view."));
-        empty.add_css_class("kalam-placeholder");
-        empty.set_wrap(true);
-        empty.set_xalign(0.0);
-        model.highlights_list.append(&empty);
+        append_reader_empty(&model.highlights_list, "No highlights yet in this view.");
         return;
     }
 
@@ -2260,11 +2290,10 @@ fn rebuild_bookmarks_list(model: &ReaderModel, sender: &ComponentSender<ReaderMo
         model.bookmarks_list.remove(&child);
     }
     if model.bookmarks.is_empty() {
-        let empty = gtk::Label::new(Some("No marks yet. Use Add current place or press M."));
-        empty.add_css_class("kalam-placeholder");
-        empty.set_wrap(true);
-        empty.set_xalign(0.0);
-        model.bookmarks_list.append(&empty);
+        append_reader_empty(
+            &model.bookmarks_list,
+            "No marks yet. Use Add current place or press M.",
+        );
         return;
     }
 
@@ -2332,13 +2361,10 @@ fn rebuild_words_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>
 
     if !model.dict_query.trim().is_empty() {
         if model.dict_results.is_empty() {
-            let empty = gtk::Label::new(Some(
+            append_reader_empty(
+                &model.words_list,
                 "No matches. Import dictionaries in Settings if needed.",
-            ));
-            empty.add_css_class("kalam-placeholder");
-            empty.set_wrap(true);
-            empty.set_xalign(0.0);
-            model.words_list.append(&empty);
+            );
             return;
         }
         for entry in model.dict_results.iter().take(40) {
@@ -2372,11 +2398,7 @@ fn rebuild_words_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>
 
     let words = model.filtered_saved_words();
     if words.is_empty() {
-        let empty = gtk::Label::new(Some("No saved words in this view yet."));
-        empty.add_css_class("kalam-placeholder");
-        empty.set_wrap(true);
-        empty.set_xalign(0.0);
-        model.words_list.append(&empty);
+        append_reader_empty(&model.words_list, "No saved words in this view yet.");
         return;
     }
 

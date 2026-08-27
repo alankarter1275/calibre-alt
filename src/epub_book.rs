@@ -443,8 +443,8 @@ fn inject_reading_shell(
     }
   }
   var scrollT = null;
-  var uiShowT = null;
   var lastScrollTop = 0;
+  var lastUiZone = 'both';
   window.addEventListener('scroll', function() {
     if (scrollT) cancelAnimationFrame(scrollT);
     scrollT = requestAnimationFrame(function(){
@@ -454,20 +454,20 @@ fn inject_reading_shell(
       var cur = se.scrollTop || 0;
       if (cur > lastScrollTop + 8 && cur > 24) {
         kalamBridge({type:'reader-ui-hide'});
+        lastUiZone = 'hidden';
       }
       lastScrollTop = cur;
-      if (uiShowT) clearTimeout(uiShowT);
-      uiShowT = setTimeout(function(){ kalamBridge({type:'reader-ui-show-all'}); }, 1100);
     });
   }, {passive:true});
 
   document.addEventListener('mousemove', function(e) {
-    if (e.clientY < 72) {
-      kalamBridge({type:'reader-ui-show-back'});
-    }
-    if (window.innerHeight - e.clientY < 92) {
-      kalamBridge({type:'reader-ui-show-pill'});
-    }
+    var zone = null;
+    if (e.clientY < 72) zone = 'top';
+    else if (window.innerHeight - e.clientY < 92) zone = 'bottom';
+    else return;
+    if (zone === lastUiZone) return;
+    lastUiZone = zone;
+    kalamBridge({type: zone === 'top' ? 'reader-ui-show-back' : 'reader-ui-show-pill'});
   }, {passive:true});
 
   function tryRestore() {

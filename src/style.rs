@@ -733,8 +733,8 @@ button.kalam-reader-tab > box {
 }
 
 button.kalam-reader-back {
-    background: alpha(@kalam_surface, 0.96);
-    border: 1px solid alpha(@kalam_border, 0.9);
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
     border-radius: 999px;
     color: @kalam_text;
     padding: 7px 11px 7px 8px;
@@ -756,8 +756,8 @@ button.kalam-reader-back:hover {
 
 button.kalam-reader-pill-nav,
 .kalam-reader-pill-info {
-    background: alpha(@kalam_surface, 0.96);
-    border: 1px solid alpha(@kalam_border, 0.9);
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
     border-radius: 999px;
     box-shadow: 0 8px 24px alpha(#000, 0.26);
 }
@@ -1062,6 +1062,12 @@ entry.kalam-reader-search > text {
     font-size: 0.8rem;
     line-height: 1.55;
     color: @kalam_text;
+}
+
+.kalam-reader-empty {
+    color: @kalam_text_dim;
+    font-size: 0.92rem;
+    padding: 18px;
 }
 
 /* Theme swatches — these must match ReadingTheme::swatch() in epub_book.rs. */
