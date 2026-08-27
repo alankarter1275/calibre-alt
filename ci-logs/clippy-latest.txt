@@ -1,6 +1,11 @@
-src/pages/settings.rs:4:5: [1m[91merror[E0432][0m: unresolved import `gtk::glib::IsA`
-src/pages/saved_quotes.rs:339:53: [1m[91merror[E0631][0m: type mismatch in function arguments: expected due to this, found signature defined here
-src/pages/saved_quotes.rs:349:49: [1m[91merror[E0631][0m: type mismatch in function arguments: expected due to this, found signature defined here
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
---- run 32968543098 ---
+src/pages/reader.rs:224:19: [1m[91merror[0m: Properties can only have `watch`, `track` or `iterative` as attribute.
+src/pages/reader.rs:234:19: [1m[91merror[0m: Properties can only have `watch`, `track` or `iterative` as attribute.
+src/pages/reader.rs:252:23: [1m[91merror[0m: Properties can only have `watch`, `track` or `iterative` as attribute.
+src/pages/reader.rs:338:23: [1m[91merror[0m: Properties can only have `watch`, `track` or `iterative` as attribute.
+src/pages/reader.rs:672:22: [1m[91merror[E0609][0m: no field `left_hover` on type `pages::reader::ReaderModelWidgets`: unknown field
+src/pages/reader.rs:678:22: [1m[91merror[E0609][0m: no field `right_hover` on type `pages::reader::ReaderModelWidgets`: unknown field
+src/pages/reader.rs:684:22: [1m[91merror[E0609][0m: no field `left_sidebar` on type `pages::reader::ReaderModelWidgets`: unknown field
+src/pages/reader.rs:690:22: [1m[91merror[E0609][0m: no field `right_sidebar` on type `pages::reader::ReaderModelWidgets`: unknown field
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 8 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 8 previous errors
+--- run 33031460747 ---
