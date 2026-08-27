@@ -329,7 +329,6 @@ impl Component for ReaderModel {
             },
 
             add_overlay = &gtk::Box {
-                #[name = "back_dock"]
                 add_css_class: "kalam-reader-back-dock",
                 #[watch]
                 set_visible: model.show_back_button,
@@ -344,7 +343,6 @@ impl Component for ReaderModel {
             },
 
             add_overlay = &gtk::Box {
-                #[name = "bottom_dock"]
                 #[watch]
                 set_visible: model.show_bottom_pill,
                 add_css_class: "kalam-reader-bottom-dock",
@@ -790,8 +788,8 @@ impl Component for ReaderModel {
             .right_panel_host
             .parent()
             .and_then(|w| w.downcast::<gtk::Box>().ok());
-        model.back_dock = Some(widgets.back_dock.clone());
-        model.bottom_dock = Some(widgets.bottom_dock.clone());
+        model.back_dock = overlay_child_box(&root, 4);
+        model.bottom_dock = overlay_child_box(&root, 5);
         model.left_sidebar_shell = left_sidebar_box
             .as_ref()
             .and_then(|sidebar| sidebar.parent())
