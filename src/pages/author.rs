@@ -1,4 +1,6 @@
-use crate::author::{self, display_author_name, initials, status_counts, works_not_in_library, SeriesProgress};
+use crate::author::{
+    self, display_author_name, initials, status_counts, works_not_in_library, SeriesProgress,
+};
 use crate::db::{AuthorProfile, AuthorWork, Catalog};
 use crate::models::Book;
 use crate::widgets::{
@@ -351,9 +353,7 @@ fn rebuild_owned_books(host: &gtk::Box, books: &[Book], sender: &ComponentSender
         row.append(&build_book_card(
             &book,
             move || {
-                full_sender
-                    .output(AuthorPageOut::OpenBook { book_id })
-                    .ok();
+                full_sender.output(AuthorPageOut::OpenBook { book_id }).ok();
             },
             move || {
                 float_sender
@@ -423,10 +423,7 @@ fn hero_fact_rows(model: &AuthorPageModel, display_name: &str) -> Vec<(String, S
             ));
         }
         if profile.work_count > 0 {
-            rows.push((
-                "Works found".to_string(),
-                profile.work_count.to_string(),
-            ));
+            rows.push(("Works found".to_string(), profile.work_count.to_string()));
         }
         let aliases = profile
             .aliases
@@ -517,7 +514,11 @@ fn author_stats(model: &AuthorPageModel) -> gtk::Grid {
 
     for (idx, (label, value, css)) in [
         ("Owned", owned.to_string(), "kalam-author-stat-owned"),
-        ("Finished", finished.to_string(), "kalam-author-stat-finished"),
+        (
+            "Finished",
+            finished.to_string(),
+            "kalam-author-stat-finished",
+        ),
         ("Reading", reading.to_string(), "kalam-author-stat-reading"),
         ("Unread", unread.to_string(), "kalam-author-stat-unread"),
     ]
@@ -648,7 +649,10 @@ fn series_card(entry: &SeriesProgress, profile: Option<&AuthorProfile>) -> gtk::
     card
 }
 
-fn online_series_summary(profile: Option<&AuthorProfile>, series_name: &str) -> Option<OnlineSeriesSummary> {
+fn online_series_summary(
+    profile: Option<&AuthorProfile>,
+    series_name: &str,
+) -> Option<OnlineSeriesSummary> {
     let profile = profile?;
     let target = normalize_key(series_name);
     if target.is_empty() {
@@ -684,7 +688,8 @@ fn series_year_text(entry: &SeriesProgress, summary: &OnlineSeriesSummary) -> Op
 
     let mut years = entry.owned.iter().filter_map(book_year).collect::<Vec<_>>();
     years.sort_unstable();
-    year_range_text(years.first().copied(), years.last().copied()).map(|text| format!("Release: {text}"))
+    year_range_text(years.first().copied(), years.last().copied())
+        .map(|text| format!("Release: {text}"))
 }
 
 fn book_year(book: &Book) -> Option<i64> {

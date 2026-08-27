@@ -594,7 +594,10 @@ fn enrich_author_work(work: &mut AuthorWork, series_names: &mut HashMap<String, 
 
 fn fetch_work_details(work_key: &str) -> Result<WorkDetailsResponse, String> {
     let body = metadata::agent()
-        .get(&format!("https://openlibrary.org{}.json", work_path(work_key)))
+        .get(&format!(
+            "https://openlibrary.org{}.json",
+            work_path(work_key)
+        ))
         .call()
         .map_err(|e| e.to_string())?
         .into_string()
@@ -643,7 +646,10 @@ fn load_series_name(cache: &mut HashMap<String, String>, series_key: &str) -> St
     }
 
     let name = metadata::agent()
-        .get(&format!("https://openlibrary.org{}.json", series_path(series_key)))
+        .get(&format!(
+            "https://openlibrary.org{}.json",
+            series_path(series_key)
+        ))
         .call()
         .map_err(|e| e.to_string())
         .and_then(|resp| resp.into_string().map_err(|e| e.to_string()))
