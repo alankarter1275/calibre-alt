@@ -898,7 +898,7 @@ button.kalam-reader-settings-switch.active {
 }
 
 button.kalam-reader-ui-preset {
-    min-width: 0;
+    min-width: 64px;
     min-height: 28px;
     padding: 4px 0;
     font-size: 0.68rem;
@@ -912,13 +912,6 @@ button.kalam-reader-ui-preset.kalam-reader-ui-preset-custom.active {
     padding-top: 2px;
 }
 
-.kalam-reader-ui-value-box {
-    background: @kalam_surface_2;
-    border: 1px solid @kalam_border;
-    border-radius: 999px;
-    padding: 0 10px;
-}
-
 entry.kalam-reader-ui-value-entry {
     background: transparent;
     border: none;
@@ -926,6 +919,12 @@ entry.kalam-reader-ui-value-entry {
     color: @kalam_text;
     min-width: 0;
     padding: 4px 0;
+}
+
+entry.kalam-reader-ui-value-entry:focus,
+entry.kalam-reader-ui-value-entry:focus-within {
+    border: none;
+    box-shadow: none;
 }
 
 entry.kalam-reader-ui-value-entry > text {

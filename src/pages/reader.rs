@@ -2456,11 +2456,13 @@ fn reader_ui_setting_block(
     let presets = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     presets.add_css_class("kalam-reader-ui-preset-row");
     presets.set_homogeneous(true);
+    let preset_size_group = gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal);
     let mut preset_buttons = Vec::new();
     for &(preset_label, preset_value) in reader_ui_presets(setting) {
         let btn = gtk::Button::with_label(preset_label);
         btn.add_css_class("kalam-reader-filter-chip");
         btn.add_css_class("kalam-reader-ui-preset");
+        preset_size_group.add_widget(&btn);
         let tx = sender.input_sender().clone();
         btn.connect_clicked(move |_| {
             let _ = tx.send(ReaderMsg::SetUiSetting(setting, preset_value));
@@ -2486,6 +2488,7 @@ fn reader_ui_setting_block(
     custom_button.add_css_class("kalam-reader-ui-preset");
     custom_button.add_css_class("kalam-reader-ui-preset-custom");
     custom_button.set_focus_on_click(false);
+    preset_size_group.add_widget(&custom_button);
     let value_entry_for_focus = value_entry.clone();
     custom_button.connect_clicked(move |_| {
         value_entry_for_focus.grab_focus();
@@ -2508,13 +2511,12 @@ fn reader_ui_setting_block(
     });
     controls.append(&minus);
 
-    let value_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    value_box.add_css_class("kalam-reader-ui-value-box");
-    value_box.append(&value_entry);
+    let value_inline = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    value_inline.append(&value_entry);
     let unit_label = gtk::Label::new(Some(reader_ui_unit(setting)));
     unit_label.add_css_class("kalam-reader-ui-unit");
-    value_box.append(&unit_label);
-    controls.append(&value_box);
+    value_inline.append(&unit_label);
+    controls.append(&value_inline);
 
     let plus = gtk::Button::new();
     plus.add_css_class("kalam-reader-stepper-btn");
