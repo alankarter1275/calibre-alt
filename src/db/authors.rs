@@ -28,7 +28,8 @@ impl Catalog {
     pub fn upsert_author_profile(&self, profile: &AuthorProfile) -> Result<i64> {
         let conn = self.conn();
         let fetched_at = chrono_like_now();
-        let subjects_json = serde_json::to_string(&profile.top_subjects).unwrap_or_else(|_| "[]".into());
+        let subjects_json =
+            serde_json::to_string(&profile.top_subjects).unwrap_or_else(|_| "[]".into());
         let works_json = serde_json::to_string(&profile.works).unwrap_or_else(|_| "[]".into());
         conn.execute(
             "INSERT INTO author_profiles
@@ -130,7 +131,9 @@ fn load_author_profile(conn: &Connection, id: i64) -> Result<Option<AuthorProfil
                     top_work: r.get(7)?,
                     top_subjects,
                     openlibrary_key: r.get(9)?,
-                    photo_path: photo_file.as_ref().map(|file| crate::paths::authors_dir().join(file)),
+                    photo_path: photo_file
+                        .as_ref()
+                        .map(|file| crate::paths::authors_dir().join(file)),
                     photo_file,
                     work_count: r.get(11)?,
                     works,

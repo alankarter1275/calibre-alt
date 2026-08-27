@@ -190,7 +190,10 @@ pub fn series_progress(books: &[Book]) -> Vec<SeriesProgress> {
         if series.is_empty() {
             continue;
         }
-        grouped.entry(series.to_string()).or_default().push(book.clone());
+        grouped
+            .entry(series.to_string())
+            .or_default()
+            .push(book.clone());
     }
 
     let mut out = Vec::new();
@@ -396,7 +399,8 @@ fn pick_best_author(
         {
             score += 380;
         }
-        if !doc.top_work.trim().is_empty() && owned_titles.contains(&normalize_title(&doc.top_work)) {
+        if !doc.top_work.trim().is_empty() && owned_titles.contains(&normalize_title(&doc.top_work))
+        {
             score += 260;
         }
         score += doc.work_count.min(60);
@@ -501,7 +505,9 @@ fn fetch_author_photo(author_key: &str) -> Result<Option<String>, String> {
     if olid.is_empty() {
         return Ok(None);
     }
-    let cover = CoverRef::Url(format!("https://covers.openlibrary.org/a/olid/{olid}-L.jpg"));
+    let cover = CoverRef::Url(format!(
+        "https://covers.openlibrary.org/a/olid/{olid}-L.jpg"
+    ));
     let bytes = match metadata::fetch_cover(&cover) {
         Ok(bytes) if !bytes.is_empty() => bytes,
         Ok(_) => return Ok(None),
@@ -539,14 +545,20 @@ fn dedup_names(names: Vec<String>) -> Vec<String> {
 }
 
 fn looks_like_sort_name(name: &str) -> bool {
-    let mut parts = name.split(',').map(str::trim).filter(|part| !part.is_empty());
+    let mut parts = name
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty());
     let Some(first) = parts.next() else {
         return false;
     };
     let Some(second) = parts.next() else {
         return false;
     };
-    parts.next().is_none() && !first.is_empty() && !second.is_empty() && second.split_whitespace().count() <= 6
+    parts.next().is_none()
+        && !first.is_empty()
+        && !second.is_empty()
+        && second.split_whitespace().count() <= 6
 }
 
 fn extract_year(text: &str) -> Option<i64> {

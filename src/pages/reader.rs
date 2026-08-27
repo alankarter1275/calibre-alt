@@ -19,9 +19,7 @@ use webkit6::prelude::*;
 #[derive(Debug)]
 pub enum ReaderOut {
     Close,
-    OpenAuthor {
-        name: String,
-    },
+    OpenAuthor { name: String },
 }
 
 #[derive(Debug, Clone, Deserialize)]

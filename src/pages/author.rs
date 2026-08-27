@@ -1,6 +1,6 @@
 use crate::author::{
-    self, AuthorQuote, SeriesProgress, display_author_name, initials, line_text, status_counts,
-    works_not_in_library,
+    self, display_author_name, initials, line_text, status_counts, works_not_in_library,
+    AuthorQuote, SeriesProgress,
 };
 use crate::db::{AuthorProfile, Catalog};
 use crate::models::Book;
@@ -163,7 +163,10 @@ impl Component for AuthorPageModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let owned_books = author::owned_books_for_author(&catalog, &author_name);
-        let profile = catalog.get_author_profile_by_name(&author_name).ok().flatten();
+        let profile = catalog
+            .get_author_profile_by_name(&author_name)
+            .ok()
+            .flatten();
         let quotes = author::saved_quotes_for_books(&catalog, &owned_books, 6);
         let series = author::series_progress(&owned_books);
         let loading = profile.is_none();
@@ -256,7 +259,9 @@ fn fill_author_page(
         .map(|profile| profile.canonical_name.clone())
         .unwrap_or_else(|| display_author_name(&model.requested_name));
     widgets.page_title.set_label(&display_name);
-    widgets.page_sub.set_label("Books you own, saved quotes, and more works kept offline after fetch.");
+    widgets
+        .page_sub
+        .set_label("Books you own, saved quotes, and more works kept offline after fetch.");
     widgets.refresh_btn.set_sensitive(!model.loading);
 
     let mut status_bits = Vec::new();
@@ -398,11 +403,7 @@ fn rebuild_hero(main_host: &gtk::Box, side_host: &gtk::Box, model: &AuthorPageMo
     side_host.append(&photo_card);
 }
 
-fn rebuild_owned_books(
-    host: &gtk::Box,
-    books: &[Book],
-    sender: &ComponentSender<AuthorPageModel>,
-) {
+fn rebuild_owned_books(host: &gtk::Box, books: &[Book], sender: &ComponentSender<AuthorPageModel>) {
     clear_box(host);
     if books.is_empty() {
         host.append(&placeholder(
