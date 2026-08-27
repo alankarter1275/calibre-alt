@@ -533,7 +533,9 @@ impl Component for ReaderModel {
             .and_then(|v| v.parse::<f32>().ok())
             .unwrap_or(1.8)
             .clamp(1.3, 2.5);
-        let catalog_column = catalog.get_pref_i64("reader.column_px", 620).clamp(400, 860) as u32;
+        let catalog_column = catalog
+            .get_pref_i64("reader.column_px", 620)
+            .clamp(400, 860) as u32;
 
         let toc_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
         let left_stack = gtk::Stack::new();
@@ -550,7 +552,13 @@ impl Component for ReaderModel {
         left_stack.add_named(&toc_scroll, Some("toc"));
 
         let (settings_panel, font_size_label, line_height_label, column_width_label, theme_dots) =
-            build_reader_settings_panel(&sender, catalog_theme, catalog_font, catalog_line_height, catalog_column);
+            build_reader_settings_panel(
+                &sender,
+                catalog_theme,
+                catalog_font,
+                catalog_line_height,
+                catalog_column,
+            );
         let settings_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
             .vscrollbar_policy(gtk::PolicyType::Automatic)
@@ -660,10 +668,30 @@ impl Component for ReaderModel {
         rebuild_bookmarks_list(&model, &sender);
         rebuild_words_list(&model, &sender);
 
-        connect_hover_zone(&widgets.left_hover, &sender, ReaderMsg::OpenLeftSidebar, ReaderMsg::ScheduleCloseLeft);
-        connect_hover_zone(&widgets.right_hover, &sender, ReaderMsg::OpenRightSidebar, ReaderMsg::ScheduleCloseRight);
-        connect_hover_zone(&widgets.left_sidebar, &sender, ReaderMsg::OpenLeftSidebar, ReaderMsg::ScheduleCloseLeft);
-        connect_hover_zone(&widgets.right_sidebar, &sender, ReaderMsg::OpenRightSidebar, ReaderMsg::ScheduleCloseRight);
+        connect_hover_zone(
+            &widgets.left_hover,
+            &sender,
+            ReaderMsg::OpenLeftSidebar,
+            ReaderMsg::ScheduleCloseLeft,
+        );
+        connect_hover_zone(
+            &widgets.right_hover,
+            &sender,
+            ReaderMsg::OpenRightSidebar,
+            ReaderMsg::ScheduleCloseRight,
+        );
+        connect_hover_zone(
+            &widgets.left_sidebar,
+            &sender,
+            ReaderMsg::OpenLeftSidebar,
+            ReaderMsg::ScheduleCloseLeft,
+        );
+        connect_hover_zone(
+            &widgets.right_sidebar,
+            &sender,
+            ReaderMsg::OpenRightSidebar,
+            ReaderMsg::ScheduleCloseRight,
+        );
 
         let s = sender.clone();
         webview.connect_title_notify(move |wv| {
@@ -697,7 +725,9 @@ impl Component for ReaderModel {
         let s = sender.clone();
         webview.connect_decide_policy(move |_wv, decision, decision_type| {
             if decision_type == webkit6::PolicyDecisionType::NavigationAction {
-                if let Some(nav_decision) = decision.downcast_ref::<webkit6::NavigationPolicyDecision>() {
+                if let Some(nav_decision) =
+                    decision.downcast_ref::<webkit6::NavigationPolicyDecision>()
+                {
                     if let Some(nav_action) = nav_decision.navigation_action() {
                         if let Some(request) = nav_action.request() {
                             if let Some(uri) = request.uri() {
@@ -875,9 +905,8 @@ impl Component for ReaderModel {
                 }
             }
             ReaderMsg::LineHeightDelta(delta) => {
-                let next = ((self.line_height * 10.0).round() as i32 + delta)
-                    .clamp(13, 25) as f32
-                    / 10.0;
+                let next =
+                    ((self.line_height * 10.0).round() as i32 + delta).clamp(13, 25) as f32 / 10.0;
                 if (next - self.line_height).abs() > f32::EPSILON {
                     self.line_height = next;
                     self.catalog
@@ -1035,7 +1064,10 @@ impl Component for ReaderModel {
                 self.dict_lookup_def = None;
                 self.dict_lookup_rect_json = None;
                 self.dict_context = None;
-                eval_js(&self.webview, "if (window.kalamHideDict) window.kalamHideDict();");
+                eval_js(
+                    &self.webview,
+                    "if (window.kalamHideDict) window.kalamHideDict();",
+                );
             }
             ReaderMsg::AddBookmark => {
                 self.right_tab = RightSidebarTab::Bookmarks;
@@ -1282,18 +1314,24 @@ impl ReaderModel {
 
     fn schedule_left_close(&mut self, sender: ComponentSender<Self>) {
         self.cancel_left_close();
-        self.left_close_timer = Some(glib::timeout_add_local(Duration::from_millis(320), move || {
-            sender.input(ReaderMsg::ForceCloseLeft);
-            glib::ControlFlow::Break
-        }));
+        self.left_close_timer = Some(glib::timeout_add_local(
+            Duration::from_millis(320),
+            move || {
+                sender.input(ReaderMsg::ForceCloseLeft);
+                glib::ControlFlow::Break
+            },
+        ));
     }
 
     fn schedule_right_close(&mut self, sender: ComponentSender<Self>) {
         self.cancel_right_close();
-        self.right_close_timer = Some(glib::timeout_add_local(Duration::from_millis(320), move || {
-            sender.input(ReaderMsg::ForceCloseRight);
-            glib::ControlFlow::Break
-        }));
+        self.right_close_timer = Some(glib::timeout_add_local(
+            Duration::from_millis(320),
+            move || {
+                sender.input(ReaderMsg::ForceCloseRight);
+                glib::ControlFlow::Break
+            },
+        ));
     }
 
     fn inject_highlights(&self) {
@@ -1446,7 +1484,11 @@ impl ReaderModel {
                 if let Some(entry) = results.first() {
                     self.dict_lookup_word = Some(entry.word.clone());
                     self.dict_lookup_def = Some(entry.definition.clone());
-                    self.show_dict_in_webview(entry.word.clone(), entry.definition.clone(), rect_json);
+                    self.show_dict_in_webview(
+                        entry.word.clone(),
+                        entry.definition.clone(),
+                        rect_json,
+                    );
                 } else {
                     let def = format!(
                         "No definition found for '{}'. Total dict entries: {}",
@@ -1507,11 +1549,21 @@ impl ReaderModel {
             .iter()
             .filter(|anno| match self.highlight_filter {
                 HighlightFilter::All => anno.kind == "highlight" || anno.kind == "quote",
-                HighlightFilter::Yellow => anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("yellow"),
-                HighlightFilter::Green => anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("green"),
-                HighlightFilter::Blue => anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("blue"),
-                HighlightFilter::Pink => anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("pink"),
-                HighlightFilter::Orange => anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("orange"),
+                HighlightFilter::Yellow => {
+                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("yellow")
+                }
+                HighlightFilter::Green => {
+                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("green")
+                }
+                HighlightFilter::Blue => {
+                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("blue")
+                }
+                HighlightFilter::Pink => {
+                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("pink")
+                }
+                HighlightFilter::Orange => {
+                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("orange")
+                }
                 HighlightFilter::Quotes => anno.kind == "quote",
             })
             .collect()
@@ -1727,11 +1779,31 @@ fn build_highlights_panel(
     let mut buttons = Vec::new();
     for (label, filter, class_name) in [
         ("All", HighlightFilter::All, None),
-        ("Yellow", HighlightFilter::Yellow, Some("kalam-reader-filter-yellow")),
-        ("Green", HighlightFilter::Green, Some("kalam-reader-filter-green")),
-        ("Blue", HighlightFilter::Blue, Some("kalam-reader-filter-blue")),
-        ("Pink", HighlightFilter::Pink, Some("kalam-reader-filter-pink")),
-        ("Orange", HighlightFilter::Orange, Some("kalam-reader-filter-orange")),
+        (
+            "Yellow",
+            HighlightFilter::Yellow,
+            Some("kalam-reader-filter-yellow"),
+        ),
+        (
+            "Green",
+            HighlightFilter::Green,
+            Some("kalam-reader-filter-green"),
+        ),
+        (
+            "Blue",
+            HighlightFilter::Blue,
+            Some("kalam-reader-filter-blue"),
+        ),
+        (
+            "Pink",
+            HighlightFilter::Pink,
+            Some("kalam-reader-filter-pink"),
+        ),
+        (
+            "Orange",
+            HighlightFilter::Orange,
+            Some("kalam-reader-filter-orange"),
+        ),
         ("Quotes", HighlightFilter::Quotes, None),
     ] {
         let btn = gtk::Button::with_label(label);
@@ -1849,21 +1921,27 @@ fn build_words_panel(
 }
 
 fn sync_reader_controls(model: &ReaderModel) {
-    model.left_stack.set_visible_child_name(match model.left_tab {
-        LeftSidebarTab::Toc => "toc",
-        LeftSidebarTab::Settings => "settings",
-    });
-    model.right_stack.set_visible_child_name(match model.right_tab {
-        RightSidebarTab::Highlights => "highlights",
-        RightSidebarTab::Bookmarks => "bookmarks",
-        RightSidebarTab::Words => "words",
-    });
+    model
+        .left_stack
+        .set_visible_child_name(match model.left_tab {
+            LeftSidebarTab::Toc => "toc",
+            LeftSidebarTab::Settings => "settings",
+        });
+    model
+        .right_stack
+        .set_visible_child_name(match model.right_tab {
+            RightSidebarTab::Highlights => "highlights",
+            RightSidebarTab::Bookmarks => "bookmarks",
+            RightSidebarTab::Words => "words",
+        });
 
     model.font_size_label.set_label(&model.font_px.to_string());
     model
         .line_height_label
         .set_label(&format!("{:.1}", model.line_height));
-    model.column_width_label.set_label(&model.column_px.to_string());
+    model
+        .column_width_label
+        .set_label(&model.column_px.to_string());
 
     for (theme, btn) in &model.theme_dots {
         toggle_active(btn, *theme == model.theme);
@@ -1890,7 +1968,10 @@ fn sync_sidebar_tabs(widgets: &ReaderModelWidgets, model: &ReaderModel) {
         &widgets.right_bookmarks_tab,
         model.right_tab == RightSidebarTab::Bookmarks,
     );
-    toggle_active(&widgets.right_words_tab, model.right_tab == RightSidebarTab::Words);
+    toggle_active(
+        &widgets.right_words_tab,
+        model.right_tab == RightSidebarTab::Words,
+    );
     sync_reader_controls(model);
 }
 
@@ -1928,7 +2009,9 @@ fn update_chrome_labels(widgets: &ReaderModelWidgets, model: &ReaderModel) {
         model.chapter + 1,
         model.open.chapter_count()
     ));
-    widgets.pill_chapter_label.set_label(model.current_chapter_title());
+    widgets
+        .pill_chapter_label
+        .set_label(model.current_chapter_title());
 }
 
 fn sync_reader_stage_theme(stage: &gtk::Box, theme: ReadingTheme) {
@@ -2040,9 +2123,16 @@ fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderM
         text.set_halign(gtk::Align::Start);
         text_col.append(&text);
         let meta_text = if anno.kind == "quote" {
-            format!("{} · quote", chapter_label(model, anno.chapter_index as usize))
+            format!(
+                "{} · quote",
+                chapter_label(model, anno.chapter_index as usize)
+            )
         } else {
-            format!("{} · {}", chapter_label(model, anno.chapter_index as usize), anno.color)
+            format!(
+                "{} · {}",
+                chapter_label(model, anno.chapter_index as usize),
+                anno.color
+            )
         };
         let meta = gtk::Label::new(Some(&meta_text));
         meta.add_css_class("kalam-reader-annotation-meta");
@@ -2100,7 +2190,11 @@ fn rebuild_bookmarks_list(model: &ReaderModel, sender: &ComponentSender<ReaderMo
         ));
         let text_col = gtk::Box::new(gtk::Orientation::Vertical, 4);
         text_col.set_hexpand(true);
-        let title = gtk::Label::new(Some(if mark.label.trim().is_empty() { "Reading mark" } else { &mark.label }));
+        let title = gtk::Label::new(Some(if mark.label.trim().is_empty() {
+            "Reading mark"
+        } else {
+            &mark.label
+        }));
         title.add_css_class("kalam-reader-bookmark-title");
         title.set_halign(gtk::Align::Start);
         title.set_xalign(0.0);
@@ -2146,7 +2240,9 @@ fn rebuild_words_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>
 
     if !model.dict_query.trim().is_empty() {
         if model.dict_results.is_empty() {
-            let empty = gtk::Label::new(Some("No matches. Import dictionaries in Settings if needed."));
+            let empty = gtk::Label::new(Some(
+                "No matches. Import dictionaries in Settings if needed.",
+            ));
             empty.add_css_class("kalam-placeholder");
             empty.set_wrap(true);
             empty.set_xalign(0.0);

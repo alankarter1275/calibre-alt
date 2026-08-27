@@ -1655,7 +1655,9 @@ mod tests {
     fn reading_bookmarks_round_trip() {
         let cat = Catalog::open_in_memory().unwrap();
         let id = seed(&cat, "Dune", "Herbert", &[]);
-        let mark = cat.insert_reading_bookmark(id, 2, 0.35, "The doors of stone").unwrap();
+        let mark = cat
+            .insert_reading_bookmark(id, 2, 0.35, "The doors of stone")
+            .unwrap();
         let all = cat.list_reading_bookmarks(id).unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].id, mark);
