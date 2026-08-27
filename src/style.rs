@@ -630,32 +630,17 @@ window.kalam-float-window {
     padding: 0;
 }
 
-.kalam-reader {
-    background: #0d0f12;
-}
-
-.kalam-reader-stage {
-    background: #0d0f12;
-}
-
-.kalam-reader-stage.kalam-reader-paper-light {
-    background: #101216;
-}
-
-.kalam-reader-stage.kalam-reader-paper-sepia {
-    background: #12110f;
-}
-
-.kalam-reader-stage.kalam-reader-paper-dark {
-    background: #08090b;
-}
-
+.kalam-reader,
+.kalam-reader-stage,
+.kalam-reader-stage.kalam-reader-paper-light,
+.kalam-reader-stage.kalam-reader-paper-sepia,
+.kalam-reader-stage.kalam-reader-paper-dark,
 .kalam-reader-stage.kalam-reader-paper-ink {
-    background: #060708;
+    background: @kalam_bg;
 }
 
 button.kalam-reader-dim {
-    background: alpha(#000, 0.22);
+    background: alpha(@kalam_bg, 0.22);
     border: none;
     border-radius: 0;
     box-shadow: none;
@@ -666,10 +651,10 @@ button.kalam-reader-dim {
 }
 
 .kalam-reader-sidebar {
-    background: alpha(#16181e, 0.97);
-    border: 1px solid alpha(#fff, 0.09);
+    background: alpha(@kalam_sidebar, 0.97);
+    border: 1px solid alpha(@kalam_border, 0.95);
     border-radius: 20px;
-    box-shadow: 0 22px 52px alpha(#000, 0.48);
+    box-shadow: 0 22px 52px alpha(#000, 0.42);
     padding: 0;
 }
 
@@ -680,7 +665,7 @@ button.kalam-reader-dim {
 
 .kalam-reader-book-head {
     padding: 22px 18px 16px;
-    border-bottom: 1px solid alpha(#fff, 0.07);
+    border-bottom: 1px solid alpha(@kalam_border, 0.9);
 }
 
 .kalam-reader-cover-slot {
@@ -690,12 +675,12 @@ button.kalam-reader-dim {
 .kalam-reader-book-title {
     font-size: 1.08rem;
     font-weight: 700;
-    color: #f1efe8;
+    color: @kalam_text;
 }
 
 .kalam-reader-book-author {
     font-size: 0.84rem;
-    color: #9ba3b2;
+    color: @kalam_text_dim;
 }
 
 progressbar.kalam-reader-progress {
@@ -704,40 +689,39 @@ progressbar.kalam-reader-progress {
 }
 
 progressbar.kalam-reader-progress trough {
-    background: alpha(#fff, 0.08);
+    background: alpha(@kalam_border, 0.8);
     border: none;
     min-height: 4px;
     border-radius: 999px;
 }
 
 progressbar.kalam-reader-progress progress {
-    background: #b28f63;
+    background: @kalam_accent;
     min-height: 4px;
     border-radius: 999px;
 }
 
 .kalam-reader-tabbar {
     padding: 10px 10px 12px;
-    gap: 4px;
-    border-top: 1px solid alpha(#fff, 0.07);
+    border-top: 1px solid alpha(@kalam_border, 0.9);
 }
 
 button.kalam-reader-tab {
     background: transparent;
     border: none;
     border-radius: 12px;
-    color: #8f97a7;
+    color: @kalam_text_dim;
     padding: 10px 4px;
 }
 
 button.kalam-reader-tab:hover {
-    background: alpha(#fff, 0.06);
-    color: #eceff5;
+    background: alpha(@kalam_surface_2, 0.92);
+    color: @kalam_text;
 }
 
 button.kalam-reader-tab.active {
-    background: alpha(#b28f63, 0.18);
-    color: #e8c48f;
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
 }
 
 .kalam-reader-tab image {
@@ -749,70 +733,65 @@ button.kalam-reader-tab > box {
 }
 
 button.kalam-reader-back {
-    background: alpha(#000, 0.02);
-    border: none;
+    background: alpha(@kalam_surface, 0.96);
+    border: 1px solid alpha(@kalam_border, 0.9);
     border-radius: 999px;
-    color: alpha(#2c2820, 0.55);
-    padding: 8px 12px 8px 8px;
-    box-shadow: none;
+    color: @kalam_text;
+    padding: 7px 11px 7px 8px;
+    box-shadow: 0 8px 22px alpha(#000, 0.24);
 }
 
 button.kalam-reader-back:hover {
-    background: alpha(#16181e, 0.86);
-    color: #eceff5;
-    box-shadow: 0 10px 28px alpha(#000, 0.35);
+    background: @kalam_surface_2;
+    color: @kalam_text;
 }
 
 .kalam-reader-back image {
     -gtk-icon-size: 16px;
 }
 
-.kalam-reader-bottom-pill {
-    background: alpha(#1c1e24, 0.88);
-    border: 1px solid alpha(#fff, 0.08);
-    border-radius: 999px;
-    padding: 6px;
-    box-shadow: 0 12px 40px alpha(#000, 0.45);
-}
-
-button.kalam-reader-pill-btn {
-    min-width: 36px;
-    min-height: 36px;
-    padding: 0 12px;
+.kalam-reader-bottom-dock {
     background: transparent;
-    border: none;
+}
+
+button.kalam-reader-pill-nav,
+.kalam-reader-pill-info {
+    background: alpha(@kalam_surface, 0.96);
+    border: 1px solid alpha(@kalam_border, 0.9);
     border-radius: 999px;
-    color: #f5f5f4;
+    box-shadow: 0 8px 24px alpha(#000, 0.26);
 }
 
-button.kalam-reader-pill-btn:hover {
-    background: alpha(#fff, 0.11);
+button.kalam-reader-pill-nav {
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0 10px;
+    color: @kalam_text;
 }
 
-.kalam-reader-pill-btn image {
-    -gtk-icon-size: 16px;
+button.kalam-reader-pill-nav:hover {
+    background: @kalam_surface_2;
+    color: @kalam_text;
 }
 
-.kalam-reader-pill-divider {
-    background: alpha(#fff, 0.08);
-    margin: 6px 2px;
+.kalam-reader-pill-nav image {
+    -gtk-icon-size: 14px;
 }
 
 .kalam-reader-pill-info {
-    padding: 0 14px;
-    min-width: 300px;
+    padding: 7px 14px;
 }
 
 .kalam-reader-pill-pages {
-    font-size: 0.94rem;
+    font-size: 0.82rem;
     font-weight: 700;
-    color: #e8c48f;
+    color: @kalam_accent;
 }
 
 .kalam-reader-pill-chapter {
-    font-size: 0.98rem;
+    font-size: 0.9rem;
     font-weight: 600;
-    color: #eef2f9;
+    color: @kalam_text;
 }
 
 .kalam-reader-panel-scroll,
@@ -829,11 +808,11 @@ button.kalam-reader-pill-btn:hover {
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #8f97a7;
+    color: @kalam_text_dim;
 }
 
 .kalam-reader-panel-divider {
-    background: alpha(#fff, 0.07);
+    background: alpha(@kalam_border, 0.9);
     margin: 4px 16px;
 }
 
@@ -843,7 +822,7 @@ button.kalam-reader-pill-btn:hover {
 
 .kalam-reader-setting-name {
     font-size: 0.84rem;
-    color: #eceff5;
+    color: @kalam_text;
 }
 
 .kalam-reader-stepper {
@@ -854,14 +833,16 @@ button.kalam-reader-stepper-btn {
     min-width: 28px;
     min-height: 28px;
     padding: 0;
-    background: #232833;
-    border: 1px solid alpha(#fff, 0.08);
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
     border-radius: 999px;
-    color: #eceff5;
+    color: @kalam_text;
 }
 
 button.kalam-reader-stepper-btn:hover {
-    background: #2d3442;
+    background: @kalam_surface;
+    border-color: @kalam_accent;
+    color: @kalam_accent;
 }
 
 .kalam-reader-stepper-value {
@@ -869,7 +850,7 @@ button.kalam-reader-stepper-btn:hover {
     font-family: monospace;
     font-size: 0.8rem;
     font-weight: 700;
-    color: #eceff5;
+    color: @kalam_text;
 }
 
 button.kalam-reader-theme-dot {
@@ -882,7 +863,7 @@ button.kalam-reader-theme-dot {
 }
 
 button.kalam-reader-theme-dot.active {
-    border-color: #e8c48f;
+    border-color: @kalam_accent;
 }
 
 button.kalam-reader-theme-dot.kalam-reader-theme-dot-light {
@@ -903,26 +884,27 @@ button.kalam-reader-theme-dot.kalam-reader-theme-dot-ink {
 
 .kalam-reader-filter-row {
     padding: 10px 12px;
-    border-bottom: 1px solid alpha(#fff, 0.07);
+    border-bottom: 1px solid alpha(@kalam_border, 0.9);
 }
 
 button.kalam-reader-filter-chip {
     background: transparent;
-    border: 1px solid alpha(#fff, 0.12);
+    border: 1px solid alpha(@kalam_border, 0.95);
     border-radius: 999px;
-    color: #8f97a7;
+    color: @kalam_text_dim;
     padding: 3px 10px;
     font-size: 0.72rem;
 }
 
 button.kalam-reader-filter-chip:hover {
-    color: #eceff5;
+    background: alpha(@kalam_surface_2, 0.85);
+    color: @kalam_text;
 }
 
 button.kalam-reader-filter-chip.active {
-    background: alpha(#b28f63, 0.18);
-    border-color: #b28f63;
-    color: #e8c48f;
+    background: @kalam_accent_dim;
+    border-color: @kalam_accent;
+    color: @kalam_accent;
 }
 
 button.kalam-reader-filter-chip.kalam-reader-filter-yellow.active {
@@ -959,24 +941,24 @@ button.kalam-reader-toc-item {
     background: transparent;
     border: none;
     border-radius: 0;
-    color: #8f97a7;
+    color: @kalam_text_dim;
     padding: 9px 16px;
 }
 
 button.kalam-reader-toc-item:hover {
-    background: alpha(#fff, 0.04);
-    color: #eceff5;
+    background: alpha(@kalam_surface_2, 0.85);
+    color: @kalam_text;
 }
 
 button.kalam-reader-toc-item.active {
-    background: alpha(#b28f63, 0.18);
-    color: #e8c48f;
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
 }
 
 .kalam-reader-annotation-row,
 .kalam-reader-bookmark-row {
     padding: 12px 14px;
-    border-bottom: 1px solid alpha(#fff, 0.05);
+    border-bottom: 1px solid alpha(@kalam_border, 0.72);
 }
 
 button.kalam-reader-list-hit {
@@ -987,7 +969,7 @@ button.kalam-reader-list-hit {
 }
 
 button.kalam-reader-list-hit:hover {
-    background: alpha(#fff, 0.03);
+    background: alpha(@kalam_surface_2, 0.8);
 }
 
 .kalam-reader-annotation-bar {
@@ -1018,7 +1000,7 @@ button.kalam-reader-list-hit:hover {
 .kalam-reader-annotation-text,
 .kalam-reader-bookmark-title,
 .kalam-reader-word-name {
-    color: #e6e9ef;
+    color: @kalam_text;
 }
 
 .kalam-reader-annotation-text {
@@ -1035,29 +1017,29 @@ button.kalam-reader-list-hit:hover {
 .kalam-reader-annotation-meta,
 .kalam-reader-word-meta {
     font-size: 0.72rem;
-    color: #8f97a7;
+    color: @kalam_text_dim;
     font-family: monospace;
 }
 
 .kalam-reader-bookmark-icon {
-    color: #d6ab52;
+    color: @kalam_warning;
     -gtk-icon-size: 15px;
 }
 
 .kalam-reader-search-row {
     padding: 10px 12px;
-    border-bottom: 1px solid alpha(#fff, 0.07);
+    border-bottom: 1px solid alpha(@kalam_border, 0.9);
 }
 
 entry.kalam-reader-search {
     background: transparent;
     border: none;
     box-shadow: none;
-    color: #eceff5;
+    color: @kalam_text;
 }
 
 entry.kalam-reader-search > text {
-    color: #eceff5;
+    color: @kalam_text;
 }
 
 .kalam-reader-word-row {
@@ -1068,7 +1050,7 @@ entry.kalam-reader-search > text {
 }
 
 .kalam-reader-word-row:hover {
-    background: alpha(#fff, 0.03);
+    background: alpha(@kalam_surface_2, 0.8);
 }
 
 .kalam-reader-word-name {
@@ -1079,7 +1061,7 @@ entry.kalam-reader-search > text {
 .kalam-reader-word-def {
     font-size: 0.8rem;
     line-height: 1.55;
-    color: #b5bdcc;
+    color: @kalam_text;
 }
 
 /* Theme swatches — these must match ReadingTheme::swatch() in epub_book.rs. */
