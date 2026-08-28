@@ -464,6 +464,7 @@ impl Component for BookFloatModel {
             desc_expanded: false,
         };
         let widgets = view_output!();
+        root.set_size_request(720, 420);
         widgets.cover_col.set_size_request(150, -1);
         widgets.progress_wrap.set_size_request(108, -1);
         widgets.progress_wrap.set_halign(gtk::Align::Center);
@@ -733,23 +734,20 @@ fn fill(
     let full_desc = clean_description(book);
     let (desc_text, can_expand) = description_preview(&full_desc, model.desc_expanded);
     widgets.description.set_label(&desc_text);
-    let desc_height = if model.desc_expanded && can_expand {
-        154
-    } else {
-        106
-    };
-    widgets.desc_scroll.set_propagate_natural_height(false);
-    widgets.desc_scroll.set_min_content_height(desc_height);
-    widgets.desc_scroll.set_max_content_height(desc_height);
-    widgets.desc_scroll.set_height_request(desc_height);
-    widgets
-        .footer_spacer
-        .set_visible(!(model.desc_expanded && can_expand));
+    widgets.footer_spacer.set_visible(has_book);
+    widgets.desc_scroll.set_vexpand(false);
     if model.desc_expanded && can_expand {
+        let desc_height = 154;
+        widgets.desc_scroll.set_propagate_natural_height(false);
+        widgets.desc_scroll.set_height_request(desc_height);
+        widgets.desc_scroll.set_max_content_height(desc_height);
         widgets
             .desc_scroll
             .set_vscrollbar_policy(gtk::PolicyType::Automatic);
     } else {
+        widgets.desc_scroll.set_propagate_natural_height(true);
+        widgets.desc_scroll.set_height_request(-1);
+        widgets.desc_scroll.set_max_content_height(-1);
         widgets
             .desc_scroll
             .set_vscrollbar_policy(gtk::PolicyType::Never);
