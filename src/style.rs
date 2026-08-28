@@ -950,7 +950,7 @@ button.kalam-float-read-more:hover {
     padding-top: 8px;
 }
 
-.kalam-float-read {
+button.kalam-float-read {
     font-size: 0.85rem;
     min-width: 0;
     min-height: 40px;
