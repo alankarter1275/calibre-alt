@@ -173,10 +173,11 @@ impl AppModel {
             });
 
         let float = ctrl.widget().clone();
-        float.set_hexpand(true);
-        float.set_vexpand(true);
-        float.set_halign(gtk::Align::Fill);
-        float.set_valign(gtk::Align::Fill);
+        float.set_size_request(720, 420);
+        float.set_hexpand(false);
+        float.set_vexpand(false);
+        float.set_halign(gtk::Align::Center);
+        float.set_valign(gtk::Align::Center);
         self.float_host.append(&float);
         self.float_scrim.set_visible(true);
         self.float_host.set_visible(true);
@@ -664,9 +665,6 @@ impl Component for AppModel {
         float_host.set_margin_bottom(24);
         float_host.set_margin_start(24);
         float_host.set_margin_end(24);
-        float_host.set_width_request(720);
-        float_host.set_height_request(420);
-        float_host.set_overflow(gtk::Overflow::Hidden);
         float_host.set_can_target(true);
         float_host.set_visible(false);
 
