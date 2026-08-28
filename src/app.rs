@@ -168,7 +168,9 @@ impl AppModel {
                 BookFloatOut::Close | BookFloatOut::Deleted { .. } => AppMsg::CloseBookDialog,
                 BookFloatOut::OpenReader { book_id } => AppMsg::OpenReader { book_id },
                 BookFloatOut::OpenFullPage { book_id } => AppMsg::FloatOpenFull { book_id },
-                BookFloatOut::OpenAuthor { name } => AppMsg::Push(Route::AuthorPage { author: name }),
+                BookFloatOut::OpenAuthor { name } => {
+                    AppMsg::Push(Route::AuthorPage { author: name })
+                }
             });
 
         let float = ctrl.widget().clone();
@@ -694,7 +696,9 @@ impl Component for AppModel {
         let float_host = widgets.float_host.clone();
         close_float_key.connect_key_pressed(move |_, keyval, _, _| {
             use gtk::gdk::Key;
-            if float_host.is_visible() && (keyval == Key::q || keyval == Key::Q || keyval == Key::Escape) {
+            if float_host.is_visible()
+                && (keyval == Key::q || keyval == Key::Q || keyval == Key::Escape)
+            {
                 s_key.input(AppMsg::CloseBookDialog);
                 return gtk::glib::Propagation::Stop;
             }
