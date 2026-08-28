@@ -101,6 +101,8 @@ pub struct AppModel {
     sidebar_override: Option<NavItem>,
     page: Option<PageSlot>,
     floating: Option<FloatingBook>,
+    float_scrim: gtk::Box,
+    float_host: gtk::Box,
     /// Pages kept alive between visits, keyed by route.
     ///
     /// Rebuilding a whole widget tree on every click was the second half of
@@ -147,20 +149,17 @@ impl AppModel {
         !self.history.is_empty() && !self.route.is_reader()
     }
 
-    fn close_floating(&mut self, float_host: &gtk::Box) {
-        while let Some(child) = float_host.first_child() {
-            float_host.remove(&child);
+    fn close_floating(&mut self) {
+        while let Some(child) = self.float_host.first_child() {
+            self.float_host.remove(&child);
         }
+        self.float_host.set_visible(false);
+        self.float_scrim.set_visible(false);
         self.floating = None;
     }
 
-    fn open_floating(
-        &mut self,
-        float_host: &gtk::Box,
-        book_id: i64,
-        sender: &ComponentSender<Self>,
-    ) {
-        self.close_floating(float_host);
+    fn open_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
+        self.close_floating();
 
         let ctrl = BookFloatModel::builder()
             .launch((self.catalog.clone(), book_id))
@@ -178,7 +177,9 @@ impl AppModel {
         float.set_vexpand(true);
         float.set_halign(gtk::Align::Fill);
         float.set_valign(gtk::Align::Fill);
-        float_host.append(&float);
+        self.float_host.append(&float);
+        self.float_scrim.set_visible(true);
+        self.float_host.set_visible(true);
         float.grab_focus();
 
         self.floating = Some(FloatingBook { _controller: ctrl });
@@ -488,35 +489,8 @@ impl Component for AppModel {
 
             // One root overlay: main app under it, then a dimmed in-app book
             // panel, then toasts on top.
+            #[name = "root_overlay"]
             gtk::Overlay {
-                add_overlay = #[name = "float_scrim"] &gtk::Box {
-                    add_css_class: "kalam-float-scrim",
-                    set_halign: gtk::Align::Fill,
-                    set_valign: gtk::Align::Fill,
-                    set_hexpand: true,
-                    set_vexpand: true,
-                    set_can_target: true,
-                    #[watch]
-                    set_visible: model.floating.is_some(),
-                },
-
-                add_overlay = #[name = "float_host"] &gtk::Box {
-                    add_css_class: "kalam-float-stage",
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_halign: gtk::Align::Center,
-                    set_valign: gtk::Align::Center,
-                    set_margin_top: 24,
-                    set_margin_bottom: 24,
-                    set_margin_start: 24,
-                    set_margin_end: 24,
-                    set_width_request: 720,
-                    set_height_request: 420,
-                    set_overflow: gtk::Overflow::Hidden,
-                    set_can_target: true,
-                    #[watch]
-                    set_visible: model.floating.is_some(),
-                },
-
                 add_overlay = &gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_spacing: 8,
@@ -673,6 +647,29 @@ impl Component for AppModel {
         let initial_route = Route::Module(NavItem::Home);
         let page = Self::build_page(&catalog, &initial_route, &sender);
 
+        let float_scrim = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        float_scrim.add_css_class("kalam-float-scrim");
+        float_scrim.set_halign(gtk::Align::Fill);
+        float_scrim.set_valign(gtk::Align::Fill);
+        float_scrim.set_hexpand(true);
+        float_scrim.set_vexpand(true);
+        float_scrim.set_can_target(true);
+        float_scrim.set_visible(false);
+
+        let float_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        float_host.add_css_class("kalam-float-stage");
+        float_host.set_halign(gtk::Align::Center);
+        float_host.set_valign(gtk::Align::Center);
+        float_host.set_margin_top(24);
+        float_host.set_margin_bottom(24);
+        float_host.set_margin_start(24);
+        float_host.set_margin_end(24);
+        float_host.set_width_request(720);
+        float_host.set_height_request(420);
+        float_host.set_overflow(gtk::Overflow::Hidden);
+        float_host.set_can_target(true);
+        float_host.set_visible(false);
+
         let cache_token = catalog.change_token();
         let model = AppModel {
             catalog,
@@ -681,19 +678,22 @@ impl Component for AppModel {
             sidebar_override: None,
             page: Some(page),
             floating: None,
+            float_scrim: float_scrim.clone(),
+            float_host: float_host.clone(),
             cache: Vec::new(),
             cache_token,
         };
 
         let widgets = view_output!();
+        widgets.root_overlay.add_overlay(&float_scrim);
+        widgets.root_overlay.add_overlay(&float_host);
 
         let block_float_clicks = gtk::GestureClick::new();
         block_float_clicks.connect_pressed(|_, _, _, _| {});
-        widgets.float_scrim.add_controller(block_float_clicks);
+        float_scrim.add_controller(block_float_clicks);
 
         let close_float_key = gtk::EventControllerKey::new();
         let s_key = sender.clone();
-        let float_host = widgets.float_host.clone();
         close_float_key.connect_key_pressed(move |_, keyval, _, _| {
             use gtk::gdk::Key;
             if float_host.is_visible()
@@ -759,11 +759,11 @@ impl Component for AppModel {
                     NavItem::Shelves => Route::ShelvesGrid,
                     other => Route::Module(other),
                 };
-                self.close_floating(&widgets.float_host);
+                self.close_floating();
                 self.swap_page(&widgets.content_host, route, false, &sender);
             }
             AppMsg::Push(route) => {
-                self.close_floating(&widgets.float_host);
+                self.close_floating();
                 self.swap_page(&widgets.content_host, route, true, &sender);
             }
             AppMsg::Back => {
@@ -783,10 +783,10 @@ impl Component for AppModel {
                 }
             }
             AppMsg::OpenBookDialog { book_id } => {
-                self.open_floating(&widgets.float_host, book_id, &sender);
+                self.open_floating(book_id, &sender);
             }
             AppMsg::FloatOpenFull { book_id } => {
-                self.close_floating(&widgets.float_host);
+                self.close_floating();
                 self.swap_page(
                     &widgets.content_host,
                     Route::BookPage { book_id },
@@ -795,7 +795,7 @@ impl Component for AppModel {
                 );
             }
             AppMsg::CloseBookDialog => {
-                self.close_floating(&widgets.float_host);
+                self.close_floating();
                 // The float can delete a book, so the page underneath may now
                 // be showing something that no longer exists. Deferred to the
                 // next main-loop turn: rebuilding here would dispose widgets
@@ -810,7 +810,7 @@ impl Component for AppModel {
                 self.refresh_if_stale(&widgets.content_host, &sender);
             }
             AppMsg::OpenReader { book_id } => {
-                self.close_floating(&widgets.float_host);
+                self.close_floating();
                 self.swap_page(
                     &widgets.content_host,
                     Route::Reader { book_id },
