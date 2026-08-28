@@ -395,7 +395,8 @@ button.kalam-author-link-detail {
 
 button.kalam-author-link-float {
     font-size: 0.92rem;
-    padding-top: 1px;
+    line-height: 1.24;
+    padding-top: 2px;
     padding-bottom: 1px;
 }
 
@@ -727,8 +728,6 @@ window.kalam-float-window {
 .kalam-float-cover-col {
     background: @kalam_surface_2;
     border-right: 1px solid @kalam_border;
-    border-top-left-radius: 20px;
-    border-bottom-left-radius: 20px;
     padding: 18px 8px 16px;
 }
 
@@ -737,12 +736,12 @@ window.kalam-float-window {
 }
 
 .kalam-float-book-shell {
-    min-width: 118px;
-    min-height: 170px;
+    min-width: 126px;
+    min-height: 182px;
 }
 
 .kalam-float-book-edge {
-    background: alpha(@kalam_bg, 0.16);
+    background: alpha(@kalam_bg, 0.14);
     border-radius: 5px;
 }
 
@@ -753,7 +752,7 @@ window.kalam-float-window {
 }
 
 .kalam-float-cover.kalam-cover-frame {
-    box-shadow: 0 14px 32px alpha(#000, 0.46);
+    box-shadow: 0 12px 28px alpha(#000, 0.36);
 }
 
 .kalam-float-progress-wrap {
@@ -761,20 +760,24 @@ window.kalam-float-window {
 }
 
 .kalam-float-progress-row {
-    min-height: 18px;
+    min-height: 22px;
 }
 
 .kalam-float-progress-pct {
     font-family: monospace;
     font-size: 0.72rem;
+    line-height: 1.25;
     font-weight: 600;
     color: @kalam_accent;
+    padding-top: 2px;
 }
 
 .kalam-float-progress-loc {
     font-family: monospace;
     font-size: 0.66rem;
+    line-height: 1.25;
     color: @kalam_text_dim;
+    padding-top: 2px;
 }
 
 progressbar.kalam-float-progress {
@@ -805,23 +808,25 @@ progressbar.kalam-float-progress progress {
 
 .kalam-float-fact-label {
     font-size: 0.56rem;
+    line-height: 1.28;
     font-weight: 700;
     letter-spacing: 0.06em;
     color: @kalam_text_dim;
-    padding-top: 1px;
+    padding-top: 2px;
+    padding-bottom: 1px;
 }
 
 .kalam-float-fact-val {
     font-family: monospace;
     font-size: 0.7rem;
+    line-height: 1.28;
     color: @kalam_text;
-    padding-top: 1px;
+    padding-top: 2px;
+    padding-bottom: 1px;
 }
 
 .kalam-float-right {
     background: @kalam_surface;
-    border-top-right-radius: 20px;
-    border-bottom-right-radius: 20px;
     min-width: 0;
 }
 
@@ -845,9 +850,9 @@ progressbar.kalam-float-progress progress {
 }
 
 button.kalam-float-close {
-    min-width: 38px;
-    min-height: 38px;
-    margin: 0;
+    min-width: 30px;
+    min-height: 30px;
+    margin: 2px 2px 0 0;
     padding: 0;
     border-radius: 999px;
     background: @kalam_surface_2;

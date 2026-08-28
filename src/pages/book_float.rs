@@ -12,8 +12,8 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
 
-const COVER_W: i32 = 112;
-const COVER_H: i32 = 164;
+const COVER_W: i32 = 120;
+const COVER_H: i32 = 176;
 const DESC_PREVIEW_CHARS: usize = 300;
 
 #[derive(Debug)]
@@ -239,7 +239,7 @@ impl Component for BookFloatModel {
                     gtk::Button {
                         set_child: Some(&crate::icons::symbolic_with_classes(
                             "window-close-symbolic",
-                            16,
+                            14,
                             &["kalam-inline-icon"],
                         )),
                         set_has_frame: false,
@@ -411,9 +411,9 @@ impl Component for BookFloatModel {
         };
         let widgets = view_output!();
         widgets.cover_col.set_size_request(150, -1);
-        widgets.progress_wrap.set_size_request(104, -1);
+        widgets.progress_wrap.set_size_request(108, -1);
         widgets.progress_wrap.set_halign(gtk::Align::Center);
-        widgets.left_meta.set_size_request(112, -1);
+        widgets.left_meta.set_size_request(120, -1);
         widgets.left_meta.set_halign(gtk::Align::Center);
         widgets.tbr_btn.set_size_request(38, 38);
         widgets.shelf_btn.set_size_request(38, 38);
