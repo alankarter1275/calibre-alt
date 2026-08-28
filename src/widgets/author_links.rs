@@ -38,6 +38,8 @@ pub fn replace_author_links(
         }
         btn.set_focus_on_click(false);
         btn.set_halign(gtk::Align::Start);
+        btn.set_valign(gtk::Align::Center);
+        btn.set_size_request(-1, 22);
         btn.set_tooltip_text(Some("Open author page"));
 
         let name = name.clone();

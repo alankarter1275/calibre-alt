@@ -395,10 +395,16 @@ button.kalam-author-link-detail {
 
 button.kalam-author-link-float {
     font-size: 0.92rem;
-    line-height: 1.3;
+    line-height: 1.34;
     padding-top: 3px;
+    padding-bottom: 3px;
+    min-height: 22px;
+}
+
+button.kalam-author-link-float > label {
+    line-height: 1.34;
+    padding-top: 2px;
     padding-bottom: 2px;
-    min-height: 20px;
 }
 
 button.kalam-author-link-reader {
@@ -711,8 +717,9 @@ button.kalam-author-photo-refresh:hover {
 
 /* ── floating book panel ────────────────────────────── */
 window.kalam-float-window {
-    background: transparent;
+    background: @kalam_surface;
     border: none;
+    border-radius: 20px;
     box-shadow: none;
 }
 
@@ -720,7 +727,7 @@ window.kalam-float-window {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 20px;
-    box-shadow: 0 16px 36px alpha(#000, 0.28);
+    box-shadow: none;
     padding: 0px;
     min-width: 700px;
     min-height: 368px;
@@ -816,21 +823,23 @@ progressbar.kalam-float-progress progress {
 
 .kalam-float-fact-label {
     font-size: 0.56rem;
-    line-height: 1.36;
+    line-height: 1.4;
     font-weight: 700;
     letter-spacing: 0.06em;
     color: @kalam_text_dim;
+    min-height: 14px;
     padding-top: 3px;
-    padding-bottom: 1px;
+    padding-bottom: 2px;
 }
 
 .kalam-float-fact-val {
     font-family: monospace;
     font-size: 0.7rem;
-    line-height: 1.36;
+    line-height: 1.4;
     color: @kalam_text;
+    min-height: 18px;
     padding-top: 3px;
-    padding-bottom: 1px;
+    padding-bottom: 2px;
 }
 
 .kalam-float-right {
@@ -862,7 +871,7 @@ button.kalam-float-close {
     min-height: 28px;
     margin: 2px 2px 0 0;
     padding: 0px;
-    border-radius: 9999px;
+    border-radius: 14px;
     background: @kalam_surface_2;
     border: 1px solid @kalam_border;
     box-shadow: none;
@@ -941,11 +950,11 @@ button.kalam-float-read-more:hover {
 }
 
 button.kalam-float-icon-btn {
-    min-width: 38px;
-    min-height: 38px;
+    min-width: 40px;
+    min-height: 40px;
     margin: 0px;
     padding: 0px;
-    border-radius: 9999px;
+    border-radius: 20px;
     background: @kalam_surface_2;
     border: 1px solid @kalam_border;
     box-shadow: none;
@@ -955,6 +964,11 @@ button.kalam-float-icon-btn {
 button.kalam-float-icon-btn > box {
     min-width: 0;
     min-height: 0;
+}
+
+button.kalam-float-icon-btn > image {
+    margin: 0px;
+    padding: 0px;
 }
 
 button.kalam-float-icon-btn:hover {

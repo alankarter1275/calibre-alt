@@ -415,11 +415,11 @@ impl Component for BookFloatModel {
         widgets.progress_wrap.set_halign(gtk::Align::Center);
         widgets.left_meta.set_size_request(120, -1);
         widgets.left_meta.set_halign(gtk::Align::Center);
-        widgets.tbr_btn.set_size_request(38, 38);
-        widgets.shelf_btn.set_size_request(38, 38);
-        widgets.edit_btn.set_size_request(38, 38);
-        widgets.finish_btn.set_size_request(38, 38);
-        widgets.remove_btn.set_size_request(38, 38);
+        widgets.tbr_btn.set_size_request(40, 40);
+        widgets.shelf_btn.set_size_request(40, 40);
+        widgets.edit_btn.set_size_request(40, 40);
+        widgets.finish_btn.set_size_request(40, 40);
+        widgets.remove_btn.set_size_request(40, 40);
         fill(&widgets, &model, &sender);
 
         let key = gtk::EventControllerKey::new();
