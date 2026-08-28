@@ -395,9 +395,10 @@ button.kalam-author-link-detail {
 
 button.kalam-author-link-float {
     font-size: 0.92rem;
-    line-height: 1.24;
-    padding-top: 2px;
-    padding-bottom: 1px;
+    line-height: 1.3;
+    padding-top: 3px;
+    padding-bottom: 2px;
+    min-height: 20px;
 }
 
 button.kalam-author-link-reader {
@@ -719,8 +720,8 @@ window.kalam-float-window {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 20px;
-    box-shadow: 0 40px 90px alpha(#000, 0.65), 0 8px 24px alpha(#000, 0.35);
-    padding: 0;
+    box-shadow: 0 16px 36px alpha(#000, 0.28);
+    padding: 0px;
     min-width: 700px;
     min-height: 368px;
 }
@@ -729,6 +730,11 @@ window.kalam-float-window {
     background: @kalam_surface_2;
     border-right: 1px solid @kalam_border;
     padding: 18px 8px 16px;
+}
+
+.kalam-float-cover-col,
+.kalam-float-right {
+    min-height: 0;
 }
 
 .kalam-float-cover-host {
@@ -760,24 +766,26 @@ window.kalam-float-window {
 }
 
 .kalam-float-progress-row {
-    min-height: 22px;
+    min-height: 24px;
 }
 
 .kalam-float-progress-pct {
     font-family: monospace;
     font-size: 0.72rem;
-    line-height: 1.25;
+    line-height: 1.32;
     font-weight: 600;
     color: @kalam_accent;
-    padding-top: 2px;
+    padding-top: 3px;
+    padding-bottom: 1px;
 }
 
 .kalam-float-progress-loc {
     font-family: monospace;
     font-size: 0.66rem;
-    line-height: 1.25;
+    line-height: 1.32;
     color: @kalam_text_dim;
-    padding-top: 2px;
+    padding-top: 3px;
+    padding-bottom: 1px;
 }
 
 progressbar.kalam-float-progress {
@@ -808,20 +816,20 @@ progressbar.kalam-float-progress progress {
 
 .kalam-float-fact-label {
     font-size: 0.56rem;
-    line-height: 1.28;
+    line-height: 1.36;
     font-weight: 700;
     letter-spacing: 0.06em;
     color: @kalam_text_dim;
-    padding-top: 2px;
+    padding-top: 3px;
     padding-bottom: 1px;
 }
 
 .kalam-float-fact-val {
     font-family: monospace;
     font-size: 0.7rem;
-    line-height: 1.28;
+    line-height: 1.36;
     color: @kalam_text;
-    padding-top: 2px;
+    padding-top: 3px;
     padding-bottom: 1px;
 }
 
@@ -850,11 +858,11 @@ progressbar.kalam-float-progress progress {
 }
 
 button.kalam-float-close {
-    min-width: 30px;
-    min-height: 30px;
+    min-width: 28px;
+    min-height: 28px;
     margin: 2px 2px 0 0;
-    padding: 0;
-    border-radius: 999px;
+    padding: 0px;
+    border-radius: 9999px;
     background: @kalam_surface_2;
     border: 1px solid @kalam_border;
     box-shadow: none;
@@ -924,7 +932,10 @@ button.kalam-float-read-more:hover {
 }
 
 .kalam-float-read {
-    padding: 9px 20px;
+    padding-top: 9px;
+    padding-right: 20px;
+    padding-bottom: 9px;
+    padding-left: 20px;
     font-size: 0.85rem;
     min-width: 0;
 }
@@ -932,12 +943,18 @@ button.kalam-float-read-more:hover {
 button.kalam-float-icon-btn {
     min-width: 38px;
     min-height: 38px;
-    padding: 0;
-    border-radius: 999px;
+    margin: 0px;
+    padding: 0px;
+    border-radius: 9999px;
     background: @kalam_surface_2;
     border: 1px solid @kalam_border;
     box-shadow: none;
     color: @kalam_text;
+}
+
+button.kalam-float-icon-btn > box {
+    min-width: 0;
+    min-height: 0;
 }
 
 button.kalam-float-icon-btn:hover {
@@ -955,6 +972,11 @@ button.kalam-float-icon-btn.done-active {
     background: alpha(@kalam_success, 0.14);
     border-color: alpha(@kalam_success, 0.44);
     color: @kalam_success;
+}
+
+button.kalam-float-icon-btn:focus,
+button.kalam-float-close:focus {
+    box-shadow: none;
 }
 
 button.kalam-float-icon-btn.kalam-float-icon-btn-danger {

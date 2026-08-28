@@ -239,7 +239,7 @@ impl Component for BookFloatModel {
                     gtk::Button {
                         set_child: Some(&crate::icons::symbolic_with_classes(
                             "window-close-symbolic",
-                            14,
+                            12,
                             &["kalam-inline-icon"],
                         )),
                         set_has_frame: false,

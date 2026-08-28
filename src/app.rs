@@ -739,7 +739,6 @@ impl Component for AppModel {
                     .modal(false)
                     .decorated(false)
                     .build();
-                window.add_css_class("kalam-window");
                 window.add_css_class("kalam-float-window");
                 window.set_child(Some(ctrl.widget()));
 
