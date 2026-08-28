@@ -326,7 +326,7 @@ impl Component for BookFloatModel {
 
                     #[name = "footer_spacer"]
                     gtk::Box {
-                        set_vexpand: true,
+                        set_vexpand: false,
                     },
 
                     #[name = "tags"]
@@ -733,21 +733,22 @@ fn fill(
 
     let full_desc = clean_description(book);
     let (desc_text, can_expand) = description_preview(&full_desc, model.desc_expanded);
+    let expanded = model.desc_expanded && can_expand;
+    let desc_height = if expanded { 154 } else { 106 };
+    let spacer_height = if expanded { 0 } else { 48 };
     widgets.description.set_label(&desc_text);
-    widgets.footer_spacer.set_visible(has_book);
     widgets.desc_scroll.set_vexpand(false);
-    if model.desc_expanded && can_expand {
-        let desc_height = 154;
-        widgets.desc_scroll.set_propagate_natural_height(false);
-        widgets.desc_scroll.set_height_request(desc_height);
-        widgets.desc_scroll.set_max_content_height(desc_height);
+    widgets.desc_scroll.set_propagate_natural_height(false);
+    widgets.desc_scroll.set_min_content_height(-1);
+    widgets.desc_scroll.set_max_content_height(desc_height);
+    widgets.desc_scroll.set_height_request(desc_height);
+    widgets.footer_spacer.set_height_request(spacer_height);
+    widgets.footer_spacer.set_visible(has_book && spacer_height > 0);
+    if expanded {
         widgets
             .desc_scroll
             .set_vscrollbar_policy(gtk::PolicyType::Automatic);
     } else {
-        widgets.desc_scroll.set_propagate_natural_height(true);
-        widgets.desc_scroll.set_height_request(-1);
-        widgets.desc_scroll.set_max_content_height(-1);
         widgets
             .desc_scroll
             .set_vscrollbar_policy(gtk::PolicyType::Never);
