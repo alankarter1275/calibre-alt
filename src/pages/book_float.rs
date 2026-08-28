@@ -786,7 +786,11 @@ fn progress_location_text(catalog: &Catalog, book: &Book) -> String {
 
 fn blank_dash(text: &str) -> &str {
     let text = text.trim();
-    if text.is_empty() { "—" } else { text }
+    if text.is_empty() {
+        "—"
+    } else {
+        text
+    }
 }
 
 fn clean_description(book: &Book) -> String {
