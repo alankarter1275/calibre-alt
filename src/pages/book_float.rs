@@ -15,6 +15,10 @@ use std::sync::Arc;
 const COVER_W: i32 = 120;
 const COVER_H: i32 = 176;
 const DESC_PREVIEW_CHARS: usize = 240;
+const DESC_PREVIEW_HEIGHT: i32 = 106;
+const DESC_EXPANDED_HEIGHT: i32 = 154;
+const READ_MORE_HEIGHT: i32 = 20;
+const DESC_SECTION_HEIGHT: i32 = DESC_EXPANDED_HEIGHT + 10 + READ_MORE_HEIGHT;
 
 #[derive(Debug)]
 pub enum BookFloatOut {
@@ -298,35 +302,43 @@ impl Component for BookFloatModel {
                         set_halign: gtk::Align::Start,
                     },
 
-                    #[name = "desc_scroll"]
-                    gtk::ScrolledWindow {
-                        add_css_class: "kalam-float-desc-scroll",
+                    #[name = "desc_section"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 10,
                         set_hexpand: true,
                         set_vexpand: false,
-                        set_hscrollbar_policy: gtk::PolicyType::Never,
 
-                        #[name = "description"]
-                        gtk::Label {
-                            add_css_class: "kalam-float-desc",
-                            add_css_class: "kalam-title-serif-italic",
-                            set_halign: gtk::Align::Start,
-                            set_valign: gtk::Align::Start,
-                            set_wrap: true,
-                            set_xalign: 0.0,
-                            set_selectable: true,
+                        #[name = "desc_scroll"]
+                        gtk::ScrolledWindow {
+                            add_css_class: "kalam-float-desc-scroll",
+                            set_hexpand: true,
+                            set_vexpand: false,
+                            set_hscrollbar_policy: gtk::PolicyType::Never,
+
+                            #[name = "description"]
+                            gtk::Label {
+                                add_css_class: "kalam-float-desc",
+                                add_css_class: "kalam-title-serif-italic",
+                                set_halign: gtk::Align::Start,
+                                set_valign: gtk::Align::Start,
+                                set_wrap: true,
+                                set_xalign: 0.0,
+                                set_selectable: true,
+                            },
                         },
-                    },
 
-                    #[name = "read_more_btn"]
-                    gtk::Button {
-                        add_css_class: "kalam-float-read-more",
-                        set_halign: gtk::Align::Start,
-                        connect_clicked => BookFloatMsg::ToggleDescription,
-                    },
+                        #[name = "read_more_btn"]
+                        gtk::Button {
+                            add_css_class: "kalam-float-read-more",
+                            set_halign: gtk::Align::Start,
+                            connect_clicked => BookFloatMsg::ToggleDescription,
+                        },
 
-                    #[name = "footer_spacer"]
-                    gtk::Box {
-                        set_vexpand: false,
+                        #[name = "desc_section_spacer"]
+                        gtk::Box {
+                            set_vexpand: true,
+                        },
                     },
 
                     #[name = "tags"]
@@ -672,9 +684,10 @@ fn fill(
     widgets.progress_wrap.set_visible(has_book);
     widgets.left_meta.set_visible(has_book);
     widgets.rating_host.set_visible(has_book);
+    widgets.desc_section.set_visible(has_book);
     widgets.desc_scroll.set_visible(has_book);
     widgets.tags.set_visible(has_book);
-    widgets.footer_spacer.set_visible(has_book);
+    widgets.desc_section_spacer.set_visible(false);
 
     let Some(book) = model.book.as_ref() else {
         widgets.header_title.set_label("Book not found");
@@ -734,33 +747,50 @@ fn fill(
     let full_desc = clean_description(book);
     let (desc_text, can_expand) = description_preview(&full_desc, model.desc_expanded);
     let expanded = model.desc_expanded && can_expand;
-    let desc_height = if expanded { 154 } else { 106 };
-    let spacer_height = if expanded { 0 } else { 48 };
     widgets.description.set_label(&desc_text);
     widgets.desc_scroll.set_vexpand(false);
-    widgets.desc_scroll.set_propagate_natural_height(false);
-    widgets.desc_scroll.set_min_content_height(-1);
-    widgets.desc_scroll.set_max_content_height(desc_height);
-    widgets.desc_scroll.set_height_request(desc_height);
-    widgets.footer_spacer.set_height_request(spacer_height);
-    widgets
-        .footer_spacer
-        .set_visible(has_book && spacer_height > 0);
-    if expanded {
+    widgets.read_more_btn.set_height_request(READ_MORE_HEIGHT);
+    if can_expand {
+        widgets.desc_section.set_height_request(DESC_SECTION_HEIGHT);
+        widgets.read_more_btn.set_visible(true);
         widgets
-            .desc_scroll
-            .set_vscrollbar_policy(gtk::PolicyType::Automatic);
+            .read_more_btn
+            .set_label(if expanded { "Show less" } else { "Read more" });
+        if expanded {
+            widgets.desc_section_spacer.set_visible(false);
+            widgets.desc_scroll.set_propagate_natural_height(false);
+            widgets.desc_scroll.set_min_content_height(-1);
+            widgets
+                .desc_scroll
+                .set_max_content_height(DESC_EXPANDED_HEIGHT);
+            widgets.desc_scroll.set_height_request(DESC_EXPANDED_HEIGHT);
+            widgets
+                .desc_scroll
+                .set_vscrollbar_policy(gtk::PolicyType::Automatic);
+        } else {
+            widgets.desc_section_spacer.set_visible(true);
+            widgets.desc_scroll.set_propagate_natural_height(false);
+            widgets.desc_scroll.set_min_content_height(-1);
+            widgets
+                .desc_scroll
+                .set_max_content_height(DESC_PREVIEW_HEIGHT);
+            widgets.desc_scroll.set_height_request(-1);
+            widgets
+                .desc_scroll
+                .set_vscrollbar_policy(gtk::PolicyType::Never);
+        }
     } else {
+        widgets.desc_section.set_height_request(-1);
+        widgets.desc_section_spacer.set_visible(false);
+        widgets.read_more_btn.set_visible(false);
+        widgets.desc_scroll.set_propagate_natural_height(true);
+        widgets.desc_scroll.set_min_content_height(-1);
+        widgets.desc_scroll.set_max_content_height(-1);
+        widgets.desc_scroll.set_height_request(-1);
         widgets
             .desc_scroll
             .set_vscrollbar_policy(gtk::PolicyType::Never);
     }
-    widgets.read_more_btn.set_visible(can_expand);
-    widgets.read_more_btn.set_label(if model.desc_expanded {
-        "Show less"
-    } else {
-        "Read more"
-    });
 
     for tag in book.tags.iter().take(12) {
         let t = chip(tag, "kalam-chip");
