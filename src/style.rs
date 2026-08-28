@@ -942,8 +942,8 @@ button.kalam-float-read-more:hover {
 }
 
 .kalam-float-tags {
-    margin-top: 10px;
-    margin-bottom: 4px;
+    margin-top: 0;
+    margin-bottom: 2px;
 }
 
 .kalam-float-actions {

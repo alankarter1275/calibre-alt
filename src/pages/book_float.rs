@@ -324,6 +324,10 @@ impl Component for BookFloatModel {
                         connect_clicked => BookFloatMsg::ToggleDescription,
                     },
 
+                    gtk::Box {
+                        set_vexpand: true,
+                    },
+
                     #[name = "tags"]
                     gtk::FlowBox {
                         add_css_class: "kalam-float-tags",
@@ -332,10 +336,6 @@ impl Component for BookFloatModel {
                         set_row_spacing: 6,
                         set_halign: gtk::Align::Start,
                         set_max_children_per_line: 8,
-                    },
-
-                    gtk::Box {
-                        set_vexpand: true,
                     },
 
                     gtk::Box {
