@@ -735,11 +735,15 @@ fn fill(
     widgets.desc_scroll.set_min_content_height(0);
     if model.desc_expanded && can_expand {
         widgets.desc_scroll.set_max_content_height(220);
-        widgets.desc_scroll.set_vscrollbar_policy(gtk::PolicyType::Automatic);
+        widgets
+            .desc_scroll
+            .set_vscrollbar_policy(gtk::PolicyType::Automatic);
         widgets.desc_scroll.set_vexpand(true);
     } else {
         widgets.desc_scroll.set_max_content_height(148);
-        widgets.desc_scroll.set_vscrollbar_policy(gtk::PolicyType::Never);
+        widgets
+            .desc_scroll
+            .set_vscrollbar_policy(gtk::PolicyType::Never);
         widgets.desc_scroll.set_vexpand(false);
     }
     widgets.read_more_btn.set_visible(can_expand);
