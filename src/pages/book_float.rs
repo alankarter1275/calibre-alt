@@ -138,16 +138,16 @@ impl Component for BookFloatModel {
                     gtk::Box {
                         add_css_class: "kalam-float-fact",
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 1,
+                        set_spacing: 0,
 
                         gtk::Label {
                             set_label: "FORMAT",
                             add_css_class: "kalam-float-fact-label",
                             set_halign: gtk::Align::Start,
                             set_valign: gtk::Align::Center,
-                            set_height_request: 18,
-                            set_margin_top: 3,
-                            set_margin_bottom: 2,
+                            set_height_request: 16,
+                            set_margin_top: 2,
+                            set_margin_bottom: 0,
                             set_xalign: 0.0,
                         },
 
@@ -156,9 +156,9 @@ impl Component for BookFloatModel {
                             add_css_class: "kalam-float-fact-val",
                             set_halign: gtk::Align::Start,
                             set_valign: gtk::Align::Center,
-                            set_height_request: 22,
-                            set_margin_top: 3,
-                            set_margin_bottom: 2,
+                            set_height_request: 18,
+                            set_margin_top: 0,
+                            set_margin_bottom: 0,
                             set_xalign: 0.0,
                         },
                     },
@@ -166,16 +166,16 @@ impl Component for BookFloatModel {
                     gtk::Box {
                         add_css_class: "kalam-float-fact",
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 1,
+                        set_spacing: 0,
 
                         gtk::Label {
                             set_label: "PUBLISHER",
                             add_css_class: "kalam-float-fact-label",
                             set_halign: gtk::Align::Start,
                             set_valign: gtk::Align::Center,
-                            set_height_request: 18,
-                            set_margin_top: 3,
-                            set_margin_bottom: 2,
+                            set_height_request: 16,
+                            set_margin_top: 2,
+                            set_margin_bottom: 0,
                             set_xalign: 0.0,
                         },
 
@@ -184,9 +184,9 @@ impl Component for BookFloatModel {
                             add_css_class: "kalam-float-fact-val",
                             set_halign: gtk::Align::Start,
                             set_valign: gtk::Align::Center,
-                            set_height_request: 22,
-                            set_margin_top: 3,
-                            set_margin_bottom: 2,
+                            set_height_request: 18,
+                            set_margin_top: 0,
+                            set_margin_bottom: 0,
                             set_wrap: true,
                             set_xalign: 0.0,
                         },
@@ -195,16 +195,16 @@ impl Component for BookFloatModel {
                     gtk::Box {
                         add_css_class: "kalam-float-fact",
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 1,
+                        set_spacing: 0,
 
                         gtk::Label {
                             set_label: "PUBLISHED",
                             add_css_class: "kalam-float-fact-label",
                             set_halign: gtk::Align::Start,
                             set_valign: gtk::Align::Center,
-                            set_height_request: 18,
-                            set_margin_top: 3,
-                            set_margin_bottom: 2,
+                            set_height_request: 16,
+                            set_margin_top: 2,
+                            set_margin_bottom: 0,
                             set_xalign: 0.0,
                         },
 
@@ -213,9 +213,9 @@ impl Component for BookFloatModel {
                             add_css_class: "kalam-float-fact-val",
                             set_halign: gtk::Align::Start,
                             set_valign: gtk::Align::Center,
-                            set_height_request: 22,
-                            set_margin_top: 3,
-                            set_margin_bottom: 2,
+                            set_height_request: 18,
+                            set_margin_top: 0,
+                            set_margin_bottom: 0,
                             set_wrap: true,
                             set_xalign: 0.0,
                         },
@@ -254,8 +254,8 @@ impl Component for BookFloatModel {
                             set_orientation: gtk::Orientation::Vertical,
                             set_halign: gtk::Align::Start,
                             set_spacing: 0,
-                            set_margin_top: 2,
-                            set_margin_bottom: 2,
+                            set_margin_top: 1,
+                            set_margin_bottom: 1,
                         },
 
                         #[name = "series_val"]
@@ -355,6 +355,8 @@ impl Component for BookFloatModel {
                             add_css_class: "kalam-btn-filled",
                             add_css_class: "kalam-float-read",
                             set_halign: gtk::Align::Start,
+                            set_valign: gtk::Align::Center,
+                            set_vexpand: false,
                             connect_clicked => BookFloatMsg::Read,
                         },
 
@@ -368,6 +370,8 @@ impl Component for BookFloatModel {
                             set_has_frame: false,
                             add_css_class: "kalam-btn-icon",
                             add_css_class: "kalam-float-icon-btn",
+                            set_valign: gtk::Align::Center,
+                            set_vexpand: false,
                             connect_clicked => BookFloatMsg::ToggleReadingList,
                         },
 
@@ -381,6 +385,8 @@ impl Component for BookFloatModel {
                             set_has_frame: false,
                             add_css_class: "kalam-btn-icon",
                             add_css_class: "kalam-float-icon-btn",
+                            set_valign: gtk::Align::Center,
+                            set_vexpand: false,
                             connect_clicked => BookFloatMsg::ShowShelfMenu,
                         },
 
@@ -394,6 +400,8 @@ impl Component for BookFloatModel {
                             set_has_frame: false,
                             add_css_class: "kalam-btn-icon",
                             add_css_class: "kalam-float-icon-btn",
+                            set_valign: gtk::Align::Center,
+                            set_vexpand: false,
                             connect_clicked => BookFloatMsg::EditMetadata,
                         },
 
@@ -407,6 +415,8 @@ impl Component for BookFloatModel {
                             set_has_frame: false,
                             add_css_class: "kalam-btn-icon",
                             add_css_class: "kalam-float-icon-btn",
+                            set_valign: gtk::Align::Center,
+                            set_vexpand: false,
                             connect_clicked => BookFloatMsg::ToggleFinished,
                         },
 
@@ -426,6 +436,8 @@ impl Component for BookFloatModel {
                             add_css_class: "kalam-float-icon-btn",
                             add_css_class: "danger",
                             add_css_class: "kalam-float-icon-btn-danger",
+                            set_valign: gtk::Align::Center,
+                            set_vexpand: false,
                             set_tooltip_text: Some("Remove"),
                             connect_clicked => BookFloatMsg::Remove,
                         },
@@ -456,6 +468,7 @@ impl Component for BookFloatModel {
         widgets.progress_wrap.set_halign(gtk::Align::Center);
         widgets.left_meta.set_size_request(120, -1);
         widgets.left_meta.set_halign(gtk::Align::Center);
+        widgets.read_btn.set_size_request(-1, 40);
         widgets.tbr_btn.set_size_request(40, 40);
         widgets.shelf_btn.set_size_request(40, 40);
         widgets.edit_btn.set_size_request(40, 40);

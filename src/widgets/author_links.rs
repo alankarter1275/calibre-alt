@@ -39,14 +39,14 @@ pub fn replace_author_links(
         btn.set_focus_on_click(false);
         btn.set_halign(gtk::Align::Start);
         btn.set_valign(gtk::Align::Center);
-        btn.set_size_request(-1, 28);
+        btn.set_size_request(-1, 24);
         btn.set_tooltip_text(Some("Open author page"));
 
         let label = gtk::Label::new(Some(name));
         label.set_halign(gtk::Align::Start);
         label.set_valign(gtk::Align::Center);
-        label.set_margin_top(3);
-        label.set_margin_bottom(3);
+        label.set_margin_top(1);
+        label.set_margin_bottom(1);
         btn.set_child(Some(&label));
 
         let name = name.clone();
