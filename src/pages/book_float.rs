@@ -12,8 +12,8 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
 
-const COVER_W: i32 = 104;
-const COVER_H: i32 = 152;
+const COVER_W: i32 = 112;
+const COVER_H: i32 = 164;
 const DESC_PREVIEW_CHARS: usize = 300;
 
 #[derive(Debug)]
@@ -145,7 +145,7 @@ impl Component for BookFloatModel {
 
                         #[name = "format_val"]
                         gtk::Label {
-                            add_css_class: "kalam-float-format-chip",
+                            add_css_class: "kalam-float-fact-val",
                             set_halign: gtk::Align::Start,
                             set_xalign: 0.0,
                         },
@@ -244,6 +244,9 @@ impl Component for BookFloatModel {
                         )),
                         set_has_frame: false,
                         add_css_class: "kalam-float-close",
+                        set_halign: gtk::Align::End,
+                        set_valign: gtk::Align::Start,
+                        set_vexpand: false,
                         set_tooltip_text: Some("Close (Q)"),
                         connect_clicked => BookFloatMsg::Close,
                     },
@@ -408,7 +411,7 @@ impl Component for BookFloatModel {
         };
         let widgets = view_output!();
         widgets.cover_col.set_size_request(150, -1);
-        widgets.progress_wrap.set_size_request(112, -1);
+        widgets.progress_wrap.set_size_request(104, -1);
         widgets.progress_wrap.set_halign(gtk::Align::Center);
         widgets.left_meta.set_size_request(112, -1);
         widgets.left_meta.set_halign(gtk::Align::Center);
