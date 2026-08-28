@@ -70,6 +70,7 @@ impl Component for BookFloatModel {
         gtk::Box {
             set_orientation: gtk::Orientation::Horizontal,
             add_css_class: "kalam-float",
+            set_overflow: gtk::Overflow::Hidden,
             set_hexpand: true,
             set_vexpand: true,
 
@@ -156,7 +157,7 @@ impl Component for BookFloatModel {
                         set_spacing: 1,
 
                         gtk::Label {
-                            set_label: "PUBLISHER · YEAR",
+                            set_label: "PUBLISHER",
                             add_css_class: "kalam-float-fact-label",
                             set_halign: gtk::Align::Start,
                             set_xalign: 0.0,
@@ -177,16 +178,17 @@ impl Component for BookFloatModel {
                         set_spacing: 1,
 
                         gtk::Label {
-                            set_label: "ADDED",
+                            set_label: "PUBLISHED",
                             add_css_class: "kalam-float-fact-label",
                             set_halign: gtk::Align::Start,
                             set_xalign: 0.0,
                         },
 
-                        #[name = "added_val"]
+                        #[name = "published_val"]
                         gtk::Label {
                             add_css_class: "kalam-float-fact-val",
                             set_halign: gtk::Align::Start,
+                            set_wrap: true,
                             set_xalign: 0.0,
                         },
                     },
@@ -240,6 +242,7 @@ impl Component for BookFloatModel {
                             16,
                             &["kalam-inline-icon"],
                         )),
+                        set_has_frame: false,
                         add_css_class: "kalam-float-close",
                         set_tooltip_text: Some("Close (Q)"),
                         connect_clicked => BookFloatMsg::Close,
@@ -324,6 +327,7 @@ impl Component for BookFloatModel {
                                 16,
                                 &["kalam-inline-icon"],
                             )),
+                            set_has_frame: false,
                             add_css_class: "kalam-float-icon-btn",
                             connect_clicked => BookFloatMsg::ToggleReadingList,
                         },
@@ -335,6 +339,7 @@ impl Component for BookFloatModel {
                                 16,
                                 &["kalam-inline-icon"],
                             )),
+                            set_has_frame: false,
                             add_css_class: "kalam-float-icon-btn",
                             connect_clicked => BookFloatMsg::ShowShelfMenu,
                         },
@@ -346,6 +351,7 @@ impl Component for BookFloatModel {
                                 16,
                                 &["kalam-inline-icon"],
                             )),
+                            set_has_frame: false,
                             add_css_class: "kalam-float-icon-btn",
                             connect_clicked => BookFloatMsg::EditMetadata,
                         },
@@ -357,6 +363,7 @@ impl Component for BookFloatModel {
                                 16,
                                 &["kalam-inline-icon"],
                             )),
+                            set_has_frame: false,
                             add_css_class: "kalam-float-icon-btn",
                             connect_clicked => BookFloatMsg::ToggleFinished,
                         },
@@ -367,8 +374,15 @@ impl Component for BookFloatModel {
 
                         #[name = "remove_btn"]
                         gtk::Button {
-                            set_label: "Remove",
-                            add_css_class: "kalam-float-remove",
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "edit-delete-symbolic",
+                                16,
+                                &["kalam-inline-icon"],
+                            )),
+                            set_has_frame: false,
+                            add_css_class: "kalam-float-icon-btn",
+                            add_css_class: "kalam-float-icon-btn-danger",
+                            set_tooltip_text: Some("Remove"),
                             connect_clicked => BookFloatMsg::Remove,
                         },
                     },
@@ -393,7 +407,16 @@ impl Component for BookFloatModel {
             desc_expanded: false,
         };
         let widgets = view_output!();
-        widgets.cover_col.set_size_request(172, -1);
+        widgets.cover_col.set_size_request(150, -1);
+        widgets.progress_wrap.set_size_request(112, -1);
+        widgets.progress_wrap.set_halign(gtk::Align::Center);
+        widgets.left_meta.set_size_request(112, -1);
+        widgets.left_meta.set_halign(gtk::Align::Center);
+        widgets.tbr_btn.set_size_request(38, 38);
+        widgets.shelf_btn.set_size_request(38, 38);
+        widgets.edit_btn.set_size_request(38, 38);
+        widgets.finish_btn.set_size_request(38, 38);
+        widgets.remove_btn.set_size_request(38, 38);
         fill(&widgets, &model, &sender);
 
         let key = gtk::EventControllerKey::new();
@@ -603,7 +626,7 @@ fn fill(
         widgets.progress_bar.set_fraction(0.0);
         widgets.format_val.set_label("");
         widgets.publisher_val.set_label("");
-        widgets.added_val.set_label("");
+        widgets.published_val.set_label("");
         widgets
             .cover_host
             .append(&build_cover_display(None, false, sender));
@@ -645,8 +668,8 @@ fn fill(
         .set_label(&progress_location_text(model.catalog.as_ref(), book));
 
     widgets.format_val.set_label(book.format.as_str());
-    widgets.publisher_val.set_label(&publisher_year_text(book));
-    widgets.added_val.set_label(&short_date(&book.added_at));
+    widgets.publisher_val.set_label(blank_dash(&book.publisher));
+    widgets.published_val.set_label(blank_dash(&book.published));
 
     let full_desc = clean_description(book);
     let (desc_text, can_expand) = description_preview(&full_desc, model.desc_expanded);
@@ -702,10 +725,10 @@ fn build_cover_display(
     cover.add_css_class("kalam-float-cover");
     cover.set_halign(gtk::Align::Start);
     cover.set_valign(gtk::Align::Start);
-    cover.set_cursor_from_name(Some("pointer"));
     shell.add_overlay(&cover);
 
     if clickable {
+        cover.set_cursor_from_name(Some("pointer"));
         let click = gtk::GestureClick::new();
         let tx = sender.input_sender().clone();
         click.connect_released(move |_, _, _, _| {
@@ -761,17 +784,9 @@ fn progress_location_text(catalog: &Catalog, book: &Book) -> String {
     }
 }
 
-fn publisher_year_text(book: &Book) -> String {
-    match (book.publisher.trim(), book.published.trim()) {
-        ("", "") => "—".into(),
-        (publisher, "") => publisher.to_string(),
-        ("", year) => year.to_string(),
-        (publisher, year) => format!("{publisher} · {year}"),
-    }
-}
-
-fn short_date(text: &str) -> String {
-    text.split('T').next().unwrap_or(text).to_string()
+fn blank_dash(text: &str) -> &str {
+    let text = text.trim();
+    if text.is_empty() { "—" } else { text }
 }
 
 fn clean_description(book: &Book) -> String {

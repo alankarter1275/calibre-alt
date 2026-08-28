@@ -715,6 +715,7 @@ window.kalam-float-window {
 
 .kalam-float {
     background: @kalam_surface;
+    border-radius: 20px;
     padding: 0;
     min-width: 700px;
     min-height: 368px;
@@ -723,7 +724,9 @@ window.kalam-float-window {
 .kalam-float-cover-col {
     background: @kalam_surface_2;
     border-right: 1px solid @kalam_border;
-    padding: 24px 16px 20px;
+    border-top-left-radius: 20px;
+    border-bottom-left-radius: 20px;
+    padding: 22px 10px 18px;
 }
 
 .kalam-float-cover-host {
@@ -822,6 +825,8 @@ progressbar.kalam-float-progress progress {
 
 .kalam-float-right {
     background: @kalam_surface;
+    border-top-right-radius: 20px;
+    border-bottom-right-radius: 20px;
     min-width: 0;
 }
 
@@ -844,12 +849,13 @@ progressbar.kalam-float-progress progress {
 }
 
 button.kalam-float-close {
-    min-width: 28px;
-    min-height: 28px;
+    min-width: 38px;
+    min-height: 38px;
     padding: 0;
     border-radius: 999px;
     background: @kalam_surface_2;
     border: 1px solid @kalam_border;
+    box-shadow: none;
     color: @kalam_text_dim;
 }
 
@@ -916,12 +922,13 @@ button.kalam-float-read-more:hover {
 }
 
 button.kalam-float-icon-btn {
-    min-width: 36px;
-    min-height: 36px;
+    min-width: 38px;
+    min-height: 38px;
     padding: 0;
     border-radius: 999px;
     background: @kalam_surface_2;
     border: 1px solid @kalam_border;
+    box-shadow: none;
     color: @kalam_text;
 }
 
@@ -942,19 +949,15 @@ button.kalam-float-icon-btn.done-active {
     color: @kalam_success;
 }
 
-button.kalam-float-remove {
-    font-size: 0.78rem;
-    font-weight: 500;
-    background: transparent;
+button.kalam-float-icon-btn.kalam-float-icon-btn-danger {
     color: @kalam_danger;
-    border: 1px solid alpha(@kalam_danger, 0.38);
-    border-radius: 999px;
-    padding: 7px 14px;
+    border-color: alpha(@kalam_danger, 0.38);
 }
 
-button.kalam-float-remove:hover {
+button.kalam-float-icon-btn.kalam-float-icon-btn-danger:hover {
     background: alpha(@kalam_danger, 0.09);
     border-color: @kalam_danger;
+    color: @kalam_danger;
 }
 
 /* ── reader (mockup shell) ───────────────────────────── */
