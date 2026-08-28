@@ -55,7 +55,11 @@ impl Component for AnalyticsModel {
                 },
 
                 gtk::Button {
-                    set_label: "↻",
+                    set_child: Some(&crate::icons::symbolic_with_classes(
+                        "view-refresh-symbolic",
+                        16,
+                        &["kalam-inline-icon"],
+                    )),
                     add_css_class: "kalam-secondary-btn",
                     set_valign: gtk::Align::Center,
                     connect_clicked => AnalyticsMsg::Refresh,

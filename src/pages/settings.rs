@@ -16,15 +16,6 @@ pub enum SettingsTab {
 }
 
 impl SettingsTab {
-    pub const ALL: &'static [Self] = &[
-        Self::Appearance,
-        Self::Storage,
-        Self::Dictionaries,
-        Self::BookFiles,
-        Self::Metadata,
-        Self::Notifications,
-    ];
-
     pub fn label(self) -> &'static str {
         match self {
             Self::Appearance => "Appearance",
@@ -38,12 +29,12 @@ impl SettingsTab {
 
     pub fn icon(self) -> &'static str {
         match self {
-            Self::Appearance => "◎",
-            Self::Storage => "☷",
-            Self::Dictionaries => "✎",
-            Self::BookFiles => "☰",
-            Self::Metadata => "★",
-            Self::Notifications => "●",
+            Self::Appearance => "applications-graphics-symbolic",
+            Self::Storage => "drive-harddisk-symbolic",
+            Self::Dictionaries => "book-open-symbolic",
+            Self::BookFiles => "text-x-generic-symbolic",
+            Self::Metadata => "system-search-symbolic",
+            Self::Notifications => "preferences-system-notifications-symbolic",
         }
     }
 
@@ -130,6 +121,10 @@ const THEME_FAMILIES: &[(&str, &str, &str, &str)] = &[
         "Nord",
     ),
 ];
+
+const THEME_BUTTON_PREFIX: &str = "theme-btn-";
+const THEME_BADGE_PREFIX: &str = "theme-badge-";
+const THEME_CHECK_PREFIX: &str = "theme-check-";
 
 #[derive(Debug)]
 pub enum SettingsMsg {
@@ -370,6 +365,9 @@ impl Component for SettingsPageModel {
                 widgets.tab_title.set_label(tab.label());
                 widgets.tab_subtitle.set_label(tab.subtitle());
                 update_tab_styles(&widgets.nav_list, tab);
+                if tab == SettingsTab::Notifications {
+                    build_notifications(&widgets.notify_list, &sender);
+                }
                 widgets.scroller.vadjustment().set_value(0.0);
             }
             SettingsMsg::ClearNotifications => {
@@ -450,8 +448,7 @@ impl SettingsPageModel {
 fn make_tab_button(tab: SettingsTab, active: bool) -> gtk::Button {
     let box_content = gtk::Box::new(gtk::Orientation::Horizontal, 10);
 
-    let icon = gtk::Label::new(Some(tab.icon()));
-    icon.set_width_chars(2);
+    let icon = crate::icons::symbolic_with_classes(tab.icon(), 16, &["kalam-settings-tab-icon"]);
     icon.set_halign(gtk::Align::Center);
     box_content.append(&icon);
 
@@ -484,17 +481,16 @@ fn update_tab_styles(container: &gtk::Box, active: SettingsTab) {
     }
 }
 
-/// One card with an accent glyph, a title, an optional description, a hairline
+/// One card with an accent icon, a title, an optional description, a hairline
 /// divider, and a body host the caller fills with rows. Appended to `host`.
-fn section_card(host: &gtk::Box, glyph: &str, title: &str, desc: Option<&str>) -> gtk::Box {
+fn section_card(host: &gtk::Box, icon_name: &str, title: &str, desc: Option<&str>) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
     card.add_css_class("kalam-section-card");
 
     let head = gtk::Box::new(gtk::Orientation::Vertical, 3);
     head.add_css_class("kalam-section-head");
     let title_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    let icon = gtk::Label::new(Some(glyph));
-    icon.add_css_class("kalam-section-icon");
+    let icon = crate::icons::symbolic_with_classes(icon_name, 16, &["kalam-section-icon"]);
     title_row.append(&icon);
     let title_label = gtk::Label::new(Some(title));
     title_label.add_css_class("kalam-section-title");
@@ -572,21 +568,11 @@ fn chip_label(text: &str, class: &str) -> gtk::Label {
     label
 }
 
-/// Mix `fg` over `bg` at fraction `t`; both are #rrggbb.
-fn blend_hex(fg: &str, bg: &str, t: f32) -> String {
-    let parse = |s: &str| u32::from_str_radix(s.trim_start_matches('#'), 16).unwrap_or(0);
-    let (f, b) = (parse(fg), parse(bg));
-    let mix = |shift: u32| {
-        let fc = ((f >> shift) & 0xff) as f32;
-        let bc = ((b >> shift) & 0xff) as f32;
-        (fc * t + bc * (1.0 - t)).round() as u32
-    };
-    format!("#{:02x}{:02x}{:02x}", mix(16), mix(8), mix(0))
-}
-
-/// Attach a widget-local CSS class carrying literal per-theme colours.
-/// Providers load at APPLICATION priority, like the global sheet, and later
-/// providers win at equal priority — the same trick as the old swatch strip.
+/// Attach a generated CSS class carrying literal per-theme colours.
+///
+/// The provider is registered on the display rather than on a widget-local
+/// StyleContext so it survives theme switches without using the deprecated
+/// widget style-context API.
 fn add_styled_class(widget: &impl IsA<gtk::Widget>, class: &str, decls: &str) {
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&format!(".{class} {{ {decls} }}"));
@@ -607,17 +593,107 @@ fn build_theme_picker(host: &gtk::Grid, catalog: &Arc<Catalog>) {
         host.remove(&child);
     }
     let active = crate::theme::current(catalog).id;
-    for (index, (base, name, desc, prefix)) in THEME_FAMILIES.iter().enumerate() {
-        let family: Vec<&crate::theme::Theme> = crate::theme::ALL
-            .iter()
-            .filter(|t| t.id == *base || t.id.starts_with(&format!("{base}-")))
-            .collect();
+    let mut slot = 0;
+    for (family_key, name, desc, prefix) in THEME_FAMILIES.iter() {
+        let family = themes_for_family(family_key);
         if family.is_empty() {
             continue;
         }
         let block = theme_family_block(&family, name, desc, prefix, active, host, catalog);
-        host.attach(&block, (index % 2) as i32, (index / 2) as i32, 1, 1);
+        host.attach(&block, (slot % 2) as i32, (slot / 2) as i32, 1, 1);
+        slot += 1;
     }
+}
+
+/// Group theme ids into the families shown in Settings.
+///
+/// Most families are `base` + `base-darker`, but Ayu's shipped ids are
+/// `ayumirage` and `ayu-darker`, so this cannot rely on a simple `base-`
+/// prefix match.
+fn themes_for_family(family_key: &str) -> Vec<&'static crate::theme::Theme> {
+    crate::theme::ALL
+        .iter()
+        .filter(|theme| theme_family_key(theme) == family_key)
+        .collect()
+}
+
+fn theme_family_key(theme: &crate::theme::Theme) -> &'static str {
+    if theme.id.starts_with("onedark") {
+        "onedark"
+    } else if theme.id.starts_with("tokyonight") {
+        "tokyonight"
+    } else if theme.id.starts_with("everforest") {
+        "everforest"
+    } else if theme.id.starts_with("catppuccin") {
+        "catppuccin"
+    } else if theme.id.starts_with("gruvbox") {
+        "gruvbox"
+    } else if theme.id.starts_with("ayu") {
+        "ayu"
+    } else if theme.id == "nord" {
+        "nord"
+    } else {
+        theme.id
+    }
+}
+
+fn active_theme_badge(theme: &crate::theme::Theme) -> &'static str {
+    if theme.id == crate::theme::DEFAULT.id {
+        "default"
+    } else {
+        "current"
+    }
+}
+
+fn visit_widget_tree(widget: &gtk::Widget, visit: &mut impl FnMut(&gtk::Widget)) {
+    visit(widget);
+    let mut child = widget.first_child();
+    while let Some(node) = child {
+        let next = node.next_sibling();
+        visit_widget_tree(&node, visit);
+        child = next;
+    }
+}
+
+/// Update the picker in place after a theme change.
+///
+/// Rebuilding the entire grid after every click caused the Appearance tab to
+/// visibly blink. The preview cards are static samples, so only the selected
+/// state needs to change.
+fn update_theme_picker_state(host: &gtk::Grid, active: &crate::theme::Theme) {
+    let root: gtk::Widget = host.clone().upcast();
+    visit_widget_tree(&root, &mut |widget| {
+        if let Ok(btn) = widget.clone().downcast::<gtk::Button>() {
+            let name = btn.widget_name();
+            let Some(theme_id) = name.strip_prefix(THEME_BUTTON_PREFIX) else {
+                return;
+            };
+            let is_active = theme_id == active.id;
+            if let Some(card) = btn.child().and_then(|w| w.downcast::<gtk::Box>().ok()) {
+                if is_active {
+                    card.add_css_class("active");
+                } else {
+                    card.remove_css_class("active");
+                }
+            }
+            return;
+        }
+
+        let name = widget.widget_name();
+        if let Some(theme_id) = name.strip_prefix(THEME_BADGE_PREFIX) {
+            if let Ok(label) = widget.clone().downcast::<gtk::Label>() {
+                if theme_id == active.id {
+                    label.set_label(active_theme_badge(active));
+                    label.remove_css_class("kalam-theme-variant-off");
+                } else {
+                    label.set_label("");
+                    label.add_css_class("kalam-theme-variant-off");
+                }
+            }
+        } else if let Some(theme_id) = name.strip_prefix(THEME_CHECK_PREFIX) {
+            widget.set_opacity(if theme_id == active.id { 1.0 } else { 0.0 });
+        }
+    });
 }
 
 fn theme_family_block(
@@ -676,44 +752,60 @@ fn theme_variant_button(
     if is_active {
         card.add_css_class("active");
     }
-    // Card background: the theme's own bg, tinted with the accent when active.
-    let card_bg = if is_active {
-        blend_hex(theme.accent, theme.bg, 0.06)
-    } else {
-        theme.bg.to_string()
-    };
     add_styled_class(
         &card,
         &format!("kalam-tc-bg-{}", theme.id),
-        &format!("background-color: {card_bg};"),
+        &format!(
+            "background-color: {}; border-color: {};",
+            theme.bg, theme.border
+        ),
     );
 
-    // Name row: variant name, "default" tag, spacer, ✓ seal.
+    // Name row: variant name, current/default tag, spacer, ✓ seal.
     let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     let name_label = gtk::Label::new(Some(variant));
     name_label.add_css_class("kalam-theme-name");
+    add_styled_class(
+        &name_label,
+        &format!("kalam-tc-name-{}", theme.id),
+        &format!("color: {};", theme.text),
+    );
     name_label.set_halign(gtk::Align::Start);
     name_row.append(&name_label);
-    if is_active {
-        let tag = gtk::Label::new(Some("default"));
-        tag.add_css_class("kalam-theme-variant");
-        tag.set_valign(gtk::Align::Center);
-        name_row.append(&tag);
+    let tag = gtk::Label::new(Some(if is_active {
+        active_theme_badge(theme)
+    } else {
+        ""
+    }));
+    tag.set_widget_name(&format!("{THEME_BADGE_PREFIX}{}", theme.id));
+    tag.add_css_class("kalam-theme-variant");
+    if !is_active {
+        tag.add_css_class("kalam-theme-variant-off");
     }
+    add_styled_class(
+        &tag,
+        &format!("kalam-tc-variant-{}", theme.id),
+        &format!("color: {};", theme.text_dim),
+    );
+    tag.set_width_chars(7);
+    tag.set_max_width_chars(7);
+    tag.set_xalign(0.0);
+    tag.set_valign(gtk::Align::Center);
+    name_row.append(&tag);
     let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
     name_row.append(&spacer);
-    if is_active {
-        let check = gtk::Label::new(Some("✓"));
-        check.add_css_class("kalam-theme-check");
-        check.set_valign(gtk::Align::Center);
-        add_styled_class(
-            &check,
-            &format!("kalam-tc-chk-{}", theme.id),
-            &format!("color: {};", theme.bg),
-        );
-        name_row.append(&check);
-    }
+    let check =
+        crate::icons::symbolic_with_classes("object-select-symbolic", 12, &["kalam-theme-check"]);
+    check.set_widget_name(&format!("{THEME_CHECK_PREFIX}{}", theme.id));
+    check.set_opacity(if is_active { 1.0 } else { 0.0 });
+    check.set_valign(gtk::Align::Center);
+    add_styled_class(
+        &check,
+        &format!("kalam-tc-chk-{}", theme.id),
+        &format!("background-color: {}; color: {};", theme.accent, theme.bg),
+    );
+    name_row.append(&check);
     card.append(&name_row);
 
     // Mini preview: sidebar rail with two dots + main bars and a card.
@@ -812,6 +904,7 @@ fn theme_variant_button(
 
     let btn = gtk::Button::new();
     btn.set_child(Some(&card));
+    btn.set_widget_name(&format!("{THEME_BUTTON_PREFIX}{}", theme.id));
     btn.add_css_class("kalam-theme-btn");
     btn.set_tooltip_text(Some(theme.label));
 
@@ -820,12 +913,8 @@ fn theme_variant_button(
     let chosen = *theme;
     btn.connect_clicked(move |_| {
         crate::theme::save_and_apply(&catalog, &chosen);
+        update_theme_picker_state(&host, &chosen);
         crate::notify::success("Theme changed", chosen.label);
-        let host = host.clone();
-        let catalog = catalog.clone();
-        gtk::glib::idle_add_local_once(move || {
-            build_theme_picker(&host, &catalog);
-        });
     });
     btn
 }
@@ -837,7 +926,7 @@ fn build_paths(host: &gtk::Box) {
     }
     let body = section_card(
         host,
-        "☷",
+        "folder-symbolic",
         "Data locations",
         Some("These paths are set at first run. Moving data requires copying the files manually."),
     );
@@ -887,7 +976,7 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    let body = section_card(host, "↓", "Backup & cache", None);
+    let body = section_card(host, "folder-download-symbolic", "Backup & cache", None);
 
     let backup_btn = gtk::Button::with_label("Back up library…");
     backup_btn.add_css_class("kalam-btn-outlined");
@@ -939,8 +1028,16 @@ fn build_backup(host: &gtk::Box, catalog: &Arc<Catalog>) {
     {
         let cache_badge = cache_badge.clone();
         clear.connect_clicked(move |btn| {
-            let (_, freed) = crate::paths::clear_reader_cache();
+            let (files, freed) = crate::paths::clear_reader_cache();
             cache_badge.set_label(&format!("Freed {}", crate::epub_write::human_size(freed)));
+            crate::notify::info(
+                "Reader cache cleared",
+                &format!(
+                    "Removed {files} file{} · freed {}",
+                    if files == 1 { "" } else { "s" },
+                    crate::epub_write::human_size(freed)
+                ),
+            );
             btn.set_sensitive(false);
         });
     }
@@ -958,7 +1055,7 @@ fn build_export(host: &gtk::Box, catalog: &Arc<Catalog>) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    let body = section_card(host, "⧉", "Export", None);
+    let body = section_card(host, "document-save-symbolic", "Export", None);
 
     let export_btn = gtk::Button::with_label("Export quotes");
     export_btn.add_css_class("kalam-btn-outlined");
@@ -998,7 +1095,7 @@ fn rebuild_dicts(
     }
     let body = section_card(
         host,
-        "✎",
+        "book-open-symbolic",
         "Installed packs",
         Some("StarDict (.ifo/.idx/.dict), SQLite (.db), and TSV formats are supported."),
     );
@@ -1016,11 +1113,16 @@ fn rebuild_dicts(
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
             row.add_css_class("kalam-setting-row");
 
-            let icon = gtk::Label::new(Some("✎"));
+            let icon = gtk::Box::new(gtk::Orientation::Vertical, 0);
             icon.add_css_class("kalam-dict-icon");
             icon.set_size_request(32, 32);
             icon.set_halign(gtk::Align::Center);
             icon.set_valign(gtk::Align::Center);
+            icon.append(&crate::icons::symbolic_with_classes(
+                "book-open-symbolic",
+                16,
+                &["kalam-dict-icon-glyph"],
+            ));
             row.append(&icon);
 
             let info = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -1057,14 +1159,25 @@ fn rebuild_dicts(
 
     let footer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     footer.add_css_class("kalam-card-footer");
-    let import_btn = gtk::Button::with_label("+ Import dictionary");
+    let import_btn = gtk::Button::new();
+    import_btn.set_child(Some(&crate::icons::labelled(
+        "list-add-symbolic",
+        16,
+        "Import dictionary",
+        6,
+    )));
     import_btn.add_css_class("kalam-btn-filled");
     {
         let s = sender.clone();
         import_btn.connect_clicked(move |_| s.input(SettingsMsg::ImportDict));
     }
     footer.append(&import_btn);
-    let refresh_btn = gtk::Button::with_label("↻");
+    let refresh_btn = gtk::Button::new();
+    refresh_btn.set_child(Some(&crate::icons::symbolic_with_classes(
+        "view-refresh-symbolic",
+        16,
+        &["kalam-inline-icon"],
+    )));
     refresh_btn.add_css_class("kalam-btn-ghost");
     refresh_btn.set_tooltip_text(Some("Rescan dictionary packs"));
     {
@@ -1082,7 +1195,7 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    let body = section_card(host, "☰", "EPUB writeback", None);
+    let body = section_card(host, "text-x-generic-symbolic", "EPUB writeback", None);
 
     {
         let catalog = catalog.clone();
@@ -1125,6 +1238,14 @@ fn build_file_write(host: &gtk::Box, catalog: &Arc<Catalog>) {
                 if count == 1 { "" } else { "s" },
                 crate::epub_write::human_size(freed)
             ));
+            crate::notify::info(
+                "Original backups deleted",
+                &format!(
+                    "Removed {count} backup{} · freed {}",
+                    if count == 1 { "" } else { "s" },
+                    crate::epub_write::human_size(freed)
+                ),
+            );
             btn.set_sensitive(false);
         });
     }
@@ -1167,7 +1288,7 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
 
     let ol_body = section_card(
         host,
-        "★",
+        "system-search-symbolic",
         "Open Library",
         Some("Internet Archive. No key needed. Strong on older and public-domain titles."),
     );
@@ -1186,7 +1307,7 @@ fn build_sources(host: &gtk::Box, catalog: &Arc<Catalog>) {
 
     let gb_body = section_card(
         host,
-        "★",
+        "system-search-symbolic",
         "Google Books",
         Some(
             "Broad coverage, good for recent and non-English books. Works without a key, but anonymous requests share a global quota and can be rate limited.",
@@ -1286,7 +1407,7 @@ fn build_notifications(host: &gtk::Box, sender: &ComponentSender<SettingsPageMod
     }
     let body = section_card(
         host,
-        "●",
+        "preferences-system-notifications-symbolic",
         "Activity log",
         Some("The last 25 events this session. Toasts fade; this keeps the record."),
     );
@@ -1350,4 +1471,21 @@ fn build_notifications(host: &gtk::Box, sender: &ComponentSender<SettingsPageMod
     }
     footer.append(&clear);
     body.append(&footer);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ayu_family_collects_both_variants() {
+        let ids: Vec<&str> = themes_for_family("ayu").into_iter().map(|t| t.id).collect();
+        assert_eq!(ids, vec!["ayumirage", "ayu-darker"]);
+    }
+
+    #[test]
+    fn selected_badge_marks_only_the_default_theme_as_default() {
+        assert_eq!(active_theme_badge(&crate::theme::DEFAULT), "default");
+        assert_eq!(active_theme_badge(&crate::theme::TOKYONIGHT), "current");
+    }
 }

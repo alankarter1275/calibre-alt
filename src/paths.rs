@@ -43,6 +43,11 @@ pub fn override_covers_dir() -> PathBuf {
     data_dir().join("covers")
 }
 
+/// `~/.local/share/kalam/authors` — cached author photos.
+pub fn authors_dir() -> PathBuf {
+    data_dir().join("authors")
+}
+
 /// `~/.local/share/kalam/dictionaries`
 pub fn dictionaries_dir() -> PathBuf {
     data_dir().join("dictionaries")
@@ -58,6 +63,7 @@ pub fn ensure_data_dirs() -> std::io::Result<()> {
     fs::create_dir_all(data_dir().join("cache").join("reader"))?;
     fs::create_dir_all(dictionaries_dir())?;
     fs::create_dir_all(override_covers_dir())?;
+    fs::create_dir_all(authors_dir())?;
     Ok(())
 }
 

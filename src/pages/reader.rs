@@ -1,17 +1,25 @@
-//! Immersive EPUB reader — P3 with highlights, quotes, offline dictionary.
+//! Immersive EPUB reader.
 
-use crate::db::{Annotation, Catalog, HighlightColor};
+use crate::db::{Annotation, Catalog, DictEntry, HighlightColor, ReadingBookmark, SavedWord};
 use crate::epub_book::{reading_css, OpenBook, ReadingTheme};
+use crate::models::Book;
 use crate::paths::reader_cache_dir;
+use crate::widgets::book_row::cover_widget;
+use gtk::glib;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use serde::Deserialize;
+use std::cell::RefCell;
+use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 use webkit6::prelude::*;
 
 #[derive(Debug)]
 pub enum ReaderOut {
     Close,
+    OpenAuthor { name: String },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -44,7 +52,107 @@ struct JsPayload {
     definition: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LeftSidebarTab {
+    Toc,
+    Settings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RightSidebarTab {
+    Highlights,
+    Bookmarks,
+    Words,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HighlightFilter {
+    All,
+    Yellow,
+    Green,
+    Blue,
+    Pink,
+    Orange,
+    Quotes,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WordScope {
+    Chapter,
+    Book,
+    All,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReaderSettingsPane {
+    Reading,
+    Ui,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReaderUiSetting {
+    SidebarGap,
+    LeftSidebarWidth,
+    RightSidebarWidth,
+    SidebarRadius,
+    SidebarPadding,
+    SidebarShadow,
+    BottomPillSize,
+    BottomPillGap,
+    BackChipSize,
+    BackTopGap,
+    BackSideGap,
+    DimStrength,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReaderUiPrefs {
+    sidebar_gap: i32,
+    left_sidebar_width: i32,
+    right_sidebar_width: i32,
+    sidebar_radius: i32,
+    sidebar_padding: i32,
+    sidebar_shadow: i32,
+    bottom_pill_size: i32,
+    bottom_pill_gap: i32,
+    back_chip_size: i32,
+    back_top_gap: i32,
+    back_side_gap: i32,
+    dim_strength: i32,
+}
+
+struct ReaderUiSettingControls {
+    value_entry: gtk::Entry,
+    last_value: Rc<RefCell<i32>>,
+    preset_buttons: Vec<(i32, gtk::Button)>,
+    custom_button: gtk::Button,
+}
+
+struct ReaderSettingsControls {
+    root: gtk::Box,
+    settings_stack: gtk::Stack,
+    pane_buttons: Vec<(ReaderSettingsPane, gtk::Button)>,
+    font_size_label: gtk::Label,
+    line_height_label: gtk::Label,
+    column_width_label: gtk::Label,
+    theme_dots: Vec<(ReadingTheme, gtk::Button)>,
+    ui_controls: Vec<(ReaderUiSetting, ReaderUiSettingControls)>,
+}
+
+const UI_PRESETS_SIDEBAR_GAP: [(&str, i32); 3] = [("Tight", 8), ("Normal", 14), ("Airy", 20)];
+const UI_PRESETS_LEFT_WIDTH: [(&str, i32); 3] = [("Narrow", 220), ("Normal", 248), ("Wide", 280)];
+const UI_PRESETS_RIGHT_WIDTH: [(&str, i32); 3] = [("Narrow", 180), ("Normal", 212), ("Wide", 252)];
+const UI_PRESETS_RADIUS: [(&str, i32); 3] = [("Soft", 14), ("Round", 20), ("Full", 26)];
+const UI_PRESETS_PADDING: [(&str, i32); 3] = [("Tight", 0), ("Normal", 4), ("Airy", 8)];
+const UI_PRESETS_SHADOW: [(&str, i32); 3] = [("Low", 18), ("Normal", 22), ("Deep", 28)];
+const UI_PRESETS_PILL_SIZE: [(&str, i32); 3] = [("Compact", 30), ("Normal", 34), ("Large", 40)];
+const UI_PRESETS_PILL_GAP: [(&str, i32); 3] = [("Tight", 12), ("Normal", 18), ("Airy", 26)];
+const UI_PRESETS_BACK_SIZE: [(&str, i32); 3] = [("Compact", 28), ("Normal", 32), ("Large", 38)];
+const UI_PRESETS_BACK_TOP: [(&str, i32); 3] = [("Tight", 10), ("Normal", 14), ("Airy", 20)];
+const UI_PRESETS_BACK_SIDE: [(&str, i32); 3] = [("Tight", 12), ("Normal", 16), ("Airy", 22)];
+const UI_PRESETS_DIM: [(&str, i32); 3] = [("Light", 12), ("Medium", 22), ("Strong", 32)];
+
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum ReaderMsg {
     Close,
@@ -53,49 +161,107 @@ pub enum ReaderMsg {
     NextChapter,
     Theme(ReadingTheme),
     FontDelta(i32),
+    LineHeightDelta(i32),
+    ColumnWidthDelta(i32),
+    SwitchSettingsPane(ReaderSettingsPane),
+    SetUiSetting(ReaderUiSetting, i32),
+    AdjustUiSetting(ReaderUiSetting, i32),
     JsRaw(String),
     Progress(f64),
     AnnotationsReload,
     DeleteAnnotation(i64),
+    DeleteBookmark(i64),
     JumpToChapter(usize),
+    JumpToLocation(usize, f64),
     DictSearch(String),
     DictSearchSelect(String),
     SaveCurrentWord,
     ClearDict,
-    ToggleAnnoPopover,
-    ToggleDictPopover,
+    AddBookmark,
+    OpenAuthor(String),
+    OpenLeftSidebar,
+    OpenRightSidebar,
+    SwitchLeftTab(LeftSidebarTab),
+    SwitchRightTab(RightSidebarTab),
+    SetHighlightFilter(HighlightFilter),
+    SetWordScope(WordScope),
+    ScheduleCloseLeft,
+    ScheduleCloseRight,
+    ForceCloseLeft(u64),
+    ForceCloseRight(u64),
+    CloseSidebars,
+    HideChrome,
+    ShowBackChrome,
+    ShowBottomChrome,
+    ShowAllChrome,
 }
 
 pub struct ReaderModel {
     catalog: Arc<Catalog>,
     book_id: i64,
     book_title: String,
+    book_authors: String,
+    book_cover_path: Option<PathBuf>,
     open: OpenBook,
     chapter: usize,
     fraction: f64,
     theme: ReadingTheme,
     font_px: u32,
     line_height: f32,
-    margin_em: f32,
+    column_px: u32,
     loading: bool,
     webview: webkit6::WebView,
     chapter_annotations: Vec<Annotation>,
     all_book_annotations: Vec<Annotation>,
+    bookmarks: Vec<ReadingBookmark>,
+    saved_words: Vec<SavedWord>,
     dict_query: String,
-    dict_results: Vec<crate::db::DictEntry>,
+    dict_results: Vec<DictEntry>,
     dict_lookup_word: Option<String>,
     dict_lookup_def: Option<String>,
     dict_lookup_rect_json: Option<String>,
     dict_context: Option<String>,
     last_selection: Option<String>,
-    /// P4: open reading session row + when it started, for time tracking.
     session_id: Option<i64>,
     session_start: std::time::Instant,
     session_start_pct: i64,
-    /// Typography popover widgets we need to update as state changes.
-    /// Held directly because they are built outside the `view!` tree.
-    font_size_label: Option<gtk::Label>,
-    theme_ticks: Vec<(ReadingTheme, gtk::Label)>,
+    left_tab: LeftSidebarTab,
+    right_tab: RightSidebarTab,
+    left_sidebar_open: bool,
+    right_sidebar_open: bool,
+    highlight_filter: HighlightFilter,
+    word_scope: WordScope,
+    settings_pane: ReaderSettingsPane,
+    ui_prefs: ReaderUiPrefs,
+    show_back_button: bool,
+    show_bottom_pill: bool,
+    left_close_timer: Option<glib::SourceId>,
+    right_close_timer: Option<glib::SourceId>,
+    left_close_token: u64,
+    right_close_token: u64,
+    left_sidebar_shell: Option<gtk::Revealer>,
+    right_sidebar_shell: Option<gtk::Revealer>,
+    left_sidebar_box: Option<gtk::Box>,
+    right_sidebar_box: Option<gtk::Box>,
+    back_dock: Option<gtk::Box>,
+    bottom_dock: Option<gtk::Box>,
+    left_stack: gtk::Stack,
+    right_stack: gtk::Stack,
+    toc_scroll: gtk::ScrolledWindow,
+    toc_list: gtk::Box,
+    highlights_list: gtk::Box,
+    bookmarks_list: gtk::Box,
+    words_list: gtk::Box,
+    settings_stack: gtk::Stack,
+    settings_pane_buttons: Vec<(ReaderSettingsPane, gtk::Button)>,
+    font_size_label: gtk::Label,
+    line_height_label: gtk::Label,
+    column_width_label: gtk::Label,
+    theme_dots: Vec<(ReadingTheme, gtk::Button)>,
+    ui_controls: Vec<(ReaderUiSetting, ReaderUiSettingControls)>,
+    highlight_filter_buttons: Vec<(HighlightFilter, gtk::Button)>,
+    word_scope_buttons: Vec<(WordScope, gtk::Button)>,
+    ui_css_provider: gtk::CssProvider,
 }
 
 #[relm4::component(pub)]
@@ -109,6 +275,7 @@ impl Component for ReaderModel {
         #[root]
         gtk::Overlay {
             add_css_class: "kalam-reader",
+            add_css_class: "kalam-reader-ui-live",
             set_hexpand: true,
             set_vexpand: true,
 
@@ -117,95 +284,255 @@ impl Component for ReaderModel {
                 set_orientation: gtk::Orientation::Vertical,
                 set_hexpand: true,
                 set_vexpand: true,
-                add_css_class: "kalam-reader-stage",
 
-                #[name = "web_host"]
+                #[name = "reader_stage"]
                 gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
                     set_hexpand: true,
                     set_vexpand: true,
+                    add_css_class: "kalam-reader-stage",
+
+                    #[name = "web_host"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_hexpand: true,
+                        set_vexpand: true,
+                    },
                 },
             },
 
+            add_overlay = &gtk::Button {
+                add_css_class: "kalam-reader-dim",
+                #[watch]
+                set_visible: model.left_sidebar_open || model.right_sidebar_open,
+                set_hexpand: true,
+                set_vexpand: true,
+                set_halign: gtk::Align::Fill,
+                set_valign: gtk::Align::Fill,
+                connect_clicked => ReaderMsg::CloseSidebars,
+            },
+
             add_overlay = &gtk::Box {
+                add_css_class: "kalam-reader-hover-edge",
+                set_width_request: 28,
+                set_hexpand: false,
+                set_vexpand: true,
+                set_halign: gtk::Align::Start,
+                set_valign: gtk::Align::Fill,
+            },
+
+            add_overlay = &gtk::Box {
+                add_css_class: "kalam-reader-hover-edge",
+                set_width_request: 28,
+                set_hexpand: false,
+                set_vexpand: true,
+                set_halign: gtk::Align::End,
+                set_valign: gtk::Align::Fill,
+            },
+
+            add_overlay = &gtk::Box {
+                add_css_class: "kalam-reader-back-dock",
+                #[watch]
+                set_visible: model.show_back_button,
                 set_halign: gtk::Align::Start,
                 set_valign: gtk::Align::Start,
-                set_margin_top: 14,
-                set_margin_start: 14,
 
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    add_css_class: "kalam-reader-top-float",
-                    set_spacing: 6,
-
-                    gtk::Button {
-                        set_label: "✕",
-                        add_css_class: "kalam-reader-pill-btn",
-                        set_tooltip_text: Some("Back (Esc)"),
-                        connect_clicked => ReaderMsg::Close,
-                    },
-
-                    #[name = "crumb_label"]
-                    gtk::Label {
-                        add_css_class: "kalam-reader-crumb",
-                        set_ellipsize: gtk::pango::EllipsizeMode::End,
-                        set_max_width_chars: 36,
-                    },
+                gtk::Button {
+                    set_child: Some(&crate::icons::labelled("go-previous-symbolic", 16, "Library", 6)),
+                    add_css_class: "kalam-reader-back",
+                    connect_clicked => ReaderMsg::Close,
                 },
             },
 
             add_overlay = &gtk::Box {
+                #[watch]
+                set_visible: model.show_bottom_pill,
+                add_css_class: "kalam-reader-bottom-dock",
                 set_halign: gtk::Align::Center,
                 set_valign: gtk::Align::End,
-                set_margin_bottom: 18,
 
                 gtk::Box {
+                    add_css_class: "kalam-reader-bottom-pill",
                     set_orientation: gtk::Orientation::Horizontal,
-                    add_css_class: "kalam-reader-pill",
-                    set_spacing: 2,
+                    set_spacing: 4,
+                    set_valign: gtk::Align::Center,
 
                     gtk::Button {
-                        set_label: "‹",
-                        add_css_class: "kalam-reader-pill-btn",
+                        set_child: Some(&crate::icons::symbolic_with_classes("go-previous-symbolic", 15, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-pill-nav",
                         set_tooltip_text: Some("Previous chapter (P)"),
                         connect_clicked => ReaderMsg::PrevChapter,
                     },
 
-                    #[name = "toc_btn"]
-                    gtk::MenuButton {
-                        set_label: "☰",
-                        add_css_class: "kalam-reader-pill-btn",
-                        set_tooltip_text: Some("Contents (T)"),
-                        set_direction: gtk::ArrowType::Up,
-                    },
+                    gtk::Box {
+                        add_css_class: "kalam-reader-pill-info",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 10,
+                        set_valign: gtk::Align::Center,
 
-                    #[name = "anno_btn"]
-                    gtk::MenuButton {
-                        set_label: "✎",
-                        add_css_class: "kalam-reader-pill-btn",
-                        set_tooltip_text: Some("Highlights & quotes"),
-                        set_direction: gtk::ArrowType::Up,
-                    },
+                        #[name = "progress_label"]
+                        gtk::Label {
+                            add_css_class: "kalam-reader-pill-pages",
+                            set_valign: gtk::Align::Center,
+                        },
 
-                    #[name = "chapter_label"]
-                    gtk::Label {
-                        add_css_class: "kalam-reader-pill-meta",
-                        set_width_chars: 7,
-                    },
-
-                    #[name = "dict_btn"]
-                    gtk::MenuButton {
-                        set_label: "Aa",
-                        add_css_class: "kalam-reader-pill-btn",
-                        set_tooltip_text: Some("Dictionary & typography (D)"),
-                        set_direction: gtk::ArrowType::Up,
+                        #[name = "pill_chapter_label"]
+                        gtk::Label {
+                            add_css_class: "kalam-reader-pill-chapter",
+                            set_max_width_chars: 36,
+                            set_ellipsize: gtk::pango::EllipsizeMode::End,
+                            set_valign: gtk::Align::Center,
+                        },
                     },
 
                     gtk::Button {
-                        set_label: "›",
-                        add_css_class: "kalam-reader-pill-btn",
+                        set_child: Some(&crate::icons::symbolic_with_classes("go-next-symbolic", 15, &["kalam-inline-icon"])),
+                        add_css_class: "kalam-reader-pill-nav",
                         set_tooltip_text: Some("Next chapter (N)"),
                         connect_clicked => ReaderMsg::NextChapter,
+                    },
+                },
+            },
+
+            add_overlay = &gtk::Revealer {
+                add_css_class: "kalam-reader-sidebar-shell",
+                add_css_class: "kalam-reader-sidebar-shell-left",
+                #[watch]
+                set_reveal_child: model.left_sidebar_open,
+                set_transition_type: gtk::RevealerTransitionType::SlideRight,
+                set_halign: gtk::Align::Start,
+                set_valign: gtk::Align::Fill,
+
+                #[wrap(Some)]
+                set_child = &gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    add_css_class: "kalam-reader-sidebar",
+                    add_css_class: "kalam-reader-sidebar-left",
+
+                    gtk::Box {
+                        add_css_class: "kalam-reader-book-head",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 10,
+
+                        #[name = "left_cover_host"]
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            add_css_class: "kalam-reader-cover-slot",
+                            set_width_request: 48,
+                        },
+
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_spacing: 4,
+                            set_hexpand: true,
+
+                            #[name = "sidebar_book_title"]
+                            gtk::Label {
+                                add_css_class: "kalam-reader-book-title",
+                                add_css_class: "kalam-title-serif",
+                                set_halign: gtk::Align::Start,
+                                set_wrap: true,
+                                set_xalign: 0.0,
+                            },
+
+                            #[name = "sidebar_book_author"]
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_halign: gtk::Align::Start,
+                            },
+
+                            #[name = "sidebar_progress"]
+                            gtk::ProgressBar {
+                                add_css_class: "kalam-reader-progress",
+                                set_show_text: false,
+                                set_fraction: 0.0,
+                            },
+                        },
+                    },
+
+                    #[name = "left_panel_host"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_hexpand: true,
+                        set_vexpand: true,
+                    },
+
+                    gtk::Box {
+                        add_css_class: "kalam-reader-tabbar",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 2,
+                        set_homogeneous: true,
+
+                        #[name = "left_toc_tab"]
+                        gtk::Button {
+                            set_child: Some(&reader_sidebar_tab_content("view-list-bullet-symbolic", "TOC")),
+                            add_css_class: "kalam-reader-tab",
+                            set_hexpand: true,
+                            connect_clicked => ReaderMsg::SwitchLeftTab(LeftSidebarTab::Toc),
+                        },
+
+                        #[name = "left_settings_tab"]
+                        gtk::Button {
+                            set_child: Some(&reader_sidebar_tab_content("preferences-system-symbolic", "Settings")),
+                            add_css_class: "kalam-reader-tab",
+                            set_hexpand: true,
+                            connect_clicked => ReaderMsg::SwitchLeftTab(LeftSidebarTab::Settings),
+                        },
+                    },
+                },
+            },
+
+            add_overlay = &gtk::Revealer {
+                add_css_class: "kalam-reader-sidebar-shell",
+                add_css_class: "kalam-reader-sidebar-shell-right",
+                #[watch]
+                set_reveal_child: model.right_sidebar_open,
+                set_transition_type: gtk::RevealerTransitionType::SlideLeft,
+                set_halign: gtk::Align::End,
+                set_valign: gtk::Align::Fill,
+
+                #[wrap(Some)]
+                set_child = &gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    add_css_class: "kalam-reader-sidebar",
+                    add_css_class: "kalam-reader-sidebar-right",
+
+                    #[name = "right_panel_host"]
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_hexpand: true,
+                        set_vexpand: true,
+                    },
+
+                    gtk::Box {
+                        add_css_class: "kalam-reader-tabbar",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 2,
+                        set_homogeneous: true,
+
+                        #[name = "right_highlights_tab"]
+                        gtk::Button {
+                            set_child: Some(&reader_sidebar_tab_content("highlight-symbolic", "Highlights")),
+                            add_css_class: "kalam-reader-tab",
+                            set_hexpand: true,
+                            connect_clicked => ReaderMsg::SwitchRightTab(RightSidebarTab::Highlights),
+                        },
+
+                        #[name = "right_bookmarks_tab"]
+                        gtk::Button {
+                            set_child: Some(&reader_sidebar_tab_content("bookmark-new-symbolic", "Marks")),
+                            add_css_class: "kalam-reader-tab",
+                            set_hexpand: true,
+                            connect_clicked => ReaderMsg::SwitchRightTab(RightSidebarTab::Bookmarks),
+                        },
+
+                        #[name = "right_words_tab"]
+                        gtk::Button {
+                            set_child: Some(&reader_sidebar_tab_content("accessories-dictionary-symbolic", "Words")),
+                            add_css_class: "kalam-reader-tab",
+                            set_hexpand: true,
+                            connect_clicked => ReaderMsg::SwitchRightTab(RightSidebarTab::Words),
+                        },
                     },
                 },
             },
@@ -222,7 +549,7 @@ impl Component for ReaderModel {
         webview.set_hexpand(true);
         webview.set_vexpand(true);
 
-        let (book_title, open, chapter, fraction) = if let Some(book) = book {
+        let (book_meta, open, chapter, fraction) = if let Some(book) = book.clone() {
             let cache = reader_cache_dir(&book.uuid);
             match OpenBook::open(&book.file_path, &cache) {
                 Ok(open) => {
@@ -232,22 +559,44 @@ impl Component for ReaderModel {
                         .flatten()
                         .unwrap_or((0, 0.0));
                     let ch = ch.min(open.chapter_count().saturating_sub(1));
-                    (book.title, open, ch, frac)
+                    (book, open, ch, frac)
                 }
                 Err(err) => {
                     eprintln!("kalam: open epub failed: {err:#}");
                     let msg = format!(
-                        "<html><body style='padding:2rem;background:#f4ecd8;\
-color:#3e3226;font-family:Georgia,serif'>\
-<h1>Could not open book</h1><pre>{err:#}</pre>\
-<p>Press Esc to go back.</p></body></html>"
+                        "<html><body style='padding:2rem;background:#f5f0e8;color:#2c2820;font-family:Georgia,serif'><h1>Could not open book</h1><pre>{err:#}</pre><p>Press Esc to go back.</p></body></html>"
                     );
                     webview.load_html(&msg, None);
-                    (book.title, OpenBook::empty_placeholder(), 0, 0.0)
+                    (book, OpenBook::empty_placeholder(), 0, 0.0)
                 }
             }
         } else {
-            ("Missing book".into(), OpenBook::empty_placeholder(), 0, 0.0)
+            (
+                Book {
+                    id: book_id,
+                    uuid: String::new(),
+                    title: "Missing book".into(),
+                    authors: String::new(),
+                    series: None,
+                    description: String::new(),
+                    format: crate::models::BookFormat::Epub,
+                    file_name: String::new(),
+                    file_hash: String::new(),
+                    cover_name: None,
+                    added_at: String::new(),
+                    progress: 0,
+                    rating: 0,
+                    publisher: String::new(),
+                    published: String::new(),
+                    series_index: 0.0,
+                    tags: Vec::new(),
+                    cover_path: None,
+                    file_path: PathBuf::new(),
+                },
+                OpenBook::empty_placeholder(),
+                0,
+                0.0,
+            )
         };
 
         let chapter_annotations = if open.chapter_count() > 0 {
@@ -260,29 +609,110 @@ color:#3e3226;font-family:Georgia,serif'>\
         let all_book_annotations = catalog
             .get_annotations_for_book(book_id)
             .unwrap_or_default();
+        let bookmarks = catalog.list_reading_bookmarks(book_id).unwrap_or_default();
+        let saved_words = catalog.list_saved_words("").unwrap_or_default();
 
         let catalog_theme = catalog
             .get_pref("reader.theme")
             .map(|v| ReadingTheme::from_str_lossy(&v))
             .unwrap_or(ReadingTheme::Sepia);
-        let catalog_font = catalog.get_pref_i64("reader.font_px", 19).clamp(14, 36) as u32;
+        let catalog_font = catalog.get_pref_i64("reader.font_px", 17).clamp(13, 24) as u32;
+        let catalog_line_height = catalog
+            .get_pref("reader.line_height")
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(1.8)
+            .clamp(1.3, 2.5);
+        let catalog_column = catalog
+            .get_pref_i64("reader.column_px", 620)
+            .clamp(400, 860) as u32;
+        let ui_prefs = ReaderUiPrefs::load(&catalog);
+        let ui_css_provider = gtk::CssProvider::new();
+        register_reader_ui_provider(&ui_css_provider);
+
+        let toc_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        toc_list.set_hexpand(true);
+        toc_list.set_vexpand(true);
+        let left_stack = gtk::Stack::new();
+        left_stack.set_hexpand(true);
+        left_stack.set_vexpand(true);
+        let toc_scroll = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vscrollbar_policy(gtk::PolicyType::Automatic)
+            .hexpand(true)
+            .vexpand(true)
+            .child(&toc_list)
+            .build();
+        toc_scroll.add_css_class("kalam-reader-panel-scroll");
+        left_stack.add_named(&toc_scroll, Some("toc"));
+
+        let ReaderSettingsControls {
+            root: settings_panel,
+            settings_stack,
+            pane_buttons: settings_pane_buttons,
+            font_size_label,
+            line_height_label,
+            column_width_label,
+            theme_dots,
+            ui_controls,
+        } = build_reader_settings_panel(
+            &sender,
+            catalog_theme,
+            catalog_font,
+            catalog_line_height,
+            catalog_column,
+            ui_prefs,
+        );
+        let settings_scroll = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vscrollbar_policy(gtk::PolicyType::Automatic)
+            .hexpand(true)
+            .vexpand(true)
+            .child(&settings_panel)
+            .build();
+        settings_scroll.add_css_class("kalam-reader-panel-scroll");
+        left_stack.add_named(&settings_scroll, Some("settings"));
+
+        let highlights_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        highlights_list.set_hexpand(true);
+        highlights_list.set_vexpand(true);
+        let (highlights_panel, highlight_filter_buttons) =
+            build_highlights_panel(&sender, HighlightFilter::All, &highlights_list);
+        let bookmarks_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        bookmarks_list.set_hexpand(true);
+        bookmarks_list.set_vexpand(true);
+        let bookmarks_panel = build_bookmarks_panel(&sender, &bookmarks_list);
+        let words_list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        words_list.set_hexpand(true);
+        words_list.set_vexpand(true);
+        let (words_panel, word_scope_buttons, _words_search_entry) =
+            build_words_panel(&sender, WordScope::Chapter, &words_list);
+
+        let right_stack = gtk::Stack::new();
+        right_stack.set_hexpand(true);
+        right_stack.set_vexpand(true);
+        right_stack.add_named(&highlights_panel, Some("highlights"));
+        right_stack.add_named(&bookmarks_panel, Some("bookmarks"));
+        right_stack.add_named(&words_panel, Some("words"));
 
         let model = ReaderModel {
             catalog,
             book_id,
-            book_title,
+            book_title: book_meta.title.clone(),
+            book_authors: book_meta.authors_display().to_string(),
+            book_cover_path: book_meta.cover_path.clone(),
             open,
             chapter,
             fraction,
-            // Restored from app_prefs so the reader reopens the way it was left.
             theme: catalog_theme,
             font_px: catalog_font,
-            line_height: 1.65,
-            margin_em: 1.4,
+            line_height: catalog_line_height,
+            column_px: catalog_column,
             loading: false,
             webview: webview.clone(),
             chapter_annotations,
             all_book_annotations,
+            bookmarks,
+            saved_words,
             dict_query: String::new(),
             dict_results: Vec::new(),
             dict_lookup_word: None,
@@ -293,13 +723,46 @@ color:#3e3226;font-family:Georgia,serif'>\
             session_id: None,
             session_start: std::time::Instant::now(),
             session_start_pct: 0,
-            font_size_label: None,
-            theme_ticks: Vec::new(),
+            left_tab: LeftSidebarTab::Toc,
+            right_tab: RightSidebarTab::Highlights,
+            left_sidebar_open: false,
+            right_sidebar_open: false,
+            highlight_filter: HighlightFilter::All,
+            word_scope: WordScope::Chapter,
+            settings_pane: ReaderSettingsPane::Reading,
+            ui_prefs,
+            show_back_button: true,
+            show_bottom_pill: true,
+            left_close_timer: None,
+            right_close_timer: None,
+            left_close_token: 0,
+            right_close_token: 0,
+            left_sidebar_shell: None,
+            right_sidebar_shell: None,
+            left_sidebar_box: None,
+            right_sidebar_box: None,
+            back_dock: None,
+            bottom_dock: None,
+            left_stack,
+            right_stack,
+            toc_scroll,
+            toc_list,
+            highlights_list,
+            bookmarks_list,
+            words_list,
+            settings_stack,
+            settings_pane_buttons,
+            font_size_label,
+            line_height_label,
+            column_width_label,
+            theme_dots,
+            ui_controls,
+            highlight_filter_buttons,
+            word_scope_buttons,
+            ui_css_provider,
         };
 
         let mut model = model;
-        // P4: history + time tracking. Only for books that actually opened —
-        // a failed EPUB shouldn't pollute History or the reading stats.
         if model.open.chapter_count() > 0 {
             let _ = model.catalog.mark_book_opened(book_id);
             let start_pct = model
@@ -313,202 +776,77 @@ color:#3e3226;font-family:Georgia,serif'>\
             model.session_start = std::time::Instant::now();
             model.session_id = model.catalog.start_reading_session(book_id, start_pct).ok();
         }
+
         let widgets = view_output!();
         widgets.web_host.append(&webview);
+        widgets.left_panel_host.append(&model.left_stack);
+        widgets.right_panel_host.append(&model.right_stack);
+        let left_sidebar_box = widgets
+            .left_panel_host
+            .parent()
+            .and_then(|w| w.downcast::<gtk::Box>().ok());
+        let right_sidebar_box = widgets
+            .right_panel_host
+            .parent()
+            .and_then(|w| w.downcast::<gtk::Box>().ok());
+        model.back_dock = overlay_child_box(&root, 4);
+        model.bottom_dock = overlay_child_box(&root, 5);
+        model.left_sidebar_shell = left_sidebar_box
+            .as_ref()
+            .and_then(|sidebar| sidebar.parent())
+            .and_then(|w| w.downcast::<gtk::Revealer>().ok());
+        model.right_sidebar_shell = right_sidebar_box
+            .as_ref()
+            .and_then(|sidebar| sidebar.parent())
+            .and_then(|w| w.downcast::<gtk::Revealer>().ok());
+        model.left_sidebar_box = left_sidebar_box.clone();
+        model.right_sidebar_box = right_sidebar_box.clone();
+        rebuild_cover_host(&widgets.left_cover_host, model.book_cover_path.as_deref());
+        sync_reader_stage_theme(&widgets.reader_stage, model.theme);
         update_chrome_labels(&widgets, &model);
+        update_sidebar_header(&widgets, &model, &sender);
+        sync_sidebar_tabs(&widgets, &model);
+        apply_reader_ui_prefs(&model);
+        sync_reader_stacks(&model);
+        sync_reader_controls(&model);
+        rebuild_toc(&model.toc_list, &model.open, model.chapter, &sender);
+        rebuild_highlights_list(&model, &sender);
+        rebuild_bookmarks_list(&model, &sender);
+        rebuild_words_list(&model, &sender);
 
-        // TOC popover
-        let toc_box = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        build_toc(&toc_box, &model.open, &sender);
-        let toc_scroll = gtk::ScrolledWindow::builder()
-            .min_content_height(300)
-            .min_content_width(280)
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .child(&toc_box)
-            .build();
-        let toc_wrap = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        toc_wrap.set_margin_all(10);
-        let toc_title = gtk::Label::new(Some("Contents"));
-        toc_title.add_css_class("kalam-reader-popover-title");
-        toc_title.set_halign(gtk::Align::Start);
-        toc_wrap.append(&toc_title);
-        toc_wrap.append(&toc_scroll);
-        let toc_pop = gtk::Popover::new();
-        toc_pop.add_css_class("kalam-reader-popover");
-        toc_pop.set_child(Some(&toc_wrap));
-        toc_pop.set_position(gtk::PositionType::Top);
-        widgets.toc_btn.set_popover(Some(&toc_pop));
-
-        // Annotations popover
-        let anno_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        anno_box.set_margin_all(12);
-        anno_box.set_hexpand(true);
-        anno_box.set_size_request(460, -1);
-        let anno_title = gtk::Label::new(Some("Highlights & quotes"));
-        anno_title.add_css_class("kalam-reader-popover-title");
-        anno_title.set_halign(gtk::Align::Start);
-        anno_box.append(&anno_title);
-
-        let anno_scroll = gtk::ScrolledWindow::builder()
-            .min_content_height(360)
-            .min_content_width(425)
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .hexpand(true)
-            .vexpand(false)
-            .build();
-        let anno_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        anno_list.set_margin_all(4);
-        anno_list.set_hexpand(true);
-        anno_list.set_size_request(410, -1);
-        anno_scroll.set_child(Some(&anno_list));
-        anno_box.append(&anno_scroll);
-
-        let anno_pop = gtk::Popover::new();
-        anno_pop.add_css_class("kalam-reader-popover");
-        anno_pop.set_child(Some(&anno_box));
-        anno_pop.set_position(gtk::PositionType::Top);
-        anno_pop.set_size_request(460, -1);
-        unsafe {
-            anno_pop.set_data("kalam-anno-list", anno_list.clone());
+        if let Some(left_hover) = overlay_child_box(&root, 2) {
+            connect_hover_zone(
+                &left_hover,
+                &sender,
+                ReaderMsg::OpenLeftSidebar,
+                ReaderMsg::ScheduleCloseLeft,
+            );
         }
-        widgets.anno_btn.set_popover(Some(&anno_pop));
-
-        let _anno_list_clone = anno_list.clone();
-        gtk::glib::idle_add_local_once(move || {
-            let _ = _anno_list_clone;
-        });
-
-        // Aa / Dictionary popover
-        let aa_wrap = gtk::Box::new(gtk::Orientation::Vertical, 10);
-        aa_wrap.set_margin_all(12);
-
-        let size_l = gtk::Label::new(Some("TEXT SIZE"));
-        size_l.add_css_class("kalam-reader-popover-title");
-        size_l.set_halign(gtk::Align::Start);
-        aa_wrap.append(&size_l);
-        let size_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        size_row.set_halign(gtk::Align::Fill);
-        let a_minus = gtk::Button::with_label("A−");
-        a_minus.add_css_class("kalam-reader-pill-btn");
-        let s1 = sender.clone();
-        a_minus.connect_clicked(move |_| s1.input(ReaderMsg::FontDelta(-1)));
-
-        // Current size, so the control reports state instead of just changing it.
-        let font_size_label = gtk::Label::new(Some(&format!("{}px", model.font_px)));
-        font_size_label.add_css_class("kalam-reader-size-value");
-        font_size_label.set_hexpand(true);
-
-        let a_plus = gtk::Button::with_label("A+");
-        a_plus.add_css_class("kalam-reader-pill-btn");
-        let s2 = sender.clone();
-        a_plus.connect_clicked(move |_| s2.input(ReaderMsg::FontDelta(1)));
-        size_row.append(&a_minus);
-        size_row.append(&font_size_label);
-        size_row.append(&a_plus);
-        aa_wrap.append(&size_row);
-
-        let theme_l = gtk::Label::new(Some("THEME"));
-        theme_l.add_css_class("kalam-reader-popover-title");
-        theme_l.set_halign(gtk::Align::Start);
-        aa_wrap.append(&theme_l);
-        // Each button is painted in the colours it applies, so the choice is
-        // visible at a glance; the active one carries a tick.
-        let theme_row = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        let mut theme_buttons = Vec::new();
-        for (label, theme) in [
-            ("Light", ReadingTheme::Light),
-            ("Sepia", ReadingTheme::Sepia),
-            ("Dark", ReadingTheme::Dark),
-        ] {
-            let b = gtk::Button::new();
-
-            let inner = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            let tick = gtk::Label::new(Some("✓"));
-            tick.add_css_class("kalam-theme-tick");
-            tick.set_width_chars(1);
-            let name = gtk::Label::new(Some(label));
-            name.set_halign(gtk::Align::Start);
-            name.set_hexpand(true);
-            inner.append(&tick);
-            inner.append(&name);
-            b.set_child(Some(&inner));
-
-            b.add_css_class("kalam-reader-theme-btn");
-            // Swatch colours live in the global stylesheet (style.rs) keyed by
-            // theme name, so no per-open CssProvider is registered.
-            b.add_css_class(&format!("kalam-theme-{}", theme.as_str()));
-
-            let s = sender.clone();
-            b.connect_clicked(move |_| s.input(ReaderMsg::Theme(theme)));
-            theme_row.append(&b);
-            theme_buttons.push((theme, tick));
+        if let Some(right_hover) = overlay_child_box(&root, 3) {
+            connect_hover_zone(
+                &right_hover,
+                &sender,
+                ReaderMsg::OpenRightSidebar,
+                ReaderMsg::ScheduleCloseRight,
+            );
         }
-        aa_wrap.append(&theme_row);
-
-        let dict_l = gtk::Label::new(Some("DICTIONARY"));
-        dict_l.add_css_class("kalam-reader-popover-title");
-        dict_l.set_halign(gtk::Align::Start);
-        dict_l.set_margin_top(8);
-        aa_wrap.append(&dict_l);
-
-        let dict_search_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let dict_entry = gtk::SearchEntry::new();
-        dict_entry.set_placeholder_text(Some("Search word…"));
-        dict_entry.set_hexpand(true);
-        let s = sender.clone();
-        dict_entry.connect_search_changed(move |e| {
-            s.input(ReaderMsg::DictSearch(e.text().to_string()));
-        });
-        dict_search_box.append(&dict_entry);
-        aa_wrap.append(&dict_search_box);
-
-        let dict_scroll = gtk::ScrolledWindow::builder()
-            .min_content_height(160)
-            .min_content_width(300)
-            .hscrollbar_policy(gtk::PolicyType::Never)
-            .build();
-        let dict_list = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        dict_scroll.set_child(Some(&dict_list));
-        aa_wrap.append(&dict_scroll);
-
-        let dict_res_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        dict_res_box.set_margin_top(6);
-        let dict_res_label = gtk::Label::new(None);
-        dict_res_label.set_wrap(true);
-        dict_res_label.set_xalign(0.0);
-        dict_res_label.add_css_class("kalam-muted");
-        dict_res_box.append(&dict_res_label);
-
-        let dict_actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let save_word_btn = gtk::Button::with_label("Save word");
-        save_word_btn.add_css_class("kalam-secondary-btn");
-        let s = sender.clone();
-        save_word_btn.connect_clicked(move |_| s.input(ReaderMsg::SaveCurrentWord));
-        dict_actions.append(&save_word_btn);
-        let clear_btn = gtk::Button::with_label("Clear");
-        clear_btn.add_css_class("kalam-secondary-btn");
-        let s = sender.clone();
-        clear_btn.connect_clicked(move |_| s.input(ReaderMsg::ClearDict));
-        dict_actions.append(&clear_btn);
-        dict_res_box.append(&dict_actions);
-        aa_wrap.append(&dict_res_box);
-
-        let aa_pop = gtk::Popover::new();
-        aa_pop.add_css_class("kalam-reader-popover");
-        aa_pop.set_child(Some(&aa_wrap));
-        aa_pop.set_position(gtk::PositionType::Top);
-        unsafe {
-            aa_pop.set_data("kalam-dict-list", dict_list.clone());
-            aa_pop.set_data("kalam-dict-res", dict_res_label.clone());
+        if let Some(left_sidebar) = left_sidebar_box {
+            connect_hover_zone(
+                &left_sidebar,
+                &sender,
+                ReaderMsg::OpenLeftSidebar,
+                ReaderMsg::ScheduleCloseLeft,
+            );
         }
-        widgets.dict_btn.set_popover(Some(&aa_pop));
+        if let Some(right_sidebar) = right_sidebar_box {
+            connect_hover_zone(
+                &right_sidebar,
+                &sender,
+                ReaderMsg::OpenRightSidebar,
+                ReaderMsg::ScheduleCloseRight,
+            );
+        }
 
-        // Keep handles to the state-reflecting widgets, then paint initial state.
-        model.font_size_label = Some(font_size_label.clone());
-        model.theme_ticks = theme_buttons.clone();
-        model.refresh_theme_ticks();
-
-        // Title notify fallback
         let s = sender.clone();
         webview.connect_title_notify(move |wv| {
             if let Some(title) = wv.title() {
@@ -523,7 +861,6 @@ color:#3e3226;font-family:Georgia,serif'>\
             }
         });
 
-        // Load changed
         let s = sender.clone();
         webview.connect_load_changed(move |_wv, event| {
             if event == webkit6::LoadEvent::Finished {
@@ -531,17 +868,14 @@ color:#3e3226;font-family:Georgia,serif'>\
             }
         });
 
-        // Script message handler
         if let Some(ucm) = webview.user_content_manager() {
             let _ = ucm.register_script_message_handler("kalam", None);
             let s = sender.clone();
             ucm.connect_script_message_received(Some("kalam"), move |_mgr, msg| {
-                let js = msg.to_string();
-                s.input(ReaderMsg::JsRaw(js));
+                s.input(ReaderMsg::JsRaw(msg.to_string()));
             });
         }
 
-        // Decide policy fallback for kalam://
         let s = sender.clone();
         webview.connect_decide_policy(move |_wv, decision, decision_type| {
             if decision_type == webkit6::PolicyDecisionType::NavigationAction {
@@ -596,8 +930,28 @@ color:#3e3226;font-family:Georgia,serif'>\
                     s.input(ReaderMsg::FontDelta(-1));
                     gtk::glib::Propagation::Stop
                 }
-                Key::d | Key::D => {
-                    s.input(ReaderMsg::DictSearch(String::new()));
+                Key::t | Key::T => {
+                    s.input(ReaderMsg::SwitchLeftTab(LeftSidebarTab::Toc));
+                    gtk::glib::Propagation::Stop
+                }
+                Key::s | Key::S => {
+                    s.input(ReaderMsg::SwitchLeftTab(LeftSidebarTab::Settings));
+                    gtk::glib::Propagation::Stop
+                }
+                Key::h | Key::H => {
+                    s.input(ReaderMsg::SwitchRightTab(RightSidebarTab::Highlights));
+                    gtk::glib::Propagation::Stop
+                }
+                Key::b | Key::B => {
+                    s.input(ReaderMsg::SwitchRightTab(RightSidebarTab::Bookmarks));
+                    gtk::glib::Propagation::Stop
+                }
+                Key::m | Key::M => {
+                    s.input(ReaderMsg::AddBookmark);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::w | Key::W => {
+                    s.input(ReaderMsg::SwitchRightTab(RightSidebarTab::Words));
                     gtk::glib::Propagation::Stop
                 }
                 _ => gtk::glib::Propagation::Proceed,
@@ -616,49 +970,135 @@ color:#3e3226;font-family:Georgia,serif'>\
         sender: ComponentSender<Self>,
         _root: &Self::Root,
     ) {
+        let mut refresh_sidebar_header = false;
+        let mut refresh_toc = false;
+        let mut refresh_highlights = false;
+        let mut refresh_bookmarks = false;
+        let mut refresh_words = false;
+        let mut refresh_controls = false;
+        let mut refresh_chrome = false;
+        let mut refresh_stage = false;
+        let mut refresh_tabs = false;
+
         match msg {
             ReaderMsg::Close => {
-                if self.fraction < 0.05 {
-                    self.fraction = 0.15;
+                if self.left_sidebar_open || self.right_sidebar_open {
+                    self.close_sidebars();
+                    refresh_tabs = true;
+                } else {
+                    if self.fraction < 0.05 {
+                        self.fraction = 0.15;
+                    }
+                    self.save_progress();
+                    sender.output(ReaderOut::Close).ok();
                 }
-                self.save_progress();
-                sender.output(ReaderOut::Close).ok();
             }
-            ReaderMsg::TocSelect(idx) => {
+            ReaderMsg::TocSelect(idx) | ReaderMsg::JumpToChapter(idx) => {
                 if idx < self.open.chapter_count() && idx != self.chapter && !self.loading {
-                    widgets.toc_btn.popdown();
                     self.go_chapter(idx, 0.0);
+                    refresh_sidebar_header = true;
+                    refresh_toc = true;
+                    refresh_highlights = true;
+                    refresh_bookmarks = true;
+                    refresh_words = true;
+                    refresh_chrome = true;
+                }
+            }
+            ReaderMsg::JumpToLocation(idx, frac) => {
+                if idx < self.open.chapter_count() && !self.loading {
+                    self.go_chapter(idx, frac);
+                    refresh_sidebar_header = true;
+                    refresh_toc = true;
+                    refresh_highlights = true;
+                    refresh_bookmarks = true;
+                    refresh_words = true;
+                    refresh_chrome = true;
                 }
             }
             ReaderMsg::PrevChapter => {
                 if self.chapter > 0 && !self.loading {
                     self.go_chapter(self.chapter - 1, 0.0);
+                    refresh_sidebar_header = true;
+                    refresh_toc = true;
+                    refresh_highlights = true;
+                    refresh_bookmarks = true;
+                    refresh_words = true;
+                    refresh_chrome = true;
                 }
             }
             ReaderMsg::NextChapter => {
                 if self.chapter + 1 < self.open.chapter_count() && !self.loading {
                     self.fraction = 1.0;
                     self.go_chapter(self.chapter + 1, 0.0);
+                    refresh_sidebar_header = true;
+                    refresh_toc = true;
+                    refresh_highlights = true;
+                    refresh_bookmarks = true;
+                    refresh_words = true;
+                    refresh_chrome = true;
                 }
             }
-            ReaderMsg::Theme(t) => {
-                self.theme = t;
-                self.catalog.set_pref("reader.theme", t.as_str());
-                self.refresh_theme_ticks();
-                widgets.dict_btn.popdown();
+            ReaderMsg::Theme(theme) => {
+                self.theme = theme;
+                self.catalog.set_pref("reader.theme", theme.as_str());
                 self.loading = true;
                 load_chapter(self);
                 self.loading = false;
+                refresh_controls = true;
+                refresh_stage = true;
             }
-            ReaderMsg::FontDelta(d) => {
-                let next = (self.font_px as i32 + d).clamp(14, 36) as u32;
+            ReaderMsg::FontDelta(delta) => {
+                let next = (self.font_px as i32 + delta).clamp(13, 24) as u32;
                 if next != self.font_px {
                     self.font_px = next;
                     self.catalog.set_pref("reader.font_px", &next.to_string());
-                    self.refresh_font_label();
                     self.loading = true;
                     load_chapter(self);
                     self.loading = false;
+                    refresh_controls = true;
+                }
+            }
+            ReaderMsg::LineHeightDelta(delta) => {
+                let next =
+                    ((self.line_height * 10.0).round() as i32 + delta).clamp(13, 25) as f32 / 10.0;
+                if (next - self.line_height).abs() > f32::EPSILON {
+                    self.line_height = next;
+                    self.catalog
+                        .set_pref("reader.line_height", &format!("{next:.1}"));
+                    self.loading = true;
+                    load_chapter(self);
+                    self.loading = false;
+                    refresh_controls = true;
+                }
+            }
+            ReaderMsg::ColumnWidthDelta(delta) => {
+                let next = (self.column_px as i32 + delta).clamp(400, 860) as u32;
+                if next != self.column_px {
+                    self.column_px = next;
+                    self.catalog.set_pref("reader.column_px", &next.to_string());
+                    self.loading = true;
+                    load_chapter(self);
+                    self.loading = false;
+                    refresh_controls = true;
+                }
+            }
+            ReaderMsg::SwitchSettingsPane(pane) => {
+                if pane != self.settings_pane {
+                    self.settings_pane = pane;
+                    refresh_controls = true;
+                }
+            }
+            ReaderMsg::SetUiSetting(setting, value) => {
+                if update_reader_ui_setting(self, setting, value) {
+                    apply_reader_ui_prefs(self);
+                    refresh_controls = true;
+                }
+            }
+            ReaderMsg::AdjustUiSetting(setting, delta) => {
+                let next = self.ui_prefs.get(setting) + delta;
+                if update_reader_ui_setting(self, setting, next) {
+                    apply_reader_ui_prefs(self);
+                    refresh_controls = true;
                 }
             }
             ReaderMsg::JsRaw(raw) => {
@@ -676,79 +1116,81 @@ color:#3e3226;font-family:Georgia,serif'>\
                 };
                 let decoded = url_decode(&json_part);
                 if let Ok(payload) = serde_json::from_str::<JsPayload>(&decoded) {
+                    let kind = payload.kind.clone();
                     self.handle_js_payload(payload, sender.clone());
+                    refresh_sidebar_header = true;
+                    refresh_chrome = true;
+                    match kind.as_str() {
+                        "highlight" | "quote" => refresh_highlights = true,
+                        "save-word" => {
+                            refresh_words = true;
+                            refresh_tabs = true;
+                        }
+                        "dict-shortcut" => {
+                            refresh_words = true;
+                            refresh_tabs = true;
+                        }
+                        _ => {}
+                    }
                 } else if let Ok(payload) = serde_json::from_str::<JsPayload>(&json_part) {
+                    let kind = payload.kind.clone();
                     self.handle_js_payload(payload, sender.clone());
+                    refresh_sidebar_header = true;
+                    refresh_chrome = true;
+                    match kind.as_str() {
+                        "highlight" | "quote" => refresh_highlights = true,
+                        "save-word" => {
+                            refresh_words = true;
+                            refresh_tabs = true;
+                        }
+                        "dict-shortcut" => {
+                            refresh_words = true;
+                            refresh_tabs = true;
+                        }
+                        _ => {}
+                    }
                 } else if let Ok(f) = decoded.parse::<f64>() {
                     if (0.0..=1.0).contains(&f) {
                         self.fraction = f;
-                    }
-                } else if decoded.starts_with("progress/") {
-                    if let Some(num) = decoded.strip_prefix("progress/") {
-                        if let Ok(f) = num.parse::<f64>() {
-                            self.fraction = f;
-                        }
+                        refresh_sidebar_header = true;
+                        refresh_chrome = true;
                     }
                 }
             }
             ReaderMsg::Progress(frac) => {
                 self.fraction = frac.clamp(0.0, 1.0);
+                refresh_sidebar_header = true;
+                refresh_chrome = true;
             }
             ReaderMsg::AnnotationsReload => {
-                self.chapter_annotations = self
-                    .catalog
-                    .get_annotations_for_chapter(self.book_id, self.chapter as i64)
-                    .unwrap_or_default();
-                self.all_book_annotations = self
-                    .catalog
-                    .get_annotations_for_book(self.book_id)
-                    .unwrap_or_default();
+                self.reload_annotations();
+                self.reload_bookmarks();
+                self.reload_saved_words();
                 self.inject_highlights();
-                if let Some(pop) = widgets.anno_btn.popover() {
-                    if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
-                        unsafe {
-                            if let Some(list) = pop.data::<gtk::Box>("kalam-anno-list") {
-                                let list = list.as_ref().clone();
-                                rebuild_anno_list(&list, &self.all_book_annotations, &sender);
-                            }
-                        }
-                    }
-                }
+                refresh_highlights = true;
+                refresh_bookmarks = true;
+                refresh_words = true;
             }
             ReaderMsg::DeleteAnnotation(id) => {
                 crate::notify::report(
                     self.catalog.delete_annotation(id),
                     "Could not delete the highlight",
                 );
-                self.chapter_annotations = self
-                    .catalog
-                    .get_annotations_for_chapter(self.book_id, self.chapter as i64)
-                    .unwrap_or_default();
-                self.all_book_annotations = self
-                    .catalog
-                    .get_annotations_for_book(self.book_id)
-                    .unwrap_or_default();
+                self.reload_annotations();
                 let script = format!(
                     "if (window.kalamRemoveHighlight) window.kalamRemoveHighlight('{}');",
                     id
                 );
                 eval_js(&self.webview, &script);
-                if let Some(pop) = widgets.anno_btn.popover() {
-                    if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
-                        unsafe {
-                            if let Some(list) = pop.data::<gtk::Box>("kalam-anno-list") {
-                                let list = list.as_ref().clone();
-                                rebuild_anno_list(&list, &self.all_book_annotations, &sender);
-                            }
-                        }
-                    }
-                }
+                refresh_highlights = true;
             }
-            ReaderMsg::JumpToChapter(idx) => {
-                if idx < self.open.chapter_count() {
-                    self.go_chapter(idx, 0.0);
-                    widgets.anno_btn.popdown();
-                }
+            ReaderMsg::DeleteBookmark(id) => {
+                crate::notify::report(
+                    self.catalog.delete_reading_bookmark(id),
+                    "Could not delete the mark",
+                );
+                self.reload_bookmarks();
+                refresh_bookmarks = true;
             }
             ReaderMsg::DictSearch(q) => {
                 self.dict_query = q.clone();
@@ -757,78 +1199,36 @@ color:#3e3226;font-family:Georgia,serif'>\
                 } else {
                     self.dict_results = self.catalog.search_dict(&q, 30).unwrap_or_default();
                 }
-                if let Some(pop) = widgets.dict_btn.popover() {
-                    if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
-                        unsafe {
-                            if let Some(list) = pop.data::<gtk::Box>("kalam-dict-list") {
-                                let list = list.as_ref().clone();
-                                rebuild_dict_list(&list, &self.dict_results, &sender);
-                            }
-                        }
-                    }
-                }
+                refresh_words = true;
             }
             ReaderMsg::DictSearchSelect(word) => {
                 let results = self.catalog.search_dict(&word, 5).unwrap_or_default();
                 if let Some(entry) = results.first() {
                     self.dict_lookup_word = Some(entry.word.clone());
                     self.dict_lookup_def = Some(entry.definition.clone());
-                    let rect_json = self.dict_lookup_rect_json.clone();
-                    self.show_dict_in_webview(
-                        entry.word.clone(),
-                        entry.definition.clone(),
-                        rect_json.clone(),
-                    );
-                    if let Some(pop) = widgets.dict_btn.popover() {
-                        if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
-                            unsafe {
-                                if let Some(label) = pop.data::<gtk::Label>("kalam-dict-res") {
-                                    label.as_ref().set_label(&format!(
-                                        "{}: {}",
-                                        entry.word,
-                                        truncate_def(&entry.definition, 400)
-                                    ));
-                                }
-                            }
-                        }
-                    }
+                    self.show_dict_in_webview(entry.word.clone(), entry.definition.clone(), None);
+                    self.right_tab = RightSidebarTab::Words;
+                    self.right_sidebar_open = true;
+                    refresh_tabs = true;
                 }
-                widgets.dict_btn.popdown();
             }
             ReaderMsg::SaveCurrentWord => {
-                if let (Some(w), Some(def)) = (&self.dict_lookup_word, &self.dict_lookup_def) {
-                    // The Result was dropped here, so the popover reported
-                    // "Word saved" even when the insert had failed.
+                if let (Some(word), Some(def)) = (&self.dict_lookup_word, &self.dict_lookup_def) {
                     let saved = self.catalog.insert_saved_word(
-                        w,
+                        word,
                         def,
                         None,
                         Some(self.book_id),
                         Some(self.chapter as i64),
                         self.dict_context.as_deref(),
                     );
-                    let message = match &saved {
+                    match saved {
                         Ok(_) => {
-                            crate::notify::compact("Word saved", w);
-                            "Word saved to Saved words."
+                            crate::notify::compact("Word saved", word);
+                            self.reload_saved_words();
+                            refresh_words = true;
                         }
-                        Err(e) => {
-                            crate::notify::error("Could not save the word", &e.to_string());
-                            "Could not save that word."
-                        }
-                    };
-                    if saved.is_ok() {
-                        self.dict_lookup_word = None;
-                        self.dict_lookup_def = None;
-                    }
-                    if let Some(pop) = widgets.dict_btn.popover() {
-                        if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
-                            unsafe {
-                                if let Some(label) = pop.data::<gtk::Label>("kalam-dict-res") {
-                                    label.as_ref().set_label(message);
-                                }
-                            }
-                        }
+                        Err(e) => crate::notify::error("Could not save the word", &e.to_string()),
                     }
                 }
             }
@@ -837,55 +1237,199 @@ color:#3e3226;font-family:Georgia,serif'>\
                 self.dict_lookup_def = None;
                 self.dict_lookup_rect_json = None;
                 self.dict_context = None;
-                if let Some(pop) = widgets.dict_btn.popover() {
-                    if let Some(pop) = pop.downcast_ref::<gtk::Popover>() {
-                        unsafe {
-                            if let Some(label) = pop.data::<gtk::Label>("kalam-dict-res") {
-                                label.as_ref().set_label("");
-                            }
-                        }
-                    }
-                }
                 eval_js(
                     &self.webview,
                     "if (window.kalamHideDict) window.kalamHideDict();",
                 );
             }
-            ReaderMsg::ToggleAnnoPopover => {
-                widgets.anno_btn.popup();
+            ReaderMsg::AddBookmark => {
+                self.right_tab = RightSidebarTab::Bookmarks;
+                self.right_sidebar_open = true;
+                self.cancel_right_close();
+                if self.open.chapter_count() > 0 {
+                    let label = self.current_chapter_title().to_string();
+                    match self.catalog.insert_reading_bookmark(
+                        self.book_id,
+                        self.chapter as i64,
+                        self.fraction,
+                        &label,
+                    ) {
+                        Ok(_) => crate::notify::compact("Mark saved", &label),
+                        Err(e) => crate::notify::error("Could not save the mark", &e.to_string()),
+                    }
+                    self.reload_bookmarks();
+                    refresh_bookmarks = true;
+                }
+                refresh_tabs = true;
             }
-            ReaderMsg::ToggleDictPopover => {
-                widgets.dict_btn.popup();
+            ReaderMsg::OpenAuthor(name) => {
+                sender.output(ReaderOut::OpenAuthor { name }).ok();
+            }
+            ReaderMsg::OpenLeftSidebar => {
+                self.cancel_left_close();
+                self.right_sidebar_open = false;
+                self.cancel_right_close();
+                if self.left_tab == LeftSidebarTab::Toc {
+                    self.position_toc_scroll();
+                }
+                self.left_sidebar_open = true;
+                refresh_tabs = true;
+            }
+            ReaderMsg::OpenRightSidebar => {
+                self.cancel_right_close();
+                self.left_sidebar_open = false;
+                self.cancel_left_close();
+                self.right_sidebar_open = true;
+                refresh_tabs = true;
+            }
+            ReaderMsg::SwitchLeftTab(tab) => {
+                self.left_tab = tab;
+                self.cancel_left_close();
+                self.right_sidebar_open = false;
+                self.cancel_right_close();
+                if matches!(tab, LeftSidebarTab::Toc) {
+                    self.position_toc_scroll();
+                }
+                self.left_sidebar_open = true;
+                refresh_tabs = true;
+                if matches!(tab, LeftSidebarTab::Settings) {
+                    refresh_controls = true;
+                }
+            }
+            ReaderMsg::SwitchRightTab(tab) => {
+                self.right_tab = tab;
+                self.right_sidebar_open = true;
+                self.cancel_right_close();
+                self.left_sidebar_open = false;
+                self.cancel_left_close();
+                refresh_tabs = true;
+                match tab {
+                    RightSidebarTab::Highlights => refresh_highlights = true,
+                    RightSidebarTab::Bookmarks => refresh_bookmarks = true,
+                    RightSidebarTab::Words => refresh_words = true,
+                }
+            }
+            ReaderMsg::SetHighlightFilter(filter) => {
+                self.highlight_filter = filter;
+                refresh_controls = true;
+                refresh_highlights = true;
+            }
+            ReaderMsg::SetWordScope(scope) => {
+                self.word_scope = scope;
+                refresh_controls = true;
+                refresh_words = true;
+            }
+            ReaderMsg::ScheduleCloseLeft => {
+                self.schedule_left_close(sender.clone());
+            }
+            ReaderMsg::ScheduleCloseRight => {
+                self.schedule_right_close(sender.clone());
+            }
+            ReaderMsg::ForceCloseLeft(token) => {
+                if token == self.left_close_token {
+                    self.left_sidebar_open = false;
+                    self.left_close_timer = None;
+                    refresh_tabs = true;
+                }
+            }
+            ReaderMsg::ForceCloseRight(token) => {
+                if token == self.right_close_token {
+                    self.right_sidebar_open = false;
+                    self.right_close_timer = None;
+                    refresh_tabs = true;
+                }
+            }
+            ReaderMsg::CloseSidebars => {
+                self.close_sidebars();
+                refresh_tabs = true;
+            }
+            ReaderMsg::HideChrome => {
+                self.show_back_button = false;
+                self.show_bottom_pill = false;
+                refresh_chrome = true;
+            }
+            ReaderMsg::ShowBackChrome => {
+                self.show_back_button = true;
+                refresh_chrome = true;
+            }
+            ReaderMsg::ShowBottomChrome => {
+                self.show_bottom_pill = true;
+                refresh_chrome = true;
+            }
+            ReaderMsg::ShowAllChrome => {
+                self.show_back_button = true;
+                self.show_bottom_pill = true;
+                refresh_chrome = true;
             }
         }
 
-        update_chrome_labels(widgets, self);
+        if refresh_stage {
+            sync_reader_stage_theme(&widgets.reader_stage, self.theme);
+        }
+        if refresh_sidebar_header {
+            update_sidebar_header(widgets, self, &sender);
+        }
+        if refresh_chrome {
+            update_chrome_labels(widgets, self);
+        }
+        if refresh_controls || refresh_tabs {
+            sync_reader_stacks(self);
+        }
+        if refresh_controls {
+            sync_reader_controls(self);
+        }
+        if refresh_tabs {
+            sync_sidebar_tabs(widgets, self);
+        }
+        if refresh_toc {
+            rebuild_toc(&self.toc_list, &self.open, self.chapter, &sender);
+            if self.left_sidebar_open && self.left_tab == LeftSidebarTab::Toc {
+                self.position_toc_scroll();
+            }
+        }
+        if refresh_highlights {
+            rebuild_highlights_list(self, &sender);
+        }
+        if refresh_bookmarks {
+            rebuild_bookmarks_list(self, &sender);
+        }
+        if refresh_words {
+            rebuild_words_list(self, &sender);
+        }
+
         self.update_view(widgets, sender);
     }
 
-    fn shutdown(&mut self, widgets: &mut Self::Widgets, _output: relm4::Sender<Self::Output>) {
+    fn shutdown(&mut self, _widgets: &mut Self::Widgets, _output: relm4::Sender<Self::Output>) {
         self.save_progress();
         self.close_session();
-
-        // Popovers are their own toplevel surfaces, so they are *not* disposed
-        // along with the MenuButton that owns them. Leaving them attached while
-        // the reader is torn down mid-navigation makes GTK probe a half-disposed
-        // widget later — the `gtk_widget_is_ancestor: assertion 'GTK_IS_WIDGET
-        // (widget)' failed` criticals on the console. Pop them down and detach.
-        for btn in [&widgets.toc_btn, &widgets.anno_btn, &widgets.dict_btn] {
-            btn.popdown();
-            btn.set_popover(None::<&gtk::Popover>);
-        }
-
-        // Stop the WebView before its widget goes away: an in-flight load that
-        // completes after disposal fires callbacks against dead widgets.
+        self.cancel_left_close();
+        self.cancel_right_close();
         self.webview.stop_loading();
     }
 }
 
 impl ReaderModel {
     fn css(&self) -> String {
-        reading_css(self.theme, self.font_px, self.line_height, self.margin_em)
+        reading_css(self.theme, self.font_px, self.line_height, self.column_px)
+    }
+
+    fn progress_pct(&self) -> i64 {
+        let count = self.open.chapter_count();
+        if count == 0 {
+            return 0;
+        }
+        ((((self.chapter as f64) + self.fraction) / count as f64) * 100.0)
+            .round()
+            .clamp(0.0, 100.0) as i64
+    }
+
+    fn current_chapter_title(&self) -> &str {
+        self.open
+            .spine
+            .get(self.chapter)
+            .map(|item| item.title.as_str())
+            .unwrap_or("Reading")
     }
 
     fn save_progress(&mut self) {
@@ -898,45 +1442,10 @@ impl ReaderModel {
             self.fraction,
             self.open.chapter_count(),
         );
-        // P4: crossing the end auto-marks the book finished (once).
         let pct = self.progress_pct();
         let _ = self.catalog.auto_finish_if_complete(self.book_id, pct);
     }
 
-    fn progress_pct(&self) -> i64 {
-        let count = self.open.chapter_count();
-        if count == 0 {
-            return 0;
-        }
-        let overall = ((self.chapter as f64) + self.fraction) / (count as f64) * 100.0;
-        overall.round().clamp(0.0, 100.0) as i64
-    }
-
-    /// Show the tick only on the active theme's button.
-    ///
-    /// Toggling a CSS class rather than set_opacity(0.0): any opacity below 1
-    /// makes GTK render the widget through an offscreen surface, and a label
-    /// that has not been allocated yet can produce a zero-sized one, which
-    /// pixman rejects with "Invalid rectangle passed". The hidden class just
-    /// paints the glyph transparent, so the row still never reflows.
-    fn refresh_theme_ticks(&self) {
-        for (theme, tick) in &self.theme_ticks {
-            if *theme == self.theme {
-                tick.remove_css_class("kalam-theme-tick-off");
-            } else {
-                tick.add_css_class("kalam-theme-tick-off");
-            }
-        }
-    }
-
-    fn refresh_font_label(&self) {
-        if let Some(label) = &self.font_size_label {
-            label.set_label(&format!("{}px", self.font_px));
-        }
-    }
-
-    /// Close the open reading-session row. Idempotent: called from shutdown,
-    /// and the id is cleared so a second call is a no-op.
     fn close_session(&mut self) {
         let Some(session_id) = self.session_id.take() else {
             return;
@@ -950,14 +1459,122 @@ impl ReaderModel {
     fn go_chapter(&mut self, idx: usize, frac: f64) {
         self.save_progress();
         self.chapter = idx;
-        self.fraction = frac;
+        self.fraction = frac.clamp(0.0, 1.0);
         self.loading = true;
-        self.chapter_annotations = self
-            .catalog
-            .get_annotations_for_chapter(self.book_id, idx as i64)
-            .unwrap_or_default();
+        self.reload_annotations();
+        self.reload_bookmarks();
+        self.reload_saved_words();
         load_chapter(self);
         self.loading = false;
+    }
+
+    fn reload_annotations(&mut self) {
+        self.chapter_annotations = self
+            .catalog
+            .get_annotations_for_chapter(self.book_id, self.chapter as i64)
+            .unwrap_or_default();
+        self.all_book_annotations = self
+            .catalog
+            .get_annotations_for_book(self.book_id)
+            .unwrap_or_default();
+    }
+
+    fn reload_bookmarks(&mut self) {
+        self.bookmarks = self
+            .catalog
+            .list_reading_bookmarks(self.book_id)
+            .unwrap_or_default();
+    }
+
+    fn reload_saved_words(&mut self) {
+        self.saved_words = self.catalog.list_saved_words("").unwrap_or_default();
+    }
+
+    fn toc_display_position(&self) -> Option<(usize, usize)> {
+        let active_spine = toc_active_spine_index(&self.open, self.chapter)?;
+        if self.open.toc.is_empty() {
+            let total = self.open.spine.len();
+            if total == 0 {
+                None
+            } else {
+                Some((active_spine.min(total.saturating_sub(1)), total))
+            }
+        } else {
+            let visible: Vec<usize> = self
+                .open
+                .toc
+                .iter()
+                .filter_map(|entry| entry.spine_index)
+                .collect();
+            let total = visible.len();
+            if total == 0 {
+                None
+            } else {
+                visible
+                    .iter()
+                    .position(|idx| *idx == active_spine)
+                    .map(|current| (current, total))
+            }
+        }
+    }
+
+    fn position_toc_scroll(&self) {
+        let Some((current, total)) = self.toc_display_position() else {
+            return;
+        };
+        let adj = self.toc_scroll.vadjustment();
+        let max = (adj.upper() - adj.page_size()).max(0.0);
+        if max <= 0.0 || total <= 1 {
+            adj.set_value(0.0);
+            return;
+        }
+        let content_span = adj.upper().max(adj.page_size());
+        let target_center = content_span * ((current as f64 + 0.5) / total as f64);
+        let target = (target_center - (adj.page_size() / 2.0)).clamp(0.0, max);
+        adj.set_value(target);
+    }
+
+    fn close_sidebars(&mut self) {
+        self.left_sidebar_open = false;
+        self.right_sidebar_open = false;
+        self.cancel_left_close();
+        self.cancel_right_close();
+    }
+
+    fn cancel_left_close(&mut self) {
+        self.left_close_token = self.left_close_token.wrapping_add(1);
+        self.left_close_timer = None;
+    }
+
+    fn cancel_right_close(&mut self) {
+        self.right_close_token = self.right_close_token.wrapping_add(1);
+        self.right_close_timer = None;
+    }
+
+    fn schedule_left_close(&mut self, sender: ComponentSender<Self>) {
+        self.cancel_left_close();
+        let token = self.left_close_token;
+        let tx = sender.input_sender().clone();
+        self.left_close_timer = Some(glib::timeout_add_local(
+            Duration::from_millis(320),
+            move || {
+                let _ = tx.send(ReaderMsg::ForceCloseLeft(token));
+                glib::ControlFlow::Break
+            },
+        ));
+    }
+
+    fn schedule_right_close(&mut self, sender: ComponentSender<Self>) {
+        self.cancel_right_close();
+        let token = self.right_close_token;
+        let tx = sender.input_sender().clone();
+        self.right_close_timer = Some(glib::timeout_add_local(
+            Duration::from_millis(320),
+            move || {
+                let _ = tx.send(ReaderMsg::ForceCloseRight(token));
+                glib::ControlFlow::Break
+            },
+        ));
     }
 
     fn inject_highlights(&self) {
@@ -1003,9 +1620,9 @@ impl ReaderModel {
             .chars()
             .take(2000)
             .collect::<String>();
-        let rect_part = if let Some(rj) = rect_json {
-            let rj_esc = rj.replace('\\', "\\\\").replace('\'', "\\'");
-            format!("'{}'", rj_esc)
+        let rect_part = if let Some(rect) = rect_json {
+            let rect_esc = rect.replace('\\', "\\\\").replace('\'', "\\'");
+            format!("'{}'", rect_esc)
         } else {
             "null".to_string()
         };
@@ -1022,6 +1639,9 @@ impl ReaderModel {
                 if let Some(f) = payload.fraction {
                     self.fraction = f.clamp(0.0, 1.0);
                 }
+            }
+            "next" => {
+                sender.input(ReaderMsg::NextChapter);
             }
             "selection" => {
                 self.last_selection = payload.text;
@@ -1054,23 +1674,14 @@ impl ReaderModel {
                 ) {
                     Ok(real_id) => {
                         let script = format!(
-                            "try {{ var nodes = document.querySelectorAll('span[data-annotation-id=\"{tmp}\"]'); nodes.forEach(function(n){{ n.dataset.annotationId='{real}'; }}); }}catch(e){{}}",
+                            "try {{ var nodes = document.querySelectorAll('span[data-annotation-id=\\\"{tmp}\\\"]'); nodes.forEach(function(n){{ n.dataset.annotationId='{real}'; }}); }} catch(e) {{}}",
                             tmp = tmp_id.replace('\'', "\\'"),
-                            real = real_id
+                            real = real_id,
                         );
                         eval_js(&self.webview, &script);
-                        self.chapter_annotations = self
-                            .catalog
-                            .get_annotations_for_chapter(self.book_id, self.chapter as i64)
-                            .unwrap_or_default();
-                        self.all_book_annotations = self
-                            .catalog
-                            .get_annotations_for_book(self.book_id)
-                            .unwrap_or_default();
+                        self.reload_annotations();
                         sender.input(ReaderMsg::AnnotationsReload);
                     }
-                    // This used to print to stderr, so a failed highlight just
-                    // silently did not appear.
                     Err(e) => crate::notify::error("Could not save the highlight", &e.to_string()),
                 }
             }
@@ -1097,10 +1708,8 @@ impl ReaderModel {
                 ) {
                     Ok(_) => {
                         crate::notify::compact("Quote saved", "");
-                        self.all_book_annotations = self
-                            .catalog
-                            .get_annotations_for_book(self.book_id)
-                            .unwrap_or_default();
+                        self.reload_annotations();
+                        sender.input(ReaderMsg::AnnotationsReload);
                     }
                     Err(e) => crate::notify::error("Could not save the quote", &e.to_string()),
                 }
@@ -1138,9 +1747,6 @@ impl ReaderModel {
                 let word = payload.word.unwrap_or_default();
                 let def = payload.definition.unwrap_or_default();
                 if !word.trim().is_empty() && !def.trim().is_empty() {
-                    // The in-page dictionary's save button comes through here,
-                    // separate from the popover's ReaderMsg::SaveCurrentWord.
-                    // It dropped its Result too, so a failure was invisible.
                     match self.catalog.insert_saved_word(
                         &word,
                         &def,
@@ -1149,34 +1755,1539 @@ impl ReaderModel {
                         Some(self.chapter as i64),
                         payload.context.as_deref().or(self.dict_context.as_deref()),
                     ) {
-                        Ok(_) => crate::notify::compact("Word saved", &word),
+                        Ok(_) => {
+                            crate::notify::compact("Word saved", &word);
+                            self.reload_saved_words();
+                            self.right_tab = RightSidebarTab::Words;
+                            self.right_sidebar_open = true;
+                        }
                         Err(e) => crate::notify::error("Could not save the word", &e.to_string()),
                     }
                 }
             }
             "dict-shortcut" => {
-                sender.input(ReaderMsg::ToggleDictPopover);
+                self.right_tab = RightSidebarTab::Words;
+                self.right_sidebar_open = true;
+            }
+            "reader-ui-hide" => {
+                self.show_back_button = false;
+                self.show_bottom_pill = false;
+            }
+            "reader-ui-show-back" => {
+                self.show_back_button = true;
+                self.show_bottom_pill = false;
+            }
+            "reader-ui-show-pill" => {
+                self.show_bottom_pill = true;
+                self.show_back_button = false;
+            }
+            "reader-ui-show-all" => {
+                self.show_back_button = true;
+                self.show_bottom_pill = true;
             }
             _ => {}
         }
     }
+
+    fn filtered_annotations(&self) -> Vec<&Annotation> {
+        self.all_book_annotations
+            .iter()
+            .filter(|anno| match self.highlight_filter {
+                HighlightFilter::All => anno.kind == "highlight" || anno.kind == "quote",
+                HighlightFilter::Yellow => {
+                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("yellow")
+                }
+                HighlightFilter::Green => {
+                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("green")
+                }
+                HighlightFilter::Blue => {
+                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("blue")
+                }
+                HighlightFilter::Pink => {
+                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("pink")
+                }
+                HighlightFilter::Orange => {
+                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("orange")
+                }
+                HighlightFilter::Quotes => anno.kind == "quote",
+            })
+            .collect()
+    }
+
+    fn filtered_saved_words(&self) -> Vec<&SavedWord> {
+        self.saved_words
+            .iter()
+            .filter(|word| match self.word_scope {
+                WordScope::Chapter => {
+                    word.book_id == Some(self.book_id)
+                        && word.chapter_index == Some(self.chapter as i64)
+                }
+                WordScope::Book => word.book_id == Some(self.book_id),
+                WordScope::All => true,
+            })
+            .collect()
+    }
+}
+
+fn reader_sidebar_tab_content(icon: &str, label: &str) -> gtk::Box {
+    let box_ = gtk::Box::new(gtk::Orientation::Vertical, 3);
+    box_.set_halign(gtk::Align::Center);
+    box_.set_hexpand(true);
+    box_.append(&crate::icons::symbolic_with_classes(
+        icon,
+        17,
+        &["kalam-inline-icon"],
+    ));
+    let label_widget = gtk::Label::new(Some(label));
+    label_widget.set_halign(gtk::Align::Center);
+    label_widget.set_width_chars(1);
+    label_widget.set_max_width_chars(8);
+    label_widget.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    box_.append(&label_widget);
+    box_
+}
+
+fn overlay_child_box(overlay: &gtk::Overlay, index: usize) -> Option<gtk::Box> {
+    let mut child = overlay.first_child()?;
+    for _ in 0..index {
+        child = child.next_sibling()?;
+    }
+    child.downcast::<gtk::Box>().ok()
+}
+
+fn connect_hover_zone(
+    widget: &impl IsA<gtk::Widget>,
+    sender: &ComponentSender<ReaderModel>,
+    open_msg: ReaderMsg,
+    close_msg: ReaderMsg,
+) {
+    let motion = gtk::EventControllerMotion::new();
+    let tx = sender.input_sender().clone();
+    motion.connect_enter(move |_, _, _| {
+        let _ = tx.send(open_msg.clone());
+    });
+    let tx = sender.input_sender().clone();
+    motion.connect_leave(move |_| {
+        let _ = tx.send(close_msg.clone());
+    });
+    widget.add_controller(motion);
+}
+
+impl ReaderUiPrefs {
+    fn load(catalog: &Catalog) -> Self {
+        let mut prefs = Self {
+            sidebar_gap: reader_ui_default(ReaderUiSetting::SidebarGap),
+            left_sidebar_width: reader_ui_default(ReaderUiSetting::LeftSidebarWidth),
+            right_sidebar_width: reader_ui_default(ReaderUiSetting::RightSidebarWidth),
+            sidebar_radius: reader_ui_default(ReaderUiSetting::SidebarRadius),
+            sidebar_padding: reader_ui_default(ReaderUiSetting::SidebarPadding),
+            sidebar_shadow: reader_ui_default(ReaderUiSetting::SidebarShadow),
+            bottom_pill_size: reader_ui_default(ReaderUiSetting::BottomPillSize),
+            bottom_pill_gap: reader_ui_default(ReaderUiSetting::BottomPillGap),
+            back_chip_size: reader_ui_default(ReaderUiSetting::BackChipSize),
+            back_top_gap: reader_ui_default(ReaderUiSetting::BackTopGap),
+            back_side_gap: reader_ui_default(ReaderUiSetting::BackSideGap),
+            dim_strength: reader_ui_default(ReaderUiSetting::DimStrength),
+        };
+        for setting in [
+            ReaderUiSetting::SidebarGap,
+            ReaderUiSetting::LeftSidebarWidth,
+            ReaderUiSetting::RightSidebarWidth,
+            ReaderUiSetting::SidebarRadius,
+            ReaderUiSetting::SidebarPadding,
+            ReaderUiSetting::SidebarShadow,
+            ReaderUiSetting::BottomPillSize,
+            ReaderUiSetting::BottomPillGap,
+            ReaderUiSetting::BackChipSize,
+            ReaderUiSetting::BackTopGap,
+            ReaderUiSetting::BackSideGap,
+            ReaderUiSetting::DimStrength,
+        ] {
+            let saved =
+                catalog.get_pref_i64(reader_ui_pref_key(setting), prefs.get(setting) as i64) as i32;
+            let _ = prefs.set(setting, saved);
+        }
+        prefs
+    }
+
+    fn get(&self, setting: ReaderUiSetting) -> i32 {
+        match setting {
+            ReaderUiSetting::SidebarGap => self.sidebar_gap,
+            ReaderUiSetting::LeftSidebarWidth => self.left_sidebar_width,
+            ReaderUiSetting::RightSidebarWidth => self.right_sidebar_width,
+            ReaderUiSetting::SidebarRadius => self.sidebar_radius,
+            ReaderUiSetting::SidebarPadding => self.sidebar_padding,
+            ReaderUiSetting::SidebarShadow => self.sidebar_shadow,
+            ReaderUiSetting::BottomPillSize => self.bottom_pill_size,
+            ReaderUiSetting::BottomPillGap => self.bottom_pill_gap,
+            ReaderUiSetting::BackChipSize => self.back_chip_size,
+            ReaderUiSetting::BackTopGap => self.back_top_gap,
+            ReaderUiSetting::BackSideGap => self.back_side_gap,
+            ReaderUiSetting::DimStrength => self.dim_strength,
+        }
+    }
+
+    fn set(&mut self, setting: ReaderUiSetting, value: i32) -> bool {
+        let next = clamp_reader_ui_value(setting, value);
+        let slot = match setting {
+            ReaderUiSetting::SidebarGap => &mut self.sidebar_gap,
+            ReaderUiSetting::LeftSidebarWidth => &mut self.left_sidebar_width,
+            ReaderUiSetting::RightSidebarWidth => &mut self.right_sidebar_width,
+            ReaderUiSetting::SidebarRadius => &mut self.sidebar_radius,
+            ReaderUiSetting::SidebarPadding => &mut self.sidebar_padding,
+            ReaderUiSetting::SidebarShadow => &mut self.sidebar_shadow,
+            ReaderUiSetting::BottomPillSize => &mut self.bottom_pill_size,
+            ReaderUiSetting::BottomPillGap => &mut self.bottom_pill_gap,
+            ReaderUiSetting::BackChipSize => &mut self.back_chip_size,
+            ReaderUiSetting::BackTopGap => &mut self.back_top_gap,
+            ReaderUiSetting::BackSideGap => &mut self.back_side_gap,
+            ReaderUiSetting::DimStrength => &mut self.dim_strength,
+        };
+        if *slot == next {
+            return false;
+        }
+        *slot = next;
+        true
+    }
+}
+
+fn reader_settings_pane_name(pane: ReaderSettingsPane) -> &'static str {
+    match pane {
+        ReaderSettingsPane::Reading => "reading",
+        ReaderSettingsPane::Ui => "ui",
+    }
+}
+
+fn reader_ui_pref_key(setting: ReaderUiSetting) -> &'static str {
+    match setting {
+        ReaderUiSetting::SidebarGap => "reader.ui.sidebar_gap_px",
+        ReaderUiSetting::LeftSidebarWidth => "reader.ui.left_sidebar_width_px",
+        ReaderUiSetting::RightSidebarWidth => "reader.ui.right_sidebar_width_px",
+        ReaderUiSetting::SidebarRadius => "reader.ui.sidebar_radius_px",
+        ReaderUiSetting::SidebarPadding => "reader.ui.sidebar_padding_px",
+        ReaderUiSetting::SidebarShadow => "reader.ui.sidebar_shadow_px",
+        ReaderUiSetting::BottomPillSize => "reader.ui.bottom_pill_size_px",
+        ReaderUiSetting::BottomPillGap => "reader.ui.bottom_pill_gap_px",
+        ReaderUiSetting::BackChipSize => "reader.ui.back_chip_size_px",
+        ReaderUiSetting::BackTopGap => "reader.ui.back_top_gap_px",
+        ReaderUiSetting::BackSideGap => "reader.ui.back_side_gap_px",
+        ReaderUiSetting::DimStrength => "reader.ui.dim_strength_pct",
+    }
+}
+
+fn reader_ui_default(setting: ReaderUiSetting) -> i32 {
+    match setting {
+        ReaderUiSetting::SidebarGap => 8,
+        ReaderUiSetting::LeftSidebarWidth => 248,
+        ReaderUiSetting::RightSidebarWidth => 212,
+        ReaderUiSetting::SidebarRadius => 20,
+        ReaderUiSetting::SidebarPadding => 0,
+        ReaderUiSetting::SidebarShadow => 22,
+        ReaderUiSetting::BottomPillSize => 34,
+        ReaderUiSetting::BottomPillGap => 18,
+        ReaderUiSetting::BackChipSize => 32,
+        ReaderUiSetting::BackTopGap => 14,
+        ReaderUiSetting::BackSideGap => 16,
+        ReaderUiSetting::DimStrength => 22,
+    }
+}
+
+fn reader_ui_presets(setting: ReaderUiSetting) -> &'static [(&'static str, i32)] {
+    match setting {
+        ReaderUiSetting::SidebarGap => &UI_PRESETS_SIDEBAR_GAP,
+        ReaderUiSetting::LeftSidebarWidth => &UI_PRESETS_LEFT_WIDTH,
+        ReaderUiSetting::RightSidebarWidth => &UI_PRESETS_RIGHT_WIDTH,
+        ReaderUiSetting::SidebarRadius => &UI_PRESETS_RADIUS,
+        ReaderUiSetting::SidebarPadding => &UI_PRESETS_PADDING,
+        ReaderUiSetting::SidebarShadow => &UI_PRESETS_SHADOW,
+        ReaderUiSetting::BottomPillSize => &UI_PRESETS_PILL_SIZE,
+        ReaderUiSetting::BottomPillGap => &UI_PRESETS_PILL_GAP,
+        ReaderUiSetting::BackChipSize => &UI_PRESETS_BACK_SIZE,
+        ReaderUiSetting::BackTopGap => &UI_PRESETS_BACK_TOP,
+        ReaderUiSetting::BackSideGap => &UI_PRESETS_BACK_SIDE,
+        ReaderUiSetting::DimStrength => &UI_PRESETS_DIM,
+    }
+}
+
+fn clamp_reader_ui_value(setting: ReaderUiSetting, value: i32) -> i32 {
+    match setting {
+        ReaderUiSetting::SidebarGap => value.clamp(0, 36),
+        ReaderUiSetting::LeftSidebarWidth => value.clamp(180, 340),
+        ReaderUiSetting::RightSidebarWidth => value.clamp(160, 320),
+        ReaderUiSetting::SidebarRadius => value.clamp(0, 36),
+        ReaderUiSetting::SidebarPadding => value.clamp(0, 18),
+        ReaderUiSetting::SidebarShadow => value.clamp(8, 40),
+        ReaderUiSetting::BottomPillSize => value.clamp(26, 52),
+        ReaderUiSetting::BottomPillGap => value.clamp(0, 40),
+        ReaderUiSetting::BackChipSize => value.clamp(24, 48),
+        ReaderUiSetting::BackTopGap => value.clamp(0, 40),
+        ReaderUiSetting::BackSideGap => value.clamp(0, 40),
+        ReaderUiSetting::DimStrength => value.clamp(0, 50),
+    }
+}
+
+fn reader_ui_step(setting: ReaderUiSetting) -> i32 {
+    match setting {
+        ReaderUiSetting::SidebarGap => 2,
+        ReaderUiSetting::LeftSidebarWidth => 4,
+        ReaderUiSetting::RightSidebarWidth => 4,
+        ReaderUiSetting::SidebarRadius => 2,
+        ReaderUiSetting::SidebarPadding => 2,
+        ReaderUiSetting::SidebarShadow => 2,
+        ReaderUiSetting::BottomPillSize => 2,
+        ReaderUiSetting::BottomPillGap => 2,
+        ReaderUiSetting::BackChipSize => 2,
+        ReaderUiSetting::BackTopGap => 2,
+        ReaderUiSetting::BackSideGap => 2,
+        ReaderUiSetting::DimStrength => 2,
+    }
+}
+
+fn reader_ui_unit(setting: ReaderUiSetting) -> &'static str {
+    match setting {
+        ReaderUiSetting::DimStrength => "%",
+        _ => "px",
+    }
+}
+
+fn reader_ui_value_text(setting: ReaderUiSetting, value: i32) -> String {
+    format!("{}{}", value, reader_ui_unit(setting))
+}
+
+fn parse_reader_ui_input(text: &str) -> Option<i32> {
+    let digits: String = text.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse().ok()
+    }
+}
+
+fn register_reader_ui_provider(provider: &gtk::CssProvider) {
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
+}
+
+fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
+    let pad = prefs.sidebar_padding;
+    let header_top = 22 + pad;
+    let header_side = 18 + pad;
+    let header_bottom = 16 + (pad / 2);
+    let section_top = 14 + (pad / 2);
+    let section_side = 16 + pad;
+    let section_bottom = 8 + (pad / 2);
+    let divider_side = 16 + pad;
+    let tab_top = 10 + (pad / 2);
+    let tab_side = 10 + (pad / 2);
+    let tab_bottom = 12 + (pad / 2);
+    let filter_top = 10 + (pad / 2);
+    let filter_side = 12 + pad;
+    let filter_bottom = 10 + (pad / 2);
+    let toc_side = 16 + pad;
+    let toc_top = 9 + (pad / 2);
+    let list_side = 14 + pad;
+    let list_top = 12 + (pad / 2);
+    let shadow = prefs.sidebar_shadow;
+    let shadow_y = (shadow / 2).clamp(6, 18);
+    let shadow_blur = (shadow * 2 + 8).clamp(24, 88);
+    let shadow_alpha = (0.20 + shadow as f32 / 100.0).clamp(0.22, 0.55);
+
+    let pill = prefs.bottom_pill_size;
+    let pill_pad_y = ((pill - 22) / 4).clamp(4, 8);
+    let pill_pad_x = ((pill - 14) / 3).clamp(6, 12);
+    let pill_info_pad = ((pill as f32 * 0.34).round() as i32).clamp(10, 18);
+    let pill_icon = (pill / 2).clamp(14, 20);
+    let pill_pages_font = ((pill as f32 * 0.44).round() as i32).clamp(12, 16);
+    let pill_chapter_font = ((pill as f32 * 0.48).round() as i32).clamp(14, 18);
+
+    let back = prefs.back_chip_size;
+    let back_pad_y = ((back - 18) / 2).clamp(5, 10);
+    let back_pad_left = (back_pad_y + 3).clamp(8, 14);
+    let back_pad_right = (back_pad_y + 6).clamp(11, 17);
+    let back_icon = (back / 2).clamp(14, 18);
+    let dim_alpha = prefs.dim_strength as f32 / 100.0;
+
+    format!(
+        r#"
+.kalam-reader-ui-live .kalam-reader-sidebar {{
+    border-radius: {radius}px;
+    box-shadow: 0 {shadow_y}px {shadow_blur}px alpha(#000, {shadow_alpha:.2});
+}}
+
+.kalam-reader-ui-live .kalam-reader-sidebar-left {{
+    min-width: {left_width}px;
+    border-radius: {radius}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-sidebar-right {{
+    min-width: {right_width}px;
+    border-radius: {radius}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-book-head {{
+    padding: {header_top}px {header_side}px {header_bottom}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-section {{
+    padding: {section_top}px {section_side}px {section_bottom}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-panel-divider {{
+    margin-left: {divider_side}px;
+    margin-right: {divider_side}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-tabbar {{
+    padding: {tab_top}px {tab_side}px {tab_bottom}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-filter-row,
+.kalam-reader-ui-live .kalam-reader-search-row {{
+    padding: {filter_top}px {filter_side}px {filter_bottom}px;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-toc-item {{
+    padding: {toc_top}px {toc_side}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-row,
+.kalam-reader-ui-live .kalam-reader-bookmark-row,
+.kalam-reader-ui-live .kalam-reader-word-row {{
+    padding: {list_top}px {list_side}px;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-dim {{
+    background: alpha(@kalam_bg, {dim_alpha:.2});
+}}
+
+.kalam-reader-ui-live .kalam-reader-bottom-pill {{
+    padding: {pill_pad_y}px {pill_pad_x}px;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-pill-nav {{
+    min-width: {pill}px;
+    min-height: {pill}px;
+    padding: 0 {pill_pad_x}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-pill-nav image {{
+    -gtk-icon-size: {pill_icon}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-pill-info {{
+    padding: 0 {pill_info_pad}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-pill-pages {{
+    font-size: {pill_pages_font}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-pill-chapter {{
+    font-size: {pill_chapter_font}px;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-back {{
+    min-height: {back}px;
+    padding: {back_pad_y}px {back_pad_right}px {back_pad_y}px {back_pad_left}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-back image {{
+    -gtk-icon-size: {back_icon}px;
+}}
+"#,
+        radius = prefs.sidebar_radius,
+        shadow_y = shadow_y,
+        shadow_blur = shadow_blur,
+        shadow_alpha = shadow_alpha,
+        left_width = prefs.left_sidebar_width,
+        right_width = prefs.right_sidebar_width,
+        header_top = header_top,
+        header_side = header_side,
+        header_bottom = header_bottom,
+        section_top = section_top,
+        section_side = section_side,
+        section_bottom = section_bottom,
+        divider_side = divider_side,
+        tab_top = tab_top,
+        tab_side = tab_side,
+        tab_bottom = tab_bottom,
+        filter_top = filter_top,
+        filter_side = filter_side,
+        filter_bottom = filter_bottom,
+        toc_top = toc_top,
+        toc_side = toc_side,
+        list_top = list_top,
+        list_side = list_side,
+        dim_alpha = dim_alpha,
+        pill_pad_y = pill_pad_y,
+        pill_pad_x = pill_pad_x,
+        pill = pill,
+        pill_icon = pill_icon,
+        pill_info_pad = pill_info_pad,
+        pill_pages_font = pill_pages_font,
+        pill_chapter_font = pill_chapter_font,
+        back = back,
+        back_pad_y = back_pad_y,
+        back_pad_right = back_pad_right,
+        back_pad_left = back_pad_left,
+        back_icon = back_icon,
+    )
+}
+
+fn apply_reader_ui_prefs(model: &ReaderModel) {
+    let gap = model.ui_prefs.sidebar_gap;
+    if let Some(shell) = &model.left_sidebar_shell {
+        shell.set_margin_start(gap);
+        shell.set_margin_top(gap);
+        shell.set_margin_bottom(gap);
+    }
+    if let Some(shell) = &model.right_sidebar_shell {
+        shell.set_margin_end(gap);
+        shell.set_margin_top(gap);
+        shell.set_margin_bottom(gap);
+    }
+    if let Some(back_dock) = &model.back_dock {
+        back_dock.set_margin_top(model.ui_prefs.back_top_gap);
+        back_dock.set_margin_start(model.ui_prefs.back_side_gap);
+    }
+    if let Some(bottom_dock) = &model.bottom_dock {
+        bottom_dock.set_margin_bottom(model.ui_prefs.bottom_pill_gap);
+    }
+    model
+        .ui_css_provider
+        .load_from_string(&reader_ui_css(model.ui_prefs));
+}
+
+fn update_reader_ui_setting(model: &mut ReaderModel, setting: ReaderUiSetting, value: i32) -> bool {
+    if !model.ui_prefs.set(setting, value) {
+        return false;
+    }
+    model.catalog.set_pref(
+        reader_ui_pref_key(setting),
+        &model.ui_prefs.get(setting).to_string(),
+    );
+    true
+}
+
+fn build_reader_settings_panel(
+    sender: &ComponentSender<ReaderModel>,
+    theme: ReadingTheme,
+    font_px: u32,
+    line_height: f32,
+    column_px: u32,
+    ui_prefs: ReaderUiPrefs,
+) -> ReaderSettingsControls {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
+
+    let switcher = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    switcher.add_css_class("kalam-reader-settings-switcher");
+    switcher.set_margin_all(12);
+    switcher.set_homogeneous(true);
+    let mut pane_buttons = Vec::new();
+    for (label, pane) in [
+        ("Reading", ReaderSettingsPane::Reading),
+        ("UI", ReaderSettingsPane::Ui),
+    ] {
+        let btn = gtk::Button::with_label(label);
+        btn.add_css_class("kalam-reader-settings-switch");
+        let tx = sender.input_sender().clone();
+        btn.connect_clicked(move |_| {
+            let _ = tx.send(ReaderMsg::SwitchSettingsPane(pane));
+        });
+        switcher.append(&btn);
+        pane_buttons.push((pane, btn));
+    }
+    wrap.append(&switcher);
+
+    let stack = gtk::Stack::new();
+    stack.set_hexpand(true);
+    stack.set_vexpand(true);
+    stack.set_transition_type(gtk::StackTransitionType::Crossfade);
+
+    let reading_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let theme_section = reader_settings_section("Reading theme");
+    let dots_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let mut dots = Vec::new();
+    for (label, value, class_name) in [
+        ("Sepia", ReadingTheme::Sepia, "kalam-reader-theme-dot-sepia"),
+        ("Light", ReadingTheme::Light, "kalam-reader-theme-dot-light"),
+        ("Dark", ReadingTheme::Dark, "kalam-reader-theme-dot-dark"),
+        ("Ink", ReadingTheme::Ink, "kalam-reader-theme-dot-ink"),
+    ] {
+        let btn = gtk::Button::new();
+        btn.add_css_class("kalam-reader-theme-dot");
+        btn.add_css_class(class_name);
+        btn.set_tooltip_text(Some(label));
+        let tx = sender.input_sender().clone();
+        btn.connect_clicked(move |_| {
+            let _ = tx.send(ReaderMsg::Theme(value));
+        });
+        dots_row.append(&btn);
+        dots.push((value, btn));
+    }
+    theme_section.append(&dots_row);
+    reading_page.append(&theme_section);
+    reading_page.append(&reader_panel_divider());
+
+    let type_section = reader_settings_section("Type");
+    let font_size_label = gtk::Label::new(Some(&font_px.to_string()));
+    font_size_label.add_css_class("kalam-reader-stepper-value");
+    type_section.append(&reader_stepper_row(
+        "Font size",
+        &font_size_label,
+        sender,
+        ReaderMsg::FontDelta(-1),
+        ReaderMsg::FontDelta(1),
+    ));
+    let line_height_label = gtk::Label::new(Some(&format!("{line_height:.1}")));
+    line_height_label.add_css_class("kalam-reader-stepper-value");
+    type_section.append(&reader_stepper_row(
+        "Line height",
+        &line_height_label,
+        sender,
+        ReaderMsg::LineHeightDelta(-1),
+        ReaderMsg::LineHeightDelta(1),
+    ));
+    reading_page.append(&type_section);
+    reading_page.append(&reader_panel_divider());
+
+    let width_section = reader_settings_section("Column width");
+    let column_width_label = gtk::Label::new(Some(&column_px.to_string()));
+    column_width_label.add_css_class("kalam-reader-stepper-value");
+    width_section.append(&reader_stepper_row(
+        "Width",
+        &column_width_label,
+        sender,
+        ReaderMsg::ColumnWidthDelta(-20),
+        ReaderMsg::ColumnWidthDelta(20),
+    ));
+    reading_page.append(&width_section);
+    stack.add_named(
+        &reading_page,
+        Some(reader_settings_pane_name(ReaderSettingsPane::Reading)),
+    );
+
+    let ui_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    let mut ui_controls = Vec::new();
+
+    let sidebar_section = reader_settings_section("Sidebars");
+    for (title, setting) in [
+        ("Edge gap", ReaderUiSetting::SidebarGap),
+        ("Left width", ReaderUiSetting::LeftSidebarWidth),
+        ("Right width", ReaderUiSetting::RightSidebarWidth),
+        ("Corner radius", ReaderUiSetting::SidebarRadius),
+        ("Inner padding", ReaderUiSetting::SidebarPadding),
+        ("Shadow depth", ReaderUiSetting::SidebarShadow),
+    ] {
+        let (row, controls) =
+            reader_ui_setting_block(title, setting, ui_prefs.get(setting), sender);
+        sidebar_section.append(&row);
+        ui_controls.push((setting, controls));
+    }
+    ui_page.append(&sidebar_section);
+    ui_page.append(&reader_panel_divider());
+
+    let controls_section = reader_settings_section("Floating controls");
+    for (title, setting) in [
+        ("Bottom pill size", ReaderUiSetting::BottomPillSize),
+        ("Bottom gap", ReaderUiSetting::BottomPillGap),
+        ("Back chip size", ReaderUiSetting::BackChipSize),
+        ("Back top gap", ReaderUiSetting::BackTopGap),
+        ("Back side gap", ReaderUiSetting::BackSideGap),
+    ] {
+        let (row, controls) =
+            reader_ui_setting_block(title, setting, ui_prefs.get(setting), sender);
+        controls_section.append(&row);
+        ui_controls.push((setting, controls));
+    }
+    ui_page.append(&controls_section);
+    ui_page.append(&reader_panel_divider());
+
+    let overlay_section = reader_settings_section("Overlay");
+    let (dim_row, dim_controls) = reader_ui_setting_block(
+        "Background dim",
+        ReaderUiSetting::DimStrength,
+        ui_prefs.get(ReaderUiSetting::DimStrength),
+        sender,
+    );
+    overlay_section.append(&dim_row);
+    ui_controls.push((ReaderUiSetting::DimStrength, dim_controls));
+    ui_page.append(&overlay_section);
+    stack.add_named(
+        &ui_page,
+        Some(reader_settings_pane_name(ReaderSettingsPane::Ui)),
+    );
+
+    if theme == ReadingTheme::Sepia {
+        for (_, dot) in &dots {
+            dot.remove_css_class("active");
+        }
+    }
+
+    wrap.append(&stack);
+
+    ReaderSettingsControls {
+        root: wrap,
+        settings_stack: stack,
+        pane_buttons,
+        font_size_label,
+        line_height_label,
+        column_width_label,
+        theme_dots: dots,
+        ui_controls,
+    }
+}
+
+fn reader_ui_setting_block(
+    label: &str,
+    setting: ReaderUiSetting,
+    value: i32,
+    sender: &ComponentSender<ReaderModel>,
+) -> (gtk::Box, ReaderUiSettingControls) {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    wrap.add_css_class("kalam-reader-ui-setting");
+
+    let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    head.add_css_class("kalam-reader-ui-setting-head");
+    let label_widget = gtk::Label::new(Some(label));
+    label_widget.add_css_class("kalam-reader-ui-setting-label");
+    label_widget.set_hexpand(true);
+    label_widget.set_halign(gtk::Align::Start);
+    head.append(&label_widget);
+    wrap.append(&head);
+
+    let presets = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    presets.add_css_class("kalam-reader-ui-preset-row");
+    presets.set_homogeneous(true);
+    let preset_size_group = gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal);
+    let mut preset_buttons = Vec::new();
+    for &(preset_label, preset_value) in reader_ui_presets(setting) {
+        let btn = gtk::Button::with_label(preset_label);
+        btn.add_css_class("kalam-reader-filter-chip");
+        btn.add_css_class("kalam-reader-ui-preset");
+        preset_size_group.add_widget(&btn);
+        let tx = sender.input_sender().clone();
+        btn.connect_clicked(move |_| {
+            let _ = tx.send(ReaderMsg::SetUiSetting(setting, preset_value));
+        });
+        presets.append(&btn);
+        preset_buttons.push((preset_value, btn));
+    }
+    wrap.append(&presets);
+
+    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    controls.add_css_class("kalam-reader-ui-control-row");
+
+    let value_entry = gtk::Entry::new();
+    value_entry.add_css_class("kalam-reader-ui-value-entry");
+    value_entry.set_input_purpose(gtk::InputPurpose::Digits);
+    value_entry.set_width_chars(4);
+    value_entry.set_max_length(4);
+    value_entry.set_text(&value.to_string());
+    let last_value = Rc::new(RefCell::new(value));
+
+    let custom_button = gtk::Button::with_label("Custom");
+    custom_button.add_css_class("kalam-reader-filter-chip");
+    custom_button.add_css_class("kalam-reader-ui-preset");
+    custom_button.add_css_class("kalam-reader-ui-preset-custom");
+    custom_button.set_focus_on_click(false);
+    preset_size_group.add_widget(&custom_button);
+    let value_entry_for_focus = value_entry.clone();
+    custom_button.connect_clicked(move |_| {
+        value_entry_for_focus.grab_focus();
+    });
+    controls.append(&custom_button);
+
+    let minus = gtk::Button::new();
+    minus.add_css_class("kalam-reader-stepper-btn");
+    minus.set_size_request(30, 30);
+    minus.set_halign(gtk::Align::Center);
+    minus.set_valign(gtk::Align::Center);
+    minus.set_child(Some(&crate::icons::symbolic_with_classes(
+        "list-remove-symbolic",
+        14,
+        &["kalam-inline-icon"],
+    )));
+    let tx = sender.input_sender().clone();
+    minus.connect_clicked(move |_| {
+        let _ = tx.send(ReaderMsg::AdjustUiSetting(
+            setting,
+            -reader_ui_step(setting),
+        ));
+    });
+    controls.append(&minus);
+
+    let value_inline = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    value_inline.append(&value_entry);
+    let unit_label = gtk::Label::new(Some(reader_ui_unit(setting)));
+    unit_label.add_css_class("kalam-reader-ui-unit");
+    value_inline.append(&unit_label);
+    controls.append(&value_inline);
+
+    let plus = gtk::Button::new();
+    plus.add_css_class("kalam-reader-stepper-btn");
+    plus.set_size_request(30, 30);
+    plus.set_halign(gtk::Align::Center);
+    plus.set_valign(gtk::Align::Center);
+    plus.set_child(Some(&crate::icons::symbolic_with_classes(
+        "list-add-symbolic",
+        14,
+        &["kalam-inline-icon"],
+    )));
+    let tx = sender.input_sender().clone();
+    plus.connect_clicked(move |_| {
+        let _ = tx.send(ReaderMsg::AdjustUiSetting(setting, reader_ui_step(setting)));
+    });
+    controls.append(&plus);
+    wrap.append(&controls);
+
+    let tx = sender.input_sender().clone();
+    let last_value_for_activate = last_value.clone();
+    value_entry.connect_activate(move |entry| {
+        if let Some(next) = parse_reader_ui_input(entry.text().as_str()) {
+            let _ = tx.send(ReaderMsg::SetUiSetting(setting, next));
+        } else {
+            entry.set_text(&last_value_for_activate.borrow().to_string());
+        }
+    });
+
+    let tx = sender.input_sender().clone();
+    let last_value_for_focus = last_value.clone();
+    value_entry.connect_has_focus_notify(move |entry| {
+        if entry.has_focus() {
+            return;
+        }
+        if let Some(next) = parse_reader_ui_input(entry.text().as_str()) {
+            let _ = tx.send(ReaderMsg::SetUiSetting(setting, next));
+        } else {
+            entry.set_text(&last_value_for_focus.borrow().to_string());
+        }
+    });
+
+    (
+        wrap,
+        ReaderUiSettingControls {
+            value_entry,
+            last_value,
+            preset_buttons,
+            custom_button,
+        },
+    )
+}
+
+fn reader_settings_section(label: &str) -> gtk::Box {
+    let section = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    section.add_css_class("kalam-reader-section");
+    let heading = gtk::Label::new(Some(label));
+    heading.add_css_class("kalam-reader-section-label");
+    heading.set_halign(gtk::Align::Start);
+    section.append(&heading);
+    section
+}
+
+fn reader_stepper_row(
+    label: &str,
+    value_label: &gtk::Label,
+    sender: &ComponentSender<ReaderModel>,
+    minus_msg: ReaderMsg,
+    plus_msg: ReaderMsg,
+) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row.add_css_class("kalam-reader-setting-row");
+
+    let label_widget = gtk::Label::new(Some(label));
+    label_widget.add_css_class("kalam-reader-setting-name");
+    label_widget.set_hexpand(true);
+    label_widget.set_halign(gtk::Align::Start);
+    row.append(&label_widget);
+
+    let stepper = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    stepper.add_css_class("kalam-reader-stepper");
+
+    let minus = gtk::Button::new();
+    minus.add_css_class("kalam-reader-stepper-btn");
+    minus.set_size_request(30, 30);
+    minus.set_halign(gtk::Align::Center);
+    minus.set_valign(gtk::Align::Center);
+    minus.set_child(Some(&crate::icons::symbolic_with_classes(
+        "list-remove-symbolic",
+        14,
+        &["kalam-inline-icon"],
+    )));
+    let s = sender.clone();
+    minus.connect_clicked(move |_| s.input(minus_msg.clone()));
+    stepper.append(&minus);
+
+    stepper.append(value_label);
+
+    let plus = gtk::Button::new();
+    plus.add_css_class("kalam-reader-stepper-btn");
+    plus.set_size_request(30, 30);
+    plus.set_halign(gtk::Align::Center);
+    plus.set_valign(gtk::Align::Center);
+    plus.set_child(Some(&crate::icons::symbolic_with_classes(
+        "list-add-symbolic",
+        14,
+        &["kalam-inline-icon"],
+    )));
+    let s = sender.clone();
+    plus.connect_clicked(move |_| s.input(plus_msg.clone()));
+    stepper.append(&plus);
+
+    row.append(&stepper);
+    row
+}
+
+fn reader_panel_divider() -> gtk::Separator {
+    let sep = gtk::Separator::new(gtk::Orientation::Horizontal);
+    sep.add_css_class("kalam-reader-panel-divider");
+    sep
+}
+
+fn build_highlights_panel(
+    sender: &ComponentSender<ReaderModel>,
+    _active: HighlightFilter,
+    list: &gtk::Box,
+) -> (gtk::Box, Vec<(HighlightFilter, gtk::Button)>) {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
+
+    let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    chips.add_css_class("kalam-reader-filter-row");
+    chips.set_margin_top(10);
+    chips.set_margin_start(12);
+    chips.set_margin_end(12);
+    chips.set_margin_bottom(10);
+
+    let mut buttons = Vec::new();
+    for (label, filter, class_name) in [
+        ("All", HighlightFilter::All, None),
+        (
+            "Yellow",
+            HighlightFilter::Yellow,
+            Some("kalam-reader-filter-yellow"),
+        ),
+        (
+            "Green",
+            HighlightFilter::Green,
+            Some("kalam-reader-filter-green"),
+        ),
+        (
+            "Blue",
+            HighlightFilter::Blue,
+            Some("kalam-reader-filter-blue"),
+        ),
+        (
+            "Pink",
+            HighlightFilter::Pink,
+            Some("kalam-reader-filter-pink"),
+        ),
+        (
+            "Orange",
+            HighlightFilter::Orange,
+            Some("kalam-reader-filter-orange"),
+        ),
+        ("Quotes", HighlightFilter::Quotes, None),
+    ] {
+        let btn = gtk::Button::with_label(label);
+        btn.add_css_class("kalam-reader-filter-chip");
+        if let Some(class_name) = class_name {
+            btn.add_css_class(class_name);
+        }
+        let s = sender.clone();
+        btn.connect_clicked(move |_| s.input(ReaderMsg::SetHighlightFilter(filter)));
+        chips.append(&btn);
+        buttons.push((filter, btn));
+    }
+    wrap.append(&chips);
+
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .hexpand(true)
+        .vexpand(true)
+        .child(list)
+        .build();
+    scroll.add_css_class("kalam-reader-panel-scroll");
+    wrap.append(&scroll);
+
+    (wrap, buttons)
+}
+
+fn build_bookmarks_panel(sender: &ComponentSender<ReaderModel>, list: &gtk::Box) -> gtk::Box {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
+
+    let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    actions.set_margin_all(12);
+    let add_btn = gtk::Button::new();
+    add_btn.set_child(Some(&crate::icons::labelled(
+        "bookmark-new-symbolic",
+        16,
+        "Add current place",
+        6,
+    )));
+    add_btn.add_css_class("kalam-btn-tonal");
+    let s = sender.clone();
+    add_btn.connect_clicked(move |_| s.input(ReaderMsg::AddBookmark));
+    actions.append(&add_btn);
+    wrap.append(&actions);
+
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .hexpand(true)
+        .vexpand(true)
+        .child(list)
+        .build();
+    scroll.add_css_class("kalam-reader-panel-scroll");
+    wrap.append(&scroll);
+    wrap
+}
+
+fn build_words_panel(
+    sender: &ComponentSender<ReaderModel>,
+    _scope: WordScope,
+    list: &gtk::Box,
+) -> (gtk::Box, Vec<(WordScope, gtk::Button)>, gtk::SearchEntry) {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
+
+    let search_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    search_row.add_css_class("kalam-reader-search-row");
+    search_row.set_margin_all(12);
+    let search = gtk::SearchEntry::new();
+    search.set_placeholder_text(Some("Look up a word…"));
+    search.set_hexpand(true);
+    search.add_css_class("kalam-reader-search");
+    let s = sender.clone();
+    search.connect_search_changed(move |entry| {
+        s.input(ReaderMsg::DictSearch(entry.text().to_string()));
+    });
+    search_row.append(&search);
+    wrap.append(&search_row);
+
+    let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    chips.add_css_class("kalam-reader-filter-row");
+    chips.set_margin_start(12);
+    chips.set_margin_end(12);
+    chips.set_margin_bottom(10);
+    let mut buttons = Vec::new();
+    for (label, scope) in [
+        ("Chapter", WordScope::Chapter),
+        ("This book", WordScope::Book),
+        ("All", WordScope::All),
+    ] {
+        let btn = gtk::Button::with_label(label);
+        btn.add_css_class("kalam-reader-filter-chip");
+        let s = sender.clone();
+        btn.connect_clicked(move |_| s.input(ReaderMsg::SetWordScope(scope)));
+        chips.append(&btn);
+        buttons.push((scope, btn));
+    }
+    wrap.append(&chips);
+
+    let scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vscrollbar_policy(gtk::PolicyType::Automatic)
+        .hexpand(true)
+        .vexpand(true)
+        .child(list)
+        .build();
+    scroll.add_css_class("kalam-reader-panel-scroll");
+    wrap.append(&scroll);
+
+    (wrap, buttons, search)
+}
+
+fn sync_reader_stacks(model: &ReaderModel) {
+    model
+        .left_stack
+        .set_visible_child_name(match model.left_tab {
+            LeftSidebarTab::Toc => "toc",
+            LeftSidebarTab::Settings => "settings",
+        });
+    model
+        .right_stack
+        .set_visible_child_name(match model.right_tab {
+            RightSidebarTab::Highlights => "highlights",
+            RightSidebarTab::Bookmarks => "bookmarks",
+            RightSidebarTab::Words => "words",
+        });
+    model
+        .settings_stack
+        .set_visible_child_name(reader_settings_pane_name(model.settings_pane));
+}
+
+fn sync_reader_controls(model: &ReaderModel) {
+    model.font_size_label.set_label(&model.font_px.to_string());
+    model
+        .line_height_label
+        .set_label(&format!("{:.1}", model.line_height));
+    model
+        .column_width_label
+        .set_label(&model.column_px.to_string());
+
+    for (pane, btn) in &model.settings_pane_buttons {
+        toggle_active(btn, *pane == model.settings_pane);
+    }
+    for (theme, btn) in &model.theme_dots {
+        toggle_active(btn, *theme == model.theme);
+    }
+    for (setting, controls) in &model.ui_controls {
+        let value = model.ui_prefs.get(*setting);
+        *controls.last_value.borrow_mut() = value;
+        controls
+            .value_entry
+            .set_tooltip_text(Some(&reader_ui_value_text(*setting, value)));
+        let desired_text = value.to_string();
+        if !controls.value_entry.has_focus() && controls.value_entry.text().as_str() != desired_text
+        {
+            controls.value_entry.set_text(&desired_text);
+        }
+        let mut matched_preset = false;
+        for (preset_value, btn) in &controls.preset_buttons {
+            let active = *preset_value == value;
+            toggle_active(btn, active);
+            matched_preset |= active;
+        }
+        toggle_active(&controls.custom_button, !matched_preset);
+    }
+    for (filter, btn) in &model.highlight_filter_buttons {
+        toggle_active(btn, *filter == model.highlight_filter);
+    }
+    for (scope, btn) in &model.word_scope_buttons {
+        toggle_active(btn, *scope == model.word_scope);
+    }
+}
+
+fn sync_sidebar_tabs(widgets: &ReaderModelWidgets, model: &ReaderModel) {
+    toggle_active(&widgets.left_toc_tab, model.left_tab == LeftSidebarTab::Toc);
+    toggle_active(
+        &widgets.left_settings_tab,
+        model.left_tab == LeftSidebarTab::Settings,
+    );
+    toggle_active(
+        &widgets.right_highlights_tab,
+        model.right_tab == RightSidebarTab::Highlights,
+    );
+    toggle_active(
+        &widgets.right_bookmarks_tab,
+        model.right_tab == RightSidebarTab::Bookmarks,
+    );
+    toggle_active(
+        &widgets.right_words_tab,
+        model.right_tab == RightSidebarTab::Words,
+    );
+}
+
+fn toggle_active(widget: &impl IsA<gtk::Widget>, active: bool) {
+    if active {
+        widget.add_css_class("active");
+    } else {
+        widget.remove_css_class("active");
+    }
+}
+
+fn rebuild_cover_host(host: &gtk::Box, cover_path: Option<&std::path::Path>) {
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+    host.append(&cover_widget(cover_path, 48, 70));
+}
+
+fn update_sidebar_header(
+    widgets: &ReaderModelWidgets,
+    model: &ReaderModel,
+    sender: &ComponentSender<ReaderModel>,
+) {
+    widgets.sidebar_book_title.set_label(&model.book_title);
+    let tx = sender.input_sender().clone();
+    crate::widgets::author_links::replace_author_links(
+        &widgets.sidebar_book_author,
+        &model.book_authors,
+        "kalam-author-link-reader",
+        std::rc::Rc::new(move |name| {
+            let _ = tx.send(ReaderMsg::OpenAuthor(name));
+        }),
+    );
+    widgets
+        .sidebar_progress
+        .set_fraction(model.progress_pct() as f64 / 100.0);
 }
 
 fn update_chrome_labels(widgets: &ReaderModelWidgets, model: &ReaderModel) {
     if model.open.chapter_count() == 0 {
-        widgets.crumb_label.set_label(&model.book_title);
-        widgets.chapter_label.set_label("—");
+        widgets.progress_label.set_label("—");
+        widgets.pill_chapter_label.set_label(&model.book_title);
         return;
     }
-    widgets.crumb_label.set_label(&format!(
-        "{} · {}",
-        model.book_title, model.open.spine[model.chapter].title
-    ));
-    widgets.chapter_label.set_label(&format!(
-        "{}/{}",
+    widgets.progress_label.set_label(&format!(
+        "{} / {}",
         model.chapter + 1,
         model.open.chapter_count()
     ));
+    widgets
+        .pill_chapter_label
+        .set_label(model.current_chapter_title());
+}
+
+fn sync_reader_stage_theme(stage: &gtk::Box, theme: ReadingTheme) {
+    for class_name in [
+        "kalam-reader-paper-light",
+        "kalam-reader-paper-sepia",
+        "kalam-reader-paper-dark",
+        "kalam-reader-paper-ink",
+    ] {
+        stage.remove_css_class(class_name);
+    }
+    stage.add_css_class(match theme {
+        ReadingTheme::Light => "kalam-reader-paper-light",
+        ReadingTheme::Sepia => "kalam-reader-paper-sepia",
+        ReadingTheme::Dark => "kalam-reader-paper-dark",
+        ReadingTheme::Ink => "kalam-reader-paper-ink",
+    });
+}
+
+fn rebuild_toc(
+    list: &gtk::Box,
+    open: &OpenBook,
+    current: usize,
+    sender: &ComponentSender<ReaderModel>,
+) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+
+    let active_spine = toc_active_spine_index(open, current);
+    if open.toc.is_empty() {
+        for (idx, item) in open.spine.iter().enumerate() {
+            append_toc_btn(list, &item.title, idx, active_spine, sender);
+        }
+    } else {
+        for entry in &open.toc {
+            if let Some(idx) = entry.spine_index {
+                append_toc_btn(list, &entry.label, idx, active_spine, sender);
+            }
+        }
+    }
+}
+
+fn append_toc_btn(
+    list: &gtk::Box,
+    label: &str,
+    idx: usize,
+    active_spine: Option<usize>,
+    sender: &ComponentSender<ReaderModel>,
+) {
+    let btn = gtk::Button::new();
+    btn.add_css_class("kalam-reader-toc-item");
+    if Some(idx) == active_spine {
+        btn.add_css_class("active");
+    }
+    let title = gtk::Label::new(Some(label));
+    title.set_halign(gtk::Align::Start);
+    title.set_hexpand(true);
+    title.set_wrap(true);
+    title.set_xalign(0.0);
+    btn.set_child(Some(&title));
+    let s = sender.clone();
+    btn.connect_clicked(move |_| s.input(ReaderMsg::TocSelect(idx)));
+    list.append(&btn);
+}
+
+fn toc_active_spine_index(open: &OpenBook, current: usize) -> Option<usize> {
+    if open.toc.is_empty() {
+        if open.spine.is_empty() {
+            None
+        } else {
+            Some(current.min(open.spine.len().saturating_sub(1)))
+        }
+    } else {
+        let visible: Vec<usize> = open
+            .toc
+            .iter()
+            .filter_map(|entry| entry.spine_index)
+            .collect();
+        if visible.is_empty() {
+            None
+        } else {
+            Some(
+                visible
+                    .iter()
+                    .copied()
+                    .rfind(|idx| *idx <= current)
+                    .unwrap_or(visible[0]),
+            )
+        }
+    }
+}
+
+fn append_reader_empty(list: &gtk::Box, text: &str) {
+    let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    wrap.set_hexpand(true);
+    wrap.set_vexpand(true);
+
+    let top_spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    top_spacer.set_vexpand(true);
+    wrap.append(&top_spacer);
+
+    let label = gtk::Label::new(Some(text));
+    label.add_css_class("kalam-reader-empty");
+    label.set_wrap(true);
+    label.set_halign(gtk::Align::Center);
+    label.set_justify(gtk::Justification::Center);
+    label.set_xalign(0.5);
+    wrap.append(&label);
+
+    let bottom_spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    bottom_spacer.set_vexpand(true);
+    wrap.append(&bottom_spacer);
+
+    list.append(&wrap);
+}
+
+fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>) {
+    while let Some(child) = model.highlights_list.first_child() {
+        model.highlights_list.remove(&child);
+    }
+    let annos = model.filtered_annotations();
+    if annos.is_empty() {
+        append_reader_empty(&model.highlights_list, "No highlights yet in this view.");
+        return;
+    }
+
+    for anno in annos.into_iter().take(150) {
+        let outer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        outer.add_css_class("kalam-reader-annotation-row");
+
+        let jump = gtk::Button::new();
+        jump.add_css_class("kalam-reader-list-hit");
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        let bar = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        bar.add_css_class("kalam-reader-annotation-bar");
+        bar.add_css_class(color_bar_class(&anno.color));
+        row.append(&bar);
+
+        let text_col = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        text_col.set_hexpand(true);
+        let text = gtk::Label::new(Some(&anno.text_excerpt));
+        text.add_css_class("kalam-reader-annotation-text");
+        text.set_wrap(true);
+        text.set_xalign(0.0);
+        text.set_halign(gtk::Align::Start);
+        text_col.append(&text);
+        let meta_text = if anno.kind == "quote" {
+            format!(
+                "{} · quote",
+                chapter_label(model, anno.chapter_index as usize)
+            )
+        } else {
+            format!(
+                "{} · {}",
+                chapter_label(model, anno.chapter_index as usize),
+                anno.color
+            )
+        };
+        let meta = gtk::Label::new(Some(&meta_text));
+        meta.add_css_class("kalam-reader-annotation-meta");
+        meta.set_halign(gtk::Align::Start);
+        meta.set_xalign(0.0);
+        text_col.append(&meta);
+        row.append(&text_col);
+        jump.set_child(Some(&row));
+        let ch = anno.chapter_index as usize;
+        let s = sender.clone();
+        jump.connect_clicked(move |_| s.input(ReaderMsg::JumpToChapter(ch)));
+        outer.append(&jump);
+
+        let delete = gtk::Button::new();
+        delete.add_css_class("kalam-btn-icon");
+        delete.add_css_class("danger");
+        delete.set_child(Some(&crate::icons::symbolic_with_classes(
+            "user-trash-symbolic",
+            16,
+            &["kalam-inline-icon"],
+        )));
+        let id = anno.id;
+        let s = sender.clone();
+        delete.connect_clicked(move |_| s.input(ReaderMsg::DeleteAnnotation(id)));
+        outer.append(&delete);
+
+        model.highlights_list.append(&outer);
+    }
+}
+
+fn rebuild_bookmarks_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>) {
+    while let Some(child) = model.bookmarks_list.first_child() {
+        model.bookmarks_list.remove(&child);
+    }
+    if model.bookmarks.is_empty() {
+        append_reader_empty(
+            &model.bookmarks_list,
+            "No marks yet. Use Add current place or press M.",
+        );
+        return;
+    }
+
+    for mark in model.bookmarks.iter().take(150) {
+        let outer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        outer.add_css_class("kalam-reader-bookmark-row");
+
+        let jump = gtk::Button::new();
+        jump.add_css_class("kalam-reader-list-hit");
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        row.append(&crate::icons::symbolic_with_classes(
+            "bookmark-new-symbolic",
+            16,
+            &["kalam-reader-bookmark-icon"],
+        ));
+        let text_col = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        text_col.set_hexpand(true);
+        let title = gtk::Label::new(Some(if mark.label.trim().is_empty() {
+            "Reading mark"
+        } else {
+            &mark.label
+        }));
+        title.add_css_class("kalam-reader-bookmark-title");
+        title.set_halign(gtk::Align::Start);
+        title.set_xalign(0.0);
+        text_col.append(&title);
+        let meta = gtk::Label::new(Some(&format!(
+            "{} · {}%",
+            chapter_label(model, mark.chapter_index as usize),
+            (mark.fraction * 100.0).round() as i64
+        )));
+        meta.add_css_class("kalam-reader-annotation-meta");
+        meta.set_halign(gtk::Align::Start);
+        meta.set_xalign(0.0);
+        text_col.append(&meta);
+        row.append(&text_col);
+        jump.set_child(Some(&row));
+        let ch = mark.chapter_index as usize;
+        let frac = mark.fraction;
+        let s = sender.clone();
+        jump.connect_clicked(move |_| s.input(ReaderMsg::JumpToLocation(ch, frac)));
+        outer.append(&jump);
+
+        let delete = gtk::Button::new();
+        delete.add_css_class("kalam-btn-icon");
+        delete.add_css_class("danger");
+        delete.set_child(Some(&crate::icons::symbolic_with_classes(
+            "user-trash-symbolic",
+            16,
+            &["kalam-inline-icon"],
+        )));
+        let id = mark.id;
+        let s = sender.clone();
+        delete.connect_clicked(move |_| s.input(ReaderMsg::DeleteBookmark(id)));
+        outer.append(&delete);
+
+        model.bookmarks_list.append(&outer);
+    }
+}
+
+fn rebuild_words_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>) {
+    while let Some(child) = model.words_list.first_child() {
+        model.words_list.remove(&child);
+    }
+
+    if !model.dict_query.trim().is_empty() {
+        if model.dict_results.is_empty() {
+            append_reader_empty(
+                &model.words_list,
+                "No matches. Import dictionaries in Settings if needed.",
+            );
+            return;
+        }
+        for entry in model.dict_results.iter().take(40) {
+            let btn = gtk::Button::new();
+            btn.add_css_class("kalam-reader-word-row");
+            let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
+            let title = gtk::Label::new(Some(&entry.word));
+            title.add_css_class("kalam-reader-word-name");
+            title.set_halign(gtk::Align::Start);
+            title.set_xalign(0.0);
+            body.append(&title);
+            let def = gtk::Label::new(Some(&truncate_def(&entry.definition, 180)));
+            def.add_css_class("kalam-reader-word-def");
+            def.set_wrap(true);
+            def.set_xalign(0.0);
+            def.set_halign(gtk::Align::Start);
+            body.append(&def);
+            let meta = gtk::Label::new(Some("Dictionary match"));
+            meta.add_css_class("kalam-reader-word-meta");
+            meta.set_halign(gtk::Align::Start);
+            meta.set_xalign(0.0);
+            body.append(&meta);
+            btn.set_child(Some(&body));
+            let word = entry.word.clone();
+            let s = sender.clone();
+            btn.connect_clicked(move |_| s.input(ReaderMsg::DictSearchSelect(word.clone())));
+            model.words_list.append(&btn);
+        }
+        return;
+    }
+
+    let words = model.filtered_saved_words();
+    if words.is_empty() {
+        append_reader_empty(&model.words_list, "No saved words in this view yet.");
+        return;
+    }
+
+    for word in words.into_iter().take(150) {
+        let btn = gtk::Button::new();
+        btn.add_css_class("kalam-reader-word-row");
+        let body = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        let title = gtk::Label::new(Some(&word.word));
+        title.add_css_class("kalam-reader-word-name");
+        title.set_halign(gtk::Align::Start);
+        title.set_xalign(0.0);
+        body.append(&title);
+        let def = gtk::Label::new(Some(&truncate_def(&word.definition, 180)));
+        def.add_css_class("kalam-reader-word-def");
+        def.set_wrap(true);
+        def.set_xalign(0.0);
+        def.set_halign(gtk::Align::Start);
+        body.append(&def);
+        let meta = gtk::Label::new(Some(&saved_word_meta(model, word)));
+        meta.add_css_class("kalam-reader-word-meta");
+        meta.set_halign(gtk::Align::Start);
+        meta.set_xalign(0.0);
+        body.append(&meta);
+        btn.set_child(Some(&body));
+        let text = word.word.clone();
+        let s = sender.clone();
+        btn.connect_clicked(move |_| s.input(ReaderMsg::DictSearchSelect(text.clone())));
+        model.words_list.append(&btn);
+    }
+}
+
+fn chapter_label(model: &ReaderModel, chapter_index: usize) -> String {
+    if let Some(item) = model.open.spine.get(chapter_index) {
+        item.title.clone()
+    } else {
+        format!("Ch {}", chapter_index + 1)
+    }
+}
+
+fn color_bar_class(color: &str) -> &'static str {
+    match HighlightColor::from_str_lossy(color) {
+        HighlightColor::Yellow => "kalam-reader-bar-yellow",
+        HighlightColor::Green => "kalam-reader-bar-green",
+        HighlightColor::Blue => "kalam-reader-bar-blue",
+        HighlightColor::Pink => "kalam-reader-bar-pink",
+        HighlightColor::Orange => "kalam-reader-bar-orange",
+    }
+}
+
+fn saved_word_meta(model: &ReaderModel, word: &SavedWord) -> String {
+    match word.chapter_index {
+        Some(ch) => format!("{} · saved word", chapter_label(model, ch as usize)),
+        None => "Saved word".into(),
+    }
 }
 
 fn load_chapter(model: &ReaderModel) {
@@ -1198,127 +3309,10 @@ fn load_chapter(model: &ReaderModel) {
         }
         Err(err) => {
             let err_html = format!(
-                "<html><body style='padding:2rem;background:#f4ecd8;\
-color:#3e3226;font-family:Georgia,serif'>\
-<h1>Could not load chapter</h1><pre>{err:#}</pre></body></html>"
+                "<html><body style='padding:2rem;background:#f5f0e8;color:#2c2820;font-family:Georgia,serif'><h1>Could not load chapter</h1><pre>{err:#}</pre></body></html>"
             );
             model.webview.load_html(&err_html, None);
         }
-    }
-}
-
-fn build_toc(list: &gtk::Box, open: &OpenBook, sender: &ComponentSender<ReaderModel>) {
-    while let Some(c) = list.first_child() {
-        list.remove(&c);
-    }
-    if open.toc.is_empty() {
-        for (i, item) in open.spine.iter().enumerate() {
-            append_toc_btn(list, &item.title, i, sender);
-        }
-    } else {
-        for entry in &open.toc {
-            if let Some(idx) = entry.spine_index {
-                append_toc_btn(list, &entry.label, idx, sender);
-            }
-        }
-    }
-}
-
-fn append_toc_btn(list: &gtk::Box, label: &str, idx: usize, sender: &ComponentSender<ReaderModel>) {
-    let btn = gtk::Button::with_label(label);
-    btn.add_css_class("kalam-toc-item");
-    btn.set_halign(gtk::Align::Fill);
-    let s = sender.clone();
-    btn.connect_clicked(move |_| s.input(ReaderMsg::TocSelect(idx)));
-    list.append(&btn);
-}
-
-fn rebuild_anno_list(list: &gtk::Box, annos: &[Annotation], sender: &ComponentSender<ReaderModel>) {
-    while let Some(child) = list.first_child() {
-        list.remove(&child);
-    }
-    if annos.is_empty() {
-        let l = gtk::Label::new(Some(
-            "No highlights or quotes in this book yet. Select text → highlight (color) or save quote (❝).",
-        ));
-        l.add_css_class("kalam-placeholder");
-        l.set_wrap(true);
-        l.set_xalign(0.0);
-        list.append(&l);
-        return;
-    }
-    for a in annos.iter().take(100) {
-        let row = gtk::Box::new(gtk::Orientation::Vertical, 4);
-        row.set_margin_bottom(8);
-        let header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let chap_l = gtk::Label::new(Some(&format!("Ch {} · {}", a.chapter_index + 1, a.color)));
-        chap_l.add_css_class("kalam-muted");
-        chap_l.set_halign(gtk::Align::Start);
-        chap_l.set_hexpand(true);
-        header.append(&chap_l);
-        let del = gtk::Button::with_label("✕");
-        del.add_css_class("kalam-secondary-btn");
-        let id = a.id;
-        let s = sender.clone();
-        del.connect_clicked(move |_| s.input(ReaderMsg::DeleteAnnotation(id)));
-        header.append(&del);
-        row.append(&header);
-
-        let txt = gtk::Label::new(Some(&a.text_excerpt));
-        txt.set_wrap(true);
-        txt.set_xalign(0.0);
-        txt.set_max_width_chars(80);
-        txt.add_css_class("kalam-quote-text");
-        row.append(&txt);
-
-        let jump = gtk::Button::with_label("Jump");
-        jump.add_css_class("kalam-secondary-btn");
-        let ch = a.chapter_index as usize;
-        let s = sender.clone();
-        jump.connect_clicked(move |_| s.input(ReaderMsg::JumpToChapter(ch)));
-        row.append(&jump);
-
-        let sep = gtk::Separator::new(gtk::Orientation::Horizontal);
-        sep.set_margin_top(6);
-        row.append(&sep);
-        list.append(&row);
-    }
-}
-
-fn rebuild_dict_list(
-    list: &gtk::Box,
-    entries: &[crate::db::DictEntry],
-    sender: &ComponentSender<ReaderModel>,
-) {
-    while let Some(child) = list.first_child() {
-        list.remove(&child);
-    }
-    if entries.is_empty() {
-        let l = gtk::Label::new(Some("No matches. Import dict packs in Settings."));
-        l.add_css_class("kalam-placeholder");
-        l.set_wrap(true);
-        list.append(&l);
-        return;
-    }
-    for e in entries.iter().take(20) {
-        let btn = gtk::Button::new();
-        btn.add_css_class("kalam-toc-item");
-        let inner = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        let w = gtk::Label::new(Some(&e.word));
-        w.set_halign(gtk::Align::Start);
-        w.add_css_class("kalam-muted");
-        inner.append(&w);
-        let def = gtk::Label::new(Some(&truncate_def(&e.definition, 120)));
-        def.set_wrap(true);
-        def.set_xalign(0.0);
-        def.set_halign(gtk::Align::Start);
-        def.add_css_class("kalam-placeholder");
-        inner.append(&def);
-        btn.set_child(Some(&inner));
-        let word = e.word.clone();
-        let s = sender.clone();
-        btn.connect_clicked(move |_| s.input(ReaderMsg::DictSearchSelect(word.clone())));
-        list.append(&btn);
     }
 }
 
@@ -1350,12 +3344,10 @@ fn url_decode(s: &str) -> String {
                 if let Ok(byte) = u8::from_str_radix(&hex, 16) {
                     out.push(byte as char);
                     continue;
-                } else {
-                    out.push('%');
-                    out.push(a);
-                    out.push(b);
-                    continue;
                 }
+                out.push('%');
+                out.push(a);
+                out.push(b);
             } else {
                 out.push('%');
                 if let Some(a) = h1 {

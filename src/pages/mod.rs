@@ -2,6 +2,7 @@
 
 pub mod all_books;
 pub mod analytics;
+pub mod author;
 pub mod book;
 pub mod book_float;
 pub mod history;

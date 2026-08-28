@@ -1,6 +1,13 @@
-src/pages/settings.rs:4:5: [1m[91merror[E0432][0m: unresolved import `gtk::glib::IsA`
-src/pages/saved_quotes.rs:339:53: [1m[91merror[E0631][0m: type mismatch in function arguments: expected due to this, found signature defined here
-src/pages/saved_quotes.rs:349:49: [1m[91merror[E0631][0m: type mismatch in function arguments: expected due to this, found signature defined here
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 3 previous errors
---- run 32968543098 ---
+src/app.rs:492:31: [1m[91merror[0m: expected identifier
+src/app.rs:503:31: [1m[91merror[0m: expected identifier
+src/app.rs:692:17: [1m[91merror[E0609][0m: no field `float_scrim` on type `app::AppModelWidgets`: unknown field
+src/app.rs:696:34: [1m[91merror[E0609][0m: no field `float_host` on type `app::AppModelWidgets`: unknown field
+src/app.rs:762:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
+src/app.rs:766:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
+src/app.rs:786:45: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
+src/app.rs:789:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
+src/app.rs:798:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
+src/app.rs:813:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 10 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
+--- run 33149743095 ---
