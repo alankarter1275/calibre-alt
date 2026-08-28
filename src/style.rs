@@ -954,6 +954,10 @@ button.kalam-float-read-more:hover {
     font-size: 0.85rem;
     min-width: 0;
     min-height: 40px;
+    padding-top: 0;
+    padding-right: 18px;
+    padding-bottom: 0;
+    padding-left: 18px;
 }
 
 button.kalam-float-icon-btn {
