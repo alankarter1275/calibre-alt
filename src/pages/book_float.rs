@@ -743,7 +743,9 @@ fn fill(
     widgets.desc_scroll.set_max_content_height(desc_height);
     widgets.desc_scroll.set_height_request(desc_height);
     widgets.footer_spacer.set_height_request(spacer_height);
-    widgets.footer_spacer.set_visible(has_book && spacer_height > 0);
+    widgets
+        .footer_spacer
+        .set_visible(has_book && spacer_height > 0);
     if expanded {
         widgets
             .desc_scroll
