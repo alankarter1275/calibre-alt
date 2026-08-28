@@ -478,7 +478,7 @@ fn return_rating_text(v: f32) -> String {
 }
 
 /// Checklist of manual shelves for one book.
-fn open_shelf_menu(
+pub(crate) fn open_shelf_menu(
     parent: Option<&gtk::Window>,
     catalog: Arc<Catalog>,
     book_id: i64,

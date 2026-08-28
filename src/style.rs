@@ -705,155 +705,256 @@ button.kalam-author-photo-refresh:hover {
     min-width: 0;
 }
 
-/* ── floating book panel (Suwayomi-style) ───────────── */
+/* ── floating book panel ────────────────────────────── */
 window.kalam-float-window {
     background: @kalam_surface;
-    border-radius: 16px;
+    border-radius: 20px;
     border: 1px solid @kalam_border;
-    box-shadow: 0 24px 64px alpha(#000, 0.55);
+    box-shadow: 0 40px 90px alpha(#000, 0.65), 0 8px 24px alpha(#000, 0.35);
 }
 
 .kalam-float {
     background: @kalam_surface;
     padding: 0;
-    min-width: 820px;
-    min-height: 480px;
+    min-width: 700px;
+    min-height: 368px;
 }
 
 .kalam-float-cover-col {
-    background: @kalam_sidebar;
+    background: @kalam_surface_2;
     border-right: 1px solid @kalam_border;
-    padding: 16px 14px 12px 14px;
+    padding: 24px 16px 20px;
 }
 
 .kalam-float-cover-host {
-    border-radius: 10px;
     min-height: 0;
 }
 
-.kalam-float-cover {
-    border-radius: 10px;
+.kalam-float-book-shell {
+    min-width: 110px;
+    min-height: 158px;
 }
 
-.kalam-float-side-actions {
-    margin-top: 10px;
+.kalam-float-book-edge {
+    background: alpha(@kalam_bg, 0.18);
+    border-radius: 5px;
 }
 
-.kalam-float-side-btn {
-    background: transparent;
+.kalam-float-cover.kalam-cover-frame,
+.kalam-float-cover .kalam-cover-img,
+.kalam-float-cover .kalam-cover-placeholder {
+    border-radius: 8px 4px 4px 8px;
+}
+
+.kalam-float-cover.kalam-cover-frame {
+    box-shadow: 0 14px 36px alpha(#000, 0.55);
+}
+
+.kalam-float-progress-wrap {
+    min-width: 0;
+}
+
+.kalam-float-progress-row {
+    min-height: 18px;
+}
+
+.kalam-float-progress-pct {
+    font-family: monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: @kalam_accent;
+}
+
+.kalam-float-progress-loc {
+    font-family: monospace;
+    font-size: 0.66rem;
+    color: @kalam_text_dim;
+}
+
+progressbar.kalam-float-progress {
+    min-height: 3px;
+}
+
+progressbar.kalam-float-progress trough {
+    background: @kalam_border;
     border: none;
+    min-height: 3px;
     border-radius: 999px;
-    color: @kalam_text_dim;
-    padding: 8px 10px;
-    font-size: 0.84rem;
 }
 
-.kalam-float-side-btn:hover {
-    background: @kalam_surface_2;
-    color: @kalam_text;
-}
-
-.kalam-float-right {
-    background: @kalam_surface;
-}
-
-.kalam-float-header {
-    padding: 16px 18px 12px 20px;
-}
-
-.kalam-float-title {
-    font-size: 1.45rem;
-    font-weight: 700;
-    color: @kalam_text;
-}
-
-.kalam-float-close {
-    min-width: 34px;
-    min-height: 34px;
-    padding: 0;
+progressbar.kalam-float-progress progress {
+    background: @kalam_accent;
+    min-height: 3px;
+    min-width: 3px;
     border-radius: 999px;
-    background: transparent;
-    border: none;
-    color: @kalam_text_dim;
-    font-size: 1.05rem;
 }
 
-.kalam-float-close:hover {
-    background: @kalam_surface_2;
-    color: @kalam_text;
+.kalam-float-facts {
+    min-width: 0;
 }
 
-.kalam-float-body {
-    padding: 4px 22px 12px 20px;
+.kalam-float-fact {
+    min-width: 0;
 }
 
-.kalam-float-footer {
-    padding: 10px 20px 16px 20px;
-    border-top: 1px solid @kalam_border;
-}
-
-.kalam-float-read {
-    padding: 11px 26px;
-    font-size: 0.98rem;
-    min-width: 120px;
-}
-
-.kalam-float-desc {
-    font-size: 0.9rem;
-    color: @kalam_text_dim;
-    line-height: 1.5;
-}
-
-.kalam-float-meta-key {
-    font-size: 0.7rem;
+.kalam-float-fact-label {
+    font-size: 0.56rem;
     font-weight: 700;
     letter-spacing: 0.06em;
     color: @kalam_text_dim;
 }
 
-.kalam-float-meta-val {
-    font-size: 0.9rem;
+.kalam-float-fact-val {
+    font-family: monospace;
+    font-size: 0.7rem;
     color: @kalam_text;
 }
 
-.kalam-badge-format {
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    color: @kalam_bg;
-    background: @kalam_success;
+.kalam-float-format-chip {
+    font-family: monospace;
+    font-size: 0.7rem;
+    color: @kalam_text_dim;
+    background: @kalam_bg;
+    border: 1px solid @kalam_border;
     border-radius: 999px;
-    padding: 3px 8px;
+    padding: 3px 10px;
 }
 
-.kalam-badge-unread {
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    color: @kalam_bg;
-    background: @kalam_warning;
-    border-radius: 999px;
-    padding: 3px 8px;
+.kalam-float-right {
+    background: @kalam_surface;
+    min-width: 0;
 }
 
-.kalam-badge-progress {
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    color: @kalam_bg;
-    background: @kalam_accent;
-    border-radius: 999px;
-    padding: 3px 8px;
+.kalam-float-topbar {
+    padding: 18px 20px 0 20px;
 }
 
-.kalam-badge-done {
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
+.kalam-float-title {
+    font-size: 1.28rem;
+    font-weight: 600;
     color: @kalam_text;
+    line-height: 1.2;
+    padding-right: 12px;
+}
+
+.kalam-float-series {
+    font-size: 0.75rem;
+    color: @kalam_text_dim;
+    margin-top: 2px;
+}
+
+button.kalam-float-close {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0;
+    border-radius: 999px;
     background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    color: @kalam_text_dim;
+}
+
+button.kalam-float-close:hover {
+    background: @kalam_border;
+    color: @kalam_text;
+}
+
+.kalam-float-body {
+    padding: 10px 22px 18px 20px;
+}
+
+.kalam-float-rating {
+    margin-top: 2px;
+}
+
+.kalam-float-rating-text {
+    font-size: 0.66rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-float-desc-scroll,
+.kalam-float-desc-scroll viewport {
+    background: transparent;
+    border: none;
+}
+
+.kalam-float-desc {
+    font-size: 0.82rem;
+    line-height: 1.62;
+    color: alpha(@kalam_text, 0.78);
+}
+
+button.kalam-float-read-more {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    color: @kalam_accent;
+    padding: 0;
+    min-width: 0;
+    min-height: 0;
+    font-size: 0.76rem;
+}
+
+button.kalam-float-read-more:hover {
+    color: @kalam_text;
+}
+
+.kalam-float-tags {
+    margin-top: 2px;
+    margin-bottom: 4px;
+}
+
+.kalam-float-actions {
+    margin-top: auto;
+    padding-top: 8px;
+}
+
+.kalam-float-read {
+    padding: 9px 20px;
+    font-size: 0.85rem;
+    min-width: 0;
+}
+
+button.kalam-float-icon-btn {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0;
     border-radius: 999px;
-    padding: 3px 8px;
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    color: @kalam_text;
+}
+
+button.kalam-float-icon-btn:hover {
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+button.kalam-float-icon-btn.active {
+    background: @kalam_accent_dim;
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+button.kalam-float-icon-btn.done-active {
+    background: alpha(@kalam_success, 0.14);
+    border-color: alpha(@kalam_success, 0.44);
+    color: @kalam_success;
+}
+
+button.kalam-float-remove {
+    font-size: 0.78rem;
+    font-weight: 500;
+    background: transparent;
+    color: @kalam_danger;
+    border: 1px solid alpha(@kalam_danger, 0.38);
+    border-radius: 999px;
+    padding: 7px 14px;
+}
+
+button.kalam-float-remove:hover {
+    background: alpha(@kalam_danger, 0.09);
+    border-color: @kalam_danger;
 }
 
 /* ── reader (mockup shell) ───────────────────────────── */

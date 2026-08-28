@@ -1,27 +1,27 @@
-//! Floating book detail — Suwayomi-style panel adapted for ebooks.
+//! Floating book detail — compact book-first panel.
 //!
-//! Tall cover column on the left (full panel height), details on the right,
-//! Read button bottom-right. ✕ / Q / Esc to close.
+//! Cover and reading progress live on the left; story info and actions live on
+//! the right. Clicking the cover opens the full book page. Q / Esc closes.
 
 use crate::db::Catalog;
 use crate::models::Book;
-use crate::widgets::book_row::cover_widget;
+use crate::pages::{book::open_shelf_menu, metadata_editor::open_metadata_editor};
+use crate::widgets::book_row::{cover_widget, invalidate_cover_cache};
+use crate::widgets::charts::star_picker;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
 
+const COVER_W: i32 = 104;
+const COVER_H: i32 = 152;
+const DESC_PREVIEW_CHARS: usize = 300;
+
 #[derive(Debug)]
 pub enum BookFloatOut {
     Close,
-    OpenFullPage {
-        book_id: i64,
-    },
-    OpenReader {
-        book_id: i64,
-    },
-    OpenAuthor {
-        name: String,
-    },
+    OpenFullPage { book_id: i64 },
+    OpenReader { book_id: i64 },
+    OpenAuthor { name: String },
     Deleted {
         #[allow(dead_code)]
         book_id: i64,
@@ -35,11 +35,21 @@ pub enum BookFloatMsg {
     Read,
     OpenAuthor(String),
     Remove,
+    ToggleReadingList,
+    ToggleFinished,
+    SetRating(u8),
+    EditMetadata,
+    ShowShelfMenu,
+    Refresh,
+    ToggleDescription,
 }
 
 pub struct BookFloatModel {
     catalog: Arc<Catalog>,
     book: Option<Book>,
+    in_reading_list: bool,
+    finished: bool,
+    desc_expanded: bool,
 }
 
 #[relm4::component(pub)]
@@ -57,47 +67,126 @@ impl Component for BookFloatModel {
             set_hexpand: true,
             set_vexpand: true,
 
-            // ── LEFT: fixed-width cover column ───────────────────
             #[name = "cover_col"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 add_css_class: "kalam-float-cover-col",
-                set_vexpand: true,
+                set_spacing: 16,
                 set_hexpand: false,
+                set_vexpand: true,
+                set_halign: gtk::Align::Fill,
                 set_valign: gtk::Align::Fill,
 
                 #[name = "cover_host"]
                 gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
                     add_css_class: "kalam-float-cover-host",
-                    set_vexpand: true,
-                    set_hexpand: true,
-                    set_halign: gtk::Align::Fill,
-                    set_valign: gtk::Align::Fill,
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_halign: gtk::Align::Center,
                 },
 
-                // Side actions under cover (like Suwayomi left rail)
+                #[name = "progress_wrap"]
                 gtk::Box {
+                    add_css_class: "kalam-float-progress-wrap",
                     set_orientation: gtk::Orientation::Vertical,
-                    add_css_class: "kalam-float-side-actions",
-                    set_spacing: 4,
+                    set_spacing: 5,
 
-                    gtk::Button {
-                        set_label: "  Open full page",
-                        add_css_class: "kalam-float-side-btn",
-                        set_halign: gtk::Align::Fill,
-                        connect_clicked => BookFloatMsg::OpenFull,
+                    gtk::Box {
+                        add_css_class: "kalam-float-progress-row",
+                        set_orientation: gtk::Orientation::Horizontal,
+
+                        #[name = "progress_pct"]
+                        gtk::Label {
+                            add_css_class: "kalam-float-progress-pct",
+                            set_halign: gtk::Align::Start,
+                            set_hexpand: true,
+                            set_xalign: 0.0,
+                        },
+
+                        #[name = "progress_loc"]
+                        gtk::Label {
+                            add_css_class: "kalam-float-progress-loc",
+                            set_halign: gtk::Align::End,
+                            set_xalign: 1.0,
+                        },
                     },
-                    gtk::Button {
-                        set_label: "  Remove",
-                        add_css_class: "kalam-float-side-btn",
-                        set_halign: gtk::Align::Fill,
-                        connect_clicked => BookFloatMsg::Remove,
+
+                    #[name = "progress_bar"]
+                    gtk::ProgressBar {
+                        add_css_class: "kalam-float-progress",
+                        set_hexpand: true,
+                        set_show_text: false,
+                    },
+                },
+
+                #[name = "left_meta"]
+                gtk::Box {
+                    add_css_class: "kalam-float-facts",
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 8,
+
+                    gtk::Box {
+                        add_css_class: "kalam-float-fact",
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 1,
+
+                        gtk::Label {
+                            set_label: "FORMAT",
+                            add_css_class: "kalam-float-fact-label",
+                            set_halign: gtk::Align::Start,
+                            set_xalign: 0.0,
+                        },
+
+                        #[name = "format_val"]
+                        gtk::Label {
+                            add_css_class: "kalam-float-format-chip",
+                            set_halign: gtk::Align::Start,
+                            set_xalign: 0.0,
+                        },
+                    },
+
+                    gtk::Box {
+                        add_css_class: "kalam-float-fact",
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 1,
+
+                        gtk::Label {
+                            set_label: "PUBLISHER · YEAR",
+                            add_css_class: "kalam-float-fact-label",
+                            set_halign: gtk::Align::Start,
+                            set_xalign: 0.0,
+                        },
+
+                        #[name = "publisher_val"]
+                        gtk::Label {
+                            add_css_class: "kalam-float-fact-val",
+                            set_halign: gtk::Align::Start,
+                            set_wrap: true,
+                            set_xalign: 0.0,
+                        },
+                    },
+
+                    gtk::Box {
+                        add_css_class: "kalam-float-fact",
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 1,
+
+                        gtk::Label {
+                            set_label: "ADDED",
+                            add_css_class: "kalam-float-fact-label",
+                            set_halign: gtk::Align::Start,
+                            set_xalign: 0.0,
+                        },
+
+                        #[name = "added_val"]
+                        gtk::Label {
+                            add_css_class: "kalam-float-fact-val",
+                            set_halign: gtk::Align::Start,
+                            set_xalign: 0.0,
+                        },
                     },
                 },
             },
 
-            // ── RIGHT: details ───────────────────────────────────
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 add_css_class: "kalam-float-right",
@@ -105,18 +194,38 @@ impl Component for BookFloatModel {
                 set_vexpand: true,
                 set_spacing: 0,
 
-                // Header: title + ✕
                 gtk::Box {
+                    add_css_class: "kalam-float-topbar",
                     set_orientation: gtk::Orientation::Horizontal,
-                    add_css_class: "kalam-float-header",
                     set_spacing: 12,
 
-                    #[name = "header_title"]
-                    gtk::Label {
-                        add_css_class: "kalam-float-title",
-                        set_halign: gtk::Align::Start,
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
+                        set_spacing: 2,
                         set_hexpand: true,
-                        set_ellipsize: gtk::pango::EllipsizeMode::End,
+
+                        #[name = "header_title"]
+                        gtk::Label {
+                            add_css_class: "kalam-float-title",
+                            add_css_class: "kalam-title-serif",
+                            set_halign: gtk::Align::Start,
+                            set_wrap: true,
+                            set_xalign: 0.0,
+                        },
+
+                        #[name = "author_val"]
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            set_halign: gtk::Align::Start,
+                        },
+
+                        #[name = "series_val"]
+                        gtk::Label {
+                            add_css_class: "kalam-float-series",
+                            set_halign: gtk::Align::Start,
+                            set_wrap: true,
+                            set_xalign: 0.0,
+                        },
                     },
 
                     gtk::Button {
@@ -131,127 +240,131 @@ impl Component for BookFloatModel {
                     },
                 },
 
-                gtk::ScrolledWindow {
+                gtk::Box {
+                    add_css_class: "kalam-float-body",
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 10,
                     set_hexpand: true,
                     set_vexpand: true,
-                    set_hscrollbar_policy: gtk::PolicyType::Never,
-                    set_propagate_natural_height: true,
 
+                    #[name = "rating_host"]
                     gtk::Box {
-                        set_orientation: gtk::Orientation::Vertical,
-                        add_css_class: "kalam-float-body",
-                        set_spacing: 12,
-                        set_hexpand: true,
+                        add_css_class: "kalam-float-rating",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 8,
+                        set_halign: gtk::Align::Start,
+                    },
 
-                        #[name = "badges"]
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Horizontal,
-                            set_spacing: 6,
-                            set_halign: gtk::Align::Start,
-                        },
+                    #[name = "desc_scroll"]
+                    gtk::ScrolledWindow {
+                        add_css_class: "kalam-float-desc-scroll",
+                        set_hexpand: true,
+                        set_vexpand: true,
+                        set_hscrollbar_policy: gtk::PolicyType::Never,
 
                         #[name = "description"]
                         gtk::Label {
                             add_css_class: "kalam-float-desc",
+                            add_css_class: "kalam-title-serif-italic",
                             set_halign: gtk::Align::Start,
+                            set_valign: gtk::Align::Start,
                             set_wrap: true,
                             set_xalign: 0.0,
-                            set_max_width_chars: 56,
-                        },
-
-                        #[name = "tags"]
-                        gtk::FlowBox {
-                            set_selection_mode: gtk::SelectionMode::None,
-                            set_max_children_per_line: 8,
-                            set_min_children_per_line: 2,
-                            set_column_spacing: 6,
-                            set_row_spacing: 6,
-                            set_halign: gtk::Align::Start,
-                        },
-
-                        gtk::Grid {
-                            set_column_spacing: 28,
-                            set_row_spacing: 8,
-                            set_margin_top: 8,
-
-                            attach[0, 0, 1, 1] = &gtk::Label {
-                                set_label: "STATUS",
-                                add_css_class: "kalam-float-meta-key",
-                                set_halign: gtk::Align::Start,
-                            },
-                            #[name = "status_val"]
-                            attach[1, 0, 1, 1] = &gtk::Label {
-                                add_css_class: "kalam-float-meta-val",
-                                set_halign: gtk::Align::Start,
-                            },
-                            attach[2, 0, 1, 1] = &gtk::Label {
-                                set_label: "AUTHOR",
-                                add_css_class: "kalam-float-meta-key",
-                                set_halign: gtk::Align::Start,
-                            },
-                            #[name = "author_val"]
-                            attach[3, 0, 1, 1] = &gtk::Box {
-                                set_orientation: gtk::Orientation::Vertical,
-                                set_halign: gtk::Align::Start,
-                            },
-
-                            attach[0, 1, 1, 1] = &gtk::Label {
-                                set_label: "SERIES",
-                                add_css_class: "kalam-float-meta-key",
-                                set_halign: gtk::Align::Start,
-                            },
-                            #[name = "series_val"]
-                            attach[1, 1, 1, 1] = &gtk::Label {
-                                add_css_class: "kalam-float-meta-val",
-                                set_halign: gtk::Align::Start,
-                                set_ellipsize: gtk::pango::EllipsizeMode::End,
-                                set_max_width_chars: 28,
-                            },
-                            attach[2, 1, 1, 1] = &gtk::Label {
-                                set_label: "FORMAT",
-                                add_css_class: "kalam-float-meta-key",
-                                set_halign: gtk::Align::Start,
-                            },
-                            #[name = "format_val"]
-                            attach[3, 1, 1, 1] = &gtk::Label {
-                                add_css_class: "kalam-float-meta-val",
-                                set_halign: gtk::Align::Start,
-                            },
-
-                            attach[0, 2, 1, 1] = &gtk::Label {
-                                set_label: "ADDED",
-                                add_css_class: "kalam-float-meta-key",
-                                set_halign: gtk::Align::Start,
-                            },
-                            #[name = "added_val"]
-                            attach[1, 2, 1, 1] = &gtk::Label {
-                                add_css_class: "kalam-float-meta-val",
-                                set_halign: gtk::Align::Start,
-                            },
+                            set_selectable: true,
                         },
                     },
-                },
 
-                // Footer: Read bottom-right
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    add_css_class: "kalam-float-footer",
+                    #[name = "read_more_btn"]
+                    gtk::Button {
+                        add_css_class: "kalam-float-read-more",
+                        set_halign: gtk::Align::Start,
+                        connect_clicked => BookFloatMsg::ToggleDescription,
+                    },
+
+                    #[name = "tags"]
+                    gtk::FlowBox {
+                        add_css_class: "kalam-float-tags",
+                        set_selection_mode: gtk::SelectionMode::None,
+                        set_column_spacing: 6,
+                        set_row_spacing: 6,
+                        set_halign: gtk::Align::Start,
+                        set_max_children_per_line: 8,
+                    },
 
                     gtk::Box {
-                        set_hexpand: true,
-                    },
+                        add_css_class: "kalam-float-actions",
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_spacing: 8,
+                        set_halign: gtk::Align::Fill,
 
-                    gtk::Button {
-                        set_child: Some(&crate::icons::labelled(
-                            "media-playback-start-symbolic",
-                            16,
-                            "Read",
-                            6,
-                        )),
-                        add_css_class: "kalam-primary-btn",
-                        add_css_class: "kalam-float-read",
-                        set_halign: gtk::Align::End,
-                        connect_clicked => BookFloatMsg::Read,
+                        #[name = "read_btn"]
+                        gtk::Button {
+                            set_child: Some(&crate::icons::labelled(
+                                "media-playback-start-symbolic",
+                                16,
+                                "Read",
+                                6,
+                            )),
+                            add_css_class: "kalam-primary-btn",
+                            add_css_class: "kalam-float-read",
+                            set_halign: gtk::Align::Start,
+                            connect_clicked => BookFloatMsg::Read,
+                        },
+
+                        #[name = "tbr_btn"]
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "view-list-symbolic",
+                                16,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-float-icon-btn",
+                            connect_clicked => BookFloatMsg::ToggleReadingList,
+                        },
+
+                        #[name = "shelf_btn"]
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "view-grid-symbolic",
+                                16,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-float-icon-btn",
+                            connect_clicked => BookFloatMsg::ShowShelfMenu,
+                        },
+
+                        #[name = "edit_btn"]
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "document-edit-symbolic",
+                                16,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-float-icon-btn",
+                            connect_clicked => BookFloatMsg::EditMetadata,
+                        },
+
+                        #[name = "finish_btn"]
+                        gtk::Button {
+                            set_child: Some(&crate::icons::symbolic_with_classes(
+                                "object-select-symbolic",
+                                16,
+                                &["kalam-inline-icon"],
+                            )),
+                            add_css_class: "kalam-float-icon-btn",
+                            connect_clicked => BookFloatMsg::ToggleFinished,
+                        },
+
+                        gtk::Box {
+                            set_hexpand: true,
+                        },
+
+                        #[name = "remove_btn"]
+                        gtk::Button {
+                            set_label: "Remove",
+                            add_css_class: "kalam-float-remove",
+                            connect_clicked => BookFloatMsg::Remove,
+                        },
                     },
                 },
             },
@@ -264,12 +377,18 @@ impl Component for BookFloatModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let book = catalog.get_book(book_id).ok().flatten();
-        let model = BookFloatModel { catalog, book };
+        let in_reading_list = catalog.is_in_reading_list(book_id).unwrap_or(false);
+        let finished = catalog.book_finished_at(book_id).ok().flatten().is_some();
+        let model = BookFloatModel {
+            catalog,
+            book,
+            in_reading_list,
+            finished,
+            desc_expanded: false,
+        };
         let widgets = view_output!();
-        // Pin left rail width so the cover never stretches with the window.
-        widgets.cover_col.set_size_request(228, -1);
-        widgets.cover_col.set_hexpand(false);
-        fill(&widgets, model.book.as_ref(), &sender);
+        widgets.cover_col.set_size_request(172, -1);
+        fill(&widgets, &model, &sender);
 
         let key = gtk::EventControllerKey::new();
         let s = sender.clone();
@@ -293,35 +412,36 @@ impl Component for BookFloatModel {
         widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
-        _root: &Self::Root,
+        root: &Self::Root,
     ) {
         match msg {
             BookFloatMsg::Close => {
                 sender.output(BookFloatOut::Close).ok();
             }
             BookFloatMsg::OpenFull => {
-                if let Some(b) = &self.book {
-                    let id = b.id;
+                if let Some(book) = &self.book {
                     sender
-                        .output(BookFloatOut::OpenFullPage { book_id: id })
+                        .output(BookFloatOut::OpenFullPage { book_id: book.id })
                         .ok();
                 }
             }
             BookFloatMsg::Read => {
-                if let Some(b) = &self.book {
-                    let id = b.id;
-                    sender.output(BookFloatOut::OpenReader { book_id: id }).ok();
+                if let Some(book) = &self.book {
+                    sender
+                        .output(BookFloatOut::OpenReader { book_id: book.id })
+                        .ok();
                 }
             }
             BookFloatMsg::OpenAuthor(name) => {
                 sender.output(BookFloatOut::OpenAuthor { name }).ok();
             }
             BookFloatMsg::Remove => {
-                if let Some(b) = &self.book {
-                    let id = b.id;
-                    let title = b.title.clone();
-                    // This panel used to delete in total silence — the card
-                    // simply vanished with no confirmation either way.
+                if let Some(book) = &self.book {
+                    if let Some(path) = &book.cover_path {
+                        invalidate_cover_cache(path);
+                    }
+                    let id = book.id;
+                    let title = book.title.clone();
                     if crate::notify::outcome(
                         self.catalog.delete_book(id),
                         "Book removed",
@@ -333,81 +453,157 @@ impl Component for BookFloatModel {
                     }
                 }
             }
+            BookFloatMsg::ToggleReadingList => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    let title = book.title.clone();
+                    if self.in_reading_list {
+                        if crate::notify::report(
+                            self.catalog.remove_from_reading_list(id),
+                            "Could not update the reading list",
+                        ) {
+                            crate::notify::info("Removed from reading list", &title);
+                        }
+                    } else if crate::notify::report(
+                        self.catalog.add_to_reading_list(id),
+                        "Could not update the reading list",
+                    ) {
+                        crate::notify::success("Added to reading list", &title);
+                    }
+                    self.reload_state(id);
+                }
+            }
+            BookFloatMsg::ToggleFinished => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    let title = book.title.clone();
+                    let becoming = !self.finished;
+                    if crate::notify::report(
+                        self.catalog.set_book_finished(id, becoming),
+                        "Could not update the book",
+                    ) {
+                        if becoming {
+                            crate::notify::success("Marked as finished", &title);
+                        } else {
+                            crate::notify::info("Marked as unread", &title);
+                        }
+                    }
+                    self.reload_state(id);
+                }
+            }
+            BookFloatMsg::SetRating(half_stars) => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    let detail = if half_stars == 0 {
+                        "Rating cleared".to_string()
+                    } else {
+                        format!("{:.1} / 5", half_stars as f32 / 2.0)
+                    };
+                    crate::notify::outcome(
+                        self.catalog.set_book_rating(id, half_stars),
+                        "Rating saved",
+                        &detail,
+                        "Could not save the rating",
+                    );
+                    self.reload_state(id);
+                }
+            }
+            BookFloatMsg::EditMetadata => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    let s = sender.clone();
+                    open_metadata_editor(
+                        root.root()
+                            .and_then(|r| r.downcast::<gtk::Window>().ok())
+                            .as_ref(),
+                        self.catalog.clone(),
+                        id,
+                        move || s.input(BookFloatMsg::Refresh),
+                    );
+                }
+            }
+            BookFloatMsg::ShowShelfMenu => {
+                if let Some(book) = &self.book {
+                    let id = book.id;
+                    let s = sender.clone();
+                    open_shelf_menu(
+                        root.root()
+                            .and_then(|r| r.downcast::<gtk::Window>().ok())
+                            .as_ref(),
+                        self.catalog.clone(),
+                        id,
+                        move || s.input(BookFloatMsg::Refresh),
+                    );
+                }
+            }
+            BookFloatMsg::Refresh => {
+                if let Some(book) = &self.book {
+                    self.reload_state(book.id);
+                }
+            }
+            BookFloatMsg::ToggleDescription => {
+                self.desc_expanded = !self.desc_expanded;
+            }
         }
-        fill(widgets, self.book.as_ref(), &sender);
+
+        fill(widgets, self, &sender);
         self.update_view(widgets, sender);
+    }
+}
+
+impl BookFloatModel {
+    fn reload_state(&mut self, book_id: i64) {
+        self.book = self.catalog.get_book(book_id).ok().flatten();
+        self.in_reading_list = self.catalog.is_in_reading_list(book_id).unwrap_or(false);
+        self.finished = self
+            .catalog
+            .book_finished_at(book_id)
+            .ok()
+            .flatten()
+            .is_some();
     }
 }
 
 fn fill(
     widgets: &BookFloatModelWidgets,
-    book: Option<&Book>,
+    model: &BookFloatModel,
     sender: &ComponentSender<BookFloatModel>,
 ) {
-    while let Some(c) = widgets.cover_host.first_child() {
-        widgets.cover_host.remove(&c);
-    }
-    while let Some(c) = widgets.badges.first_child() {
-        widgets.badges.remove(&c);
-    }
-    while let Some(c) = widgets.tags.first_child() {
-        widgets.tags.remove(&c);
-    }
-    while let Some(c) = widgets.author_val.first_child() {
-        widgets.author_val.remove(&c);
-    }
+    clear_box(&widgets.cover_host);
+    clear_box(&widgets.author_val);
+    clear_flowbox(&widgets.tags);
+    clear_box(&widgets.rating_host);
 
-    let Some(book) = book else {
+    let has_book = model.book.is_some();
+    widgets.read_btn.set_visible(has_book);
+    widgets.tbr_btn.set_visible(has_book);
+    widgets.shelf_btn.set_visible(has_book);
+    widgets.edit_btn.set_visible(has_book);
+    widgets.finish_btn.set_visible(has_book);
+    widgets.remove_btn.set_visible(has_book);
+    widgets.progress_wrap.set_visible(has_book);
+    widgets.left_meta.set_visible(has_book);
+    widgets.rating_host.set_visible(has_book);
+    widgets.desc_scroll.set_visible(has_book);
+    widgets.tags.set_visible(has_book);
+
+    let Some(book) = model.book.as_ref() else {
         widgets.header_title.set_label("Book not found");
+        widgets.series_val.set_visible(false);
         widgets.description.set_label("This book was removed.");
-        let ph = cover_widget(None, 200, 320);
-        ph.add_css_class("kalam-float-cover");
-        widgets.cover_host.append(&ph);
+        widgets.read_more_btn.set_visible(false);
+        widgets.progress_pct.set_label("");
+        widgets.progress_loc.set_label("");
+        widgets.progress_bar.set_fraction(0.0);
+        widgets.format_val.set_label("");
+        widgets.publisher_val.set_label("");
+        widgets.added_val.set_label("");
+        widgets.cover_host.append(&build_cover_display(None, false, sender));
         return;
     };
 
     widgets.header_title.set_label(&book.title);
 
-    // Fixed 1.6:1 portrait cover (same helper as cards).
-    let cover_w = 200;
-    let cover_h = ((cover_w as f64) * 1.6) as i32;
-    let cover = cover_widget(book.cover_path.as_deref(), cover_w, cover_h);
-    cover.add_css_class("kalam-float-cover");
-    cover.set_halign(gtk::Align::Center);
-    widgets.cover_host.append(&cover);
-
-    let fmt = chip(book.format.as_str(), "kalam-badge-format");
-    widgets.badges.append(&fmt);
-
-    let prog = if book.progress == 0 {
-        chip("UNREAD", "kalam-badge-unread")
-    } else if book.progress >= 100 {
-        chip("FINISHED", "kalam-badge-done")
-    } else {
-        chip(&format!("{}% READ", book.progress), "kalam-badge-progress")
-    };
-    widgets.badges.append(&prog);
-
-    let desc = crate::epub::strip_html(&book.description);
-    if desc.trim().is_empty() {
-        widgets.description.set_label("No description.");
-    } else {
-        widgets.description.set_label(&desc);
-    }
-
-    for tag in book.tags.iter().take(12) {
-        let t = chip(tag, "kalam-chip");
-        widgets.tags.insert(&t, -1);
-    }
-
-    let status = if book.progress >= 100 {
-        "Finished"
-    } else if book.progress > 0 {
-        "Reading"
-    } else {
-        "Unread"
-    };
-    widgets.status_val.set_label(status);
     let tx = sender.input_sender().clone();
     crate::widgets::author_links::replace_author_links(
         &widgets.author_val,
@@ -417,16 +613,212 @@ fn fill(
             let _ = tx.send(BookFloatMsg::OpenAuthor(name));
         }),
     );
+
+    if let Some(series) = book.series_display() {
+        widgets.series_val.set_label(&series);
+        widgets.series_val.set_visible(true);
+    } else {
+        widgets.series_val.set_visible(false);
+    }
+
+    widgets.cover_host.append(&build_cover_display(
+        book.cover_path.as_deref(),
+        true,
+        sender,
+    ));
+
+    let progress_fraction = (book.progress as f64 / 100.0).clamp(0.0, 1.0);
+    widgets.progress_bar.set_fraction(progress_fraction);
     widgets
-        .series_val
-        .set_label(book.series.as_deref().unwrap_or("—"));
+        .progress_pct
+        .set_label(&format!("{}%", book.progress.min(100)));
+    widgets
+        .progress_loc
+        .set_label(&progress_location_text(model.catalog.as_ref(), book));
+
     widgets.format_val.set_label(book.format.as_str());
-    let added = book.added_at.split('T').next().unwrap_or(&book.added_at);
-    widgets.added_val.set_label(added);
+    widgets
+        .publisher_val
+        .set_label(&publisher_year_text(book));
+    widgets.added_val.set_label(&short_date(&book.added_at));
+
+    let full_desc = clean_description(book);
+    let (desc_text, can_expand) = description_preview(&full_desc, model.desc_expanded);
+    widgets.description.set_label(&desc_text);
+    widgets.read_more_btn.set_visible(can_expand);
+    widgets
+        .read_more_btn
+        .set_label(if model.desc_expanded { "Show less" } else { "Read more" });
+
+    for tag in book.tags.iter().take(12) {
+        let t = chip(tag, "kalam-chip");
+        widgets.tags.insert(&t, -1);
+    }
+    widgets.tags.set_visible(!book.tags.is_empty());
+
+    let s = sender.clone();
+    widgets
+        .rating_host
+        .append(&star_picker(book.rating, move |v| s.input(BookFloatMsg::SetRating(v))));
+    let rating_text = gtk::Label::new(Some(&rating_text(book)));
+    rating_text.add_css_class("kalam-float-rating-text");
+    rating_text.set_valign(gtk::Align::Center);
+    widgets.rating_host.append(&rating_text);
+
+    sync_action_buttons(widgets, model);
+}
+
+fn build_cover_display(
+    path: Option<&std::path::Path>,
+    clickable: bool,
+    sender: &ComponentSender<BookFloatModel>,
+) -> gtk::Widget {
+    let shell = gtk::Overlay::new();
+    shell.add_css_class("kalam-float-book-shell");
+    shell.set_size_request(COVER_W + 6, COVER_H + 6);
+    shell.set_halign(gtk::Align::Center);
+    shell.set_valign(gtk::Align::Start);
+
+    let edge = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    edge.add_css_class("kalam-float-book-edge");
+    edge.set_size_request(COVER_W, COVER_H);
+    edge.set_halign(gtk::Align::Start);
+    edge.set_valign(gtk::Align::Start);
+    edge.set_margin_start(5);
+    edge.set_margin_top(5);
+    shell.set_child(Some(&edge));
+
+    let cover = cover_widget(path, COVER_W, COVER_H);
+    cover.add_css_class("kalam-float-cover");
+    cover.set_halign(gtk::Align::Start);
+    cover.set_valign(gtk::Align::Start);
+    cover.set_cursor_from_name(Some("pointer"));
+    shell.add_overlay(&cover);
+
+    if clickable {
+        let click = gtk::GestureClick::new();
+        let tx = sender.input_sender().clone();
+        click.connect_released(move |_, _, _, _| {
+            let _ = tx.send(BookFloatMsg::OpenFull);
+        });
+        shell.add_controller(click);
+        shell.set_tooltip_text(Some("Open full details"));
+        shell.set_cursor_from_name(Some("pointer"));
+    }
+
+    shell.upcast()
+}
+
+fn sync_action_buttons(widgets: &BookFloatModelWidgets, model: &BookFloatModel) {
+    widgets.tbr_btn.remove_css_class("active");
+    widgets.finish_btn.remove_css_class("active");
+    widgets.finish_btn.remove_css_class("done-active");
+
+    if model.in_reading_list {
+        widgets.tbr_btn.add_css_class("active");
+        widgets
+            .tbr_btn
+            .set_tooltip_text(Some("Remove from reading list"));
+    } else {
+        widgets.tbr_btn.set_tooltip_text(Some("Add to reading list"));
+    }
+
+    widgets.shelf_btn.set_tooltip_text(Some("Shelves"));
+    widgets.edit_btn.set_tooltip_text(Some("Edit metadata"));
+
+    if model.finished {
+        widgets.finish_btn.add_css_class("active");
+        widgets.finish_btn.add_css_class("done-active");
+        widgets.finish_btn.set_tooltip_text(Some("Mark unread"));
+    } else {
+        widgets.finish_btn.set_tooltip_text(Some("Mark finished"));
+    }
+}
+
+fn progress_location_text(catalog: &Catalog, book: &Book) -> String {
+    if book.progress >= 100 {
+        return "Finished".into();
+    }
+    if let Ok(Some((chapter, _fraction))) = catalog.get_reading_progress(book.id) {
+        return format!("Ch. {}", chapter + 1);
+    }
+    if book.progress > 0 {
+        "In progress".into()
+    } else {
+        "Not started".into()
+    }
+}
+
+fn publisher_year_text(book: &Book) -> String {
+    match (book.publisher.trim(), book.published.trim()) {
+        ("", "") => "—".into(),
+        (publisher, "") => publisher.to_string(),
+        ("", year) => year.to_string(),
+        (publisher, year) => format!("{publisher} · {year}"),
+    }
+}
+
+fn short_date(text: &str) -> String {
+    text.split('T').next().unwrap_or(text).to_string()
+}
+
+fn clean_description(book: &Book) -> String {
+    let desc = crate::epub::strip_html(&book.description);
+    let desc = desc.trim();
+    if desc.is_empty() {
+        "No description.".into()
+    } else {
+        desc.to_string()
+    }
+}
+
+fn description_preview(full: &str, expanded: bool) -> (String, bool) {
+    if full == "No description." || full.chars().count() <= DESC_PREVIEW_CHARS {
+        return (full.to_string(), false);
+    }
+    if expanded {
+        return (full.to_string(), true);
+    }
+    (truncate_text(full, DESC_PREVIEW_CHARS), true)
+}
+
+fn truncate_text(text: &str, max_chars: usize) -> String {
+    let total = text.chars().count();
+    if total <= max_chars {
+        return text.to_string();
+    }
+    let mut out = String::new();
+    for ch in text.chars().take(max_chars) {
+        out.push(ch);
+    }
+    while out.chars().last().is_some_and(char::is_whitespace) {
+        out.pop();
+    }
+    out.push('…');
+    out
+}
+
+fn rating_text(book: &Book) -> String {
+    match book.rating_stars() {
+        Some(v) => format!("{v:.1} / 5"),
+        None => "Not rated yet".into(),
+    }
 }
 
 fn chip(text: &str, class: &str) -> gtk::Label {
     let l = gtk::Label::new(Some(text));
     l.add_css_class(class);
     l
+}
+
+fn clear_box(host: &gtk::Box) {
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+}
+
+fn clear_flowbox(host: &gtk::FlowBox) {
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
 }
