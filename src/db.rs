@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use thiserror::Error;
 
 mod annotations;
+mod authors;
 mod dictionaries;
 mod history;
 mod metadata;
@@ -30,8 +31,9 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// Bumped whenever `migrate()` learns new tables/columns.
 /// v3 = P3 annotations & dictionary · v4 = P4 shelves, lists, history, sessions
 /// · v5 = ratings + reading goals · v6 = publisher/published/series index
-/// · v7 = remembered metadata edits, keyed by file hash.
-pub const SCHEMA_VERSION: i64 = 7;
+/// · v7 = remembered metadata edits, keyed by file hash · v8 = reader bookmarks
+/// · v9 = cached author profiles and aliases.
+pub const SCHEMA_VERSION: i64 = 9;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -84,6 +86,59 @@ pub struct SavedWord {
     pub chapter_index: Option<i64>,
     pub context_text: Option<String>,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct ReadingBookmark {
+    pub id: i64,
+    pub book_id: i64,
+    pub chapter_index: i64,
+    pub fraction: f64,
+    pub label: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct AuthorWork {
+    pub title: String,
+    pub first_publish_year: Option<i64>,
+    pub subjects: Vec<String>,
+    pub cover_id: Option<i64>,
+    #[serde(default)]
+    pub cover_file: Option<String>,
+    pub work_key: String,
+    #[serde(default)]
+    pub series_key: String,
+    #[serde(default)]
+    pub series_name: String,
+    #[serde(default)]
+    pub series_position: String,
+    #[serde(default)]
+    pub rating_average: Option<f32>,
+    #[serde(default)]
+    pub rating_count: i64,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AuthorProfile {
+    pub id: i64,
+    pub canonical_name: String,
+    pub sort_name: String,
+    pub normalized_name: String,
+    pub bio: String,
+    pub birth_date: String,
+    pub death_date: String,
+    pub top_work: String,
+    pub top_subjects: Vec<String>,
+    pub openlibrary_key: String,
+    pub photo_file: Option<String>,
+    pub photo_path: Option<PathBuf>,
+    pub work_count: i64,
+    pub works: Vec<AuthorWork>,
+    pub aliases: Vec<String>,
+    pub fetched_at: String,
+    pub source_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -211,10 +266,10 @@ impl EventKind {
 
     pub fn icon(self) -> &'static str {
         match self {
-            EventKind::Opened => "◷",
-            EventKind::Finished => "✓",
-            EventKind::Unfinished => "↺",
-            EventKind::Imported => "+",
+            EventKind::Opened => "document-open-recent-symbolic",
+            EventKind::Finished => "object-select-symbolic",
+            EventKind::Unfinished => "view-refresh-symbolic",
+            EventKind::Imported => "list-add-symbolic",
         }
     }
 
@@ -443,6 +498,17 @@ impl Catalog {
             );
             CREATE INDEX IF NOT EXISTS idx_saved_words_word ON saved_words(word COLLATE NOCASE);
 
+            CREATE TABLE IF NOT EXISTS reading_bookmarks (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id       INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                chapter_index INTEGER NOT NULL,
+                fraction      REAL    NOT NULL DEFAULT 0.0,
+                label         TEXT    NOT NULL DEFAULT '',
+                created_at    TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_reading_bookmarks_book
+                ON reading_bookmarks(book_id, chapter_index, created_at DESC);
+
             CREATE TABLE IF NOT EXISTS dictionaries (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 name        TEXT    NOT NULL UNIQUE,
@@ -541,6 +607,35 @@ impl Catalog {
                 cover_name   TEXT,
                 updated_at   TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS author_profiles (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                canonical_name    TEXT NOT NULL,
+                sort_name         TEXT NOT NULL DEFAULT '',
+                normalized_name   TEXT NOT NULL UNIQUE,
+                bio               TEXT NOT NULL DEFAULT '',
+                birth_date        TEXT NOT NULL DEFAULT '',
+                death_date        TEXT NOT NULL DEFAULT '',
+                top_work          TEXT NOT NULL DEFAULT '',
+                top_subjects_json TEXT NOT NULL DEFAULT '[]',
+                openlibrary_key   TEXT NOT NULL DEFAULT '',
+                photo_file        TEXT,
+                work_count        INTEGER NOT NULL DEFAULT 0,
+                works_json        TEXT NOT NULL DEFAULT '[]',
+                fetched_at        TEXT NOT NULL DEFAULT '',
+                source_url        TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_author_profiles_name
+                ON author_profiles(canonical_name COLLATE NOCASE);
+
+            CREATE TABLE IF NOT EXISTS author_aliases (
+                author_id         INTEGER NOT NULL REFERENCES author_profiles(id) ON DELETE CASCADE,
+                alias             TEXT NOT NULL,
+                normalized_alias  TEXT NOT NULL UNIQUE,
+                PRIMARY KEY (author_id, normalized_alias)
+            );
+            CREATE INDEX IF NOT EXISTS idx_author_aliases_author
+                ON author_aliases(author_id);
             "#,
         )?;
 
@@ -1040,6 +1135,17 @@ fn row_to_saved_word(row: &rusqlite::Row<'_>) -> rusqlite::Result<SavedWord> {
         chapter_index: row.get(5)?,
         context_text: row.get(6)?,
         created_at: row.get(7)?,
+    })
+}
+
+fn row_to_reading_bookmark(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReadingBookmark> {
+    Ok(ReadingBookmark {
+        id: row.get(0)?,
+        book_id: row.get(1)?,
+        chapter_index: row.get(2)?,
+        fraction: row.get(3)?,
+        label: row.get(4)?,
+        created_at: row.get(5)?,
     })
 }
 
@@ -1616,6 +1722,23 @@ mod tests {
         assert_eq!(quotes.len(), 1);
         assert_eq!(quotes[0].1, "Dune");
         assert_eq!(cat.count_quotes().unwrap(), 1);
+    }
+
+    #[test]
+    fn reading_bookmarks_round_trip() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "Dune", "Herbert", &[]);
+        let mark = cat
+            .insert_reading_bookmark(id, 2, 0.35, "The doors of stone")
+            .unwrap();
+        let all = cat.list_reading_bookmarks(id).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, mark);
+        assert_eq!(all[0].chapter_index, 2);
+        assert!((all[0].fraction - 0.35).abs() < f64::EPSILON);
+        assert_eq!(all[0].label, "The doors of stone");
+        cat.delete_reading_bookmark(mark).unwrap();
+        assert!(cat.list_reading_bookmarks(id).unwrap().is_empty());
     }
 
     #[test]

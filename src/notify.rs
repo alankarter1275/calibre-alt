@@ -37,13 +37,13 @@ pub enum Kind {
 }
 
 impl Kind {
-    /// Nerd Font glyphs, matching the reference design.
+    /// Symbolic icon name from the current GTK icon theme.
     fn icon(self) -> &'static str {
         match self {
-            Kind::Success => "\u{2713}",  // ✓
-            Kind::Error => "\u{26a0}",    // ⚠
-            Kind::Info => "\u{24d8}",     // ⓘ
-            Kind::Progress => "\u{2193}", // ↓
+            Kind::Success => "object-select-symbolic",
+            Kind::Error => "dialog-warning-symbolic",
+            Kind::Info => "dialog-information-symbolic",
+            Kind::Progress => "folder-download-symbolic",
         }
     }
 
@@ -329,8 +329,7 @@ fn build_card(entry: &Entry) -> gtk::Box {
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 14);
     body.add_css_class("kalam-toast-body");
 
-    let icon = gtk::Label::new(Some(entry.kind.icon()));
-    icon.add_css_class("kalam-toast-icon");
+    let icon = crate::icons::symbolic_with_classes(entry.kind.icon(), 17, &["kalam-toast-icon"]);
     icon.set_valign(gtk::Align::Center);
     body.append(&icon);
 

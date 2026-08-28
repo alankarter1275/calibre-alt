@@ -41,14 +41,14 @@ impl NavItem {
 
     pub fn icon(self) -> &'static str {
         match self {
-            NavItem::Home => "⌂",
-            NavItem::Library => "☰",
-            NavItem::Shelves => "▦",
-            NavItem::Downloads => "↓",
-            NavItem::Comics => "▤",
-            NavItem::Ao3 => "A3",
-            NavItem::Fanfiction => "✎",
-            NavItem::Settings => "⚙",
+            NavItem::Home => "go-home-symbolic",
+            NavItem::Library => "folder-documents-symbolic",
+            NavItem::Shelves => "view-grid-symbolic",
+            NavItem::Downloads => "folder-download-symbolic",
+            NavItem::Comics => "image-x-generic-symbolic",
+            NavItem::Ao3 => "internet-web-browser-symbolic",
+            NavItem::Fanfiction => "document-edit-symbolic",
+            NavItem::Settings => "emblem-system-symbolic",
         }
     }
 
@@ -70,6 +70,9 @@ pub enum Route {
     TagBooks {
         tag: String,
     },
+    AuthorPage {
+        author: String,
+    },
     BookPage {
         book_id: i64,
     },
@@ -80,37 +83,12 @@ pub enum Route {
 }
 
 impl Route {
-    pub fn title(&self) -> String {
-        match self {
-            Route::Module(item) => item.label().to_string(),
-            Route::LibrarySection(s) => s.label().to_string(),
-            Route::ShelvesGrid => "Shelves".into(),
-            Route::ShelfDetail { .. } => "Shelf".into(),
-            Route::TagBooks { tag } => tag.clone(),
-            Route::BookPage { .. } => "Book".into(),
-            Route::Reader { .. } => "Reading".into(),
-        }
-    }
-
-    pub fn subtitle(&self) -> Option<String> {
-        match self {
-            Route::Module(NavItem::Home) => Some("Continue where you left off".into()),
-            Route::Module(NavItem::Library) => Some("Catalog, lists, quotes & more".into()),
-            Route::ShelvesGrid => Some("Smart and manual collections".into()),
-            Route::LibrarySection(s) => Some(s.blurb().into()),
-            Route::Module(NavItem::Settings) => Some("Paths and preferences".into()),
-            Route::TagBooks { .. } => Some("Every book with this tag".into()),
-            Route::Reader { .. } => Some("Esc back · T TOC · N/P chapter · A+/A−".into()),
-            _ => None,
-        }
-    }
-
     pub fn sidebar_item(&self) -> NavItem {
         match self {
             Route::Module(item) => *item,
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
-            Route::TagBooks { .. } => NavItem::Library,
+            Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,
             Route::BookPage { .. } | Route::Reader { .. } => NavItem::Library,
         }
     }
@@ -146,40 +124,16 @@ impl LibrarySection {
         LibrarySection::Analytics,
     ];
 
-    pub fn label(self) -> &'static str {
-        match self {
-            LibrarySection::AllBooks => "All books",
-            LibrarySection::ReadingList => "Reading list",
-            LibrarySection::History => "History",
-            LibrarySection::SavedQuotes => "Saved quotes",
-            LibrarySection::SavedWords => "Saved words",
-            LibrarySection::Tags => "Tags",
-            LibrarySection::Analytics => "Analytics",
-        }
-    }
-
     #[allow(dead_code)]
     pub fn icon(self) -> &'static str {
         match self {
-            LibrarySection::AllBooks => "📚",
-            LibrarySection::ReadingList => "📌",
-            LibrarySection::History => "◷",
-            LibrarySection::SavedQuotes => "❝",
-            LibrarySection::SavedWords => "Aa",
-            LibrarySection::Tags => "#",
-            LibrarySection::Analytics => "◔",
-        }
-    }
-
-    pub fn blurb(self) -> &'static str {
-        match self {
-            LibrarySection::AllBooks => "Everything in your library",
-            LibrarySection::ReadingList => "Up next / to be read",
-            LibrarySection::History => "Recently opened and finished",
-            LibrarySection::SavedQuotes => "Lines you saved while reading",
-            LibrarySection::SavedWords => "Vocabulary from the dictionary",
-            LibrarySection::Tags => "Browse by tag",
-            LibrarySection::Analytics => "Light reading stats",
+            LibrarySection::AllBooks => "folder-documents-symbolic",
+            LibrarySection::ReadingList => "view-list-symbolic",
+            LibrarySection::History => "document-open-recent-symbolic",
+            LibrarySection::SavedQuotes => "insert-text-symbolic",
+            LibrarySection::SavedWords => "accessories-dictionary-symbolic",
+            LibrarySection::Tags => "tag-symbolic",
+            LibrarySection::Analytics => "view-bar-symbolic",
         }
     }
 }

@@ -58,7 +58,11 @@ impl Component for SavedQuotesModel {
                     connect_clicked => SavedQuotesMsg::Export,
                 },
                 gtk::Button {
-                    set_label: "↻",
+                    set_child: Some(&crate::icons::symbolic_with_classes(
+                        "view-refresh-symbolic",
+                        16,
+                        &["kalam-inline-icon"],
+                    )),
                     add_css_class: "kalam-secondary-btn",
                     set_tooltip_text: Some("Refresh"),
                     connect_clicked => SavedQuotesMsg::Refresh,
@@ -256,7 +260,12 @@ fn rebuild(
         color_badge.add_css_class(&format!("kalam-badge-{}", anno.color));
         header.append(&color_badge);
 
-        let del_btn = gtk::Button::with_label("✕");
+        let del_btn = gtk::Button::new();
+        del_btn.set_child(Some(&crate::icons::symbolic_with_classes(
+            "window-close-symbolic",
+            16,
+            &["kalam-inline-icon"],
+        )));
         del_btn.add_css_class("kalam-secondary-btn");
         let id = anno.id;
         let s = sender.clone();
@@ -329,6 +338,25 @@ fn rebuild(
 
         list.append(&row);
     }
+}
+
+/// Export every saved quote to `~/Quotes.md`. Shared between this page and
+/// the Settings → Export card, so both always use the same format.
+pub fn export_all_quotes_markdown(
+    catalog: &Arc<Catalog>,
+) -> Result<(usize, std::path::PathBuf), String> {
+    let annos = catalog.list_all_quotes("").map_err(|e| format!("{e}"))?;
+    let mut quotes = Vec::with_capacity(annos.len());
+    for a in annos {
+        let book = catalog.get_book(a.book_id).ok().flatten();
+        quotes.push((a, book));
+    }
+    let markdown = export_quotes_markdown(&quotes);
+    let out_path = dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("Quotes.md");
+    std::fs::write(&out_path, markdown).map_err(|e| format!("{e}"))?;
+    Ok((quotes.len(), out_path))
 }
 
 fn export_quotes_markdown(quotes: &[(Annotation, Option<Book>)]) -> String {

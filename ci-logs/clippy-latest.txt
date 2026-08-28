@@ -1,5 +1,13 @@
-src/notify.rs:388:9: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
-src/notify.rs:389:9: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
-src/notify.rs:400:13: [1m[91merror[E0061][0m: this function takes 4 arguments but 3 arguments were supplied
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
---- run 30319141801 ---
+src/app.rs:492:31: [1m[91merror[0m: expected identifier
+src/app.rs:503:31: [1m[91merror[0m: expected identifier
+src/app.rs:692:17: [1m[91merror[E0609][0m: no field `float_scrim` on type `app::AppModelWidgets`: unknown field
+src/app.rs:696:34: [1m[91merror[E0609][0m: no field `float_host` on type `app::AppModelWidgets`: unknown field
+src/app.rs:762:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
+src/app.rs:766:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
+src/app.rs:786:45: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
+src/app.rs:789:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
+src/app.rs:798:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
+src/app.rs:813:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 10 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
+--- run 33149743095 ---

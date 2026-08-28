@@ -254,7 +254,12 @@ pub fn star_picker(current: u8, on_pick: impl Fn(u8) + 'static) -> gtk::Box {
     }
 
     // Explicit clear, since discovering "click the same star again" is unlikely.
-    let clear = gtk::Button::with_label("\u{2715}");
+    let clear = gtk::Button::new();
+    clear.set_child(Some(&crate::icons::symbolic_with_classes(
+        "window-close-symbolic",
+        14,
+        &["kalam-inline-icon"],
+    )));
     clear.add_css_class("kalam-star-clear");
     clear.set_tooltip_text(Some("Clear rating"));
     clear.set_visible(current > 0);

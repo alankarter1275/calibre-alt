@@ -14,6 +14,9 @@ pub enum BookPageOut {
     #[allow(dead_code)]
     Back,
     OpenReader,
+    OpenAuthor {
+        name: String,
+    },
     Deleted {
         #[allow(dead_code)]
         book_id: i64,
@@ -26,6 +29,7 @@ pub enum BookPageMsg {
     ToggleReadingList,
     ToggleFinished,
     SetRating(u8),
+    OpenAuthor(String),
     EditMetadata,
     ShowShelfMenu,
     Refresh,
@@ -75,9 +79,10 @@ impl Component for BookPageModel {
                         set_wrap: true,
                     },
                     #[name = "author"]
-                    gtk::Label {
-                        add_css_class: "kalam-detail-author",
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Vertical,
                         set_halign: gtk::Align::Start,
+                        set_margin_bottom: 8,
                     },
                     #[name = "series"]
                     gtk::Label {
@@ -246,6 +251,7 @@ impl Component for BookPageModel {
             &widgets.path,
             &widgets.description,
             model.book.as_ref(),
+            &sender,
         );
         model.refresh_p4(&widgets, &sender);
         ComponentParts { model, widgets }
@@ -320,6 +326,9 @@ impl Component for BookPageModel {
                     self.book = self.catalog.get_book(id).ok().flatten();
                 }
             }
+            BookPageMsg::OpenAuthor(name) => {
+                sender.output(BookPageOut::OpenAuthor { name }).ok();
+            }
             BookPageMsg::ToggleFinished => {
                 if let Some(book) = &self.book {
                     let id = book.id;
@@ -386,6 +395,7 @@ impl Component for BookPageModel {
             &widgets.path,
             &widgets.description,
             self.book.as_ref(),
+            &sender,
         );
         self.refresh_p4(widgets, &sender);
         self.update_view(widgets, sender);
@@ -468,7 +478,7 @@ fn return_rating_text(v: f32) -> String {
 }
 
 /// Checklist of manual shelves for one book.
-fn open_shelf_menu(
+pub(crate) fn open_shelf_menu(
     parent: Option<&gtk::Window>,
     catalog: Arc<Catalog>,
     book_id: i64,
@@ -578,19 +588,23 @@ fn fill(
     cover_host: &gtk::Box,
     tags_box: &gtk::Box,
     title: &gtk::Label,
-    author: &gtk::Label,
+    author: &gtk::Box,
     series: &gtk::Label,
     format: &gtk::Label,
     progress: &gtk::Label,
     path: &gtk::Label,
     description: &gtk::Label,
     book: Option<&Book>,
+    sender: &ComponentSender<BookPageModel>,
 ) {
     while let Some(child) = cover_host.first_child() {
         cover_host.remove(&child);
     }
     while let Some(child) = tags_box.first_child() {
         tags_box.remove(&child);
+    }
+    while let Some(child) = author.first_child() {
+        author.remove(&child);
     }
 
     if let Some(book) = book {
@@ -601,7 +615,15 @@ fn fill(
         cover_host.append(&cover);
 
         title.set_label(&book.title);
-        author.set_label(book.authors_display());
+        let tx = sender.input_sender().clone();
+        crate::widgets::author_links::replace_author_links(
+            author,
+            book.authors_display(),
+            "kalam-author-link-detail",
+            std::rc::Rc::new(move |name| {
+                let _ = tx.send(BookPageMsg::OpenAuthor(name));
+            }),
+        );
         // series_display() folds in the index, e.g. "Lord of the Rings #3".
         if let Some(text) = book.series_display() {
             series.set_label(&text);
@@ -635,7 +657,6 @@ fn fill(
         let cover = cover_widget(None, 160, 256);
         cover_host.append(&cover);
         title.set_label("Book not found");
-        author.set_label("");
         series.set_visible(false);
         format.set_label("");
         progress.set_label("");

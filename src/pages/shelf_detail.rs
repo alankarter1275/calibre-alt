@@ -345,7 +345,12 @@ impl ShelfDetailModel {
         let book_id = book.id;
         let sortable = self.sort == SortKey::Added;
 
-        let up = gtk::Button::with_label("↑");
+        let up = gtk::Button::new();
+        up.set_child(Some(&crate::icons::symbolic_with_classes(
+            "go-up-symbolic",
+            16,
+            &["kalam-inline-icon"],
+        )));
         up.add_css_class("kalam-mini-btn");
         up.set_sensitive(sortable);
         up.set_tooltip_text(Some(if sortable {
@@ -368,7 +373,12 @@ impl ShelfDetailModel {
         }
         row.append(&up);
 
-        let down = gtk::Button::with_label("↓");
+        let down = gtk::Button::new();
+        down.set_child(Some(&crate::icons::symbolic_with_classes(
+            "go-down-symbolic",
+            16,
+            &["kalam-inline-icon"],
+        )));
         down.add_css_class("kalam-mini-btn");
         down.set_sensitive(sortable);
         down.set_tooltip_text(Some("Move down"));

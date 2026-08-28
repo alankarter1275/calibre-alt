@@ -235,4 +235,44 @@ impl Catalog {
         conn.execute("DELETE FROM saved_words WHERE id = ?1", params![id])?;
         Ok(())
     }
+
+    // -----------------------------------------------------------------------
+    // Reader bookmarks
+    // -----------------------------------------------------------------------
+
+    pub fn insert_reading_bookmark(
+        &self,
+        book_id: i64,
+        chapter_index: i64,
+        fraction: f64,
+        label: &str,
+    ) -> Result<i64> {
+        let conn = self.conn();
+        let now = chrono_like_now();
+        conn.execute(
+            "INSERT INTO reading_bookmarks (book_id, chapter_index, fraction, label, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![book_id, chapter_index, fraction.clamp(0.0, 1.0), label, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn list_reading_bookmarks(&self, book_id: i64) -> Result<Vec<ReadingBookmark>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, book_id, chapter_index, fraction, label, created_at
+             FROM reading_bookmarks
+             WHERE book_id = ?1
+             ORDER BY chapter_index ASC, fraction ASC, created_at DESC",
+        )?;
+        let rows = stmt.query_map(params![book_id], row_to_reading_bookmark)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    pub fn delete_reading_bookmark(&self, id: i64) -> Result<()> {
+        let conn = self.conn();
+        conn.execute("DELETE FROM reading_bookmarks WHERE id = ?1", params![id])?;
+        Ok(())
+    }
 }

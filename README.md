@@ -70,6 +70,50 @@ Release build (what you’ll use day to day):
 cargo run --release
 ```
 
+## Test online with GitHub Codespaces
+
+If running Kalam on your own machine is a pain, you can test it in GitHub Codespaces.
+
+### First time setup
+
+1. Open this repo on GitHub.
+2. Click **Code**.
+3. Open the **Codespaces** tab.
+4. Click **Create codespace** on the branch you want to test.
+5. Wait for the setup to finish.
+
+### Start Kalam in the browser
+
+In the Codespaces terminal, run:
+
+```bash
+./scripts/run-kalam-codespace.sh
+```
+
+Then:
+
+1. Open the **Ports** tab in Codespaces.
+2. Find port **6080**.
+3. Open it in the browser.
+4. You should see a simple Linux desktop.
+5. Kalam should open there.
+
+### If you want to start it by hand
+
+```bash
+./scripts/codespaces-desktop.sh
+source ~/.cache/kalam-codespace/env.sh
+cargo run
+```
+
+### Notes
+
+- The first start can take a few minutes.
+- Port **6080** is the browser view for the app.
+- If you only see a file list in the browser, run `./scripts/codespaces-desktop.sh` again and refresh the page.
+- If the desktop opens but Kalam is not running yet, go back to the terminal and run `cargo run`.
+- You can also use `cargo run --release` if you want the faster build.
+
 ## Click-through demo (P4)
 
 1. **Shelves → + Smart shelf** → name it, add rules (e.g. `Tag is fantasy`

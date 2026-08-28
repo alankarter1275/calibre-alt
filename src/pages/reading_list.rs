@@ -239,7 +239,12 @@ fn build_row(
 
     let book_id = book.id;
 
-    let up = gtk::Button::with_label("↑");
+    let up = gtk::Button::new();
+    up.set_child(Some(&crate::icons::symbolic_with_classes(
+        "go-up-symbolic",
+        16,
+        &["kalam-inline-icon"],
+    )));
     up.add_css_class("kalam-mini-btn");
     up.set_valign(gtk::Align::Center);
     up.set_sensitive(index > 0);
@@ -249,7 +254,12 @@ fn build_row(
     }
     row.append(&up);
 
-    let down = gtk::Button::with_label("↓");
+    let down = gtk::Button::new();
+    down.set_child(Some(&crate::icons::symbolic_with_classes(
+        "go-down-symbolic",
+        16,
+        &["kalam-inline-icon"],
+    )));
     down.add_css_class("kalam-mini-btn");
     down.set_valign(gtk::Align::Center);
     down.set_sensitive(index < last);
@@ -270,7 +280,12 @@ fn build_row(
     }
     row.append(&read);
 
-    let remove = gtk::Button::with_label("✕");
+    let remove = gtk::Button::new();
+    remove.set_child(Some(&crate::icons::symbolic_with_classes(
+        "window-close-symbolic",
+        16,
+        &["kalam-inline-icon"],
+    )));
     remove.add_css_class("kalam-mini-btn");
     remove.add_css_class("kalam-mini-btn-danger");
     remove.set_valign(gtk::Align::Center);

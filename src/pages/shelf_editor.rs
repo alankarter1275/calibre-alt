@@ -131,7 +131,13 @@ pub fn open_shelf_editor(
         root.append(&scroll);
 
         let add_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let add_btn = gtk::Button::with_label("+ Add rule");
+        let add_btn = gtk::Button::new();
+        add_btn.set_child(Some(&crate::icons::labelled(
+            "list-add-symbolic",
+            16,
+            "Add rule",
+            6,
+        )));
         add_btn.add_css_class("kalam-secondary-btn");
         add_row.append(&add_btn);
         count_label.set_hexpand(true);
@@ -400,7 +406,12 @@ fn build_rule_row(
     row.append(&value_widget);
 
     // ── remove ──────────────────────────────────────────────────────────
-    let remove = gtk::Button::with_label("✕");
+    let remove = gtk::Button::new();
+    remove.set_child(Some(&crate::icons::symbolic_with_classes(
+        "window-close-symbolic",
+        16,
+        &["kalam-inline-icon"],
+    )));
     remove.add_css_class("kalam-rule-remove");
     remove.set_tooltip_text(Some("Remove this rule"));
     {

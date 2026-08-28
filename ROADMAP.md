@@ -351,10 +351,22 @@ rounds.
   bottom, circular active state.
 - **Logo** — `assets/logo.png`, embedded with `include_bytes!`.
 - **Settings (`src/pages/settings.rs`)** — redesigned into a two-column layout: a 220px navigation rail with 6 categories (Appearance, Storage & Backup, Dictionaries, Book Files, Metadata Sources, Notifications) and rounded cards (`kalam-card`) grouping individual setting rows.
+- **Settings v2** — rebuilt again in the P5.5 design language from the user's
+  `settings.html` reference, reconciled against shipped features: grouped nav
+  rail (Appearance / Library / Sources / App overlines), section cards
+  (accent glyph + title + description + divider + rows), hairline-separated
+  setting rows, Material-You-style pill switches for every real pref
+  (EPUB writeback, Open Library, Google Books), theme picker grouped by family
+  with per-variant cards (mini UI preview + swatch strip + ✓ seal on the
+  active theme), dictionary rows with icon blocks, notification history with
+  colour-correct badges, and an Export quotes card sharing the saved-quotes
+  Markdown exporter. Nothing faked: every control backs a real mechanism.
 
 ### Next
 1. Home / dashboard — the two-column layout the design references imply.
 2. Library, Book page, Reader chrome, dialogs.
+3. Book page (`src/pages/book.rs`) redesign — rolled back once, to be redone
+   with user guidance per the one-window-at-a-time method.
 
 ### Hard-won GTK/CSS rules
 
@@ -632,3 +644,5 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-28 | EPUB writeback fixed for single-line OPFs; toast accent restyled to the reference; every user action now confirms |
 | 2026-07-28 | P5.5 opened: UI overhaul, one window at a time, mockup before code. Colour system + 13 dark themes + slim sidebar shipped |
 | 2026-07-28 | P5.5 Settings window redesigned: 220px 6-tab navigation rail + rounded cards layout |
+| 2026-08-26 | P5.5 button hierarchy + chip + serif-title classes adopted from user style pass (`d545d28`) |
+| 2026-08-26 | Settings v2 shipped: grouped nav, section cards, family theme picker, pill switches, export card — mockup-first, CI green |
