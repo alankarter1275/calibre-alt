@@ -719,17 +719,19 @@ button.kalam-author-photo-refresh:hover {
 }
 
 /* ── floating book panel ────────────────────────────── */
-window.kalam-float-window {
-    background: @kalam_surface;
-    border: none;
-    box-shadow: none;
+.kalam-float-scrim {
+    background: alpha(@kalam_bg, 0.62);
+}
+
+.kalam-float-stage {
+    background: transparent;
 }
 
 .kalam-float {
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    box-shadow: none;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 20px;
+    box-shadow: 0 30px 80px alpha(#000, 0.46), 0 8px 24px alpha(#000, 0.26);
     padding: 0px;
     min-width: 700px;
     min-height: 368px;
