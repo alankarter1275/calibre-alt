@@ -665,6 +665,8 @@ impl Component for AppModel {
         float_host.set_margin_bottom(24);
         float_host.set_margin_start(24);
         float_host.set_margin_end(24);
+        float_host.set_size_request(720, 420);
+        float_host.set_overflow(gtk::Overflow::Visible);
         float_host.set_can_target(true);
         float_host.set_visible(false);
 
