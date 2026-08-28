@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 const COVER_W: i32 = 120;
 const COVER_H: i32 = 176;
-const DESC_PREVIEW_CHARS: usize = 300;
+const DESC_PREVIEW_CHARS: usize = 240;
 
 #[derive(Debug)]
 pub enum BookFloatOut {
@@ -302,7 +302,7 @@ impl Component for BookFloatModel {
                     gtk::ScrolledWindow {
                         add_css_class: "kalam-float-desc-scroll",
                         set_hexpand: true,
-                        set_vexpand: true,
+                        set_vexpand: false,
                         set_hscrollbar_policy: gtk::PolicyType::Never,
 
                         #[name = "description"]
@@ -731,6 +731,17 @@ fn fill(
     let full_desc = clean_description(book);
     let (desc_text, can_expand) = description_preview(&full_desc, model.desc_expanded);
     widgets.description.set_label(&desc_text);
+    widgets.desc_scroll.set_propagate_natural_height(true);
+    widgets.desc_scroll.set_min_content_height(0);
+    if model.desc_expanded && can_expand {
+        widgets.desc_scroll.set_max_content_height(220);
+        widgets.desc_scroll.set_vscrollbar_policy(gtk::PolicyType::Automatic);
+        widgets.desc_scroll.set_vexpand(true);
+    } else {
+        widgets.desc_scroll.set_max_content_height(148);
+        widgets.desc_scroll.set_vscrollbar_policy(gtk::PolicyType::Never);
+        widgets.desc_scroll.set_vexpand(false);
+    }
     widgets.read_more_btn.set_visible(can_expand);
     widgets.read_more_btn.set_label(if model.desc_expanded {
         "Show less"
