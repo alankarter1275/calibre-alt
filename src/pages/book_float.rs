@@ -19,9 +19,15 @@ const DESC_PREVIEW_CHARS: usize = 300;
 #[derive(Debug)]
 pub enum BookFloatOut {
     Close,
-    OpenFullPage { book_id: i64 },
-    OpenReader { book_id: i64 },
-    OpenAuthor { name: String },
+    OpenFullPage {
+        book_id: i64,
+    },
+    OpenReader {
+        book_id: i64,
+    },
+    OpenAuthor {
+        name: String,
+    },
     Deleted {
         #[allow(dead_code)]
         book_id: i64,
@@ -598,7 +604,9 @@ fn fill(
         widgets.format_val.set_label("");
         widgets.publisher_val.set_label("");
         widgets.added_val.set_label("");
-        widgets.cover_host.append(&build_cover_display(None, false, sender));
+        widgets
+            .cover_host
+            .append(&build_cover_display(None, false, sender));
         return;
     };
 
@@ -637,18 +645,18 @@ fn fill(
         .set_label(&progress_location_text(model.catalog.as_ref(), book));
 
     widgets.format_val.set_label(book.format.as_str());
-    widgets
-        .publisher_val
-        .set_label(&publisher_year_text(book));
+    widgets.publisher_val.set_label(&publisher_year_text(book));
     widgets.added_val.set_label(&short_date(&book.added_at));
 
     let full_desc = clean_description(book);
     let (desc_text, can_expand) = description_preview(&full_desc, model.desc_expanded);
     widgets.description.set_label(&desc_text);
     widgets.read_more_btn.set_visible(can_expand);
-    widgets
-        .read_more_btn
-        .set_label(if model.desc_expanded { "Show less" } else { "Read more" });
+    widgets.read_more_btn.set_label(if model.desc_expanded {
+        "Show less"
+    } else {
+        "Read more"
+    });
 
     for tag in book.tags.iter().take(12) {
         let t = chip(tag, "kalam-chip");
@@ -659,7 +667,9 @@ fn fill(
     let s = sender.clone();
     widgets
         .rating_host
-        .append(&star_picker(book.rating, move |v| s.input(BookFloatMsg::SetRating(v))));
+        .append(&star_picker(book.rating, move |v| {
+            s.input(BookFloatMsg::SetRating(v))
+        }));
     let rating_text = gtk::Label::new(Some(&rating_text(book)));
     rating_text.add_css_class("kalam-float-rating-text");
     rating_text.set_valign(gtk::Align::Center);
@@ -720,7 +730,9 @@ fn sync_action_buttons(widgets: &BookFloatModelWidgets, model: &BookFloatModel) 
             .tbr_btn
             .set_tooltip_text(Some("Remove from reading list"));
     } else {
-        widgets.tbr_btn.set_tooltip_text(Some("Add to reading list"));
+        widgets
+            .tbr_btn
+            .set_tooltip_text(Some("Add to reading list"));
     }
 
     widgets.shelf_btn.set_tooltip_text(Some("Shelves"));
