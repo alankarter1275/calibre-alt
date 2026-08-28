@@ -742,7 +742,9 @@ fn fill(
     widgets.desc_scroll.set_min_content_height(desc_height);
     widgets.desc_scroll.set_max_content_height(desc_height);
     widgets.desc_scroll.set_height_request(desc_height);
-    widgets.footer_spacer.set_visible(!(model.desc_expanded && can_expand));
+    widgets
+        .footer_spacer
+        .set_visible(!(model.desc_expanded && can_expand));
     if model.desc_expanded && can_expand {
         widgets
             .desc_scroll
