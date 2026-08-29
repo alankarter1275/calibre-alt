@@ -1,4 +1,5 @@
-src/app.rs:839:38: [1m[91merror[E0308][0m: mismatched types: expected `&str`, found `Option<&str>`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error; 1 warning emitted
---- run 33233469605 ---
+src/app.rs:831:51: [1m[91merror[E0277][0m: `*mut std::ffi::c_void` cannot be sent between threads safely: `*mut std::ffi::c_void` cannot be sent between threads safely
+src/app.rs:831:51: [1m[91merror[E0277][0m: `*mut std::ffi::c_void` cannot be shared between threads safely: `*mut std::ffi::c_void` cannot be shared between threads safely
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors; 1 warning emitted
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+--- run 33233590457 ---
