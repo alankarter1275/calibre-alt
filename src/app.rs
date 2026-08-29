@@ -48,6 +48,10 @@ pub enum AppMsg {
     OpenAnnotationsFloat {
         book_id: i64,
     },
+    /// Open the shelves checklist panel (in-app float) from the book page.
+    OpenShelvesFloat {
+        book_id: i64,
+    },
     /// Rebuild the page on screen if the catalog changed under it.
     RefreshCurrentPage,
     /// Open immersive reader for book_id.
@@ -108,6 +112,8 @@ enum Floating {
     Series(Controller<SeriesFloatModel>),
     /// Highlights & quotes — a plain widget panel, nothing to keep alive.
     Annotations,
+    /// Shelves checklist — a plain widget panel, nothing to keep alive.
+    Shelves,
 }
 
 pub struct AppModel {
@@ -254,6 +260,27 @@ impl AppModel {
         panel.grab_focus();
 
         self.floating = Some(Floating::Annotations);
+    }
+
+    fn open_shelves_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
+        self.close_floating();
+
+        let s = sender.clone();
+        let panel =
+            crate::pages::book::build_shelves_panel(self.catalog.clone(), book_id, move || {
+                s.input(AppMsg::CloseBookDialog)
+            });
+        panel.set_size_request(380, 420);
+        panel.set_hexpand(false);
+        panel.set_vexpand(false);
+        panel.set_halign(gtk::Align::Center);
+        panel.set_valign(gtk::Align::Center);
+        self.float_host.append(&panel);
+        self.float_scrim.set_visible(true);
+        self.float_host.set_visible(true);
+        panel.grab_focus();
+
+        self.floating = Some(Floating::Shelves);
     }
 
     fn build_page(
@@ -429,6 +456,7 @@ impl AppModel {
                             first_author,
                         },
                         BookPageOut::ViewHighlights => AppMsg::OpenAnnotationsFloat { book_id: id },
+                        BookPageOut::ShowShelves => AppMsg::OpenShelvesFloat { book_id: id },
                         BookPageOut::Deleted { .. } => AppMsg::Back,
                     });
                 PageSlot::Book(ctrl)
@@ -875,6 +903,7 @@ impl Component for AppModel {
             AppMsg::OpenAnnotationsFloat { book_id } => {
                 self.open_annotations_floating(book_id, &sender);
             }
+            AppMsg::OpenShelvesFloat { book_id } => self.open_shelves_floating(book_id, &sender),
             AppMsg::FloatOpenFull { book_id } => {
                 self.close_floating();
                 self.swap_page(

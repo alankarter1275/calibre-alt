@@ -37,6 +37,8 @@ pub enum BookPageOut {
     },
     /// Open the highlights & quotes panel (in-app float).
     ViewHighlights,
+    /// Open the shelves checklist panel (in-app float).
+    ShowShelves,
     Deleted {
         #[allow(dead_code)]
         book_id: i64,
@@ -740,18 +742,7 @@ impl Component for BookPageModel {
                 }
             }
             BookPageMsg::ShowShelfMenu => {
-                if let Some(book) = &self.book {
-                    let id = book.id;
-                    let s = sender.clone();
-                    open_shelf_menu(
-                        root.root()
-                            .and_then(|r| r.downcast::<gtk::Window>().ok())
-                            .as_ref(),
-                        self.catalog.clone(),
-                        id,
-                        move || s.input(BookPageMsg::Refresh),
-                    );
-                }
+                sender.output(BookPageOut::ShowShelves).ok();
             }
             BookPageMsg::RemoveTag(tag) => {
                 if let Some(book) = &self.book {
@@ -1835,6 +1826,107 @@ pub fn build_annotations_panel(
     });
     *holder.borrow_mut() = Some(closure.clone());
     closure();
+    root
+}
+
+/// Checklist of manual shelves for one book, hosted in the app's in-app
+/// float layer (see AppModel::open_shelves_floating) instead of a separate
+/// window, so the compositor can't tile it onto another workspace. The
+/// book page underneath refreshes when the float closes.
+pub fn build_shelves_panel(
+    catalog: Arc<Catalog>,
+    book_id: i64,
+    on_done: impl Fn() + 'static,
+) -> gtk::Box {
+    let on_done = std::rc::Rc::new(on_done);
+
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    root.add_css_class("kalam-shelves-float");
+    root.set_overflow(gtk::Overflow::Hidden);
+
+    let list_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    list_host.set_margin_all(16);
+
+    let scroll = gtk::ScrolledWindow::builder()
+        .vexpand(true)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .child(&list_host)
+        .build();
+    root.append(&scroll);
+
+    let done = gtk::Button::with_label("Done");
+    done.add_css_class("kalam-primary-btn");
+    done.set_halign(gtk::Align::End);
+    done.set_margin_all(12);
+    let done_fn = on_done.clone();
+    done.connect_clicked(move |_| done_fn());
+    root.append(&done);
+
+    let list = list_host.clone();
+    let all: Vec<_> = catalog
+        .list_shelves()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|s| s.kind == ShelfKind::Manual)
+        .collect();
+
+    if all.is_empty() {
+        let empty = gtk::Label::new(Some(
+            "No manual shelves yet.\n\nCreate one from the Shelves page, then add books to it here.\n\nSmart shelves fill themselves from rules \u{2014} they can't be edited by hand.",
+        ));
+        empty.add_css_class("kalam-placeholder");
+        empty.set_wrap(true);
+        empty.set_xalign(0.0);
+        empty.set_halign(gtk::Align::Start);
+        list.append(&empty);
+    } else {
+        let hint = gtk::Label::new(Some("Tick the shelves this book belongs on."));
+        hint.add_css_class("kalam-muted");
+        hint.set_halign(gtk::Align::Start);
+        hint.set_margin_bottom(6);
+        list.append(&hint);
+
+        let current: Vec<i64> = catalog
+            .shelves_for_book(book_id)
+            .unwrap_or_default()
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
+
+        for shelf in all {
+            let check = gtk::CheckButton::with_label(&format!(
+                "{}  ({} book{})",
+                shelf.name,
+                shelf.book_count,
+                if shelf.book_count == 1 { "" } else { "s" }
+            ));
+            check.add_css_class("kalam-picker-row");
+            check.set_active(current.contains(&shelf.id));
+
+            let catalog = catalog.clone();
+            let shelf_id = shelf.id;
+            let shelf_name = shelf.name.clone();
+            check.connect_toggled(move |c| {
+                if c.is_active() {
+                    crate::notify::outcome(
+                        catalog.add_book_to_shelf(shelf_id, book_id),
+                        "Added to shelf",
+                        &shelf_name,
+                        "Could not add to the shelf",
+                    );
+                } else {
+                    crate::notify::outcome_info(
+                        catalog.remove_book_from_shelf(shelf_id, book_id),
+                        "Removed from shelf",
+                        &shelf_name,
+                        "Could not remove from the shelf",
+                    );
+                }
+            });
+            list.append(&check);
+        }
+    }
+
     root
 }
 

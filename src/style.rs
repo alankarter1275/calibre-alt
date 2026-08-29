@@ -3180,6 +3180,14 @@ button.kalam-journey-more:hover {
     box-shadow: 0 18px 44px alpha(#000, 0.40);
 }
 
+/* In-app shelves checklist float (book page's Shelves button) */
+.kalam-shelves-float {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    box-shadow: 0 18px 44px alpha(#000, 0.40);
+}
+
 .kalam-series-float-title {
     font-size: 1.0rem;
     font-weight: 700;
