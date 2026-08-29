@@ -802,7 +802,7 @@ impl Component for AppModel {
         spacer.set_hexpand(true);
         titlebar.append(&spacer);
         let window_controls = |icon: &str| -> gtk::Button {
-            let button = gtk::Button::from_icon_name(Some(icon));
+            let button = gtk::Button::from_icon_name(icon);
             button.add_css_class("kalam-titlebar-btn");
             button.set_focus_on_click(false);
             button
@@ -828,7 +828,7 @@ impl Component for AppModel {
             let window = root.clone();
             move |_| window.close()
         });
-        root.connect_notify_is_maximized({
+        root.connect_notify(Some("is-maximized"), {
             let button = max_btn.clone();
             move |window, _| {
                 let icon = if window.is_maximized() {
@@ -842,7 +842,7 @@ impl Component for AppModel {
         titlebar.append(&min_btn);
         titlebar.append(&max_btn);
         titlebar.append(&close_btn);
-        root.set_titlebar(&titlebar);
+        root.set_titlebar(Some(&titlebar));
 
         ComponentParts { model, widgets }
     }
