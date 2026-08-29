@@ -1730,7 +1730,7 @@ fn open_in_file_manager(file: &std::path::Path) {
             _ => url.push_str(&format!("%{b:02X}")),
         }
     }
-    let _ = gio::AppInfo::launch_default_for_uri(&url, None);
+    let _ = gio::AppInfo::launch_default_for_uri(&url, None::<&gio::Cancellable>);
 }
 
 // ---------------------------------------------------------------------------
