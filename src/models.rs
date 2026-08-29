@@ -96,7 +96,6 @@ impl Route {
     pub fn is_reader(&self) -> bool {
         matches!(self, Route::Reader { .. })
     }
-
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
