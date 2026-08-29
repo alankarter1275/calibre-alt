@@ -1,13 +1,33 @@
-src/app.rs:492:31: [1m[91merror[0m: expected identifier
-src/app.rs:503:31: [1m[91merror[0m: expected identifier
-src/app.rs:692:17: [1m[91merror[E0609][0m: no field `float_scrim` on type `app::AppModelWidgets`: unknown field
-src/app.rs:696:34: [1m[91merror[E0609][0m: no field `float_host` on type `app::AppModelWidgets`: unknown field
-src/app.rs:762:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
-src/app.rs:766:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
-src/app.rs:786:45: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
-src/app.rs:789:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
-src/app.rs:798:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
-src/app.rs:813:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 10 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
---- run 33149743095 ---
+src/pages/book.rs:174:39: [1m[91merror[0m: Properties can only have `watch`, `track` or `iterative` as attribute.
+src/pages/book.rs:201:39: [1m[91merror[0m: Properties can only have `watch`, `track` or `iterative` as attribute.
+src/pages/book.rs:363:37: [1m[91merror[E0599][0m: no method named `set_from_icon_name` found for struct `gtk4::Image` in the current scope
+src/pages/book.rs:422:37: [1m[91merror[E0599][0m: no method named `set_from_icon_name` found for struct `gtk4::Image` in the current scope
+src/pages/book.rs:465:37: [1m[91merror[E0599][0m: no method named `set_from_icon_name` found for struct `gtk4::Image` in the current scope
+src/pages/book.rs:550:37: [1m[91merror[E0599][0m: no method named `set_from_icon_name` found for struct `gtk4::Image` in the current scope
+src/pages/book.rs:585:37: [1m[91merror[E0599][0m: no method named `set_from_icon_name` found for struct `gtk4::Image` in the current scope
+src/pages/book.rs:881:22: [1m[91merror[E0609][0m: no field `cover_host` on type `&pages::book::BookPageModelWidgets`: unknown field
+src/pages/book.rs:942:56: [1m[91merror[E0308][0m: mismatched types: expected `&Arc<Catalog>`, found `&Catalog`
+src/pages/book.rs:946:14: [1m[91merror[E0308][0m: arguments to this method are incorrect
+src/pages/book.rs:977:16: [1m[91merror[E0308][0m: mismatched types: expected `&_`, found `Widget`
+src/pages/book.rs:993:9: [1m[91merror[E0308][0m: mismatched types: expected `Widget`, found `Label`
+src/pages/book.rs:1025:41: [1m[91merror[E0308][0m: mismatched types: expected `Widget`, found `Button`
+src/pages/book.rs:1042:51: [1m[91merror[E0308][0m: mismatched types: expected `Widget`, found `Label`
+src/pages/book.rs:1495:20: [1m[91merror[E0308][0m: mismatched types: expected `&str`, found `String`
+src/pages/book.rs:1678:9: [1m[91merror[E0308][0m: mismatched types: expected `Widget`, found `Label`
+src/pages/book.rs:1684:9: [1m[91merror[E0308][0m: mismatched types: expected `Widget`, found `Label`
+src/pages/book.rs:1692:9: [1m[91merror[E0308][0m: mismatched types: expected `Widget`, found `Label`
+src/pages/book.rs:1696:27: [1m[91merror[E0599][0m: no method named `connect_clicked_once` found for struct `gtk4::Button` in the current scope
+src/pages/book.rs:1714:52: [1m[91merror[E0599][0m: no method named `unwrap_or_default` found for reference `&[u8]` in the current scope: method not found in `&[u8]`
+src/pages/book.rs:1719:26: [1m[91merror[E0614][0m: type `u8` cannot be dereferenced: can't be dereferenced
+src/pages/series_float.rs:266:13: [1m[91merror[E0308][0m: mismatched types: expected `Result<FetchResult, RecvError>`, found `FetchResult`
+src/pages/series_float.rs:270:13: [1m[91merror[E0308][0m: mismatched types: expected `Result<FetchResult, RecvError>`, found `FetchResult`
+src/pages/book.rs:832:21: [1m[91merror[E0506][0m: cannot assign to `self.book` because it is borrowed: `self.book` is assigned to here but it was already borrowed
+src/pages/book.rs:1134:17: [1m[91merror[E0507][0m: cannot move out of `s`, a captured variable in an `Fn` closure: `s` is moved here
+src/pages/book.rs:1641:14: [1m[91merror[E0716][0m: temporary value dropped while borrowed: creates a temporary value which is freed while still in use
+src/pages/series_float.rs:164:17: [1m[91merror[E0594][0m: cannot assign to `model.fetching`, as `model` is not declared as mutable: cannot assign
+src/pages/series_float.rs:165:17: [1m[91merror[E0594][0m: cannot assign to `model.state`, as `model` is not declared as mutable: cannot assign
+src/pages/series_float.rs:177:17: [1m[91merror[E0594][0m: cannot assign to `model.fetching`, as `model` is not declared as mutable: cannot assign
+src/pages/series_float.rs:178:17: [1m[91merror[E0594][0m: cannot assign to `model.state`, as `model` is not declared as mutable: cannot assign
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 30 previous errors; 2 warnings emitted
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 30 previous errors; 3 warnings emitted
+--- run 33227923895 ---
