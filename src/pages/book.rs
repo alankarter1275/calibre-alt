@@ -633,7 +633,7 @@ impl Component for BookPageModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let book = catalog.get_book(book_id).ok().flatten();
-        let model = BookPageModel {
+        let mut model = BookPageModel {
             in_reading_list: catalog.is_in_reading_list(book_id).unwrap_or(false),
             finished: catalog.book_finished_at(book_id).ok().flatten().is_some(),
             journey_expanded: false,
@@ -883,7 +883,7 @@ impl BookPageModel {
                 self.chapter_titles_for = book.id;
             }
         }
-        &self.chapter_titles
+        self.chapter_titles.clone()
     }
 
     /// Refill every host from model state. Called from init and after every
@@ -904,7 +904,7 @@ impl BookPageModel {
             &widgets.prog_fill,
             &self.catalog,
             self.book.as_ref(),
-            chapters,
+            &chapters,
         );
 
         if let Some(book) = &self.book {
@@ -953,10 +953,10 @@ impl BookPageModel {
             }));
 
         // Cards.
-        fill_stats_card(&widgets, self, chapters);
-        fill_highlights_card(&widgets.highlights_host, self, chapters);
+        fill_stats_card(&widgets, self, &chapters);
+        fill_highlights_card(&widgets.highlights_host, self, &chapters);
         fill_author_card(&widgets, self.book.as_ref(), self.catalog.as_ref(), sender);
-        fill_journey_card(&widgets, self, chapters);
+        fill_journey_card(&widgets, self, &chapters);
         fill_file_card(&widgets, self.book.as_ref());
     }
 }
@@ -981,7 +981,7 @@ fn fill_cover(overlay: &gtk::Overlay, host: &gtk::Box, book: Option<&Book>) {
 }
 
 /// A `KEY` over `value` line, used by the hero meta block and the file card.
-fn meta_row<V: gtk::prelude::IsA<gtk::Widget>>(key: &str, value: V) -> gtk::Box {
+fn meta_row<V: gtk::prelude::IsA<gtk::Widget>>(key: &str, value: &V) -> gtk::Box {
     let row = gtk::Box::new(gtk::Orientation::Vertical, 2);
     row.add_css_class("kalam-meta-row");
     let k = gtk::Label::new(Some(key));
@@ -1000,12 +1000,10 @@ fn fill_meta(host: &gtk::Box, book: Option<&Book>, sender: &ComponentSender<Book
         return;
     };
 
-    host.append(&meta_row("Format", {
-        let l = gtk::Label::new(Some(book.format.as_str()));
-        l.add_css_class("kalam-meta-val");
-        l.set_halign(gtk::Align::Start);
-        l
-    }));
+    let format_label = gtk::Label::new(Some(book.format.as_str()));
+    format_label.add_css_class("kalam-meta-val");
+    format_label.set_halign(gtk::Align::Start);
+    host.append(&meta_row("Format", &format_label));
 
     if let Some(series) = book
         .series
@@ -1036,7 +1034,7 @@ fn fill_meta(host: &gtk::Box, book: Option<&Book>, sender: &ComponentSender<Book
                 first_author: first_author.clone(),
             });
         });
-        host.append(&meta_row("Series", btn));
+        host.append(&meta_row("Series", &btn));
     }
 
     let publisher = book.publisher.trim();
@@ -1053,7 +1051,7 @@ fn fill_meta(host: &gtk::Box, book: Option<&Book>, sender: &ComponentSender<Book
         l.set_halign(gtk::Align::Start);
         l.set_wrap(true);
         l.set_xalign(0.0);
-        host.append(&meta_row("Publisher · Year", l));
+        host.append(&meta_row("Publisher · Year", &l));
     }
 }
 
@@ -1726,7 +1724,7 @@ fn open_in_file_manager(file: &std::path::Path) {
     let Some(dir) = file.parent() else {
         return;
     };
-    let bytes = dir.as_os_str().as_encoded_bytes().unwrap_or(&[]);
+    let bytes = dir.as_os_str().as_encoded_bytes();
     let mut url = String::from("file://");
     for b in bytes {
         match b {
