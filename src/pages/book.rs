@@ -1629,6 +1629,8 @@ fn open_in_file_manager(file: &std::path::Path) {
 // Dialogs
 // ---------------------------------------------------------------------------
 
+
+
 /// Full list of a book's highlights/quotes, with per-row delete.
 /// The highlights & quotes panel, hosted in the app's in-app float layer
 /// (see AppModel::open_annotations_floating) instead of a separate window,
@@ -1863,9 +1865,7 @@ pub fn build_tags_panel(
     add_row.set_margin_end(16);
     add_row.set_margin_bottom(4);
 
-    let entry = gtk::Entry::builder()
-        .placeholder_text("e.g. fantasy")
-        .build();
+    let entry = gtk::Entry::builder().placeholder_text("e.g. fantasy").build();
     entry.set_hexpand(true);
     add_row.append(&entry);
 
@@ -1909,6 +1909,7 @@ pub fn build_tags_panel(
         let host = list_host.clone();
         let catalog = catalog.clone();
         let book_id = book_id;
+        let holder = holder.clone();
         move || {
             while let Some(child) = host.first_child() {
                 host.remove(&child);
