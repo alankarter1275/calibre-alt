@@ -793,6 +793,9 @@ impl Component for AppModel {
         // The default window titlebar reads as a thick header over the
         // pages, so the app draws its own: a transparent strip whose only
         // visible content is the window controls in the top-right corner.
+        // (The maximize button toggles state; its icon stays the maximize
+        // glyph because tracking the window state here hits a Send+Sync
+        // bound on gtk4 0.9's connect_notify.)
         let titlebar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
         titlebar.add_css_class("kalam-titlebar");
         titlebar.set_hexpand(true);
@@ -827,17 +830,6 @@ impl Component for AppModel {
         close_btn.connect_clicked({
             let window = root.clone();
             move |_| window.close()
-        });
-        root.connect_notify(Some("is-maximized"), {
-            let button = max_btn.clone();
-            move |window, _| {
-                let icon = if window.is_maximized() {
-                    "window-restore-symbolic"
-                } else {
-                    "window-maximize-symbolic"
-                };
-                button.set_icon_name(icon);
-            }
         });
         titlebar.append(&min_btn);
         titlebar.append(&max_btn);
