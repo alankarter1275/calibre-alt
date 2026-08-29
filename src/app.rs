@@ -239,10 +239,11 @@ impl AppModel {
         self.close_floating();
 
         let s = sender.clone();
-        let panel =
-            crate::pages::book::build_annotations_panel(self.catalog.clone(), book_id, move || {
-                s.input(AppMsg::CloseBookDialog).ok()
-            });
+        let panel = crate::pages::book::build_annotations_panel(
+            self.catalog.clone(),
+            book_id,
+            move || s.input(AppMsg::CloseBookDialog),
+        );
         panel.set_size_request(460, 480);
         panel.set_hexpand(false);
         panel.set_vexpand(false);
@@ -428,7 +429,9 @@ impl AppModel {
                             series,
                             first_author,
                         },
-                        BookPageOut::ViewHighlights => AppMsg::OpenAnnotationsFloat { book_id: id },
+                        BookPageOut::ViewHighlights => AppMsg::OpenAnnotationsFloat {
+                            book_id: id,
+                        },
                         BookPageOut::Deleted { .. } => AppMsg::Back,
                     });
                 PageSlot::Book(ctrl)
