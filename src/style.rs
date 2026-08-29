@@ -182,6 +182,35 @@ scrollbar slider:active {
     min-height: 0;
 }
 
+/* ── window + custom titlebar ───────────────────────── */
+/* Uniform background so the transparent titlebar strip is invisible. */
+.kalam-window {
+    background: @kalam_bg;
+}
+
+.kalam-titlebar {
+    background: transparent;
+}
+
+.kalam-titlebar-btn {
+    min-width: 34px;
+    min-height: 28px;
+    padding: 0;
+    border-radius: 999px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.kalam-titlebar-btn:hover {
+    background: @kalam_surface_2;
+}
+
+.kalam-titlebar-btn image {
+    color: @kalam_text_dim;
+    -gtk-icon-size: 14px;
+}
+
 /* ── main column ────────────────────────────────────── */
 .kalam-main {
     background: @kalam_bg;

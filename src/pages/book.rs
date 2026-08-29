@@ -163,7 +163,7 @@ impl Component for BookPageModel {
                             },
                         },
 
-                        // right: identity + actions + description
+                        // center: identity + actions + description
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
                             set_hexpand: true,
@@ -298,9 +298,45 @@ impl Component for BookPageModel {
                                 set_margin_top: 6,
                             },
                         },
+
+                        // Reading journey
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            add_css_class: "kalam-detail-card",
+                            set_width_request: 300,
+                            set_valign: gtk::Align::Start,
+
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_spacing: 7,
+                                gtk::Image {
+                                    add_css_class: "kalam-detail-card-icon",
+                                    set_icon_name: Some("view-list-symbolic"),
+                                    set_pixel_size: 15,
+                                },
+                                gtk::Label {
+                                    set_label: "Reading journey",
+                                    add_css_class: "kalam-detail-card-title",
+                                },
+                            },
+
+                            #[name = "journey_host"]
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_margin_top: 8,
+                            },
+                            #[name = "journey_more"]
+                            gtk::Button {
+                                add_css_class: "kalam-journey-more",
+                                set_focus_on_click: false,
+                                set_halign: gtk::Align::Start,
+                                connect_clicked => BookPageMsg::ToggleJourney,
+                            },
+                        },
+
                     },
 
-                    // ── row 1: stats & history | journey ────────────────
+                    // ── row 1: stats & history | highlights ────────────
                     gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         add_css_class: "kalam-card-row",
@@ -365,49 +401,6 @@ impl Component for BookPageModel {
                             },
                         },
 
-                        // Reading journey
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            add_css_class: "kalam-detail-card",
-                            set_hexpand: true,
-                            set_valign: gtk::Align::Start,
-
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 7,
-                                gtk::Image {
-                                    add_css_class: "kalam-detail-card-icon",
-                                    set_icon_name: Some("view-list-symbolic"),
-                                    set_pixel_size: 15,
-                                },
-                                gtk::Label {
-                                    set_label: "Reading journey",
-                                    add_css_class: "kalam-detail-card-title",
-                                },
-                            },
-
-                            #[name = "journey_host"]
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Vertical,
-                                set_margin_top: 8,
-                            },
-                            #[name = "journey_more"]
-                            gtk::Button {
-                                add_css_class: "kalam-journey-more",
-                                set_focus_on_click: false,
-                                set_halign: gtk::Align::Start,
-                                connect_clicked => BookPageMsg::ToggleJourney,
-                            },
-                        },
-
-                    },
-
-                    // ── row 2: highlights | author | file ───────────────
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        add_css_class: "kalam-card-row",
-                        set_spacing: 14,
-
                         // Highlights & quotes
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
@@ -443,6 +436,14 @@ impl Component for BookPageModel {
                                 set_margin_top: 8,
                             },
                         },
+
+                    },
+
+                    // ── row 2: author | file ────────────────────────────
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        add_css_class: "kalam-card-row",
+                        set_spacing: 14,
 
                         // Author
                         gtk::Box {
