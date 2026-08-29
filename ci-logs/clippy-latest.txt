@@ -1,6 +1,8 @@
-src/pages/book.rs:991:16: [1m[91merror[E0308][0m: mismatched types: expected `&_`, found type parameter `V`
-src/pages/book.rs:1729:52: [1m[91merror[E0599][0m: no method named `unwrap_or` found for reference `&[u8]` in the current scope: method not found in `&[u8]`
-src/pages/book.rs:636:13: [1m[91merror[E0596][0m: cannot borrow `model` as mutable, as it is not declared as mutable: not mutable
+src/pages/book.rs:886:9: [1m[91merror[E0308][0m: mismatched types: expected `&[String]`, found `Vec<String>`
+src/pages/book.rs:1693:9: [1m[91merror[E0308][0m: mismatched types: expected `&_`, found `Label`
+src/pages/book.rs:1699:9: [1m[91merror[E0308][0m: mismatched types: expected `&_`, found `Label`
+src/pages/book.rs:1707:9: [1m[91merror[E0308][0m: mismatched types: expected `&_`, found `Label`
+src/pages/book.rs:1732:26: [1m[91merror[E0606][0m: casting `&u8` as `char` is invalid
 src/pages/book.rs:898:13: [1m[91merror[E0502][0m: cannot borrow `self.book` as immutable because it is also borrowed as mutable: immutable borrow occurs here
 src/pages/book.rs:900:39: [1m[91merror[E0502][0m: cannot borrow `self.book` as immutable because it is also borrowed as mutable: immutable borrow occurs here
 src/pages/book.rs:905:13: [1m[91merror[E0502][0m: cannot borrow `self.catalog` as immutable because it is also borrowed as mutable: immutable borrow occurs here
@@ -13,6 +15,6 @@ src/pages/book.rs:957:56: [1m[91merror[E0502][0m: cannot borrow `*self` as im
 src/pages/book.rs:958:36: [1m[91merror[E0502][0m: cannot borrow `self.book` as immutable because it is also borrowed as mutable: immutable borrow occurs here
 src/pages/book.rs:958:56: [1m[91merror[E0502][0m: cannot borrow `self.catalog` as immutable because it is also borrowed as mutable: immutable borrow occurs here
 src/pages/book.rs:959:37: [1m[91merror[E0502][0m: cannot borrow `*self` as immutable because it is also borrowed as mutable: immutable borrow occurs here
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 15 previous errors; 3 warnings emitted
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 15 previous errors; 2 warnings emitted
---- run 33228208521 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 17 previous errors; 2 warnings emitted
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 17 previous errors; 3 warnings emitted
+--- run 33228729841 ---
