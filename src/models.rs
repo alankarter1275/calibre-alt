@@ -97,11 +97,6 @@ impl Route {
         matches!(self, Route::Reader { .. })
     }
 
-    /// The book page draws its own back pill + metadata pencil, so the app's
-    /// floating back chip would duplicate it.
-    pub fn is_book_page(&self) -> bool {
-        matches!(self, Route::BookPage { .. })
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

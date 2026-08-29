@@ -156,7 +156,7 @@ impl AppModel {
     }
 
     fn show_back_chip(&self) -> bool {
-        !self.history.is_empty() && !self.route.is_reader() && !self.route.is_book_page()
+        !self.history.is_empty() && !self.route.is_reader()
     }
 
     fn close_floating(&mut self) {
@@ -386,7 +386,6 @@ impl AppModel {
                 let ctrl = BookPageModel::builder()
                     .launch((catalog.clone(), id))
                     .forward(sender.input_sender(), move |out| match out {
-                        BookPageOut::Back => AppMsg::Back,
                         BookPageOut::OpenReader => AppMsg::OpenReader { book_id: id },
                         BookPageOut::OpenAuthor { name } => {
                             AppMsg::Push(Route::AuthorPage { author: name })

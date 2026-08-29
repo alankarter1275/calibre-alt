@@ -2696,20 +2696,6 @@ switch.kalam-switch slider {
 /* ── P5.5 book detail page ───────────────────────────────── */
 
 /* Fixed chrome row: back pill on the left, metadata pencil on the right. */
-.kalam-bookpage-chrome {
-    padding: 6px 4px 12px;
-}
-
-.kalam-bookpage-back {
-    min-height: 0;
-}
-
-.kalam-bookpage-back image {
-    color: inherit;
-    -gtk-icon-size: 15px;
-}
-
-.kalam-bookpage-chrome .kalam-icon-btn,
 .kalam-actions .kalam-icon-btn {
     border-radius: 999px;
     min-height: 38px;
@@ -2717,10 +2703,18 @@ switch.kalam-switch slider {
     background: transparent;
 }
 
-.kalam-bookpage-chrome .kalam-icon-btn image,
 .kalam-actions .kalam-icon-btn image {
     color: inherit;
     -gtk-icon-size: 16px;
+}
+
+/* Remove action — danger tint. */
+.kalam-icon-btn-danger {
+    color: @kalam_danger;
+}
+
+.kalam-icon-btn-danger:hover {
+    background: alpha(@kalam_danger, 0.12);
 }
 
 /* Hero. */
@@ -2745,14 +2739,8 @@ switch.kalam-switch slider {
 }
 
 /* Cover face with the page-edge behind it. */
-.kalam-cover-edge {
-    background: @kalam_surface_2;
-    border: 1px solid @kalam_border;
-    border-radius: 2px 6px 6px 2px;
-}
-
 .kalam-cover-face {
-    border-radius: 2px 4px 4px 2px;
+    border-radius: 4px;
     box-shadow: 0 12px 26px alpha(#000, 0.30);
 }
 
@@ -2835,18 +2823,6 @@ button.kalam-series-link:hover {
     filter: brightness(1.1);
 }
 
-.kalam-btn-remove {
-    background: transparent;
-    color: @kalam_danger;
-    border: 1px solid alpha(@kalam_danger, 0.5);
-    border-radius: 999px;
-    padding: 7px 16px;
-    font-weight: 600;
-}
-
-.kalam-btn-remove:hover {
-    background: alpha(@kalam_danger, 0.12);
-}
 
 /* Inline tag chips. */
 .kalam-tags flowboxchild {

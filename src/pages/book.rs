@@ -22,7 +22,6 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum BookPageOut {
-    Back,
     OpenReader,
     OpenAuthor {
         name: String,
@@ -94,47 +93,6 @@ impl Component for BookPageModel {
             set_hexpand: true,
             set_vexpand: true,
 
-            // ── fixed chrome: back on the left, metadata pencil on the right
-            gtk::Box {
-                set_orientation: gtk::Orientation::Horizontal,
-                add_css_class: "kalam-bookpage-chrome",
-                set_spacing: 8,
-
-                gtk::Button {
-                    add_css_class: "kalam-back-btn",
-                    add_css_class: "kalam-bookpage-back",
-                    set_focus_on_click: false,
-                    set_child: Some(&crate::icons::labelled(
-                        "go-previous-symbolic",
-                        15,
-                        "All books",
-                        6,
-                    )),
-                    #[watch]
-                    set_visible: model.book.is_some(),
-                    connect_clicked[sender] => move |_| {
-                        sender.output(BookPageOut::Back).ok();
-                    },
-                },
-
-                gtk::Box {
-                    set_hexpand: true,
-                },
-
-                gtk::Button {
-                    add_css_class: "kalam-icon-btn",
-                    set_focus_on_click: false,
-                    set_tooltip_text: Some("Edit metadata"),
-                    set_child: Some(&crate::icons::symbolic(
-                        "document-edit-symbolic",
-                        16,
-                    )),
-                    #[watch]
-                    set_visible: model.book.is_some(),
-                    connect_clicked => BookPageMsg::EditMetadata,
-                },
-            },
-
             gtk::ScrolledWindow {
                 set_vexpand: true,
                 set_hexpand: true,
@@ -155,31 +113,15 @@ impl Component for BookPageModel {
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
                             set_spacing: 16,
-                            set_width_request: 172,
+                            set_width_request: 148,
                             set_valign: gtk::Align::Start,
 
-                            #[name = "cover_overlay"]
-                            gtk::Overlay {
+                            // Plain cover — no 3D page edge.
+                            #[name = "cover_host"]
+                            gtk::Box {
+                                add_css_class: "kalam-cover-face",
+                                set_halign: gtk::Align::Start,
                                 set_valign: gtk::Align::Start,
-                                #[name = "cover_edge"]
-                                gtk::Box {
-                                    add_css_class: "kalam-cover-edge",
-                                    set_margin_top: 5,
-                                    set_margin_start: 6,
-                                    set_hexpand: true,
-                                    set_vexpand: true,
-                                },
-                                add_overlay = &gtk::Box {
-                                    add_css_class: "kalam-cover-face",
-                                    set_halign: gtk::Align::Start,
-                                    set_valign: gtk::Align::Start,
-
-                                    #[name = "cover_host"]
-                                    gtk::Box {
-                                        set_hexpand: true,
-                                        set_vexpand: true,
-                                    },
-                                },
                             },
 
                             gtk::Box {
@@ -281,6 +223,17 @@ impl Component for BookPageModel {
                                     },
                                 },
 
+                                gtk::Button {
+                                    add_css_class: "kalam-icon-btn",
+                                    set_focus_on_click: false,
+                                    set_tooltip_text: Some("Edit metadata"),
+                                    set_child: Some(&crate::icons::symbolic(
+                                        "document-edit-symbolic",
+                                        16,
+                                    )),
+                                    connect_clicked => BookPageMsg::EditMetadata,
+                                },
+
                                 #[name = "tbr_btn"]
                                 gtk::Button {
                                     add_css_class: "kalam-icon-btn",
@@ -316,14 +269,15 @@ impl Component for BookPageModel {
                                     connect_clicked => BookPageMsg::ToggleFinished,
                                 },
 
-                                gtk::Box {
-                                    set_hexpand: true,
-                                },
-
                                 gtk::Button {
-                                    set_label: "Remove",
-                                    add_css_class: "kalam-btn-remove",
+                                    add_css_class: "kalam-icon-btn",
+                                    add_css_class: "kalam-icon-btn-danger",
                                     set_focus_on_click: false,
+                                    set_tooltip_text: Some("Remove book"),
+                                    set_child: Some(&crate::icons::symbolic(
+                                        "user-trash-symbolic",
+                                        16,
+                                    )),
                                     connect_clicked => BookPageMsg::Delete,
                                 },
                             },
@@ -346,7 +300,7 @@ impl Component for BookPageModel {
                         },
                     },
 
-                    // ── row 1: stats & history | highlights ─────────────
+                    // ── row 1: stats & history | journey ────────────────
                     gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         add_css_class: "kalam-card-row",
@@ -411,6 +365,49 @@ impl Component for BookPageModel {
                             },
                         },
 
+                        // Reading journey
+                        gtk::Box {
+                            set_orientation: gtk::Orientation::Vertical,
+                            add_css_class: "kalam-detail-card",
+                            set_hexpand: true,
+                            set_valign: gtk::Align::Start,
+
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Horizontal,
+                                set_spacing: 7,
+                                gtk::Image {
+                                    add_css_class: "kalam-detail-card-icon",
+                                    set_icon_name: Some("view-list-symbolic"),
+                                    set_pixel_size: 15,
+                                },
+                                gtk::Label {
+                                    set_label: "Reading journey",
+                                    add_css_class: "kalam-detail-card-title",
+                                },
+                            },
+
+                            #[name = "journey_host"]
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_margin_top: 8,
+                            },
+                            #[name = "journey_more"]
+                            gtk::Button {
+                                add_css_class: "kalam-journey-more",
+                                set_focus_on_click: false,
+                                set_halign: gtk::Align::Start,
+                                connect_clicked => BookPageMsg::ToggleJourney,
+                            },
+                        },
+
+                    },
+
+                    // ── row 2: highlights | author | file ───────────────
+                    gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        add_css_class: "kalam-card-row",
+                        set_spacing: 14,
+
                         // Highlights & quotes
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
@@ -446,13 +443,6 @@ impl Component for BookPageModel {
                                 set_margin_top: 8,
                             },
                         },
-                    },
-
-                    // ── row 2: author | journey | file ──────────────────
-                    gtk::Box {
-                        set_orientation: gtk::Orientation::Horizontal,
-                        add_css_class: "kalam-card-row",
-                        set_spacing: 14,
 
                         // Author
                         gtk::Box {
@@ -536,41 +526,6 @@ impl Component for BookPageModel {
                                 set_orientation: gtk::Orientation::Horizontal,
                                 set_spacing: 8,
                                 set_margin_top: 8,
-                            },
-                        },
-
-                        // Reading journey
-                        gtk::Box {
-                            set_orientation: gtk::Orientation::Vertical,
-                            add_css_class: "kalam-detail-card",
-                            set_hexpand: true,
-                            set_valign: gtk::Align::Start,
-
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Horizontal,
-                                set_spacing: 7,
-                                gtk::Image {
-                                    add_css_class: "kalam-detail-card-icon",
-                                    set_icon_name: Some("view-list-symbolic"),
-                                    set_pixel_size: 15,
-                                },
-                                gtk::Label {
-                                    set_label: "Reading journey",
-                                    add_css_class: "kalam-detail-card-title",
-                                },
-                            },
-
-                            #[name = "journey_host"]
-                            gtk::Box {
-                                set_orientation: gtk::Orientation::Vertical,
-                                set_margin_top: 8,
-                            },
-                            #[name = "journey_more"]
-                            gtk::Button {
-                                add_css_class: "kalam-journey-more",
-                                set_focus_on_click: false,
-                                set_halign: gtk::Align::Start,
-                                connect_clicked => BookPageMsg::ToggleJourney,
                             },
                         },
 
@@ -890,11 +845,7 @@ impl BookPageModel {
     fn rebuild(&mut self, widgets: &BookPageModelWidgets, sender: &ComponentSender<Self>) {
         // Hero.
         let chapters = self.chapter_titles();
-        fill_cover(
-            &widgets.cover_overlay,
-            &widgets.cover_host,
-            self.book.as_ref(),
-        );
+        fill_cover(&widgets.cover_host, self.book.as_ref());
         fill_meta(&widgets.meta_host, self.book.as_ref(), sender);
         fill_progress(
             &widgets.prog_pct,
@@ -963,13 +914,11 @@ impl BookPageModel {
 // Hero
 // ---------------------------------------------------------------------------
 
-/// Cover face 148×214 over a 6px page edge → the overlay is 154×219.
+/// The hero cover, fixed at 148×214.
 const COVER_W: i32 = 148;
 const COVER_H: i32 = 214;
-const EDGE_PX: i32 = 6;
 
-fn fill_cover(overlay: &gtk::Overlay, host: &gtk::Box, book: Option<&Book>) {
-    overlay.set_size_request(COVER_W + EDGE_PX, COVER_H + EDGE_PX);
+fn fill_cover(host: &gtk::Box, book: Option<&Book>) {
     host.set_size_request(COVER_W, COVER_H);
     while let Some(child) = host.first_child() {
         host.remove(&child);
