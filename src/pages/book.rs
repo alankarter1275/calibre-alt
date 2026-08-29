@@ -39,6 +39,8 @@ pub enum BookPageOut {
     ViewHighlights,
     /// Open the shelves checklist panel (in-app float).
     ShowShelves,
+    /// Open the tags panel (in-app float) from the hero's "+" chip.
+    ShowTags,
     Deleted {
         #[allow(dead_code)]
         book_id: i64,
@@ -61,9 +63,8 @@ pub enum BookPageMsg {
     Refresh,
     /// The author card's "View page →" — always the first listed author.
     OpenFirstAuthor,
-    /// Inline tag editing from the hero chips.
-    RemoveTag(String),
-    AddTag(String),
+    /// Open the tags panel (in-app float) — tags are managed there.
+    ShowTags,
     /// Toggle the journey between 6 chapters and the full list.
     ToggleJourney,
     /// Open the full annotations dialog from the highlights card.
@@ -744,28 +745,8 @@ impl Component for BookPageModel {
             BookPageMsg::ShowShelfMenu => {
                 sender.output(BookPageOut::ShowShelves).ok();
             }
-            BookPageMsg::RemoveTag(tag) => {
-                if let Some(book) = &self.book {
-                    let id = book.id;
-                    if crate::notify::report(
-                        self.catalog.remove_book_tag(id, &tag),
-                        "Could not remove the tag",
-                    ) {
-                        self.book = self.catalog.get_book(id).ok().flatten();
-                    }
-                }
-            }
-            BookPageMsg::AddTag(tag) => {
-                if let Some(book) = &self.book {
-                    let id = book.id;
-                    if crate::notify::report(
-                        self.catalog.add_book_tag(id, &tag),
-                        "Could not add the tag",
-                    ) {
-                        crate::notify::compact("Tag added", &tag);
-                        self.book = self.catalog.get_book(id).ok().flatten();
-                    }
-                }
+            BookPageMsg::ShowTags => {
+                sender.output(BookPageOut::ShowTags).ok();
             }
             BookPageMsg::ToggleJourney => {
                 self.journey_expanded = !self.journey_expanded;
@@ -1040,40 +1021,23 @@ fn fill_tags(flow: &gtk::FlowBox, book: &Book, sender: &ComponentSender<BookPage
         flow.remove(&child);
     }
     for tag in &book.tags {
+        // Display-only: management (add/remove) lives in the tags panel.
         let btn = gtk::Button::new();
         btn.add_css_class("kalam-tag-chip");
         btn.set_has_frame(false);
         btn.set_focus_on_click(false);
-        let inner = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-        let t = gtk::Label::new(Some(tag));
-        t.set_halign(gtk::Align::Start);
-        inner.append(&t);
-        let x = gtk::Label::new(Some("\u{2715}"));
-        x.add_css_class("kalam-tag-x");
-        inner.append(&x);
-        btn.set_child(Some(&inner));
-        let tag = tag.clone();
-        let s = sender.clone();
-        btn.set_tooltip_text(Some("Remove tag"));
-        btn.connect_clicked(move |_| s.input(BookPageMsg::RemoveTag(tag.clone())));
+        btn.set_can_target(false);
+        btn.set_label(tag);
         flow.append(&btn);
     }
-    let add = gtk::Button::with_label("+ Add tag");
+    let add = gtk::Button::new();
     add.add_css_class("kalam-tag-add");
     add.set_has_frame(false);
     add.set_focus_on_click(false);
-    add.connect_clicked({
-        let s = sender.clone();
-        move |b| {
-            let s2 = s.clone();
-            open_add_tag_dialog(
-                b.root()
-                    .and_then(|r| r.downcast::<gtk::Window>().ok())
-                    .as_ref(),
-                move |text| s2.input(BookPageMsg::AddTag(text)),
-            );
-        }
-    });
+    add.set_child(Some(&crate::icons::symbolic("value-add-symbolic", 14)));
+    add.set_tooltip_text(Some("Manage tags"));
+    let s = sender.clone();
+    add.connect_clicked(move |_| s.input(BookPageMsg::ShowTags));
     flow.append(&add);
 }
 
@@ -1665,55 +1629,7 @@ fn open_in_file_manager(file: &std::path::Path) {
 // Dialogs
 // ---------------------------------------------------------------------------
 
-/// Small modal for the "+ Add tag" chip.
-fn open_add_tag_dialog(parent: Option<&gtk::Window>, on_add: impl Fn(String) + 'static) {
-    let window = gtk::Window::builder()
-        .title("Add tag")
-        .modal(true)
-        .resizable(false)
-        .build();
-    window.add_css_class("kalam-window");
-    if let Some(parent) = parent {
-        window.set_transient_for(Some(parent));
-    }
 
-    let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    root.set_margin_all(16);
-
-    let entry = gtk::Entry::builder()
-        .placeholder_text("e.g. fantasy")
-        .build();
-    entry.set_width_chars(24);
-    root.append(&entry);
-
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    row.set_halign(gtk::Align::End);
-    let cancel = gtk::Button::with_label("Cancel");
-    cancel.add_css_class("kalam-secondary-btn");
-    let window_c = window.clone();
-    cancel.connect_clicked(move |_| window_c.close());
-    row.append(&cancel);
-
-    let add = gtk::Button::with_label("Add");
-    add.add_css_class("kalam-primary-btn");
-    let entry_ref = entry.clone();
-    let window_a = window.clone();
-    let on_add = Rc::new(on_add);
-    add.connect_clicked(move |_| {
-        let text = entry_ref.text().to_string();
-        let text = text.trim().to_string();
-        if !text.is_empty() {
-            on_add(text);
-        }
-        window_a.close();
-    });
-    row.append(&add);
-    root.append(&row);
-
-    window.set_child(Some(&root));
-    window.present();
-    entry.grab_focus();
-}
 
 /// Full list of a book's highlights/quotes, with per-row delete.
 /// The highlights & quotes panel, hosted in the app's in-app float layer
@@ -1927,5 +1843,144 @@ pub fn build_shelves_panel(
         }
     }
 
+    root
+}
+
+/// All of a book's tags in one place: add new ones, remove existing. Hosted
+/// in the app's in-app float layer (see AppModel::open_tags_floating).
+pub fn build_tags_panel(
+    catalog: Arc<Catalog>,
+    book_id: i64,
+    on_done: impl Fn() + 'static,
+) -> gtk::Box {
+    let on_done = std::rc::Rc::new(on_done);
+
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    root.add_css_class("kalam-tags-float");
+    root.set_overflow(gtk::Overflow::Hidden);
+
+    let add_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    add_row.set_margin_top(16);
+    add_row.set_margin_start(16);
+    add_row.set_margin_end(16);
+    add_row.set_margin_bottom(4);
+
+    let entry = gtk::Entry::builder().placeholder_text("e.g. fantasy").build();
+    entry.set_hexpand(true);
+    add_row.append(&entry);
+
+    let add_btn = gtk::Button::with_label("Add");
+    add_btn.add_css_class("kalam-primary-btn");
+    add_row.append(&add_btn);
+    root.append(&add_row);
+
+    let section = gtk::Label::new(Some("Current tags"));
+    section.add_css_class("kalam-section-label");
+    section.set_halign(gtk::Align::Start);
+    section.set_margin_top(8);
+    section.set_margin_start(16);
+    root.append(&section);
+
+    let list_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    list_host.set_margin_start(16);
+    list_host.set_margin_end(16);
+    list_host.set_margin_bottom(8);
+
+    let scroll = gtk::ScrolledWindow::builder()
+        .vexpand(true)
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .child(&list_host)
+        .build();
+    root.append(&scroll);
+
+    let done = gtk::Button::with_label("Done");
+    done.add_css_class("kalam-primary-btn");
+    done.set_halign(gtk::Align::End);
+    done.set_margin_all(12);
+    let done_fn = on_done.clone();
+    done.connect_clicked(move |_| done_fn());
+    root.append(&done);
+
+    // Self-referential refresh: add/remove need to re-run it, so the
+    // closure finds itself through a slot it fills in after construction.
+    let holder: Rc<std::cell::RefCell<Option<Rc<dyn Fn()>>>> =
+        Rc::new(std::cell::RefCell::new(None));
+    let closure: Rc<dyn Fn()> = Rc::new({
+        let host = list_host.clone();
+        let catalog = catalog.clone();
+        let book_id = book_id;
+        move || {
+            while let Some(child) = host.first_child() {
+                host.remove(&child);
+            }
+            let tags = catalog
+                .get_book(book_id)
+                .ok()
+                .flatten()
+                .map(|b| b.tags)
+                .unwrap_or_default();
+            if tags.is_empty() {
+                let none = gtk::Label::new(Some("No tags yet \u{2014} add one above."));
+                none.add_css_class("kalam-placeholder");
+                none.set_xalign(0.0);
+                host.append(&none);
+                return;
+            }
+            for tag in tags {
+                let row = gtk::Box::new(gtk::Orientation::Horizontal, 9);
+                row.set_margin_top(4);
+                row.set_margin_bottom(4);
+                let text = gtk::Label::new(Some(&tag));
+                text.add_css_class("kalam-hl-text");
+                text.set_halign(gtk::Align::Start);
+                text.set_hexpand(true);
+                text.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                row.append(&text);
+
+                let del = gtk::Button::new();
+                del.add_css_class("kalam-icon-btn");
+                del.set_focus_on_click(false);
+                del.set_tooltip_text(Some("Remove tag"));
+                del.set_child(Some(&crate::icons::symbolic("user-trash-symbolic", 15)));
+                let catalog = catalog.clone();
+                let holder = holder.clone();
+                del.connect_clicked(move |_| {
+                    if let Err(err) = catalog.remove_book_tag(book_id, &tag) {
+                        crate::notify::error("Could not remove the tag", &err.to_string());
+                    } else {
+                        crate::notify::compact("Tag removed", &tag);
+                    }
+                    if let Some(refresh) = holder.borrow().clone() {
+                        refresh();
+                    }
+                });
+                row.append(&del);
+                host.append(&row);
+            }
+        }
+    });
+    *holder.borrow_mut() = Some(closure.clone());
+
+    let entry_add = entry.clone();
+    let add_catalog = catalog.clone();
+    let holder_add = holder.clone();
+    add_btn.connect_clicked(move |_| {
+        let text = entry_add.text().to_string();
+        let text = text.trim().to_string();
+        if text.is_empty() {
+            return;
+        }
+        if let Err(err) = add_catalog.add_book_tag(book_id, &text) {
+            crate::notify::error("Could not add the tag", &err.to_string());
+        } else {
+            crate::notify::compact("Tag added", &text);
+            entry_add.set_text("");
+        }
+        if let Some(refresh) = holder_add.borrow().clone() {
+            refresh();
+        }
+    });
+
+    closure();
     root
 }

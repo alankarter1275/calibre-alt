@@ -2839,7 +2839,7 @@ button.kalam-tag-chip {
 }
 
 button.kalam-tag-chip:hover {
-    border-color: @kalam_danger;
+    border-color: @kalam_accent;
 }
 
 button.kalam-tag-chip label {
@@ -3182,6 +3182,14 @@ button.kalam-journey-more:hover {
 
 /* In-app shelves checklist float (book page's Shelves button) */
 .kalam-shelves-float {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    box-shadow: 0 18px 44px alpha(#000, 0.40);
+}
+
+/* In-app tags panel float (book page's "+" chip) */
+.kalam-tags-float {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
     border-radius: 14px;
