@@ -171,10 +171,15 @@ impl Component for BookPageModel {
                                     set_vexpand: true,
                                 },
                                 add_overlay = &gtk::Box {
-                                    #[name = "cover_host"]
                                     add_css_class: "kalam-cover-face",
                                     set_halign: gtk::Align::Start,
                                     set_valign: gtk::Align::Start,
+
+                                    #[name = "cover_host"]
+                                    gtk::Box {
+                                        set_hexpand: true,
+                                        set_vexpand: true,
+                                    },
                                 },
                             },
 
@@ -197,8 +202,8 @@ impl Component for BookPageModel {
                                         set_halign: gtk::Align::End,
                                     },
                                 },
+                                #[name = "prog_track"]
                                 gtk::Box {
-                                    #[name = "prog_track"]
                                     add_css_class: "kalam-prog-track",
                                     #[name = "prog_fill"]
                                     gtk::Box {
@@ -360,7 +365,7 @@ impl Component for BookPageModel {
                                 set_spacing: 7,
                                 gtk::Image {
                                     add_css_class: "kalam-detail-card-icon",
-                                    set_from_icon_name: Some("view-statistics-chart-symbolic"),
+                                    set_icon_name: Some("view-statistics-chart-symbolic"),
                                     set_pixel_size: 15,
                                 },
                                 gtk::Label {
@@ -419,7 +424,7 @@ impl Component for BookPageModel {
                                 set_spacing: 7,
                                 gtk::Image {
                                     add_css_class: "kalam-detail-card-icon",
-                                    set_from_icon_name: Some("text-x-generic-symbolic"),
+                                    set_icon_name: Some("text-x-generic-symbolic"),
                                     set_pixel_size: 15,
                                 },
                                 gtk::Label {
@@ -462,7 +467,7 @@ impl Component for BookPageModel {
                                 set_spacing: 7,
                                 gtk::Image {
                                     add_css_class: "kalam-detail-card-icon",
-                                    set_from_icon_name: Some("system-users-symbolic"),
+                                    set_icon_name: Some("system-users-symbolic"),
                                     set_pixel_size: 15,
                                 },
                                 gtk::Label {
@@ -547,7 +552,7 @@ impl Component for BookPageModel {
                                 set_spacing: 7,
                                 gtk::Image {
                                     add_css_class: "kalam-detail-card-icon",
-                                    set_from_icon_name: Some("view-list-symbolic"),
+                                    set_icon_name: Some("view-list-symbolic"),
                                     set_pixel_size: 15,
                                 },
                                 gtk::Label {
@@ -582,7 +587,7 @@ impl Component for BookPageModel {
                                 set_spacing: 7,
                                 gtk::Image {
                                     add_css_class: "kalam-detail-card-icon",
-                                    set_from_icon_name: Some("x-office-document-symbolic"),
+                                    set_icon_name: Some("x-office-document-symbolic"),
                                     set_pixel_size: 15,
                                 },
                                 gtk::Label {
@@ -638,6 +643,17 @@ impl Component for BookPageModel {
             book,
         };
         let widgets = view_output!();
+
+        // Wired once, not in rebuild (which runs on every message): the file
+        // path is fixed for the page's lifetime, so stacking handlers would
+        // open N file managers after N messages.
+        if let Some(book) = &model.book {
+            let path = book.file_path.clone();
+            widgets.file_open_btn.connect_clicked(move |_| {
+                open_in_file_manager(&path);
+            });
+        }
+
         model.reload_state(book_id);
         model.rebuild(&widgets, &sender);
         ComponentParts { model, widgets }
@@ -828,9 +844,9 @@ impl Component for BookPageModel {
                 }
             }
             BookPageMsg::Refresh => {
-                if let Some(book) = &self.book {
-                    self.book = self.catalog.get_book(book.id).ok().flatten();
-                    self.reload_state(book.id);
+                if let Some(id) = self.book.as_ref().map(|b| b.id) {
+                    self.book = self.catalog.get_book(id).ok().flatten();
+                    self.reload_state(id);
                 }
             }
         }
@@ -942,8 +958,6 @@ impl BookPageModel {
         fill_author_card(&widgets, self.book.as_ref(), self.catalog.as_ref(), sender);
         fill_journey_card(&widgets, self, chapters);
         fill_file_card(&widgets, self.book.as_ref());
-
-        self.update_view(widgets, sender);
     }
 }
 
@@ -967,7 +981,7 @@ fn fill_cover(overlay: &gtk::Overlay, host: &gtk::Box, book: Option<&Book>) {
 }
 
 /// A `KEY` over `value` line, used by the hero meta block and the file card.
-fn meta_row(key: &str, value: gtk::Widget) -> gtk::Box {
+fn meta_row<V: gtk::prelude::IsA<gtk::Widget>>(key: &str, value: V) -> gtk::Box {
     let row = gtk::Box::new(gtk::Orientation::Vertical, 2);
     row.add_css_class("kalam-meta-row");
     let k = gtk::Label::new(Some(key));
@@ -1127,11 +1141,12 @@ fn fill_tags(flow: &gtk::FlowBox, book: &Book, sender: &ComponentSender<BookPage
     add.connect_clicked({
         let s = sender.clone();
         move |b| {
+            let s2 = s.clone();
             open_add_tag_dialog(
                 b.root()
                     .and_then(|r| r.downcast::<gtk::Window>().ok())
                     .as_ref(),
-                move |text| s.input(BookPageMsg::AddTag(text)),
+                move |text| s2.input(BookPageMsg::AddTag(text)),
             );
         }
     });
@@ -1447,7 +1462,7 @@ fn fill_highlights_card(host: &gtk::Box, model: &BookPageModel, chapters: &[Stri
 fn fill_author_card(
     widgets: &BookPageModelWidgets,
     book: Option<&Book>,
-    catalog: &Arc<Catalog>,
+    catalog: &Catalog,
     sender: &ComponentSender<BookPageModel>,
 ) {
     let Some(book) = book else {
@@ -1491,10 +1506,11 @@ fn fill_author_card(
 
     // Sub-line: birth year when the cached profile has one — never invented.
     let birth_year = profile.as_ref().and_then(|p| extract_year(&p.birth_date));
-    widgets.author_sub.set_label(match birth_year {
+    let sub = match birth_year {
         Some(y) => format!("b. {y}"),
-        None => "",
-    });
+        None => String::new(),
+    };
+    widgets.author_sub.set_label(&sub);
 
     let bio = profile.as_ref().map(|p| p.bio.as_str()).unwrap_or("");
     widgets.author_bio.set_label(if bio.trim().is_empty() {
@@ -1635,11 +1651,12 @@ fn fill_journey_card(widgets: &BookPageModelWidgets, model: &BookPageModel, chap
     if chapters.len() > 6 {
         let hidden = chapters.len() - visible;
         more.set_visible(true);
-        more.set_label(if model.journey_expanded {
-            "Show fewer"
+        let label = if model.journey_expanded {
+            "Show fewer".to_string()
         } else {
-            &format!("+ {hidden} more chapters")
-        });
+            format!("+ {hidden} more chapters")
+        };
+        more.set_label(&label);
     }
 }
 
@@ -1692,10 +1709,8 @@ fn fill_file_card(widgets: &BookPageModelWidgets, book: Option<&Book>) {
         l
     }));
 
-    let path = book.file_path.clone();
-    widgets.file_open_btn.connect_clicked_once(move |_| {
-        open_in_file_manager(&path);
-    });
+    // The "open folder" button is wired once in init — the path is fixed for
+    // the page's lifetime, so rebuilding must not stack another handler.
 }
 
 fn pretty_imported(iso: &str) -> String {
@@ -1711,12 +1726,12 @@ fn open_in_file_manager(file: &std::path::Path) {
     let Some(dir) = file.parent() else {
         return;
     };
-    let bytes = dir.as_os_str().as_encoded_bytes().unwrap_or_default();
+    let bytes = dir.as_os_str().as_encoded_bytes().unwrap_or(&[]);
     let mut url = String::from("file://");
     for b in bytes {
         match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
-                url.push(*b as char)
+                url.push(b as char)
             }
             _ => url.push_str(&format!("%{b:02X}")),
         }

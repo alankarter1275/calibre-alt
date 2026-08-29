@@ -3295,5 +3295,44 @@ button.kalam-journey-more:hover {
     font-size: 0.7rem;
 }
 
+
+/* ── page shell + small gaps left over from the first pass ── */
+.kalam-bookpage {
+    background: transparent;
+}
+
+.kalam-bookpage-inner {
+    padding: 24px 32px 32px;
+}
+
+.kalam-meta-block {
+    min-width: 0;
+}
+
+.kalam-meta-row {
+    min-width: 0;
+}
+
+.kalam-author-thumb-cover {
+    border-radius: 4px;
+}
+
+.kalam-hl-bar-yellow {
+    background: #e5c07b;
+}
+
+.kalam-series-host {
+    padding: 4px 0;
+}
+
+.kalam-series-list {
+    min-width: 0;
+    padding-bottom: 8px;
+}
+
+.kalam-series-mini {
+    border-radius: 3px;
+}
+
 /* ── end P5.5 ──────────────────────────────────────────── */
 "#;

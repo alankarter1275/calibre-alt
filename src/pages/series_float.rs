@@ -147,7 +147,7 @@ impl Component for SeriesFloatModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let key = series_key(&series_name, &first_author);
-        let model = SeriesFloatModel {
+        let mut model = SeriesFloatModel {
             catalog,
             series_name: series_name.clone(),
             series_key: key,
@@ -261,7 +261,10 @@ fn start_fetch(
     });
 
     gtk::glib::spawn_future_local(async move {
-        let result = rx.recv().await;
+        let result = rx
+            .recv()
+            .await
+            .unwrap_or_else(|_| FetchResult::Err("Fetch worker ended unexpectedly.".into()));
         let msg = match result {
             FetchResult::Ok(works) => SeriesFloatMsg::Fetched {
                 works: Some(works),
