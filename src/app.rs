@@ -154,9 +154,7 @@ impl AppModel {
     }
 
     fn show_back_chip(&self) -> bool {
-        !self.history.is_empty()
-            && !self.route.is_reader()
-            && !self.route.is_book_page()
+        !self.history.is_empty() && !self.route.is_reader() && !self.route.is_book_page()
     }
 
     fn close_floating(&mut self) {

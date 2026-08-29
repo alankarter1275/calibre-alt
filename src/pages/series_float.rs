@@ -19,9 +19,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub enum SeriesFloatOut {
     Close,
-    OpenBook {
-        book_id: i64,
-    },
+    OpenBook { book_id: i64 },
 }
 
 #[derive(Debug)]
@@ -169,14 +167,12 @@ impl Component for SeriesFloatModel {
                     fetched_at: entry.fetched_at,
                 };
             }
-            Ok(None) => {
-                start_fetch(
-                    &model.catalog,
-                    &model.series_name,
-                    &model.series_key,
-                    sender.clone(),
-                )
-            }
+            Ok(None) => start_fetch(
+                &model.catalog,
+                &model.series_name,
+                &model.series_key,
+                sender.clone(),
+            ),
             Err(err) => {
                 model.fetching = false;
                 model.state = SeriesState::Error {
@@ -281,11 +277,7 @@ fn start_fetch(
 }
 
 /// Search, download covers, and cache the listing. Runs off the main thread.
-fn fetch_and_cache(
-    catalog: &Arc<Catalog>,
-    series_name: &str,
-    series_key: &str,
-) -> FetchResult {
+fn fetch_and_cache(catalog: &Arc<Catalog>, series_name: &str, series_key: &str) -> FetchResult {
     let remote = match crate::metadata::series::search_series(series_name) {
         Ok(works) => works,
         Err(err) => return FetchResult::Err(err.to_string()),
@@ -465,9 +457,10 @@ fn render(
 
             // Honest footer: where this came from, and when.
             widgets.footer.set_visible(true);
-            widgets
-                .footer
-                .set_label(&format!("Open Library · fetched {}", pretty_fetched(fetched_at)));
+            widgets.footer.set_label(&format!(
+                "Open Library · fetched {}",
+                pretty_fetched(fetched_at)
+            ));
         }
     }
 }
@@ -540,9 +533,7 @@ fn build_series_row(
         let click = gtk::GestureClick::new();
         click.set_button(1);
         click.connect_released(move |_, _, _, _| {
-            sender
-                .output(SeriesFloatOut::OpenBook { book_id: id })
-                .ok();
+            sender.output(SeriesFloatOut::OpenBook { book_id: id }).ok();
         });
         outer.add_controller(click);
     }

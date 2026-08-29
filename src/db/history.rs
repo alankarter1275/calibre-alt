@@ -289,11 +289,7 @@ impl Catalog {
     }
 
     /// The `limit` most recent sessions for one book, newest first.
-    pub fn book_recent_sessions(
-        &self,
-        book_id: i64,
-        limit: usize,
-    ) -> Result<Vec<SessionRow>> {
+    pub fn book_recent_sessions(&self, book_id: i64, limit: usize) -> Result<Vec<SessionRow>> {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT id, book_id, started_at, ended_at, seconds

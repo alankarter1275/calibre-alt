@@ -175,7 +175,10 @@ mod tests {
         cat.upsert_series_cache("kingkiller|rothfuss", "openlibrary", &works)
             .unwrap();
 
-        let entry = cat.get_cached_series("kingkiller|rothfuss").unwrap().unwrap();
+        let entry = cat
+            .get_cached_series("kingkiller|rothfuss")
+            .unwrap()
+            .unwrap();
         assert_eq!(entry.source, "openlibrary");
         assert_eq!(entry.works.len(), 2);
         assert_eq!(entry.works[1].title, "The Wise Man's Fear");
@@ -184,7 +187,10 @@ mod tests {
         let fewer = vec![works[0].clone()];
         cat.upsert_series_cache("kingkiller|rothfuss", "openlibrary", &fewer)
             .unwrap();
-        let entry = cat.get_cached_series("kingkiller|rothfuss").unwrap().unwrap();
+        let entry = cat
+            .get_cached_series("kingkiller|rothfuss")
+            .unwrap()
+            .unwrap();
         assert_eq!(entry.works.len(), 1);
     }
 

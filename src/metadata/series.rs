@@ -63,10 +63,7 @@ pub fn search_series(name: &str) -> Result<Vec<RemoteWork>, FetchError> {
         docs = query("q", &quoted)?;
     }
 
-    let mut works: Vec<RemoteWork> = docs
-        .into_iter()
-        .filter_map(doc_to_work)
-        .collect();
+    let mut works: Vec<RemoteWork> = docs.into_iter().filter_map(doc_to_work).collect();
 
     // Deduplicate by normalised title, preferring the doc that has a cover.
     works.sort_by(|a, b| {
@@ -119,7 +116,10 @@ fn doc_to_work(doc: SearchDoc) -> Option<RemoteWork> {
     Some(RemoteWork {
         title,
         key: doc.key.unwrap_or_default(),
-        author: doc.author_name.and_then(|a| a.into_iter().next()).unwrap_or_default(),
+        author: doc
+            .author_name
+            .and_then(|a| a.into_iter().next())
+            .unwrap_or_default(),
         year: doc.first_publish_year.unwrap_or(0),
         cover_i: doc.cover_i,
     })

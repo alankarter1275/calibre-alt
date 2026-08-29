@@ -715,7 +715,10 @@ impl Component for BookPageModel {
             BookPageMsg::OpenAuthor(name) => {
                 sender.output(BookPageOut::OpenAuthor { name }).ok();
             }
-            BookPageMsg::OpenSeries { series, first_author } => {
+            BookPageMsg::OpenSeries {
+                series,
+                first_author,
+            } => {
                 sender
                     .output(BookPageOut::OpenSeries {
                         series,
@@ -873,7 +876,11 @@ impl BookPageModel {
     fn rebuild(&mut self, widgets: &BookPageModelWidgets, sender: &ComponentSender<Self>) {
         // Hero.
         let chapters = self.chapter_titles();
-        fill_cover(&widgets.cover_overlay, &widgets.cover_host, self.book.as_ref());
+        fill_cover(
+            &widgets.cover_overlay,
+            &widgets.cover_host,
+            self.book.as_ref(),
+        );
         fill_meta(&widgets.meta_host, self.book.as_ref(), sender);
         fill_progress(
             &widgets.prog_pct,
@@ -921,11 +928,13 @@ impl BookPageModel {
         } else {
             "Mark finished"
         }));
-        widgets.tbr_btn.set_tooltip_text(Some(if self.in_reading_list {
-            "In reading list — remove"
-        } else {
-            "Add to reading list"
-        }));
+        widgets
+            .tbr_btn
+            .set_tooltip_text(Some(if self.in_reading_list {
+                "In reading list — remove"
+            } else {
+                "Add to reading list"
+            }));
 
         // Cards.
         fill_stats_card(&widgets, self, chapters);
@@ -947,21 +956,13 @@ const COVER_W: i32 = 148;
 const COVER_H: i32 = 214;
 const EDGE_PX: i32 = 6;
 
-fn fill_cover(
-    overlay: &gtk::Overlay,
-    host: &gtk::Box,
-    book: Option<&Book>,
-) {
+fn fill_cover(overlay: &gtk::Overlay, host: &gtk::Box, book: Option<&Book>) {
     overlay.set_size_request(COVER_W + EDGE_PX, COVER_H + EDGE_PX);
     host.set_size_request(COVER_W, COVER_H);
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
-    let cover = cover_widget(
-        book.and_then(|b| b.cover_path.as_deref()),
-        COVER_W,
-        COVER_H,
-    );
+    let cover = cover_widget(book.and_then(|b| b.cover_path.as_deref()), COVER_W, COVER_H);
     host.append(&cover);
 }
 
@@ -992,7 +993,12 @@ fn fill_meta(host: &gtk::Box, book: Option<&Book>, sender: &ComponentSender<Book
         l
     }));
 
-    if let Some(series) = book.series.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(series) = book
+        .series
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         let label = book.series_display().unwrap_or_else(|| series.to_string());
         let series = series.to_string();
         let first_author = book
@@ -1073,19 +1079,14 @@ fn fill_progress(
     fill.set_width_request(w);
 }
 
-fn fill_rating(
-    host: &gtk::Box,
-    book: &Book,
-    sender: &ComponentSender<BookPageModel>,
-) {
+fn fill_rating(host: &gtk::Box, book: &Book, sender: &ComponentSender<BookPageModel>) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
     let s = sender.clone();
-    host.append(&star_picker(
-        book.rating,
-        move |v| s.input(BookPageMsg::SetRating(v)),
-    ));
+    host.append(&star_picker(book.rating, move |v| {
+        s.input(BookPageMsg::SetRating(v))
+    }));
     let text = match book.rating_stars() {
         Some(v) => format!("{v:.1} / 5 — click again to clear"),
         None => "Not rated yet".to_string(),
@@ -1096,11 +1097,7 @@ fn fill_rating(
     host.append(&hint);
 }
 
-fn fill_tags(
-    flow: &gtk::FlowBox,
-    book: &Book,
-    sender: &ComponentSender<BookPageModel>,
-) {
+fn fill_tags(flow: &gtk::FlowBox, book: &Book, sender: &ComponentSender<BookPageModel>) {
     while let Some(child) = flow.first_child() {
         flow.remove(&child);
     }
@@ -1183,11 +1180,7 @@ fn stat_tile(host: &gtk::Box, value: &str, label: &str) {
     host.append(&tile);
 }
 
-fn fill_stats_card(
-    widgets: &BookPageModelWidgets,
-    model: &BookPageModel,
-    chapters: &[String],
-) {
+fn fill_stats_card(widgets: &BookPageModelWidgets, model: &BookPageModel, chapters: &[String]) {
     let host = &widgets.stat_host;
     while let Some(child) = host.first_child() {
         host.remove(&child);
@@ -1201,8 +1194,8 @@ fn fill_stats_card(
         let est: String = if book.progress >= 100 || model.finished {
             "Done".into()
         } else if book.progress > 0 && total > 0 {
-            let secs_left = total.saturating_mul(100 - book.progress as i64)
-                / book.progress.max(1) as i64;
+            let secs_left =
+                total.saturating_mul(100 - book.progress as i64) / book.progress.max(1) as i64;
             format!("≈ {}", format_duration(secs_left))
         } else {
             "—".into()
@@ -1241,7 +1234,12 @@ fn fill_stats_card(
     let by_day = model
         .book
         .as_ref()
-        .map(|b| model.catalog.book_seconds_by_day(b.id, 7).unwrap_or_default())
+        .map(|b| {
+            model
+                .catalog
+                .book_seconds_by_day(b.id, 7)
+                .unwrap_or_default()
+        })
         .unwrap_or_default();
     let bars = &widgets.bars_host;
     while let Some(child) = bars.first_child() {
@@ -1294,7 +1292,11 @@ fn fill_stats_card(
     if let Some(book) = &model.book {
         let id = book.id;
         let mut items: Vec<(String, &str, &str, Option<i64>)> = Vec::new();
-        for s in model.catalog.book_recent_sessions(id, 3).unwrap_or_default() {
+        for s in model
+            .catalog
+            .book_recent_sessions(id, 3)
+            .unwrap_or_default()
+        {
             items.push((
                 s.started_at.clone(),
                 "Reading session",
@@ -1451,12 +1453,7 @@ fn fill_author_card(
     let Some(book) = book else {
         return;
     };
-    let first_author = book
-        .authors
-        .split(',')
-        .next()
-        .unwrap_or("")
-        .trim();
+    let first_author = book.authors.split(',').next().unwrap_or("").trim();
     let profile = catalog
         .get_author_profile_by_name(first_author)
         .ok()
@@ -1485,14 +1482,15 @@ fn fill_author_card(
         }
     }
 
-    widgets
-        .author_name
-        .set_label(profile.as_ref().map(|p| p.canonical_name.as_str()).unwrap_or(first_author));
+    widgets.author_name.set_label(
+        profile
+            .as_ref()
+            .map(|p| p.canonical_name.as_str())
+            .unwrap_or(first_author),
+    );
 
     // Sub-line: birth year when the cached profile has one — never invented.
-    let birth_year = profile
-        .as_ref()
-        .and_then(|p| extract_year(&p.birth_date));
+    let birth_year = profile.as_ref().and_then(|p| extract_year(&p.birth_date));
     widgets.author_sub.set_label(match birth_year {
         Some(y) => format!("b. {y}"),
         None => "",
@@ -1566,11 +1564,7 @@ fn extract_year(s: &str) -> Option<String> {
     None
 }
 
-fn fill_journey_card(
-    widgets: &BookPageModelWidgets,
-    model: &BookPageModel,
-    chapters: &[String],
-) {
+fn fill_journey_card(widgets: &BookPageModelWidgets, model: &BookPageModel, chapters: &[String]) {
     let host = &widgets.journey_host;
     while let Some(child) = host.first_child() {
         host.remove(&child);
@@ -1609,7 +1603,11 @@ fn fill_journey_card(
         let (glyph, icon_class, label_class) = if i < current {
             ("\u{2713}", "kalam-journey-done", "kalam-journey-label-done")
         } else if i == current {
-            ("\u{25CF}", "kalam-journey-current", "kalam-journey-label-current")
+            (
+                "\u{25CF}",
+                "kalam-journey-current",
+                "kalam-journey-label-current",
+            )
         } else {
             ("\u{25CB}", "kalam-journey-todo", "kalam-journey-label-todo")
         };
@@ -1673,35 +1671,26 @@ fn fill_file_card(widgets: &BookPageModelWidgets, book: Option<&Book>) {
     let size = std::fs::metadata(&book.file_path)
         .map(|m| human_size(m.len()))
         .unwrap_or_else(|_| "—".into());
-    rows.append(&meta_row(
-        "Size",
-        {
-            let l = gtk::Label::new(Some(&size));
-            l.add_css_class("kalam-meta-val");
-            l.set_halign(gtk::Align::Start);
-            l
-        },
-    ));
-    rows.append(&meta_row(
-        "Imported",
-        {
-            let l = gtk::Label::new(Some(&pretty_imported(&book.added_at)));
-            l.add_css_class("kalam-meta-val");
-            l.set_halign(gtk::Align::Start);
-            l
-        },
-    ));
+    rows.append(&meta_row("Size", {
+        let l = gtk::Label::new(Some(&size));
+        l.add_css_class("kalam-meta-val");
+        l.set_halign(gtk::Align::Start);
+        l
+    }));
+    rows.append(&meta_row("Imported", {
+        let l = gtk::Label::new(Some(&pretty_imported(&book.added_at)));
+        l.add_css_class("kalam-meta-val");
+        l.set_halign(gtk::Align::Start);
+        l
+    }));
     let hash = format!("{}…", &book.file_hash.chars().take(12).collect::<String>());
-    rows.append(&meta_row(
-        "File hash",
-        {
-            let l = gtk::Label::new(Some(&hash));
-            l.add_css_class("kalam-meta-val");
-            l.set_halign(gtk::Align::Start);
-            l.set_selectable(true);
-            l
-        },
-    ));
+    rows.append(&meta_row("File hash", {
+        let l = gtk::Label::new(Some(&hash));
+        l.add_css_class("kalam-meta-val");
+        l.set_halign(gtk::Align::Start);
+        l.set_selectable(true);
+        l
+    }));
 
     let path = book.file_path.clone();
     widgets.file_open_btn.connect_clicked_once(move |_| {
@@ -1837,7 +1826,9 @@ fn open_annotations_dialog(parent: Option<&gtk::Window>, catalog: Arc<Catalog>, 
             while let Some(child) = host.first_child() {
                 host.remove(&child);
             }
-            let annos = catalog.get_annotations_for_book(book_id).unwrap_or_default();
+            let annos = catalog
+                .get_annotations_for_book(book_id)
+                .unwrap_or_default();
             if annos.is_empty() {
                 let none = gtk::Label::new(Some("No highlights or quotes for this book yet."));
                 none.add_css_class("kalam-placeholder");
@@ -1885,10 +1876,7 @@ fn open_annotations_dialog(parent: Option<&gtk::Window>, catalog: Arc<Catalog>, 
                 let holder = holder.clone();
                 del.connect_clicked(move |_| {
                     if let Err(err) = catalog.delete_annotation(id) {
-                        crate::notify::error(
-                            "Could not delete the annotation",
-                            &err.to_string(),
-                        );
+                        crate::notify::error("Could not delete the annotation", &err.to_string());
                     } else {
                         crate::notify::compact("Annotation deleted", "");
                     }
