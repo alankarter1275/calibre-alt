@@ -836,7 +836,7 @@ impl Component for AppModel {
                 } else {
                     "window-maximize-symbolic"
                 };
-                button.set_icon_name(Some(icon));
+                button.set_icon_name(icon);
             }
         });
         titlebar.append(&min_btn);
