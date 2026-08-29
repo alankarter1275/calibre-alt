@@ -48,6 +48,12 @@ pub fn authors_dir() -> PathBuf {
     data_dir().join("authors")
 }
 
+/// `~/.local/share/kalam/series-covers` — covers for remote series works,
+/// fetched with the series cache and named by their Open Library cover id.
+pub fn series_covers_dir() -> PathBuf {
+    data_dir().join("series-covers")
+}
+
 /// `~/.local/share/kalam/dictionaries`
 pub fn dictionaries_dir() -> PathBuf {
     data_dir().join("dictionaries")
@@ -64,6 +70,7 @@ pub fn ensure_data_dirs() -> std::io::Result<()> {
     fs::create_dir_all(dictionaries_dir())?;
     fs::create_dir_all(override_covers_dir())?;
     fs::create_dir_all(authors_dir())?;
+    fs::create_dir_all(series_covers_dir())?;
     Ok(())
 }
 

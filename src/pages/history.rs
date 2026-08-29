@@ -319,7 +319,7 @@ fn build_row(event: &ReadingEvent, sender: &ComponentSender<HistoryModel>) -> gt
 }
 
 /// `2026-07-27` → `27 Jul 2026`; today and yesterday get friendly names.
-fn pretty_day(day: &str) -> String {
+pub(crate) fn pretty_day(day: &str) -> String {
     if day.len() < 10 {
         return day.to_string();
     }

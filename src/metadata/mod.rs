@@ -10,6 +10,7 @@
 
 pub mod google_books;
 pub mod openlibrary;
+pub mod series;
 
 use std::time::Duration;
 

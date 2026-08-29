@@ -2692,4 +2692,608 @@ switch.kalam-switch slider {
     background: alpha(@kalam_danger, 0.16);
     color: @kalam_danger;
 }
+
+/* ── P5.5 book detail page ───────────────────────────────── */
+
+/* Fixed chrome row: back pill on the left, metadata pencil on the right. */
+.kalam-bookpage-chrome {
+    padding: 6px 4px 12px;
+}
+
+.kalam-bookpage-back {
+    min-height: 0;
+}
+
+.kalam-bookpage-back image {
+    color: inherit;
+    -gtk-icon-size: 15px;
+}
+
+.kalam-bookpage-chrome .kalam-icon-btn,
+.kalam-actions .kalam-icon-btn {
+    border-radius: 999px;
+    min-height: 38px;
+    padding: 0 11px;
+    background: transparent;
+}
+
+.kalam-bookpage-chrome .kalam-icon-btn image,
+.kalam-actions .kalam-icon-btn image {
+    color: inherit;
+    -gtk-icon-size: 16px;
+}
+
+/* Hero. */
+.kalam-bookpage-hero {
+    margin-bottom: 18px;
+}
+
+.kalam-bookpage-title {
+    font-family: "Fraunces", serif;
+    font-size: 1.7rem;
+    font-weight: 600;
+    line-height: 1.15;
+    color: @kalam_text;
+}
+
+.kalam-desc-serif {
+    font-family: "Fraunces", serif;
+    font-style: italic;
+    font-size: 0.95rem;
+    line-height: 1.55;
+    color: @kalam_text_dim;
+}
+
+/* Cover face with the page-edge behind it. */
+.kalam-cover-edge {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 2px 6px 6px 2px;
+}
+
+.kalam-cover-face {
+    border-radius: 2px 4px 4px 2px;
+    box-shadow: 0 12px 26px alpha(#000, 0.30);
+}
+
+/* Progress. */
+.kalam-prog-pct {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-prog-loc {
+    font-size: 0.75rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+}
+
+.kalam-prog-track {
+    background: @kalam_border;
+    border-radius: 999px;
+    min-height: 3px;
+}
+
+.kalam-prog-fill {
+    background: @kalam_accent;
+    border-radius: 999px;
+}
+
+/* Meta rows: FORMAT / SERIES / PUBLISHER. */
+.kalam-meta-key {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: @kalam_text_dim;
+}
+
+.kalam-meta-val {
+    font-size: 0.82rem;
+    font-family: monospace;
+    color: @kalam_text;
+}
+
+/* The Series value is the door to the float. */
+button.kalam-series-link {
+    background: none;
+    border: none;
+    padding: 0;
+    min-height: 0;
+    font-size: 0.82rem;
+    font-family: monospace;
+    color: @kalam_accent;
+}
+
+button.kalam-series-link:hover {
+    color: @kalam_accent;
+    text-decoration-line: underline;
+}
+
+/* Action row. */
+.kalam-actions {
+    margin-top: 2px;
+}
+
+.kalam-btn-read {
+    background: @kalam_accent;
+    color: @kalam_bg;
+    border: none;
+    border-radius: 999px;
+    padding: 8px 18px;
+    font-weight: 600;
+}
+
+.kalam-btn-read image {
+    color: inherit;
+    -gtk-icon-size: 14px;
+}
+
+.kalam-btn-read:hover {
+    background: @kalam_accent;
+    filter: brightness(1.1);
+}
+
+.kalam-btn-remove {
+    background: transparent;
+    color: @kalam_danger;
+    border: 1px solid alpha(@kalam_danger, 0.5);
+    border-radius: 999px;
+    padding: 7px 16px;
+    font-weight: 600;
+}
+
+.kalam-btn-remove:hover {
+    background: alpha(@kalam_danger, 0.12);
+}
+
+/* Inline tag chips. */
+.kalam-tags flowboxchild {
+    padding: 0;
+}
+
+button.kalam-tag-chip {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    padding: 4px 10px;
+    min-height: 0;
+    font-size: 0.78rem;
+}
+
+button.kalam-tag-chip:hover {
+    border-color: @kalam_danger;
+}
+
+button.kalam-tag-chip label {
+    color: @kalam_text;
+}
+
+.kalam-tag-x {
+    color: @kalam_text_dim;
+    font-size: 0.7rem;
+}
+
+button.kalam-tag-add {
+    background: none;
+    border: 1px dashed @kalam_border;
+    border-radius: 999px;
+    padding: 4px 10px;
+    min-height: 0;
+    font-size: 0.78rem;
+    color: @kalam_text_dim;
+}
+
+button.kalam-tag-add:hover {
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+/* Author links on the page (vs float/reader variants). */
+button.kalam-author-link-page {
+    font-size: 0.9rem;
+}
+
+/* Card grid. */
+.kalam-card-row {
+    margin-bottom: 14px;
+}
+
+.kalam-detail-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 16px;
+    min-height: 96px;
+}
+
+.kalam-detail-card-icon {
+    color: @kalam_text_dim;
+}
+
+.kalam-detail-card-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+button.kalam-detail-card-link {
+    background: none;
+    border: none;
+    padding: 0 4px;
+    min-height: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: @kalam_accent;
+}
+
+button.kalam-detail-card-link:hover {
+    color: @kalam_accent;
+    text-decoration-line: underline;
+}
+
+/* Stat tiles. */
+.kalam-stat-tile {
+    background: @kalam_surface_2;
+    border-radius: 10px;
+    padding: 9px 12px;
+    min-width: 64px;
+}
+
+.kalam-stat-val {
+    font-size: 1.0rem;
+    font-weight: 700;
+    font-family: monospace;
+    color: @kalam_text;
+}
+
+.kalam-stat-label {
+    font-size: 0.68rem;
+    color: @kalam_text_dim;
+    margin-top: 1px;
+}
+
+/* 7-day bars. */
+.kalam-bars {
+    min-height: 44px;
+}
+
+.kalam-bar {
+    background: @kalam_accent;
+    border-radius: 3px 3px 0 0;
+    min-width: 6px;
+}
+
+.kalam-bar-zero {
+    background: @kalam_border;
+}
+
+.kalam-bar-today {
+    background: @kalam_accent;
+    filter: brightness(1.15);
+}
+
+.kalam-bar-label {
+    font-size: 0.65rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+    text-align: center;
+}
+
+/* Timeline. */
+.kalam-divider {
+    background: @kalam_border;
+    min-height: 1px;
+}
+
+.kalam-tl-item {
+    margin-bottom: 2px;
+}
+
+.kalam-tl-dot {
+    background: @kalam_accent;
+    border-radius: 999px;
+    min-width: 9px;
+    min-height: 9px;
+    margin-top: 5px;
+}
+
+.kalam-tl-dot-success {
+    background: @kalam_success;
+}
+
+.kalam-tl-dot-dim {
+    background: @kalam_text_dim;
+}
+
+.kalam-tl-line {
+    background: @kalam_border;
+    min-width: 1px;
+    min-height: 10px;
+}
+
+.kalam-tl-event {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-tl-when {
+    font-size: 0.72rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+}
+
+.kalam-tl-dur {
+    font-size: 0.78rem;
+    font-family: monospace;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+/* Highlights. */
+.kalam-hl-item {
+    margin-bottom: 10px;
+}
+
+.kalam-hl-bar {
+    min-width: 3px;
+    border-radius: 2px;
+    /* One Dark marker palette — deliberately theme-independent. */
+    background: #e5c07b;
+}
+
+.kalam-hl-bar-green {
+    background: #98c379;
+}
+
+.kalam-hl-bar-blue {
+    background: #61afef;
+}
+
+.kalam-hl-bar-pink {
+    background: #c678dd;
+}
+
+.kalam-hl-bar-orange {
+    background: #d19a66;
+}
+
+.kalam-hl-text {
+    font-family: "Fraunces", serif;
+    font-style: italic;
+    font-size: 0.88rem;
+    line-height: 1.45;
+    color: @kalam_text;
+}
+
+.kalam-hl-meta {
+    font-size: 0.7rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+}
+
+/* Author card. */
+.kalam-author-avatar {
+    min-width: 40px;
+    min-height: 40px;
+    border-radius: 999px;
+}
+
+.kalam-author-avatar image {
+    border-radius: 999px;
+}
+
+.kalam-author-initials {
+    background: @kalam_surface_2;
+    color: @kalam_text_dim;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.kalam-author-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-author-sub {
+    font-size: 0.75rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-author-bio {
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: @kalam_text_dim;
+}
+
+.kalam-author-book-title {
+    font-size: 0.68rem;
+    color: @kalam_text_dim;
+    line-height: 1.2;
+}
+
+/* Journey. */
+.kalam-journey-row {
+    margin-bottom: 5px;
+}
+
+.kalam-journey-icon {
+    min-width: 16px;
+    font-size: 0.8rem;
+    text-align: center;
+}
+
+.kalam-journey-done {
+    color: @kalam_success;
+}
+
+.kalam-journey-current {
+    color: @kalam_accent;
+}
+
+.kalam-journey-todo {
+    color: @kalam_text_dim;
+}
+
+.kalam-journey-label {
+    font-size: 0.82rem;
+}
+
+.kalam-journey-label-done {
+    color: @kalam_text_dim;
+}
+
+.kalam-journey-label-current {
+    color: @kalam_text;
+    font-weight: 600;
+}
+
+.kalam-journey-label-todo {
+    color: @kalam_text_dim;
+}
+
+.kalam-journey-pct {
+    font-size: 0.75rem;
+    font-family: monospace;
+    font-weight: 600;
+    color: @kalam_accent;
+}
+
+button.kalam-journey-more {
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    min-height: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: @kalam_accent;
+    margin-top: 4px;
+}
+
+button.kalam-journey-more:hover {
+    color: @kalam_accent;
+    text-decoration-line: underline;
+}
+
+/* Book file card. */
+.kalam-file-name {
+    font-family: monospace;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: @kalam_text;
+    background: @kalam_surface_2;
+    border-radius: 8px;
+    padding: 7px 10px;
+}
+
+/* ── P5.5 series float ─────────────────────────────────── */
+
+.kalam-series-float {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    box-shadow: 0 18px 44px alpha(#000, 0.40);
+}
+
+.kalam-series-float-title {
+    font-size: 1.0rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-series-float .kalam-icon-btn {
+    border-radius: 999px;
+    min-height: 32px;
+    background: transparent;
+}
+
+.kalam-series-float .kalam-icon-btn image {
+    color: inherit;
+    -gtk-icon-size: 16px;
+}
+
+.kalam-series-float .kalam-icon-btn:disabled {
+    color: alpha(@kalam_text_dim, 0.5);
+    border-color: alpha(@kalam_border, 0.6);
+    background: transparent;
+}
+
+.kalam-series-spinner {
+    min-width: 28px;
+    min-height: 28px;
+}
+
+.kalam-series-error {
+    font-size: 0.88rem;
+    line-height: 1.5;
+    color: @kalam_text_dim;
+}
+
+.kalam-series-footer {
+    font-size: 0.7rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+}
+
+.kalam-series-row {
+    padding: 7px 8px;
+    border-radius: 10px;
+    background: transparent;
+}
+
+.kalam-series-row:hover {
+    background: @kalam_surface_2;
+}
+
+.kalam-series-num {
+    font-size: 0.68rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+}
+
+.kalam-series-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+/* Ownership badges. */
+.kalam-badge-series-read {
+    background: alpha(@kalam_success, 0.16);
+    color: @kalam_success;
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.kalam-badge-series-reading {
+    background: alpha(@kalam_accent, 0.16);
+    color: @kalam_accent;
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.kalam-badge-series-unread {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    color: @kalam_text_dim;
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.kalam-badge-series-unowned {
+    background: transparent;
+    color: alpha(@kalam_text_dim, 0.6);
+    font-size: 0.7rem;
+}
+
+/* ── end P5.5 ──────────────────────────────────────────── */
 "#;

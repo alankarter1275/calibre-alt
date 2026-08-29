@@ -361,12 +361,32 @@ rounds.
   active theme), dictionary rows with icon blocks, notification history with
   colour-correct badges, and an Export quotes card sharing the saved-quotes
   Markdown exporter. Nothing faked: every control backs a real mechanism.
+- **Book detail page (`src/pages/book.rs`)** — full-page rewrite to the
+  `docs/files/book_detail.html` mockup. Fixed chrome row (back pill left,
+  metadata pencil right), hero with 3D cover + progress + Format/Series/
+  Publisher meta, title/author/half-stars/inline tag chips (add + remove),
+  action row (Read / reading list / shelves / finished / Remove), serif
+  description. Card grid: reading stats (4 tiles: time, estimate, minutes per
+  chapter, sessions) + 7-day bars + timeline (recent sessions, finished,
+  first opened); highlights (≤4, View-all dialog with delete); author
+  (avatar, birth year only when known, bio, other owned books clickable);
+  reading journey (✓/●/○ chapters from the EPUB spine, +N more expand);
+  book file (name/size/imported/hash, show in file manager). The app's back
+  chip hides on this page — the page owns its own. Series is **not** a card.
+- **Series float (`src/pages/series_float.rs`, schema v10)** — the series name
+  in the hero opens a floating window with the full listing. Fetched once from
+  Open Library (series field, quoted-query fallback), cached in
+  `series_cache` keyed by normalised `series|first_author`; covers cached in
+  `series-covers/`. Works you own are title-matched and get live badges
+  (Read / N% read / Not started) and open their book page; the rest read
+  "Not in library". Footer says where and when it was fetched; ⟳ is the only
+  re-fetch. An empty OL result is shown but not cached.
 
 ### Next
 1. Home / dashboard — the two-column layout the design references imply.
-2. Library, Book page, Reader chrome, dialogs.
-3. Book page (`src/pages/book.rs`) redesign — rolled back once, to be redone
-   with user guidance per the one-window-at-a-time method.
+2. Library, Reader chrome, dialogs.
+3. "Similar from your shelf" on the book page — deferred from the mockup to
+   its own round.
 
 ### Hard-won GTK/CSS rules
 
@@ -646,3 +666,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-28 | P5.5 Settings window redesigned: 220px 6-tab navigation rail + rounded cards layout |
 | 2026-08-26 | P5.5 button hierarchy + chip + serif-title classes adopted from user style pass (`d545d28`) |
 | 2026-08-26 | Settings v2 shipped: grouped nav, section cards, family theme picker, pill switches, export card — mockup-first, CI green |
+| 2026-08-29 | P5.5 book detail page shipped to mockup: hero + stats/history, highlights, author, journey, file cards; inline tag editing; metadata pencil in the chrome row. Series moved to a float fetched from Open Library once per series and cached (schema v10), manual ⟳ refresh only |

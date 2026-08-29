@@ -16,6 +16,7 @@ use crate::pages::{
     reading_list::{ReadingListModel, ReadingListOut},
     saved_quotes::{SavedQuotesModel, SavedQuotesOut},
     saved_words::{SavedWordsModel, SavedWordsOut},
+    series_float::{SeriesFloatModel, SeriesFloatOut},
     settings::SettingsPageModel,
     shelf_detail::{ShelfDetailModel, ShelfDetailOut},
     shelves_grid::{ShelvesGridModel, ShelvesOut},
@@ -38,6 +39,11 @@ pub enum AppMsg {
         book_id: i64,
     },
     CloseBookDialog,
+    /// Open the series float from the book page's Series link.
+    OpenSeriesFloat {
+        series: String,
+        first_author: String,
+    },
     /// Rebuild the page on screen if the catalog changed under it.
     RefreshCurrentPage,
     /// Open immersive reader for book_id.
@@ -90,8 +96,10 @@ impl PageSlot {
     }
 }
 
-struct FloatingBook {
-    _controller: Controller<BookFloatModel>,
+/// Which float is on screen — only one at a time.
+enum Floating {
+    Book(Controller<BookFloatModel>),
+    Series(Controller<SeriesFloatModel>),
 }
 
 pub struct AppModel {
@@ -100,7 +108,7 @@ pub struct AppModel {
     history: Vec<Route>,
     sidebar_override: Option<NavItem>,
     page: Option<PageSlot>,
-    floating: Option<FloatingBook>,
+    floating: Option<Floating>,
     float_scrim: gtk::Box,
     float_host: gtk::Box,
     /// Pages kept alive between visits, keyed by route.
@@ -146,7 +154,9 @@ impl AppModel {
     }
 
     fn show_back_chip(&self) -> bool {
-        !self.history.is_empty() && !self.route.is_reader()
+        !self.history.is_empty()
+            && !self.route.is_reader()
+            && !self.route.is_book_page()
     }
 
     fn close_floating(&mut self) {
@@ -183,7 +193,37 @@ impl AppModel {
         self.float_host.set_visible(true);
         float.grab_focus();
 
-        self.floating = Some(FloatingBook { _controller: ctrl });
+        self.floating = Some(Floating::Book(ctrl));
+    }
+
+    /// The series float, opened from the book page's Series link.
+    fn open_series_floating(
+        &mut self,
+        series: String,
+        first_author: String,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.close_floating();
+
+        let ctrl = SeriesFloatModel::builder()
+            .launch((self.catalog.clone(), series, first_author))
+            .forward(sender.input_sender(), |out| match out {
+                SeriesFloatOut::Close => AppMsg::CloseBookDialog,
+                SeriesFloatOut::OpenBook { book_id } => AppMsg::FloatOpenFull { book_id },
+            });
+
+        let float = ctrl.widget().clone();
+        float.set_size_request(560, 560);
+        float.set_hexpand(false);
+        float.set_vexpand(false);
+        float.set_halign(gtk::Align::Center);
+        float.set_valign(gtk::Align::Center);
+        self.float_host.append(&float);
+        self.float_scrim.set_visible(true);
+        self.float_host.set_visible(true);
+        float.grab_focus();
+
+        self.floating = Some(Floating::Series(ctrl));
     }
 
     fn build_page(
@@ -351,6 +391,14 @@ impl AppModel {
                         BookPageOut::OpenAuthor { name } => {
                             AppMsg::Push(Route::AuthorPage { author: name })
                         }
+                        BookPageOut::OpenBook { book_id } => AppMsg::FloatOpenFull { book_id },
+                        BookPageOut::OpenSeries {
+                            series,
+                            first_author,
+                        } => AppMsg::OpenSeriesFloat {
+                            series,
+                            first_author,
+                        },
                         BookPageOut::Deleted { .. } => AppMsg::Back,
                     });
                 PageSlot::Book(ctrl)
@@ -784,6 +832,12 @@ impl Component for AppModel {
             }
             AppMsg::OpenBookDialog { book_id } => {
                 self.open_floating(book_id, &sender);
+            }
+            AppMsg::OpenSeriesFloat {
+                series,
+                first_author,
+            } => {
+                self.open_series_floating(series, first_author, &sender);
             }
             AppMsg::FloatOpenFull { book_id } => {
                 self.close_floating();

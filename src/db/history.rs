@@ -5,6 +5,16 @@
 
 use super::*;
 
+/// A closed session row, for the book page's timeline.
+#[derive(Debug, Clone)]
+pub struct SessionRow {
+    pub id: i64,
+    pub book_id: i64,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub seconds: i64,
+}
+
 impl Catalog {
     // -----------------------------------------------------------------------
     // P4: History (append-only event log)
@@ -225,5 +235,97 @@ impl Catalog {
             |r| r.get(0),
         )?;
         Ok(n)
+    }
+
+    // -----------------------------------------------------------------------
+    // P5.5: per-book stats for the book detail page
+    // -----------------------------------------------------------------------
+
+    /// How many reading sessions this book has, for the stats tile.
+    pub fn count_sessions_for_book(&self, book_id: i64) -> Result<i64> {
+        let conn = self.conn();
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM reading_sessions WHERE book_id = ?1",
+            params![book_id],
+            |r| r.get(0),
+        )?;
+        Ok(n)
+    }
+
+    /// Seconds read per UTC day for the last `days` days, oldest first.
+    ///
+    /// Missing days are filled with 0 so the chart always has `days` bars.
+    /// Used by the "Last 7 days" mini chart on the book page.
+    pub fn book_seconds_by_day(&self, book_id: i64, days: i64) -> Result<Vec<(String, i64)>> {
+        let days = days.clamp(1, 30);
+        let since = iso_days_ago(days - 1);
+        let conn = self.conn();
+
+        let mut stmt = conn.prepare_cached(
+            "SELECT substr(started_at, 1, 10) AS day, SUM(seconds) AS total
+             FROM reading_sessions
+             WHERE book_id = ?1 AND started_at >= ?2
+             GROUP BY day",
+        )?;
+        let rows = stmt.query_map(params![book_id, since], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })?;
+
+        let mut by_day: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        for row in rows {
+            let (day, total) = row?;
+            by_day.insert(day, total);
+        }
+
+        // Walk the window oldest → newest, filling gaps.
+        let mut out = Vec::with_capacity(days as usize);
+        for ago in (0..days).rev() {
+            let day = iso_days_ago(ago);
+            let key = &day[..10];
+            let total = by_day.remove(key).unwrap_or(0);
+            out.push((key.to_string(), total));
+        }
+        Ok(out)
+    }
+
+    /// The `limit` most recent sessions for one book, newest first.
+    pub fn book_recent_sessions(
+        &self,
+        book_id: i64,
+        limit: usize,
+    ) -> Result<Vec<SessionRow>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, book_id, started_at, ended_at, seconds
+             FROM reading_sessions
+             WHERE book_id = ?1 AND ended_at IS NOT NULL
+             ORDER BY started_at DESC, id DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![book_id, limit as i64], |r| {
+            Ok(SessionRow {
+                id: r.get(0)?,
+                book_id: r.get(1)?,
+                started_at: r.get(2)?,
+                ended_at: r.get(3)?,
+                seconds: r.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// When the book was first opened, if ever. Drives the "First opened"
+    /// timeline entry.
+    pub fn book_first_opened(&self, book_id: i64) -> Result<Option<String>> {
+        let conn = self.conn();
+        let row = conn
+            .query_row(
+                "SELECT MIN(at) FROM reading_events
+                 WHERE book_id = ?1 AND kind = 'opened'",
+                params![book_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(row)
     }
 }

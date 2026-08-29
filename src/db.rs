@@ -15,8 +15,12 @@ mod dictionaries;
 mod history;
 mod metadata;
 mod prefs;
+mod series;
 mod shelves;
 mod stats;
+
+pub use history::SessionRow;
+pub use series::{series_key, SeriesCacheEntry, SeriesWork};
 
 #[derive(Debug, Error)]
 pub enum DbError {
@@ -32,8 +36,8 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// v3 = P3 annotations & dictionary · v4 = P4 shelves, lists, history, sessions
 /// · v5 = ratings + reading goals · v6 = publisher/published/series index
 /// · v7 = remembered metadata edits, keyed by file hash · v8 = reader bookmarks
-/// · v9 = cached author profiles and aliases.
-pub const SCHEMA_VERSION: i64 = 9;
+/// · v9 = cached author profiles and aliases · v10 = series cache (Open Library)
+pub const SCHEMA_VERSION: i64 = 10;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -636,6 +640,15 @@ impl Catalog {
             );
             CREATE INDEX IF NOT EXISTS idx_author_aliases_author
                 ON author_aliases(author_id);
+
+            -- v10: series listings fetched from Open Library, one row per
+            -- series so the book page's series float caches first-time only.
+            CREATE TABLE IF NOT EXISTS series_cache (
+                series_key TEXT PRIMARY KEY,
+                source     TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                works_json TEXT NOT NULL
+            );
             "#,
         )?;
 
@@ -1170,7 +1183,8 @@ fn escape_like(s: &str) -> String {
         .replace('_', "\\_")
 }
 
-fn chrono_like_now() -> String {
+/// Current time in the same ISO-8601 UTC format every stored timestamp uses.
+pub fn chrono_like_now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
