@@ -534,6 +534,9 @@ impl Component for AppModel {
             set_title: Some("Kalam"),
             set_default_width: 1100,
             set_default_height: 720,
+            // No titlebar at all — not even the transparent strip with
+            // window controls. The page runs edge to edge; Alt+F4 closes.
+            set_decorated: false,
 
             // One root overlay: main app under it, then a dimmed in-app book
             // panel, then toasts on top.
@@ -789,52 +792,6 @@ impl Component for AppModel {
             widgets.content_host.append(&page.widget());
         }
         sync_content_classes(&widgets.content_host, &model.route, model.show_back_chip());
-
-        // The default window titlebar reads as a thick header over the
-        // pages, so the app draws its own: a transparent strip whose only
-        // visible content is the window controls in the top-right corner.
-        // (The maximize button toggles state; its icon stays the maximize
-        // glyph because tracking the window state here hits a Send+Sync
-        // bound on gtk4 0.9's connect_notify.)
-        let titlebar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-        titlebar.add_css_class("kalam-titlebar");
-        titlebar.set_hexpand(true);
-        titlebar.set_margin_top(6);
-        titlebar.set_margin_end(10);
-        let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        spacer.set_hexpand(true);
-        titlebar.append(&spacer);
-        let window_controls = |icon: &str| -> gtk::Button {
-            let button = gtk::Button::from_icon_name(icon);
-            button.add_css_class("kalam-titlebar-btn");
-            button.set_focus_on_click(false);
-            button
-        };
-        let min_btn = window_controls("window-minimize-symbolic");
-        let max_btn = window_controls("window-maximize-symbolic");
-        let close_btn = window_controls("window-close-symbolic");
-        min_btn.connect_clicked({
-            let window = root.clone();
-            move |_| window.minimize()
-        });
-        max_btn.connect_clicked({
-            let window = root.clone();
-            move |_| {
-                if window.is_maximized() {
-                    window.unmaximize();
-                } else {
-                    window.maximize();
-                }
-            }
-        });
-        close_btn.connect_clicked({
-            let window = root.clone();
-            move |_| window.close()
-        });
-        titlebar.append(&min_btn);
-        titlebar.append(&max_btn);
-        titlebar.append(&close_btn);
-        root.set_titlebar(Some(&titlebar));
 
         ComponentParts { model, widgets }
     }
