@@ -48,9 +48,11 @@ pub enum AppMsg {
     OpenAnnotationsFloat {
         book_id: i64,
     },
-    /// Open the shelves checklist panel (in-app float) from the book page.
+    /// Open the shelves checklist panel (in-app float).
     OpenShelvesFloat {
         book_id: i64,
+        /// True when opened from the book float — closing returns there.
+        from_book_float: bool,
     },
     /// Rebuild the page on screen if the catalog changed under it.
     RefreshCurrentPage,
@@ -113,7 +115,9 @@ enum Floating {
     /// Highlights & quotes — a plain widget panel, nothing to keep alive.
     Annotations,
     /// Shelves checklist — a plain widget panel, nothing to keep alive.
-    Shelves,
+    /// `return_to` holds the book id when the panel was opened from the book
+    /// float, so closing it hands control back to that float, not the page.
+    Shelves { return_to: Option<i64> },
 }
 
 pub struct AppModel {
@@ -192,6 +196,10 @@ impl AppModel {
                 BookFloatOut::OpenAuthor { name } => {
                     AppMsg::Push(Route::AuthorPage { author: name })
                 }
+                BookFloatOut::ShowShelves => AppMsg::OpenShelvesFloat {
+                    book_id,
+                    from_book_float: true,
+                },
             });
 
         let float = ctrl.widget().clone();
@@ -262,7 +270,12 @@ impl AppModel {
         self.floating = Some(Floating::Annotations);
     }
 
-    fn open_shelves_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
+    fn open_shelves_floating(
+        &mut self,
+        book_id: i64,
+        from_book_float: bool,
+        sender: &ComponentSender<Self>,
+    ) {
         self.close_floating();
 
         let s = sender.clone();
@@ -280,7 +293,7 @@ impl AppModel {
         self.float_host.set_visible(true);
         panel.grab_focus();
 
-        self.floating = Some(Floating::Shelves);
+        self.floating = Some(Floating::Shelves { return_to: from_book_float.then_some(book_id) });
     }
 
     fn build_page(
@@ -456,7 +469,10 @@ impl AppModel {
                             first_author,
                         },
                         BookPageOut::ViewHighlights => AppMsg::OpenAnnotationsFloat { book_id: id },
-                        BookPageOut::ShowShelves => AppMsg::OpenShelvesFloat { book_id: id },
+                        BookPageOut::ShowShelves => AppMsg::OpenShelvesFloat {
+                            book_id: id,
+                            from_book_float: false,
+                        },
                         BookPageOut::Deleted { .. } => AppMsg::Back,
                     });
                 PageSlot::Book(ctrl)
@@ -903,7 +919,10 @@ impl Component for AppModel {
             AppMsg::OpenAnnotationsFloat { book_id } => {
                 self.open_annotations_floating(book_id, &sender);
             }
-            AppMsg::OpenShelvesFloat { book_id } => self.open_shelves_floating(book_id, &sender),
+            AppMsg::OpenShelvesFloat {
+                book_id,
+                from_book_float,
+            } => self.open_shelves_floating(book_id, from_book_float, &sender),
             AppMsg::FloatOpenFull { book_id } => {
                 self.close_floating();
                 self.swap_page(
@@ -914,7 +933,16 @@ impl Component for AppModel {
                 );
             }
             AppMsg::CloseBookDialog => {
+                // A shelves panel opened from the book float hands control
+                // back to that float — not straight down to the page.
+                let return_to_book = match self.floating {
+                    Some(Floating::Shelves { return_to: Some(book_id) }) => Some(book_id),
+                    _ => None,
+                };
                 self.close_floating();
+                if let Some(book_id) = return_to_book {
+                    self.open_floating(book_id, &sender);
+                }
                 // The float can delete a book, so the page underneath may now
                 // be showing something that no longer exists. Deferred to the
                 // next main-loop turn: rebuilding here would dispose widgets
