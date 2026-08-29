@@ -117,9 +117,7 @@ enum Floating {
     /// Shelves checklist — a plain widget panel, nothing to keep alive.
     /// `return_to` holds the book id when the panel was opened from the book
     /// float, so closing it hands control back to that float, not the page.
-    Shelves {
-        return_to: Option<i64>,
-    },
+    Shelves { return_to: Option<i64> },
 }
 
 pub struct AppModel {
@@ -191,7 +189,7 @@ impl AppModel {
 
         let ctrl = BookFloatModel::builder()
             .launch((self.catalog.clone(), book_id))
-            .forward(sender.input_sender(), |out| match out {
+            .forward(sender.input_sender(), move |out| match out {
                 BookFloatOut::Close | BookFloatOut::Deleted { .. } => AppMsg::CloseBookDialog,
                 BookFloatOut::OpenReader { book_id } => AppMsg::OpenReader { book_id },
                 BookFloatOut::OpenFullPage { book_id } => AppMsg::FloatOpenFull { book_id },
@@ -295,9 +293,7 @@ impl AppModel {
         self.float_host.set_visible(true);
         panel.grab_focus();
 
-        self.floating = Some(Floating::Shelves {
-            return_to: from_book_float.then_some(book_id),
-        });
+        self.floating = Some(Floating::Shelves { return_to: from_book_float.then_some(book_id) });
     }
 
     fn build_page(
@@ -940,9 +936,7 @@ impl Component for AppModel {
                 // A shelves panel opened from the book float hands control
                 // back to that float — not straight down to the page.
                 let return_to_book = match self.floating {
-                    Some(Floating::Shelves {
-                        return_to: Some(book_id),
-                    }) => Some(book_id),
+                    Some(Floating::Shelves { return_to: Some(book_id) }) => Some(book_id),
                     _ => None,
                 };
                 self.close_floating();
