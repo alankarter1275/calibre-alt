@@ -866,8 +866,10 @@ impl BookPageModel {
             .is_some();
     }
 
-    /// Spine titles for the journey + progress location. Cached per book.
-    fn chapter_titles(&mut self) -> &[String] {
+    /// Spine titles for the journey + progress location. Cached per book;
+    /// returned owned so callers can keep using `self` afterwards (a
+    /// `&mut self`-rooted reference would pin the page's whole borrow).
+    fn chapter_titles(&mut self) -> Vec<String> {
         if let Some(book) = &self.book {
             if self.chapter_titles_for != book.id || self.chapter_titles.is_empty() {
                 self.chapter_titles = if book.format == BookFormat::Epub {
@@ -1686,26 +1688,20 @@ fn fill_file_card(widgets: &BookPageModelWidgets, book: Option<&Book>) {
     let size = std::fs::metadata(&book.file_path)
         .map(|m| human_size(m.len()))
         .unwrap_or_else(|_| "—".into());
-    rows.append(&meta_row("Size", {
-        let l = gtk::Label::new(Some(&size));
-        l.add_css_class("kalam-meta-val");
-        l.set_halign(gtk::Align::Start);
-        l
-    }));
-    rows.append(&meta_row("Imported", {
-        let l = gtk::Label::new(Some(&pretty_imported(&book.added_at)));
-        l.add_css_class("kalam-meta-val");
-        l.set_halign(gtk::Align::Start);
-        l
-    }));
+    let size_label = gtk::Label::new(Some(&size));
+    size_label.add_css_class("kalam-meta-val");
+    size_label.set_halign(gtk::Align::Start);
+    rows.append(&meta_row("Size", &size_label));
+    let imported = gtk::Label::new(Some(&pretty_imported(&book.added_at)));
+    imported.add_css_class("kalam-meta-val");
+    imported.set_halign(gtk::Align::Start);
+    rows.append(&meta_row("Imported", &imported));
     let hash = format!("{}…", &book.file_hash.chars().take(12).collect::<String>());
-    rows.append(&meta_row("File hash", {
-        let l = gtk::Label::new(Some(&hash));
-        l.add_css_class("kalam-meta-val");
-        l.set_halign(gtk::Align::Start);
-        l.set_selectable(true);
-        l
-    }));
+    let hash_label = gtk::Label::new(Some(&hash));
+    hash_label.add_css_class("kalam-meta-val");
+    hash_label.set_halign(gtk::Align::Start);
+    hash_label.set_selectable(true);
+    rows.append(&meta_row("File hash", &hash_label));
 
     // The "open folder" button is wired once in init — the path is fixed for
     // the page's lifetime, so rebuilding must not stack another handler.
@@ -1726,7 +1722,7 @@ fn open_in_file_manager(file: &std::path::Path) {
     };
     let bytes = dir.as_os_str().as_encoded_bytes();
     let mut url = String::from("file://");
-    for b in bytes {
+    for &b in bytes {
         match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
                 url.push(b as char)
