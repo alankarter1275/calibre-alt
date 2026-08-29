@@ -44,6 +44,10 @@ pub enum AppMsg {
         series: String,
         first_author: String,
     },
+    /// Open the highlights & quotes panel (in-app float) from the book page.
+    OpenAnnotationsFloat {
+        book_id: i64,
+    },
     /// Rebuild the page on screen if the catalog changed under it.
     RefreshCurrentPage,
     /// Open immersive reader for book_id.
@@ -102,6 +106,8 @@ impl PageSlot {
 enum Floating {
     Book(Controller<BookFloatModel>),
     Series(Controller<SeriesFloatModel>),
+    /// Highlights & quotes — a plain widget panel, nothing to keep alive.
+    Annotations,
 }
 
 pub struct AppModel {
@@ -224,6 +230,31 @@ impl AppModel {
         float.grab_focus();
 
         self.floating = Some(Floating::Series(ctrl));
+    }
+
+    /// The highlights & quotes panel, opened from the book page. Like the
+    /// other floats it lives in the in-app float layer — never a separate
+    /// window — so the compositor can't move it to another workspace.
+    fn open_annotations_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
+        self.close_floating();
+
+        let s = sender.clone();
+        let panel = crate::pages::book::build_annotations_panel(
+            self.catalog.clone(),
+            book_id,
+            move || s.input(AppMsg::CloseBookDialog).ok(),
+        );
+        panel.set_size_request(460, 480);
+        panel.set_hexpand(false);
+        panel.set_vexpand(false);
+        panel.set_halign(gtk::Align::Center);
+        panel.set_valign(gtk::Align::Center);
+        self.float_host.append(&panel);
+        self.float_scrim.set_visible(true);
+        self.float_host.set_visible(true);
+        panel.grab_focus();
+
+        self.floating = Some(Floating::Annotations);
     }
 
     fn build_page(
@@ -397,6 +428,9 @@ impl AppModel {
                         } => AppMsg::OpenSeriesFloat {
                             series,
                             first_author,
+                        },
+                        BookPageOut::ViewHighlights => AppMsg::OpenAnnotationsFloat {
+                            book_id: id,
                         },
                         BookPageOut::Deleted { .. } => AppMsg::Back,
                     });
@@ -840,6 +874,9 @@ impl Component for AppModel {
                 first_author,
             } => {
                 self.open_series_floating(series, first_author, &sender);
+            }
+            AppMsg::OpenAnnotationsFloat { book_id } => {
+                self.open_annotations_floating(book_id, &sender);
             }
             AppMsg::FloatOpenFull { book_id } => {
                 self.close_floating();

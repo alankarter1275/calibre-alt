@@ -35,6 +35,8 @@ pub enum BookPageOut {
         series: String,
         first_author: String,
     },
+    /// Open the highlights & quotes panel (in-app float).
+    ViewHighlights,
     Deleted {
         #[allow(dead_code)]
         book_id: i64,
@@ -778,15 +780,7 @@ impl Component for BookPageModel {
                 self.journey_expanded = !self.journey_expanded;
             }
             BookPageMsg::ViewHighlights => {
-                if let Some(book) = &self.book {
-                    open_annotations_dialog(
-                        root.root()
-                            .and_then(|r| r.downcast::<gtk::Window>().ok())
-                            .as_ref(),
-                        self.catalog.clone(),
-                        book.id,
-                    );
-                }
+                sender.output(BookPageOut::ViewHighlights).ok();
             }
             BookPageMsg::Refresh => {
                 if let Some(id) = self.book.as_ref().map(|b| b.id) {
@@ -1731,19 +1725,19 @@ fn open_add_tag_dialog(parent: Option<&gtk::Window>, on_add: impl Fn(String) + '
 }
 
 /// Full list of a book's highlights/quotes, with per-row delete.
-fn open_annotations_dialog(parent: Option<&gtk::Window>, catalog: Arc<Catalog>, book_id: i64) {
-    let window = gtk::Window::builder()
-        .title("Highlights & quotes")
-        .modal(true)
-        .default_width(460)
-        .default_height(480)
-        .build();
-    window.add_css_class("kalam-window");
-    if let Some(parent) = parent {
-        window.set_transient_for(Some(parent));
-    }
+/// The highlights & quotes panel, hosted in the app's in-app float layer
+/// (see AppModel::open_annotations_floating) instead of a separate window,
+/// so the compositor can't tile it onto another workspace.
+pub fn build_annotations_panel(
+    catalog: Arc<Catalog>,
+    book_id: i64,
+    on_done: impl Fn() + 'static,
+) -> gtk::Box {
+    let on_done = std::rc::Rc::new(on_done);
 
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    root.add_css_class("kalam-annotations-float");
+    root.set_overflow(gtk::Overflow::Hidden);
 
     let list_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
     list_host.set_margin_all(16);
@@ -1759,11 +1753,9 @@ fn open_annotations_dialog(parent: Option<&gtk::Window>, catalog: Arc<Catalog>, 
     done.add_css_class("kalam-primary-btn");
     done.set_halign(gtk::Align::End);
     done.set_margin_all(12);
-    let window_d = window.clone();
-    done.connect_clicked(move |_| window_d.close());
+    let done_fn = on_done.clone();
+    done.connect_clicked(move |_| done_fn());
     root.append(&done);
-
-    window.set_child(Some(&root));
 
     // Self-referential refresh: the delete buttons need to re-run it, so the
     // closure finds itself through a slot it fills in after construction.
@@ -1843,7 +1835,7 @@ fn open_annotations_dialog(parent: Option<&gtk::Window>, catalog: Arc<Catalog>, 
     });
     *holder.borrow_mut() = Some(closure.clone());
     closure();
-    window.present();
+    root
 }
 
 /// Checklist of manual shelves for one book.
