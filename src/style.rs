@@ -2978,7 +2978,6 @@ button.kalam-detail-card-link:hover {
     font-size: 0.65rem;
     font-family: monospace;
     color: @kalam_text_dim;
-    text-align: center;
 }
 
 /* Timeline. */
@@ -3123,7 +3122,6 @@ button.kalam-detail-card-link:hover {
 .kalam-journey-icon {
     min-width: 16px;
     font-size: 0.8rem;
-    text-align: center;
 }
 
 .kalam-journey-done {

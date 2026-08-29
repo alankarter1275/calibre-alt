@@ -53,7 +53,6 @@ pub enum BookPageMsg {
         series: String,
         first_author: String,
     },
-    OpenBook(i64),
     EditMetadata,
     ShowShelfMenu,
     Refresh,
@@ -741,9 +740,6 @@ impl Component for BookPageModel {
                         first_author,
                     })
                     .ok();
-            }
-            BookPageMsg::OpenBook(book_id) => {
-                sender.output(BookPageOut::OpenBook { book_id }).ok();
             }
             BookPageMsg::OpenFirstAuthor => {
                 if let Some(book) = &self.book {
@@ -1565,7 +1561,10 @@ fn fill_author_card(
 /// First plausible year inside a free-text birth date ("1973", "1973-07-06").
 fn extract_year(s: &str) -> Option<String> {
     let bytes = s.as_bytes();
-    for i in 0..=bytes.len().saturating_sub(4) {
+    // `checked_sub` — `saturating_sub` would yield `0..=0` for a short/empty
+    // string and index out of bounds below (empty birth dates are common).
+    let last = bytes.len().checked_sub(4)?;
+    for i in 0..=last {
         if bytes[i].is_ascii_digit()
             && bytes[i + 1].is_ascii_digit()
             && bytes[i + 2].is_ascii_digit()
@@ -1630,6 +1629,7 @@ fn fill_journey_card(widgets: &BookPageModelWidgets, model: &BookPageModel, chap
         let icon = gtk::Label::new(Some(glyph));
         icon.add_css_class("kalam-journey-icon");
         icon.add_css_class(icon_class);
+        icon.set_halign(gtk::Align::Center);
         row.append(&icon);
 
         let label = gtk::Label::new(Some(title));

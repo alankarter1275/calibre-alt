@@ -19,8 +19,7 @@ mod series;
 mod shelves;
 mod stats;
 
-pub use history::SessionRow;
-pub use series::{series_key, SeriesCacheEntry, SeriesWork};
+pub use series::{series_key, SeriesWork};
 
 #[derive(Debug, Error)]
 pub enum DbError {
