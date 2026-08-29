@@ -91,17 +91,11 @@ impl Component for BookPageModel {
             set_orientation: gtk::Orientation::Vertical,
             add_css_class: "kalam-bookpage",
             set_hexpand: true,
-            set_vexpand: true,
+            set_vexpand: false,
 
-            gtk::ScrolledWindow {
-                set_vexpand: true,
-                set_hexpand: true,
-                set_overlay_scrolling: true,
-                set_hscrollbar_policy: gtk::PolicyType::Never,
-
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    add_css_class: "kalam-bookpage-inner",
+            gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                add_css_class: "kalam-bookpage-inner",
 
                     // ── hero ────────────────────────────────────────────
                     gtk::Box {
@@ -578,7 +572,6 @@ impl Component for BookPageModel {
                         },
                     },
                 },
-            },
         }
     }
 
