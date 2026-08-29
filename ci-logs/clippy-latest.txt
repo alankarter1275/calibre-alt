@@ -1,4 +1,4 @@
-src/pages/book.rs:1733:56: [1m[91merror[E0283][0m: type annotations needed: cannot infer type of the type parameter `T` declared on the enum `Option`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error; 2 warnings emitted
+src/pages/book.rs:1733:56: [1m[91merror[E0277][0m: the trait bound `gio::Cancellable: gtk4::glib::object::IsA<gio::AppLaunchContext>` is not satisfied: the trait `gtk4::glib::object::IsA<gio::AppLaunchContext>` is not implemented for `gio::Cancellable`
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error; 3 warnings emitted
---- run 33228841741 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error; 2 warnings emitted
+--- run 33228970142 ---
