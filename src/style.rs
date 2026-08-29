@@ -2866,6 +2866,16 @@ button.kalam-tag-add:hover {
     color: @kalam_accent;
 }
 
+button.kalam-tag-add label {
+    color: inherit;
+}
+
+.kalam-tag-plus {
+    font-size: 0.95rem;
+    font-weight: 700;
+    min-height: 0;
+}
+
 /* Author links on the page (vs float/reader variants). */
 button.kalam-author-link-page {
     font-size: 0.9rem;

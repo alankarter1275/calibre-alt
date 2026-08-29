@@ -1034,7 +1034,10 @@ fn fill_tags(flow: &gtk::FlowBox, book: &Book, sender: &ComponentSender<BookPage
     add.add_css_class("kalam-tag-add");
     add.set_has_frame(false);
     add.set_focus_on_click(false);
-    add.set_child(Some(&crate::icons::symbolic("value-add-symbolic", 14)));
+    // Plain text plus — theme icons render inconsistently across icon sets.
+    let plus = gtk::Label::new(Some("+"));
+    plus.add_css_class("kalam-tag-plus");
+    add.set_child(Some(&plus));
     add.set_tooltip_text(Some("Manage tags"));
     let s = sender.clone();
     add.connect_clicked(move |_| s.input(BookPageMsg::ShowTags));
