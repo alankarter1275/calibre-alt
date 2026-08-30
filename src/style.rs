@@ -56,6 +56,17 @@
 //! on a given node.
 
 pub const APP_CSS: &str = r#"
+/* ── base font ──────────────────────────────────────── */
+/* Nerd Fonts "Propo" (proportional) variants first, so UI text and
+ * fallback glyphs (✓, →, ·) never come from a mono-width nerd face;
+ * clean proportional fallbacks if none are installed. */
+* {
+    font-family: "JetBrains Mono Nerd Font Propo", "JetBrainsMono Nerd Font Propo",
+                 "Cascadia Code Nerd Font Propo", "FiraCode Nerd Font Propo",
+                 "Hack Nerd Font Propo", "Source Code Pro Nerd Font Propo",
+                 "Cantarell", "Noto Sans", sans-serif;
+}
+
 /* ── window ─────────────────────────────────────────── */
 window.kalam-window {
     background: @kalam_bg;
@@ -2230,6 +2241,7 @@ entry.kalam-reader-search > text {
 /* Inline field-search icons (Nerd Font glyph). */
 .kalam-icon-btn {
     font-family: "Symbols Nerd Font", "Symbols Nerd Font Mono",
+                 "JetBrainsMono Nerd Font Propo", "FiraCode Nerd Font Propo",
                  "JetBrainsMono Nerd Font", "FiraCode Nerd Font", monospace;
     background: @kalam_surface_2;
     border: 1px solid @kalam_border;

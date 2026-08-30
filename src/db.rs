@@ -279,7 +279,7 @@ impl EventKind {
 
     pub fn icon(self) -> &'static str {
         match self {
-            EventKind::Opened => "book-open-symbolic",
+            EventKind::Opened => "document-open-recent-symbolic",
             EventKind::Finished => "object-select-symbolic",
             EventKind::Unfinished => "view-refresh-symbolic",
             EventKind::Imported => "list-add-symbolic",

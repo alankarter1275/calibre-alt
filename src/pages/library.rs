@@ -416,7 +416,7 @@ fn now_reading_card(
                 // line box and the check would drift off-centre.
                 let check = crate::icons::symbolic_with_classes(
                     "object-select-symbolic",
-                    9,
+                    10,
                     &["kalam-nr-dot-check"],
                 );
                 check.set_halign(gtk::Align::Center);
