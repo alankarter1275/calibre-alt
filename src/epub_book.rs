@@ -530,6 +530,108 @@ fn inject_reading_shell(
   }
   window.kalamGetSelectionData = getSelectionData;
 
+  // ---- Temporary selection handles ----
+  // The browser owns the selection itself. These two small elements mirror its
+  // endpoints without replacing native selection, copy, or highlight behavior.
+  var selectionHandleStart = null;
+  var selectionHandleEnd = null;
+  var selectionHandlesVisible = false;
+  var selectionHandleFrame = null;
+
+  function ensureSelectionHandles() {
+    if (selectionHandleStart && selectionHandleEnd) return;
+    selectionHandleStart = document.createElement('div');
+    selectionHandleStart.className = 'kalam-selection-handle kalam-selection-handle-start';
+    selectionHandleStart.setAttribute('aria-hidden', 'true');
+    selectionHandleEnd = document.createElement('div');
+    selectionHandleEnd.className = 'kalam-selection-handle kalam-selection-handle-end';
+    selectionHandleEnd.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(selectionHandleStart);
+    document.body.appendChild(selectionHandleEnd);
+  }
+
+  function hideSelectionHandles() {
+    selectionHandlesVisible = false;
+    if (selectionHandleFrame !== null) {
+      cancelAnimationFrame(selectionHandleFrame);
+      selectionHandleFrame = null;
+    }
+    if (selectionHandleStart) selectionHandleStart.style.display = 'none';
+    if (selectionHandleEnd) selectionHandleEnd.style.display = 'none';
+  }
+
+  function selectionEndpointRect(range, which) {
+    try {
+      var point = document.createRange();
+      if (which === 'start') {
+        point.setStart(range.startContainer, range.startOffset);
+      } else {
+        point.setStart(range.endContainer, range.endOffset);
+      }
+      point.collapse(true);
+      var pointRects = point.getClientRects();
+      if (pointRects && pointRects.length) return pointRects[0];
+    } catch(e) {}
+
+    // Some WebKit versions do not expose a rect for a collapsed range at the
+    // edge of a text node. The first/last line is a good visual fallback.
+    try {
+      var rects = range.getClientRects();
+      if (rects && rects.length) {
+        return which === 'start' ? rects[0] : rects[rects.length - 1];
+      }
+      var fallback = range.getBoundingClientRect();
+      if (fallback) return fallback;
+    } catch(e) {}
+    return null;
+  }
+
+  function positionSelectionHandles() {
+    selectionHandleFrame = null;
+    if (!selectionHandlesVisible || !selectionHandleStart || !selectionHandleEnd) return;
+
+    var data = getSelectionData();
+    if (!data) {
+      hideSelectionHandles();
+      return;
+    }
+
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+      hideSelectionHandles();
+      return;
+    }
+    var range = sel.getRangeAt(0);
+    var startRect = selectionEndpointRect(range, 'start');
+    var endRect = selectionEndpointRect(range, 'end');
+    if (!startRect || !endRect) {
+      hideSelectionHandles();
+      return;
+    }
+
+    // The start handle hangs above the first selected line; the end handle
+    // hangs below the last selected line. Coordinates are document-relative
+    // because the handles are absolutely positioned inside the chapter body.
+    var endX = endRect.width > 0 ? endRect.right : endRect.left;
+    selectionHandleStart.style.left = (window.scrollX + startRect.left - 9) + 'px';
+    selectionHandleStart.style.top = (window.scrollY + startRect.top - 22) + 'px';
+    selectionHandleEnd.style.left = (window.scrollX + endX - 9) + 'px';
+    selectionHandleEnd.style.top = (window.scrollY + endRect.bottom - 2) + 'px';
+    selectionHandleStart.style.display = 'block';
+    selectionHandleEnd.style.display = 'block';
+  }
+
+  function scheduleSelectionHandlePosition() {
+    if (!selectionHandlesVisible || selectionHandleFrame !== null) return;
+    selectionHandleFrame = requestAnimationFrame(positionSelectionHandles);
+  }
+
+  function showSelectionHandles() {
+    ensureSelectionHandles();
+    selectionHandlesVisible = true;
+    scheduleSelectionHandlePosition();
+  }
+
   function wrapRangeByPaths(startPath, startOffset, endPath, endOffset, color, annId) {
     var startNode = nodeFromPath(startPath);
     var endNode = nodeFromPath(endPath);
@@ -669,12 +771,14 @@ fn inject_reading_shell(
     var ok = wrapRangeByPaths(data.startPath, data.startOffset, data.endPath, data.endOffset, color, provisional);
     if (!ok) return;
     hideChip();
+    hideSelectionHandles();
     kalamBridge({type:'highlight', color:color, text:data.text, startPath:data.startPath, startOffset:data.startOffset, endPath:data.endPath, endOffset:data.endOffset, tmpId:provisional});
   };
   window.kalamHandleQuote = function() {
     var data = getSelectionData();
     if (!data) return;
     hideChip();
+    hideSelectionHandles();
     kalamBridge({type:'quote', text:data.text, startPath:data.startPath, startOffset:data.startOffset, endPath:data.endPath, endOffset:data.endOffset});
   };
   window.kalamHandleDict = function() {
@@ -696,6 +800,7 @@ fn inject_reading_shell(
     }
     if (!word) return;
     hideChip();
+    hideSelectionHandles();
     kalamBridge({type:'dict-lookup', word:word, context:ctx, rect:rect});
   };
 
@@ -775,9 +880,11 @@ fn inject_reading_shell(
     selTimeout = setTimeout(function(){
       var data = getSelectionData();
       if (data && data.text && data.text.trim().length>0 && data.text.trim().length < 2000) {
+        showSelectionHandles();
         showChipAt(data.rect);
         kalamBridge({type:'selection', text:data.text});
       } else {
+        hideSelectionHandles();
         // do not hide immediately if dict is open
         var dict = document.getElementById('kalam-dict-popup');
         if (!dict || dict.style.display==='none') {
@@ -790,8 +897,22 @@ fn inject_reading_shell(
   document.addEventListener('mousedown', function(e){
     if (e.target.closest && (e.target.closest('#kalam-chip') || e.target.closest('#kalam-dict-popup'))) return;
     hideChip();
+    hideSelectionHandles();
     // don't hide dict on mousedown inside content
   });
+
+  document.addEventListener('selectionchange', function(){
+    if (!selectionHandlesVisible) return;
+    var data = getSelectionData();
+    if (data && data.text && data.text.trim()) {
+      scheduleSelectionHandlePosition();
+    } else {
+      hideSelectionHandles();
+    }
+  });
+  window.addEventListener('scroll', scheduleSelectionHandlePosition, {passive:true});
+  window.addEventListener('resize', scheduleSelectionHandlePosition, {passive:true});
+
   document.addEventListener('keydown', function(e){
     if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey && !e.altKey) {
       // only if selection exists or chip visible
@@ -806,6 +927,7 @@ fn inject_reading_shell(
     }
     if (e.key === 'Escape') {
       hideChip();
+      hideSelectionHandles();
       hideDict();
     }
   });
@@ -914,6 +1036,7 @@ fn join_zip_path(dir: &str, href: &str) -> String {
 /// and chip styling.
 pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, column_px: u32) -> String {
     let (bg, fg) = theme.swatch();
+    let (selection_bg, handle_color) = theme.selection_style();
 
     // Many EPUBs ship chapter headings, ornaments and diagrams as PNG/JPEG with
     // a baked-in **white** background. CSS cannot repaint pixels inside an
@@ -1041,11 +1164,64 @@ img, svg {{
   height: auto !important;
   -webkit-text-fill-color: initial !important;
 }}
-/* selection tint pink-ish (Apple Books like) */
+/* Temporary selection — each reading theme supplies its own soft band. */
 ::selection {{
-  background: rgba(244, 114, 182, 0.38) !important;
+  background: {selection_bg} !important;
   color: {fg} !important;
   -webkit-text-fill-color: {fg} !important;
+}}
+
+/* ── temporary selection handles ──
+   These are deliberately a different colour from the selection band: near
+   black on Light/Sepia, bright on Dark/Ink. They are visual targets for the
+   later drag interaction; this first pass keeps pointer events out of the
+   way of normal text selection. */
+.kalam-selection-handle {{
+  position: absolute !important;
+  z-index: 999997 !important;
+  display: none;
+  width: 18px !important;
+  height: 24px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  pointer-events: none !important;
+  background: transparent !important;
+  color: {handle_color} !important;
+}}
+.kalam-selection-handle::before {{
+  content: '' !important;
+  position: absolute !important;
+  left: 50% !important;
+  width: 14px !important;
+  height: 14px !important;
+  background: {handle_color} !important;
+  border: none !important;
+  border-radius: 50% 50% 50% 0 !important;
+}}
+.kalam-selection-handle::after {{
+  content: '' !important;
+  position: absolute !important;
+  left: 50% !important;
+  width: 2px !important;
+  height: 9px !important;
+  background: {handle_color} !important;
+  border: none !important;
+  border-radius: 999px !important;
+  transform: translateX(-50%) !important;
+}}
+.kalam-selection-handle-start::before {{
+  top: 0 !important;
+  transform: translateX(-50%) rotate(-45deg) !important;
+}}
+.kalam-selection-handle-start::after {{
+  top: 12px !important;
+}}
+.kalam-selection-handle-end::before {{
+  top: 10px !important;
+  transform: translateX(-50%) rotate(135deg) !important;
+}}
+.kalam-selection-handle-end::after {{
+  top: 3px !important;
 }}
 
 /* ── P3 highlights ── */
@@ -1258,6 +1434,8 @@ img, svg {{
 "#,
         bg = bg,
         fg = fg,
+        selection_bg = selection_bg,
+        handle_color = handle_color,
         font_px = font_px,
         lh = line_height,
         column_px = column_px,
@@ -1300,6 +1478,18 @@ impl ReadingTheme {
             ReadingTheme::Sepia => ("#f5f0e8", "#2c2820"),
             ReadingTheme::Dark => ("#1b1e24", "#abb2bf"),
             ReadingTheme::Ink => ("#0d0d0d", "#c8c8c8"),
+        }
+    }
+
+    /// Temporary selection and its separate endpoint-handle colour. The
+    /// handles are intentionally high-contrast controls rather than part of
+    /// the selection band: near-black on light pages, bright on dark pages.
+    pub fn selection_style(self) -> (&'static str, &'static str) {
+        match self {
+            ReadingTheme::Light => ("rgba(211, 137, 148, 0.42)", "#0b0b0b"),
+            ReadingTheme::Sepia => ("rgba(202, 126, 136, 0.44)", "#0b0b0b"),
+            ReadingTheme::Dark => ("rgba(184, 93, 112, 0.52)", "#ffd166"),
+            ReadingTheme::Ink => ("rgba(204, 104, 132, 0.52)", "#ffd166"),
         }
     }
 }
