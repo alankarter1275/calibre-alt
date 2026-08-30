@@ -373,14 +373,17 @@ fn now_reading_card(
     bar.set_fraction((book.progress as f64 / 100.0).clamp(0.0, 1.0));
     card.append(&bar);
 
+    // The current spine entry's own title — a plain "Chapter N" would count
+    // front-matter spine entries too and drift from the timeline below.
     let loc = if chapters.is_empty() {
         format!("{}% complete", book.progress)
     } else {
-        format!("{}% complete · Chapter {}", book.progress, current + 1)
+        format!("{}% complete · {}", book.progress, chapters[current])
     };
     let loc_label = gtk::Label::new(Some(&loc));
     loc_label.add_css_class("kalam-nr-prog-label");
     loc_label.set_halign(gtk::Align::Start);
+    loc_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
     card.append(&loc_label);
 
     // Four rows, centered on the current chapter (one behind, two ahead).
@@ -558,6 +561,17 @@ fn continue_card(book: &Book, sender: &ComponentSender<LibraryPageModel>) -> gtk
     let overlay = gtk::Overlay::new();
     overlay.set_size_request(120, 170);
     let cover = cover_widget(book.cover_path.as_deref(), 120, 170);
+    // Card-click gesture lives on the cover itself: the play button sits
+    // above the cover in the overlay, so its clicks never reach it.
+    let id = book.id;
+    let s = sender.clone();
+    let click = gtk::GestureClick::new();
+    click.set_button(1);
+    click.connect_released(move |_, _, _, _| {
+        s.output(LibraryOut::BookDialog { book_id: id }).ok();
+    });
+    cover.add_controller(click);
+    cover.set_cursor_from_name(Some("pointer"));
     overlay.set_child(Some(&cover));
 
     let play = gtk::Button::new();
@@ -577,30 +591,8 @@ fn continue_card(book: &Book, sender: &ComponentSender<LibraryPageModel>) -> gtk
     play.connect_clicked(move |_| {
         s_play.output(LibraryOut::Read { book_id: id_play }).ok();
     });
-    overlay.add_overlay(&play);
 
-    // Card click — but a press landing inside the play button belongs to the
-    // play button, so convert the point into the play button's own space.
-    let id = book.id;
-    let s = sender.clone();
-    let play_ref = play.clone();
-    let overlay_ref = overlay.clone();
-    let click = gtk::GestureClick::new();
-    click.set_button(1);
-    click.connect_released(move |_, _, x, y| {
-        if let Some((px, py)) = overlay_ref.translate_coordinates(&play_ref, x, y) {
-            if px >= 0.0
-                && px < play_ref.width() as f64
-                && py >= 0.0
-                && py < play_ref.height() as f64
-            {
-                return;
-            }
-        }
-        s.output(LibraryOut::BookDialog { book_id: id }).ok();
-    });
-    overlay.add_controller(click);
-    overlay.set_cursor_from_name(Some("pointer"));
+    overlay.add_overlay(&play);
     cell.append(&overlay);
 
     let bar = gtk::ProgressBar::new();

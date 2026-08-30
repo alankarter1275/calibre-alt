@@ -3419,22 +3419,22 @@ progressbar.kalam-nr-prog progress {
     min-height: 13px;
 }
 .kalam-nr-dot-check {
-    font-size: 0.5rem;
+    font-size: 0.6rem;
     color: @kalam_bg;
 }
 .kalam-nr-dot-cur {
     border: 2px solid @kalam_accent;
     background: alpha(@kalam_accent, 0.18);
     border-radius: 999px;
-    min-width: 13px;
-    min-height: 13px;
+    min-width: 9px;
+    min-height: 9px;
 }
 .kalam-nr-dot-fut {
     border: 1px solid @kalam_border;
     background: @kalam_bg;
     border-radius: 999px;
-    min-width: 13px;
-    min-height: 13px;
+    min-width: 11px;
+    min-height: 11px;
 }
 .kalam-nr-line {
     background: @kalam_border;
