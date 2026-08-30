@@ -217,6 +217,7 @@ Daily-driver EPUB reading without annotations — **met for P2 scope**.
 ### Known issue (deferred)
 
 - [ ] Triple-click paragraph selection can still render an italic run in a different temporary selection text colour from the preceding roman text. Revisit the WebKit selection rendering later.
+- [ ] Make temporary selection handles draggable for pointer/touch input without disrupting native selection.
 
 ### Out (deferred)
 
