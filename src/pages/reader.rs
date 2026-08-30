@@ -1050,7 +1050,6 @@ impl Component for ReaderModel {
                         self.go_chapter(idx, 0.0);
                         refresh_sidebar_header = true;
                         refresh_toc = true;
-                        refresh_highlights = true;
                         refresh_bookmarks = true;
                         refresh_words = true;
                         refresh_chrome = true;
@@ -2389,7 +2388,6 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
 .kalam-reader-ui-live .kalam-reader-annotation-card {{
     border: 1px solid transparent;
     border-radius: 10px;
-    overflow: hidden;
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card-yellow {{
