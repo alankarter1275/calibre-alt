@@ -1427,9 +1427,12 @@ body * ::selection,
 html.kalam-selection-active body *::selection,
 html.kalam-selection-active body * ::selection {{
   background: transparent !important;
-  color: {fg} !important;
-  -webkit-text-fill-color: {fg} !important;
-  text-shadow: none !important;
+  /* WebKit can keep a different foreground colour for a nested italic run
+     during a paragraph selection. Paint the selected glyphs through one
+     theme-coloured, zero-offset shadow so every inline run matches. */
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  text-shadow: 0 0 0 {fg} !important;
 }}
 
 /* ── temporary selection band ── */
