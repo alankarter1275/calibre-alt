@@ -1614,32 +1614,25 @@ html.kalam-selection-active body * ::selection {{
 #kalam-chip {{
   position: absolute !important;
   z-index: 999999 !important;
-  background: rgba(22, 24, 30, 0.96) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  border-radius: 14px !important;
+  background: var(--kalam-chip-bg) !important;
+  background: color-mix(in srgb, var(--kalam-chip-fg) 8%, var(--kalam-chip-bg)) !important;
+  border: 1px solid var(--kalam-chip-fg) !important;
+  border-color: color-mix(in srgb, var(--kalam-chip-fg) 18%, var(--kalam-chip-bg)) !important;
+  border-radius: 999px !important;
   padding: 4px !important;
   display: none;
   flex-direction: row !important;
   align-items: center !important;
   gap: 2px !important;
-  box-shadow: 0 10px 28px rgba(0,0,0,0.42) !important;
+  box-shadow: none !important;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--kalam-chip-fg) 24%, transparent) !important;
   font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif !important;
+  color-scheme: light dark !important;
   backdrop-filter: blur(16px) !important;
   -webkit-backdrop-filter: blur(16px) !important;
 }}
 #kalam-chip, #kalam-chip * {{
   box-sizing: border-box !important;
-}}
-#kalam-chip::after {{
-  content: '' !important;
-  position: absolute !important;
-  bottom: -6px !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  width: 10px !important;
-  height: 6px !important;
-  background: rgba(22, 24, 30, 0.96) !important;
-  clip-path: polygon(0 0, 100% 0, 50% 100%) !important;
 }}
 .kalam-chip-colors {{
   display: none !important;
@@ -1654,28 +1647,30 @@ html.kalam-selection-active body * ::selection {{
   width: 20px !important;
   height: 20px !important;
   border-radius: 999px !important;
-  border: 2px solid rgba(255,255,255,0.20) !important;
+  border: 2px solid var(--kalam-chip-fg) !important;
+  border-color: color-mix(in srgb, var(--kalam-chip-fg) 20%, transparent) !important;
   cursor: pointer !important;
   padding: 0 !important;
   margin: 0 !important;
 }}
 .kalam-chip-btn:hover {{
   transform: scale(1.18) !important;
-  border-color: rgba(255,255,255,0.65) !important;
+  border-color: var(--kalam-chip-fg) !important;
 }}
 .kalam-chip-sep {{
   width: 1px !important;
   height: 20px !important;
-  background: rgba(255,255,255,0.14) !important;
+  background: var(--kalam-chip-fg) !important;
+  opacity: 0.18 !important;
   margin: 0 2px !important;
 }}
 .kalam-chip-action {{
   width: 32px !important;
   height: 32px !important;
-  border-radius: 9px !important;
+  border-radius: 999px !important;
   border: none !important;
   background: transparent !important;
-  color: rgba(255,255,255,0.84) !important;
+  color: var(--kalam-chip-fg) !important;
   cursor: pointer !important;
   padding: 0 !important;
   margin: 0 !important;
@@ -1685,33 +1680,49 @@ html.kalam-selection-active body * ::selection {{
   flex: 0 0 32px !important;
 }}
 .kalam-chip-action:hover {{
-  background: rgba(255,255,255,0.11) !important;
-  color: #ffffff !important;
+  background: color-mix(in srgb, var(--kalam-chip-fg) 12%, transparent) !important;
+  color: var(--kalam-chip-fg) !important;
 }}
 .kalam-chip-action:focus-visible {{
-  outline: 2px solid rgba(255,255,255,0.72) !important;
+  outline: 2px solid var(--kalam-chip-fg) !important;
   outline-offset: 1px !important;
 }}
 .kalam-chip-icon {{
   display: block !important;
   width: 17px !important;
   height: 17px !important;
+  min-width: 17px !important;
+  min-height: 17px !important;
+  overflow: visible !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  color: var(--kalam-chip-fg) !important;
   fill: none !important;
-  stroke: currentColor !important;
+  stroke: var(--kalam-chip-fg) !important;
   stroke-width: 1.8 !important;
   stroke-linecap: round !important;
   stroke-linejoin: round !important;
   pointer-events: none !important;
 }}
+.kalam-chip-icon path, .kalam-chip-icon rect {{
+  stroke: var(--kalam-chip-fg) !important;
+  stroke-width: 1.8 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}}
 .kalam-chip-icon-fill, .kalam-chip-icon-letters {{
-  fill: currentColor !important;
+  fill: var(--kalam-chip-fg) !important;
+  stroke: none !important;
+}}
+.kalam-chip-icon-fill path, .kalam-chip-icon-letters text {{
+  fill: var(--kalam-chip-fg) !important;
   stroke: none !important;
 }}
 .kalam-chip-icon-letters {{
   font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif !important;
 }}
 .kalam-chip-action-accent {{
-  color: #fbbf24 !important;
+  color: var(--kalam-chip-fg) !important;
 }}
 
 /* ── dictionary popup inside WebView ── */
@@ -1793,26 +1804,26 @@ html.kalam-selection-active body * ::selection {{
   background: rgba(255,255,255,0.20) !important;
 }}
 
-/* Final override — ensure Kalam UI inside WebView stays visible in light/sepia/dark regardless of aggressive resets */
-#kalam-chip, #kalam-dict-popup {{
-  color-scheme: dark !important;
+/* Final override — keep reader controls aligned with the active reading theme */
+#kalam-chip {{
+  --kalam-chip-bg: {bg};
+  --kalam-chip-fg: {fg};
+  color-scheme: light dark !important;
+  color: var(--kalam-chip-fg) !important;
+  background: var(--kalam-chip-bg) !important;
+  background: color-mix(in srgb, var(--kalam-chip-fg) 8%, var(--kalam-chip-bg)) !important;
 }}
-#kalam-chip, #kalam-chip *, #kalam-dict-popup, #kalam-dict-popup * {{
+#kalam-chip, #kalam-chip * {{
+  color: var(--kalam-chip-fg) !important;
+  -webkit-text-fill-color: var(--kalam-chip-fg) !important;
+}}
+#kalam-dict-popup, #kalam-dict-popup * {{
   color: #f5f5f4 !important;
   -webkit-text-fill-color: #f5f5f4 !important;
-}}
-#kalam-chip {{
-  background: rgba(28,25,23,0.92) !important;
-  background-color: rgba(28,25,23,0.92) !important;
 }}
 #kalam-dict-popup {{
   background: #1c1917 !important;
   background-color: #1c1917 !important;
-}}
-#kalam-chip .kalam-chip-action-accent,
-#kalam-chip .kalam-chip-action-accent * {{
-  color: #fbbf24 !important;
-  -webkit-text-fill-color: #fbbf24 !important;
 }}
 
 /* ── theme-specific image handling (appended last so it wins) ── */
