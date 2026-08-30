@@ -1213,6 +1213,14 @@ fn join_zip_path(dir: &str, href: &str) -> String {
 pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, column_px: u32) -> String {
     let (bg, fg) = theme.swatch();
     let (selection_bg, handle_color) = theme.selection_style();
+    // The custom selection band sits above the text so it can cross inline
+    // fragments. Blend it instead of covering the ink: multiply preserves
+    // dark text on light pages, while screen preserves bright text on dark
+    // pages.
+    let selection_blend = match theme {
+        ReadingTheme::Light | ReadingTheme::Sepia => "multiply",
+        ReadingTheme::Dark | ReadingTheme::Ink => "screen",
+    };
 
     // Many EPUBs ship chapter headings, ornaments and diagrams as PNG/JPEG with
     // a baked-in **white** background. CSS cannot repaint pixels inside an
@@ -1371,6 +1379,7 @@ img, svg {{
   border-radius: 2px !important;
   background: {selection_bg} !important;
   background-color: {selection_bg} !important;
+  mix-blend-mode: {selection_blend} !important;
   pointer-events: none !important;
 }}
 
@@ -1622,6 +1631,7 @@ img, svg {{
         bg = bg,
         fg = fg,
         selection_bg = selection_bg,
+        selection_blend = selection_blend,
         handle_color = handle_color,
         font_px = font_px,
         lh = line_height,
