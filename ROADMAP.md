@@ -214,6 +214,10 @@ Daily-driver EPUB reading without annotations — **met for P2 scope**.
 - Highlight colors soft (incl. pink/rose option like reference photo) — `kalam-hl-pink` rgba(251,207,232,0.70)
 - Must not reintroduce blue underlines on body text — preserved via reading CSS `!important`
 
+### Known issue (deferred)
+
+- [ ] Triple-click paragraph selection can still render an italic run in a different temporary selection text colour from the preceding roman text. Revisit the WebKit selection rendering later.
+
 ### Out (deferred)
 
 - Full EPUB HTML editing, sync, collaborative notes, note editing UI (note field exists but no inline editor yet)

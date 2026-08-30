@@ -839,10 +839,10 @@ if (!window.kalamReaderShellLoaded) {
     var startTop = startRect.top + (startRect.height - referenceHeight) / 2;
     var endTop = endRect.top + (endRect.height - referenceHeight) / 2;
     var endX = endRect.width > 0 ? endRect.right : endRect.left;
-    selectionHandleStart.style.left = (window.scrollX + startRect.left - 1.5) + 'px';
+    selectionHandleStart.style.left = (window.scrollX + startRect.left - 1) + 'px';
     selectionHandleStart.style.top = (window.scrollY + startTop) + 'px';
     selectionHandleStart.style.height = Math.max(1, referenceHeight) + 'px';
-    selectionHandleEnd.style.left = (window.scrollX + endX - 1.5) + 'px';
+    selectionHandleEnd.style.left = (window.scrollX + endX - 1) + 'px';
     selectionHandleEnd.style.top = (window.scrollY + endTop) + 'px';
     selectionHandleEnd.style.height = Math.max(1, referenceHeight) + 'px';
     selectionHandleStart.style.display = 'block';
@@ -1476,7 +1476,7 @@ html.kalam-selection-active body > *:not(#kalam-selection-bands):not(#kalam-chip
   position: absolute !important;
   z-index: 999997 !important;
   display: none;
-  width: 3px !important;
+  width: 2px !important;
   height: 0;
   padding: 0 !important;
   margin: 0 !important;
@@ -1489,18 +1489,18 @@ html.kalam-selection-active body > *:not(#kalam-selection-bands):not(#kalam-chip
   content: '' !important;
   position: absolute !important;
   left: 50% !important;
-  width: 7px !important;
-  height: 7px !important;
+  width: 5px !important;
+  height: 5px !important;
   background: {handle_color} !important;
   border: none !important;
   border-radius: 50% 50% 50% 0 !important;
 }}
 .kalam-selection-handle-start::after {{
-  top: -5px !important;
+  top: -3px !important;
   transform: translateX(-50%) rotate(-45deg) !important;
 }}
 .kalam-selection-handle-end::after {{
-  bottom: -5px !important;
+  bottom: -3px !important;
   transform: translateX(-50%) rotate(135deg) !important;
 }}
 
