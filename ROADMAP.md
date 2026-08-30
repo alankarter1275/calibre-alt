@@ -249,47 +249,79 @@ Annotations trustworthy enough you stop using another app for EPUB markup — **
 
 ---
 
-## Reader improvements — current track  ◀ active
+## Reader improvements — annotation workflow  ◀ current track
 
-This is the focused follow-up to the shipped P2/P3 text reader. We finish and
-validate the reader workflow before starting another reader or a broad UI
-screen.
+This track follows the shipped P2/P3 text reader. It keeps the work in the
+order we agreed: finish the annotation workflow first, then improve anchoring,
+annotation controls, and dictionary behaviour. Larger reader architecture
+changes come last.
 
-### Current position
+### Milestone 1 — annotation workflow  ✅ complete
 
-- [x] Selection toolbar redesign: compact icon actions, useful tooltips,
-      round-ended application-theme surface, and no decorative pointer
-- [x] Default WebKit context menu suppressed only; text selection and the
-      automatic selection-actions toolbar remain available
-- [x] Exact annotation jumps across chapters, near-top positioning, temporary
-      emphasis, and annotation-ID-first restoration
-- [x] Dark rounded annotation cards with subtle pastel tint, colored left edge,
-      no color dot, saved note previews, and expandable multiline editors
-- [x] Autosave note editing on focus loss, navigation, filter/tab changes,
-      reader setting changes, sidebar closure, and reader shutdown
-- [x] Reader-local hover styling fixed so annotation quote buttons do not add a
-      second light highlight
-- [x] CI green for the current reader changes: rustfmt, Clippy with warnings
-      denied, debug build, and release build
-- [ ] Arch UX sign-off for the completed workflow
+A user can:
 
-### Next reader implementation
+1. [x] Click an annotation in the right panel.
+2. [x] Load its chapter when necessary.
+3. [x] Restore the exact saved text location.
+4. [x] Scroll that location into view near the top.
+5. [x] Briefly emphasize the location without changing the permanent highlight.
+6. [x] Edit the annotation note in an expandable multiline editor with autosave.
 
-1. **Text-excerpt fallback anchoring** — keep the current annotation-ID and
-   DOM-path/offset lookup first. If those locations fail after an EPUB’s HTML
-   changes, search the saved text excerpt within the chapter, then restore near the top
-   and apply the same temporary emphasis. This is a fallback, not a replacement
-   for the current anchoring system.
-2. Revisit the known WebKit triple-click selection colour mismatch.
-3. Consider draggable selection handles only after they can be added without
-   disrupting native selection or the automatic selection-actions toolbar.
+This uses the existing chapter index, DOM paths, start/end offsets, text
+excerpt, note field, and `update_annotation_note`. The current restoration
+prefers the injected annotation ID and existing DOM path/offset data; saved
+text-excerpt fallback is intentionally still separate and remains next.
 
-### Deliberately later
+Related reader work already completed:
 
-- Do not add multi-chapter buffering until annotation anchoring and progress
-  behaviour are settled.
-- Do not reintroduce an always-running background progress timer; use event-based
-  or debounced persistence if progress work needs another pass.
+- [x] Compact themed selection toolbar with tooltips, rounded ends, and no
+      decorative pointer.
+- [x] Default WebKit context menu suppressed without affecting text selection
+      or the automatic selection-actions toolbar.
+- [x] Dark rounded annotation cards with subtle pastel tints, colored left
+      edges, no color dot, and improved quote presentation.
+- [x] Saved note previews as note indicators.
+- [x] Annotation filtering by color/type.
+- [x] Annotation hover styling fixed so quote buttons do not add a second light
+      highlight.
+- [x] CI green for the current reader changes: rustfmt, Clippy with `-D
+      warnings`, debug build, and release build.
+- [ ] Arch UX sign-off for this completed milestone.
+
+### After milestone 1 — agreed order
+
+1. **Hybrid anchoring**  ◀ next reader implementation
+   - [ ] Try the existing DOM path and start/end offsets first.
+   - [ ] Fall back to matching the saved text excerpt when that location fails.
+   - [ ] Keep full EPUB CFI for later; do not replace the current system in one
+         risky step.
+
+2. **Improve annotation controls**
+   - [x] Edit notes.
+   - [ ] Recolor existing highlights.
+   - [x] Show note indicators through saved note previews.
+   - [ ] Add text search; keep the existing color/type filters.
+   - [x] Improve quote/highlight presentation with the approved dark card design.
+
+3. **Improve dictionary behavior**
+   - [ ] Better phrase selection.
+   - [ ] Punctuation and simple inflection handling.
+   - [ ] Multiple results.
+   - [ ] Safe formatting.
+
+4. **Only later consider architecture changes**
+   - [ ] Multi-chapter buffering.
+   - [ ] Book-wide continuous scrolling.
+   - [ ] Automatic chapter advance redesign.
+   - [ ] Advanced CFI support.
+
+### Reader constraints that remain locked
+
+- Keep temporary text selection separate from permanent saved highlights.
+- Do not add multi-chapter buffering until anchoring and progress behaviour are
+  settled.
+- Do not reintroduce an always-running background progress timer; use
+  event-based or debounced persistence instead.
 
 ---
 
@@ -658,15 +690,20 @@ Deps include `webkitgtk-6.0` for P2+.
 
 ## Immediate next steps
 
-1. **Reader improvements:** run the completed annotation workflow on Arch and
-   record your sign-off or change requests.
-2. **Next reader implementation:** add text-excerpt fallback anchoring while
-   preserving the current annotation-ID and DOM-path/offset lookup.
-3. **UI overhaul:** after the reader track is signed off, continue the
+1. **Reader milestone 1 validation:** run the completed annotation workflow on
+   Arch and record your sign-off or change requests.
+2. **Reader milestone 2:** add hybrid anchoring — DOM path and offsets first,
+   saved text excerpt as the fallback.
+3. Finish the agreed annotation-control improvements, then improve dictionary
+   behaviour.
+4. Only after those reader milestones, consider multi-chapter buffering,
+   continuous book-wide scrolling, chapter auto-advance redesign, or advanced
+   CFI.
+5. **UI overhaul:** after the reader track is signed off, continue the
    mockup-first screen work. `library_look.png` shows a two-column dashboard;
    the app is currently a single vertical stack.
-4. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
-5. **P8** when you want comics for real (UI target already specified above).
+6. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
+7. **P8** when you want comics for real (UI target already specified above).
 
 ---
 
@@ -701,4 +738,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-28 | P5.5 Settings window redesigned: 220px 6-tab navigation rail + rounded cards layout |
 | 2026-08-26 | P5.5 button hierarchy + chip + serif-title classes adopted from user style pass (`d545d28`) |
 | 2026-08-26 | Settings v2 shipped: grouped nav, section cards, family theme picker, pill switches, export card — mockup-first, CI green |
-| 2026-08-30 | Reader-improvements track recorded: themed selection toolbar, context-menu suppression, exact annotation jumps, temporary emphasis, dark annotation cards, note previews, multiline autosave, and hover/warning cleanup; next reader work is excerpt fallback anchoring |
+| 2026-08-30 | Reader-improvements track recorded: annotation workflow milestone complete; next is hybrid anchoring (DOM path and offsets first, saved text excerpt fallback), followed by annotation controls, dictionary improvements, and only later reader architecture changes |
