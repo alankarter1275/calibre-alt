@@ -283,6 +283,8 @@ Related reader work already completed:
       edges, no color dot, and improved quote presentation.
 - [x] Saved note previews as note indicators.
 - [x] Annotation filtering by color/type.
+- [x] Existing highlights can be recolored from each card using the current
+      pastel palette.
 - [x] Annotation hover styling fixed so quote buttons do not add a second light
       highlight.
 - [x] CI green for the current reader changes: rustfmt, Clippy with `-D
@@ -298,12 +300,15 @@ Related reader work already completed:
          missing or points to different text.
    - [x] Keep full EPUB CFI for later; the current system was not replaced.
 
-2. **Improve annotation controls**  ◀ next reader work
+2. **Improve annotation controls**  ◀ current reader work
    - [x] Edit notes.
-   - [ ] Recolor existing highlights.
+   - [x] Recolor existing highlights.
    - [x] Show note indicators through saved note previews.
    - [ ] Add text search; keep the existing color/type filters.
    - [x] Improve quote/highlight presentation with the approved dark card design.
+
+   The next isolated reader change is text search. Keep it separate from saved
+   highlight anchoring and temporary selection emphasis.
 
 3. **Improve dictionary behavior**
    - [ ] Better phrase selection.
@@ -696,8 +701,8 @@ Deps include `webkitgtk-6.0` for P2+.
    Arch and record your sign-off or change requests.
 2. **Reader milestone 2 validation:** test hybrid anchoring with an EPUB whose
    chapter HTML has changed, then record your sign-off or change requests.
-3. **Next reader work:** improve annotation controls — recolor existing
-   highlights and add text search while preserving the current filters.
+3. **Next reader work:** add text search while preserving the current
+   annotation filters, saved-highlight anchoring, and temporary emphasis.
 4. Improve dictionary behaviour in the agreed order.
 5. Only after those reader milestones, consider multi-chapter buffering,
    continuous book-wide scrolling, chapter auto-advance redesign, or advanced
@@ -741,4 +746,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-28 | P5.5 Settings window redesigned: 220px 6-tab navigation rail + rounded cards layout |
 | 2026-08-26 | P5.5 button hierarchy + chip + serif-title classes adopted from user style pass (`d545d28`) |
 | 2026-08-26 | Settings v2 shipped: grouped nav, section cards, family theme picker, pill switches, export card — mockup-first, CI green |
-| 2026-08-30 | Reader-improvements track recorded: annotation workflow and hybrid anchoring are complete; next is annotation controls (recolor existing highlights and text search), followed by dictionary improvements and only later reader architecture changes |
+| 2026-08-30 | Reader-improvements track recorded: annotation workflow and hybrid anchoring are complete; recoloring existing highlights is shipped, with text search next, followed by dictionary improvements and only later reader architecture changes |
