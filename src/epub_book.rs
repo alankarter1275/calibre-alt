@@ -532,7 +532,7 @@ fn inject_reading_shell(
 
   // ---- Temporary selection handles ----
   // The browser owns the selection itself. These two small elements mirror its
-  // endpoints without replacing native selection, copy, or highlight behavior.
+  // endpoint edges without replacing native selection, copy, or highlight behavior.
   var selectionHandleStart = null;
   var selectionHandleEnd = null;
   var selectionHandlesVisible = false;
@@ -609,14 +609,18 @@ fn inject_reading_shell(
       return;
     }
 
-    // The start handle hangs above the first selected line; the end handle
-    // hangs below the last selected line. Coordinates are document-relative
-    // because the handles are absolutely positioned inside the chapter body.
+    // Each handle is now the complete vertical edge of the endpoint line box.
+    // The start edge is on the left and the end edge is on the right; their
+    // tiny teardrops are positioned by CSS at the top and bottom respectively.
+    // Coordinates are document-relative because the handles are absolutely
+    // positioned inside the chapter body.
     var endX = endRect.width > 0 ? endRect.right : endRect.left;
-    selectionHandleStart.style.left = (window.scrollX + startRect.left - 9) + 'px';
-    selectionHandleStart.style.top = (window.scrollY + startRect.top - 22) + 'px';
-    selectionHandleEnd.style.left = (window.scrollX + endX - 9) + 'px';
-    selectionHandleEnd.style.top = (window.scrollY + endRect.bottom - 2) + 'px';
+    selectionHandleStart.style.left = (window.scrollX + startRect.left - 1.5) + 'px';
+    selectionHandleStart.style.top = (window.scrollY + startRect.top) + 'px';
+    selectionHandleStart.style.height = Math.max(1, Math.ceil(startRect.height)) + 'px';
+    selectionHandleEnd.style.left = (window.scrollX + endX - 1.5) + 'px';
+    selectionHandleEnd.style.top = (window.scrollY + endRect.top) + 'px';
+    selectionHandleEnd.style.height = Math.max(1, Math.ceil(endRect.height)) + 'px';
     selectionHandleStart.style.display = 'block';
     selectionHandleEnd.style.display = 'block';
   }
@@ -1173,55 +1177,39 @@ img, svg {{
 
 /* ── temporary selection handles ──
    These are deliberately a different colour from the selection band: near
-   black on Light/Sepia, bright on Dark/Ink. They are visual targets for the
-   later drag interaction; this first pass keeps pointer events out of the
-   way of normal text selection. */
+   black on Light/Sepia, bright on Dark/Ink. The edge line spans the complete
+   line box at the selection endpoint; the teardrop is intentionally tiny.
+   This first pass keeps pointer events out of the way of normal selection. */
 .kalam-selection-handle {{
   position: absolute !important;
   z-index: 999997 !important;
   display: none;
-  width: 18px !important;
-  height: 24px !important;
+  width: 3px !important;
+  height: 0;
   padding: 0 !important;
   margin: 0 !important;
   pointer-events: none !important;
-  background: transparent !important;
-  color: {handle_color} !important;
-}}
-.kalam-selection-handle::before {{
-  content: '' !important;
-  position: absolute !important;
-  left: 50% !important;
-  width: 14px !important;
-  height: 14px !important;
   background: {handle_color} !important;
   border: none !important;
-  border-radius: 50% 50% 50% 0 !important;
+  border-radius: 999px !important;
 }}
 .kalam-selection-handle::after {{
   content: '' !important;
   position: absolute !important;
   left: 50% !important;
-  width: 2px !important;
-  height: 9px !important;
+  width: 7px !important;
+  height: 7px !important;
   background: {handle_color} !important;
   border: none !important;
-  border-radius: 999px !important;
-  transform: translateX(-50%) !important;
-}}
-.kalam-selection-handle-start::before {{
-  top: 0 !important;
-  transform: translateX(-50%) rotate(-45deg) !important;
+  border-radius: 50% 50% 50% 0 !important;
 }}
 .kalam-selection-handle-start::after {{
-  top: 12px !important;
-}}
-.kalam-selection-handle-end::before {{
-  top: 10px !important;
-  transform: translateX(-50%) rotate(135deg) !important;
+  top: -5px !important;
+  transform: translateX(-50%) rotate(-45deg) !important;
 }}
 .kalam-selection-handle-end::after {{
-  top: 3px !important;
+  bottom: -5px !important;
+  transform: translateX(-50%) rotate(135deg) !important;
 }}
 
 /* ── P3 highlights ── */
