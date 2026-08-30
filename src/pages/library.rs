@@ -172,7 +172,7 @@ fn build_dashboard(
     ];
     for (i, (label, value, unit, series, spark_class)) in cards.iter().enumerate() {
         let card = stat_card(label, value, unit, series, spark_class);
-        grid.attach(&card, (i % 2) as u32, (i / 2) as u32, 1, 1);
+        grid.attach(&card, (i % 2) as i32, (i / 2) as i32, 1, 1);
     }
     grid.attach(&goal_card(catalog), 1, 1, 1, 1);
     top_row.append(&grid);
@@ -366,9 +366,7 @@ fn now_reading_card(
         .ok()
         .flatten()
         .unwrap_or((0, 0.0));
-    let current = chapter_index
-        .min(chapters.len().saturating_sub(1) as i64)
-        .max(0) as usize;
+    let current = chapter_index.min(chapters.len().saturating_sub(1));
 
     let bar = gtk::ProgressBar::new();
     bar.add_css_class("kalam-nr-prog");
@@ -430,7 +428,7 @@ fn now_reading_card(
             }
             row.append(&col);
 
-            let name = gtk::Label::new(chapter_title);
+            let name = gtk::Label::new(Some(chapter_title));
             let name_class = if *i < current {
                 "kalam-nr-ch-done"
             } else if *i == current {
@@ -532,7 +530,7 @@ fn goal_card(catalog: &Arc<Catalog>) -> gtk::Box {
 /// Horizontal, scrollable row of book cards. Hovering a card reveals a
 /// circular play button (resume in the reader); clicking the card opens the
 /// book float.
-fn continue_strip(books: &[Book], sender: &ComponentSender<LibraryPageModel>) -> gtk::Box {
+fn continue_strip(books: &[Book], sender: &ComponentSender<LibraryPageModel>) -> gtk::ScrolledWindow {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     row.set_halign(gtk::Align::Start);
     for book in books {
@@ -576,7 +574,7 @@ fn continue_card(book: &Book, sender: &ComponentSender<LibraryPageModel>) -> gtk
     play.connect_clicked(move |_| {
         s_play.output(LibraryOut::Read { book_id: id_play }).ok();
     });
-    overlay.set_overlay(&play);
+    overlay.add_overlay(&play);
 
     // Card click — but a press landing inside the play button belongs to the
     // play button, so check the allocation first.
@@ -587,10 +585,10 @@ fn continue_card(book: &Book, sender: &ComponentSender<LibraryPageModel>) -> gtk
     click.set_button(1);
     click.connect_released(move |_, _, x, y| {
         let a = play_ref.allocation();
-        if (x as i32) >= a.x
-            && (x as i32) < a.x + a.width
-            && (y as i32) >= a.y
-            && (y as i32) < a.y + a.height
+        if (x as i32) >= a.x()
+            && (x as i32) < a.x() + a.width()
+            && (y as i32) >= a.y()
+            && (y as i32) < a.y() + a.height()
         {
             return;
         }

@@ -98,7 +98,7 @@ pub struct SavedWord {
 pub struct QuoteRef {
     pub title: String,
     pub author: String,
-    pub cover_path: Option<String>,
+    pub cover_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
