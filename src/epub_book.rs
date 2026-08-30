@@ -978,20 +978,28 @@ if (!window.kalamReaderShellLoaded) {
     chip = document.createElement('div');
     chip.id = 'kalam-chip';
     chip.style.display = 'none';
-    chip.innerHTML = '<button class=\"kalam-chip-action kalam-chip-action-accent\" id=\"kalam-chip-highlight\" title=\"Highlight\">Highlight</button>'
+    chip.innerHTML = '<button type=\"button\" class=\"kalam-chip-action kalam-chip-action-accent\" id=\"kalam-chip-highlight\" title=\"Highlight\" aria-label=\"Highlight\" aria-expanded=\"false\">'
+      + '<svg class=\"kalam-chip-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\" focusable=\"false\">'
+      + '<path d=\"m15 4 5 5-9 9H6v-5l9-9Z\"></path><path d=\"m13 6 5 5\"></path><path d=\"M4 20h8\"></path>'
+      + '</svg></button>'
       + '<div class=\"kalam-chip-colors\" id=\"kalam-chip-colors\">'
-      + '<button class=\"kalam-chip-btn\" data-color=\"yellow\" title=\"Highlight yellow\" style=\"background:#fef08a\"></button>'
-      + '<button class=\"kalam-chip-btn\" data-color=\"green\" title=\"Highlight green\" style=\"background:#bbf7d0\"></button>'
-      + '<button class=\"kalam-chip-btn\" data-color=\"blue\" title=\"Highlight blue\" style=\"background:#bfdbfe\"></button>'
-      + '<button class=\"kalam-chip-btn\" data-color=\"pink\" title=\"Highlight pink\" style=\"background:#fbcfe8\"></button>'
-      + '<button class=\"kalam-chip-btn\" data-color=\"orange\" title=\"Highlight orange\" style=\"background:#fed7aa\"></button>'
+      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"yellow\" title=\"Highlight yellow\" aria-label=\"Highlight yellow\" style=\"background:#fef08a\"></button>'
+      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"green\" title=\"Highlight green\" aria-label=\"Highlight green\" style=\"background:#bbf7d0\"></button>'
+      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"blue\" title=\"Highlight blue\" aria-label=\"Highlight blue\" style=\"background:#bfdbfe\"></button>'
+      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"pink\" title=\"Highlight pink\" aria-label=\"Highlight pink\" style=\"background:#fbcfe8\"></button>'
+      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"orange\" title=\"Highlight orange\" aria-label=\"Highlight orange\" style=\"background:#fed7aa\"></button>'
       + '</div>'
       + '<div class=\"kalam-chip-sep\"></div>'
-      + '<button class=\"kalam-chip-action\" id=\"kalam-chip-quote\" title=\"Save quote\">Quote</button>'
+      + '<button type=\"button\" class=\"kalam-chip-action\" id=\"kalam-chip-quote\" title=\"Save quote\" aria-label=\"Save quote\">'
+      + '<svg class=\"kalam-chip-icon kalam-chip-icon-fill\" viewBox=\"0 0 24 24\" aria-hidden=\"true\" focusable=\"false\">'
+      + '<path d=\"M4 11V8h4v3c0 3-1.3 5-4 6v-2.1c1.1-.5 1.8-1.3 2-2.9H4Zm10 0V8h4v3c0 3-1.3 5-4 6v-2.1c1.1-.5 1.8-1.3 2-2.9h-2Z\"></path>'
+      + '</svg></button>'
       + '<div class=\"kalam-chip-sep\"></div>'
-      + '<button class=\"kalam-chip-action\" id=\"kalam-chip-dict\" title=\"Dictionary (D)\">Define</button>'
+      + '<button type=\"button\" class=\"kalam-chip-action\" id=\"kalam-chip-dict\" title=\"Dictionary (D)\" aria-label=\"Dictionary (D)\">'
+      + '<svg class=\"kalam-chip-icon kalam-chip-icon-letters\" viewBox=\"0 0 24 24\" aria-hidden=\"true\" focusable=\"false\"><text x=\"2.5\" y=\"16\" font-size=\"12\" font-weight=\"700\">A</text><text x=\"13\" y=\"19\" font-size=\"9\" font-weight=\"600\">a</text></svg></button>'
       + '<div class=\"kalam-chip-sep\"></div>'
-      + '<button class=\"kalam-chip-action\" id=\"kalam-chip-copy\" title=\"Copy\">Copy</button>';
+      + '<button type=\"button\" class=\"kalam-chip-action\" id=\"kalam-chip-copy\" title=\"Copy\" aria-label=\"Copy\">'
+      + '<svg class=\"kalam-chip-icon\" viewBox=\"0 0 24 24\" aria-hidden=\"true\" focusable=\"false\"><rect x=\"8\" y=\"8\" width=\"11\" height=\"12\" rx=\"2\"></rect><path d=\"M16 8V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3\"></path></svg></button>';
     document.body.appendChild(chip);
     chip.querySelectorAll('.kalam-chip-btn').forEach(function(b){
       b.addEventListener('click', function(){
@@ -1002,7 +1010,10 @@ if (!window.kalamReaderShellLoaded) {
     var highlight = document.getElementById('kalam-chip-highlight');
     if (highlight) highlight.addEventListener('click', function(){
       var colors = document.getElementById('kalam-chip-colors');
-      if (colors) colors.classList.toggle('visible');
+      if (colors) {
+        var visible = colors.classList.toggle('visible');
+        highlight.setAttribute('aria-expanded', visible ? 'true' : 'false');
+      }
     });
     var q = document.getElementById('kalam-chip-quote');
     if (q) q.addEventListener('click', function(){ kalamHandleQuote(); });
@@ -1021,27 +1032,36 @@ if (!window.kalamReaderShellLoaded) {
     var chip = ensureChip();
     var colors = document.getElementById('kalam-chip-colors');
     if (colors) colors.classList.remove('visible');
+    var highlight = document.getElementById('kalam-chip-highlight');
+    if (highlight) highlight.setAttribute('aria-expanded', 'false');
+    chip.style.display = 'flex';
+    var chipWidth = chip.offsetWidth || 168;
+    var chipHeight = chip.offsetHeight || 40;
+    var margin = 12;
     var top, left;
     if (rect) {
-      top = (window.scrollY + rect.y - 58);
-      left = (window.scrollX + rect.x + (rect.w || 0) / 2 - 180);
-      if (left < 12) left = 12;
-      if (top < 12) top = window.scrollY + rect.y + rect.h + 12;
+      top = (window.scrollY + rect.y - chipHeight - 14);
+      left = (window.scrollX + rect.x + (rect.w || 0) / 2 - chipWidth / 2);
+      if (top < window.scrollY + margin) top = window.scrollY + rect.y + rect.h + margin;
     } else {
       top = window.scrollY + 120;
       left = window.scrollX + 80;
     }
-    var maxLeft = window.scrollX + window.innerWidth - 360;
+    var minLeft = window.scrollX + margin;
+    var maxLeft = window.scrollX + window.innerWidth - chipWidth - margin;
+    if (maxLeft < minLeft) maxLeft = minLeft;
+    if (left < minLeft) left = minLeft;
     if (left > maxLeft) left = maxLeft;
     chip.style.top = top + 'px';
     chip.style.left = left + 'px';
-    chip.style.display = 'flex';
   }
   function hideChip() {
     var chip = document.getElementById('kalam-chip');
     if (chip) chip.style.display = 'none';
     var colors = document.getElementById('kalam-chip-colors');
     if (colors) colors.classList.remove('visible');
+    var highlight = document.getElementById('kalam-chip-highlight');
+    if (highlight) highlight.setAttribute('aria-expanded', 'false');
   }
   window.kalamHideChip = hideChip;
   window.kalamShowChipAt = showChipAt;
@@ -1595,17 +1615,20 @@ html.kalam-selection-active body * ::selection {{
   position: absolute !important;
   z-index: 999999 !important;
   background: rgba(22, 24, 30, 0.96) !important;
-  border: 1px solid rgba(255, 255, 255, 0.10) !important;
-  border-radius: 999px !important;
-  padding: 5px 6px !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 14px !important;
+  padding: 4px !important;
   display: none;
   flex-direction: row !important;
   align-items: center !important;
   gap: 2px !important;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.40) !important;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.42) !important;
   font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif !important;
   backdrop-filter: blur(16px) !important;
   -webkit-backdrop-filter: blur(16px) !important;
+}}
+#kalam-chip, #kalam-chip * {{
+  box-sizing: border-box !important;
 }}
 #kalam-chip::after {{
   content: '' !important;
@@ -1642,28 +1665,53 @@ html.kalam-selection-active body * ::selection {{
 }}
 .kalam-chip-sep {{
   width: 1px !important;
-  height: 18px !important;
-  background: rgba(255,255,255,0.12) !important;
+  height: 20px !important;
+  background: rgba(255,255,255,0.14) !important;
   margin: 0 2px !important;
 }}
 .kalam-chip-action {{
-  height: 28px !important;
-  border-radius: 999px !important;
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 9px !important;
   border: none !important;
   background: transparent !important;
-  color: rgba(255,255,255,0.82) !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
+  color: rgba(255,255,255,0.84) !important;
   cursor: pointer !important;
-  padding: 0 12px !important;
-  white-space: nowrap !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 32px !important;
 }}
 .kalam-chip-action:hover {{
-  background: rgba(255,255,255,0.10) !important;
+  background: rgba(255,255,255,0.11) !important;
   color: #ffffff !important;
 }}
+.kalam-chip-action:focus-visible {{
+  outline: 2px solid rgba(255,255,255,0.72) !important;
+  outline-offset: 1px !important;
+}}
+.kalam-chip-icon {{
+  display: block !important;
+  width: 17px !important;
+  height: 17px !important;
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 1.8 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  pointer-events: none !important;
+}}
+.kalam-chip-icon-fill, .kalam-chip-icon-letters {{
+  fill: currentColor !important;
+  stroke: none !important;
+}}
+.kalam-chip-icon-letters {{
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif !important;
+}}
 .kalam-chip-action-accent {{
-  color: #61afef !important;
+  color: #fbbf24 !important;
 }}
 
 /* ── dictionary popup inside WebView ── */
@@ -1760,6 +1808,11 @@ html.kalam-selection-active body * ::selection {{
 #kalam-dict-popup {{
   background: #1c1917 !important;
   background-color: #1c1917 !important;
+}}
+#kalam-chip .kalam-chip-action-accent,
+#kalam-chip .kalam-chip-action-accent * {{
+  color: #fbbf24 !important;
+  -webkit-text-fill-color: #fbbf24 !important;
 }}
 
 /* ── theme-specific image handling (appended last so it wins) ── */
