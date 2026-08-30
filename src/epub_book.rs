@@ -542,6 +542,7 @@ if (!window.kalamReaderShellLoaded) {
   var selectionBandLayer = null;
   var selectionBandsVisible = false;
   var selectionBandFrame = null;
+  var selectionInkStyles = [];
 
   function ensureSelectionBandLayer() {
     if (selectionBandLayer) return;
@@ -555,6 +556,59 @@ if (!window.kalamReaderShellLoaded) {
     if (!selectionBandLayer) return;
     while (selectionBandLayer.firstChild) {
       selectionBandLayer.removeChild(selectionBandLayer.firstChild);
+    }
+  }
+
+  function clearSelectionInkStyles() {
+    for (var i = 0; i < selectionInkStyles.length; i++) {
+      var saved = selectionInkStyles[i];
+      var style = saved.element.style;
+      if (saved.color) style.setProperty('color', saved.color, saved.colorPriority);
+      else style.removeProperty('color');
+      if (saved.fill) style.setProperty('-webkit-text-fill-color', saved.fill, saved.fillPriority);
+      else style.removeProperty('-webkit-text-fill-color');
+    }
+    selectionInkStyles = [];
+  }
+
+  function selectionRangeIntersectsElement(range, element) {
+    try {
+      var elementRange = document.createRange();
+      elementRange.selectNodeContents(element);
+      return range.compareBoundaryPoints(window.Range.END_TO_START, elementRange) > 0 &&
+        range.compareBoundaryPoints(window.Range.START_TO_END, elementRange) < 0;
+    } catch(e) {
+      return false;
+    }
+  }
+
+  function normalizeSelectionInkStyles(range) {
+    clearSelectionInkStyles();
+    if (!document.body || !range) return;
+
+    var textColor = '';
+    try { textColor = window.getComputedStyle(document.body).color; } catch(e) {}
+    if (!textColor) return;
+
+    var root = range.commonAncestorContainer;
+    if (root && root.nodeType !== 1) root = root.parentElement;
+    if (!root || !root.querySelectorAll) return;
+
+    var elements = root.querySelectorAll('*');
+    for (var i = 0; i < elements.length; i++) {
+      var element = elements[i];
+      if (element.closest && (element.closest('#kalam-chip') || element.closest('#kalam-dict-popup') || element.closest('#kalam-selection-bands') || element.closest('.kalam-selection-handle'))) continue;
+      if (!selectionRangeIntersectsElement(range, element)) continue;
+      var style = element.style;
+      selectionInkStyles.push({
+        element: element,
+        color: style.getPropertyValue('color'),
+        colorPriority: style.getPropertyPriority('color'),
+        fill: style.getPropertyValue('-webkit-text-fill-color'),
+        fillPriority: style.getPropertyPriority('-webkit-text-fill-color')
+      });
+      style.setProperty('color', textColor, 'important');
+      style.setProperty('-webkit-text-fill-color', textColor, 'important');
     }
   }
 
@@ -572,6 +626,7 @@ if (!window.kalamReaderShellLoaded) {
       selectionBandFrame = null;
     }
     clearSelectionBands();
+    clearSelectionInkStyles();
     setSelectionBandStacking(false);
     if (selectionBandLayer) selectionBandLayer.style.display = 'none';
   }
@@ -643,6 +698,7 @@ if (!window.kalamReaderShellLoaded) {
     }
 
     var range = sel.getRangeAt(0);
+    normalizeSelectionInkStyles(range);
     var rects;
     try {
       rects = range.getClientRects();
@@ -1365,10 +1421,15 @@ img, svg {{
    background is hidden because WebKit gives different line fragments
    different heights. Kalam paints the visible band below. */
 ::selection,
-body *::selection {{
+*::selection,
+body *::selection,
+body * ::selection,
+html.kalam-selection-active body *::selection,
+html.kalam-selection-active body * ::selection {{
   background: transparent !important;
   color: {fg} !important;
   -webkit-text-fill-color: {fg} !important;
+  text-shadow: none !important;
 }}
 
 /* ── temporary selection band ── */
