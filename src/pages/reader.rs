@@ -2457,7 +2457,8 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card button.kalam-reader-list-hit:hover {{
-    background: alpha(@kalam_text, 0.04);
+    background: transparent;
+    box-shadow: none;
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card button.kalam-btn-icon {{
