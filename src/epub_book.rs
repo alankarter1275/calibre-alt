@@ -543,6 +543,7 @@ if (!window.kalamReaderShellLoaded) {
   var selectionBandsVisible = false;
   var selectionBandFrame = null;
   var selectionBandPadding = 2;
+  var selectionBandStackElements = [];
   var selectionInkStyles = [];
 
   function ensureSelectionBandLayer() {
@@ -620,6 +621,55 @@ if (!window.kalamReaderShellLoaded) {
     else root.classList.remove('kalam-selection-active');
   }
 
+  function clearSelectionBandStacking() {
+    for (var i = 0; i < selectionBandStackElements.length; i++) {
+      var element = selectionBandStackElements[i];
+      if (element.classList) element.classList.remove('kalam-selection-content-above');
+    }
+    selectionBandStackElements = [];
+  }
+
+  function addSelectionBandStacking(element) {
+    if (!element || element === document.body || element === document.documentElement) return;
+    if (!element.classList || selectionBandStackElements.indexOf(element) !== -1) return;
+    element.classList.add('kalam-selection-content-above');
+    selectionBandStackElements.push(element);
+  }
+
+  function selectionBlockFromNode(node) {
+    var element = node && node.nodeType === 1 ? node : node && node.parentElement;
+    if (!element) return null;
+    var block = element.closest && element.closest('p, li, blockquote, pre, h1, h2, h3, h4, h5, h6, dt, dd, td, th');
+    if (block) return block;
+    return (element.closest && element.closest('div, section, article, main')) || null;
+  }
+
+  function stackSelectedContent(range) {
+    clearSelectionBandStacking();
+    if (!range) return;
+
+    var root = range.commonAncestorContainer;
+    if (root && root.nodeType !== 1) root = root.parentElement;
+    if (!root || !root.querySelectorAll) return;
+
+    var foundBlock = false;
+    var blocks = root.querySelectorAll('p, li, blockquote, pre, h1, h2, h3, h4, h5, h6, dt, dd, td, th');
+    for (var i = 0; i < blocks.length; i++) {
+      if (selectionRangeIntersectsElement(range, blocks[i])) {
+        addSelectionBandStacking(blocks[i]);
+        foundBlock = true;
+      }
+    }
+
+    var startBlock = selectionBlockFromNode(range.startContainer);
+    var endBlock = selectionBlockFromNode(range.endContainer);
+    if (startBlock) addSelectionBandStacking(startBlock);
+    if (endBlock) addSelectionBandStacking(endBlock);
+    if (!foundBlock && !startBlock && !endBlock) {
+      addSelectionBandStacking(root);
+    }
+  }
+
   function hideSelectionBands() {
     selectionBandsVisible = false;
     if (selectionBandFrame !== null) {
@@ -628,17 +678,13 @@ if (!window.kalamReaderShellLoaded) {
     }
     clearSelectionBands();
     clearSelectionInkStyles();
+    clearSelectionBandStacking();
     setSelectionBandStacking(false);
     if (selectionBandLayer) selectionBandLayer.style.display = 'none';
   }
 
   function selectionTextBlock(range) {
-    var node = range.startContainer;
-    var element = node && node.nodeType === 1 ? node : node && node.parentElement;
-    if (!element) return document.body;
-    var block = element.closest && element.closest('p, li, blockquote, pre, h1, h2, h3, h4, h5, h6, dt, dd, td, th');
-    if (block) return block;
-    return (element.closest && element.closest('div, section, article, main')) || document.body;
+    return selectionBlockFromNode(range.startContainer) || document.body;
   }
 
   function firstReadableTextNode(root) {
@@ -699,6 +745,7 @@ if (!window.kalamReaderShellLoaded) {
     }
 
     var range = sel.getRangeAt(0);
+    stackSelectedContent(range);
     normalizeSelectionInkStyles(range);
     var rects;
     try {
@@ -1441,9 +1488,10 @@ html.kalam-selection-active body * ::selection {{
 }}
 
 /* ── temporary selection band ── */
-/* Keep the band under the chapter content. This prevents its colour from
-   being composited into the glyphs, which is especially visible in italics. */
-html.kalam-selection-active body > *:not(#kalam-selection-bands):not(#kalam-chip):not(#kalam-dict-popup):not(.kalam-selection-handle) {{
+/* Keep only the selected text blocks above the band. Applying this to every
+   body child would create new compositing groups and break themed images that
+   rely on their existing blend backdrop. */
+.kalam-selection-content-above {{
   position: relative !important;
   z-index: 1 !important;
 }}
