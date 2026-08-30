@@ -546,6 +546,9 @@ impl Component for ReaderModel {
     ) -> ComponentParts<Self> {
         let book = catalog.get_book(book_id).ok().flatten();
         let webview = webkit6::WebView::new();
+        // The reader is not a browser: suppress WebKit's Back/Forward/Stop/
+        // Reload context menu so a right-click cannot navigate the EPUB view.
+        webview.connect_context_menu(|_, _, _| true);
         webview.set_hexpand(true);
         webview.set_vexpand(true);
 
