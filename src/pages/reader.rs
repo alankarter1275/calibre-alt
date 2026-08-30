@@ -172,6 +172,8 @@ pub enum ReaderMsg {
     DeleteAnnotation(i64),
     DeleteBookmark(i64),
     JumpToAnnotation(i64),
+    SaveAnnotationNote(i64, String),
+    CancelAnnotationNote,
     JumpToChapter(usize),
     JumpToLocation(usize, f64),
     DictSearch(String),
@@ -215,6 +217,7 @@ pub struct ReaderModel {
     chapter_annotations: Vec<Annotation>,
     all_book_annotations: Vec<Annotation>,
     pending_annotation_jump: Option<i64>,
+    editing_annotation: Option<i64>,
     bookmarks: Vec<ReadingBookmark>,
     saved_words: Vec<SavedWord>,
     dict_query: String,
@@ -717,6 +720,7 @@ impl Component for ReaderModel {
             chapter_annotations,
             all_book_annotations,
             pending_annotation_jump: None,
+            editing_annotation: None,
             bookmarks,
             saved_words,
             dict_query: String::new(),
@@ -1026,6 +1030,7 @@ impl Component for ReaderModel {
                 self.right_tab = RightSidebarTab::Highlights;
                 self.right_sidebar_open = true;
                 self.cancel_right_close();
+                self.editing_annotation = Some(annotation.id);
                 self.pending_annotation_jump = Some(annotation.id);
                 if idx != self.chapter {
                     self.go_chapter(idx, 0.0);
@@ -1039,6 +1044,7 @@ impl Component for ReaderModel {
                     self.restore_pending_annotation();
                 }
                 refresh_tabs = true;
+                refresh_highlights = true;
             }
             ReaderMsg::JumpToLocation(idx, frac) => {
                 if idx < self.open.chapter_count() && !self.loading {
@@ -1213,12 +1219,33 @@ impl Component for ReaderModel {
                     self.catalog.delete_annotation(id),
                     "Could not delete the highlight",
                 );
+                if self.editing_annotation == Some(id) {
+                    self.editing_annotation = None;
+                }
                 self.reload_annotations();
                 let script = format!(
                     "if (window.kalamRemoveHighlight) window.kalamRemoveHighlight('{}');",
                     id
                 );
                 eval_js(&self.webview, &script);
+                refresh_highlights = true;
+            }
+            ReaderMsg::SaveAnnotationNote(id, note) => {
+                if self.all_book_annotations.iter().any(|annotation| annotation.id == id) {
+                    if crate::notify::outcome(
+                        self.catalog.update_annotation_note(id, note.trim()),
+                        "Note saved",
+                        "",
+                        "Could not save your note",
+                    ) {
+                        self.editing_annotation = Some(id);
+                        self.reload_annotations();
+                        refresh_highlights = true;
+                    }
+                }
+            }
+            ReaderMsg::CancelAnnotationNote => {
+                self.editing_annotation = None;
                 refresh_highlights = true;
             }
             ReaderMsg::DeleteBookmark(id) => {
@@ -2270,6 +2297,40 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
 .kalam-reader-ui-live .kalam-reader-back image {{
     -gtk-icon-size: {back_icon}px;
 }}
+
+.kalam-reader-ui-live .kalam-reader-annotation-row-selected {{
+    background: alpha(@kalam_accent, 0.07);
+    border-bottom-color: alpha(@kalam_accent, 0.55);
+}}
+
+.kalam-reader-ui-live .kalam-reader-note-editor {{
+    padding: 2px 0 1px;
+}}
+
+.kalam-reader-ui-live label.kalam-reader-note-label {{
+    color: @kalam_text_dim;
+    font-size: 0.72rem;
+    font-weight: 700;
+}}
+
+.kalam-reader-ui-live entry.kalam-reader-note-entry {{
+    min-height: 30px;
+    padding: 5px 9px;
+    background: @kalam_bg;
+    color: @kalam_text;
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
+}}
+
+.kalam-reader-ui-live entry.kalam-reader-note-entry:focus {{
+    border-color: @kalam_accent;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-note-action {{
+    min-height: 0;
+    padding: 6px 12px;
+    font-size: 0.78rem;
+}}
 "#,
         radius = prefs.sidebar_radius,
         shadow_y = shadow_y,
@@ -3131,12 +3192,22 @@ fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderM
     }
 
     for anno in annos.into_iter().take(150) {
-        let outer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let annotation_id = anno.id;
+        let selected = model.editing_annotation == Some(annotation_id);
+        let outer = gtk::Box::new(gtk::Orientation::Vertical, 6);
         outer.add_css_class("kalam-reader-annotation-row");
+        if selected {
+            outer.add_css_class("kalam-reader-annotation-row-selected");
+        }
 
+        let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        top_row.set_hexpand(true);
         let jump = gtk::Button::new();
         jump.add_css_class("kalam-reader-list-hit");
+        jump.set_hexpand(true);
+        jump.set_halign(gtk::Align::Fill);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        row.set_hexpand(true);
         let bar = gtk::Box::new(gtk::Orientation::Vertical, 0);
         bar.add_css_class("kalam-reader-annotation-bar");
         bar.add_css_class(color_bar_class(&anno.color));
@@ -3169,23 +3240,75 @@ fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderM
         text_col.append(&meta);
         row.append(&text_col);
         jump.set_child(Some(&row));
-        let id = anno.id;
         let s = sender.clone();
-        jump.connect_clicked(move |_| s.input(ReaderMsg::JumpToAnnotation(id)));
-        outer.append(&jump);
+        jump.connect_clicked(move |_| s.input(ReaderMsg::JumpToAnnotation(annotation_id)));
+        top_row.append(&jump);
 
         let delete = gtk::Button::new();
         delete.add_css_class("kalam-btn-icon");
         delete.add_css_class("danger");
+        delete.set_tooltip_text(Some("Delete highlight"));
         delete.set_child(Some(&crate::icons::symbolic_with_classes(
             "user-trash-symbolic",
             16,
             &["kalam-inline-icon"],
         )));
-        let id = anno.id;
         let s = sender.clone();
-        delete.connect_clicked(move |_| s.input(ReaderMsg::DeleteAnnotation(id)));
-        outer.append(&delete);
+        delete.connect_clicked(move |_| s.input(ReaderMsg::DeleteAnnotation(annotation_id)));
+        top_row.append(&delete);
+        outer.append(&top_row);
+
+        if selected {
+            let editor = gtk::Box::new(gtk::Orientation::Vertical, 5);
+            editor.add_css_class("kalam-reader-note-editor");
+            editor.set_hexpand(true);
+
+            let note_label = gtk::Label::new(Some("Note"));
+            note_label.add_css_class("kalam-reader-note-label");
+            note_label.set_halign(gtk::Align::Start);
+            note_label.set_xalign(0.0);
+            editor.append(&note_label);
+
+            let note_entry = gtk::Entry::new();
+            note_entry.add_css_class("kalam-reader-note-entry");
+            note_entry.set_hexpand(true);
+            note_entry.set_placeholder_text(Some("Add a note about this highlight"));
+            note_entry.set_text(&anno.note);
+            editor.append(&note_entry);
+
+            let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            actions.set_halign(gtk::Align::End);
+
+            let cancel = gtk::Button::with_label("Cancel");
+            cancel.add_css_class("kalam-btn-outlined");
+            cancel.add_css_class("kalam-reader-note-action");
+            let s = sender.clone();
+            cancel.connect_clicked(move |_| s.input(ReaderMsg::CancelAnnotationNote));
+            actions.append(&cancel);
+
+            let save = gtk::Button::with_label("Save");
+            save.add_css_class("kalam-btn-tonal");
+            save.add_css_class("kalam-reader-note-action");
+            let entry_for_save = note_entry.clone();
+            let s = sender.clone();
+            save.connect_clicked(move |_| {
+                s.input(ReaderMsg::SaveAnnotationNote(
+                    annotation_id,
+                    entry_for_save.text().to_string(),
+                ));
+            });
+            actions.append(&save);
+
+            let s = sender.clone();
+            note_entry.connect_activate(move |entry| {
+                s.input(ReaderMsg::SaveAnnotationNote(
+                    annotation_id,
+                    entry.text().to_string(),
+                ));
+            });
+            editor.append(&actions);
+            outer.append(&editor);
+        }
 
         model.highlights_list.append(&outer);
     }
