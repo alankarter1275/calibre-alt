@@ -561,6 +561,17 @@ fn inject_reading_shell(
   }
 
   function selectionEndpointRect(range, which) {
+    // Use the selection's own line rectangles first. A collapsed range at an
+    // endpoint can be shorter or vertically misplaced on a later wrapped line
+    // in WebKit; the first/last selection rect is the actual painted line box.
+    try {
+      var rects = range.getClientRects();
+      if (rects && rects.length) {
+        return which === 'start' ? rects[0] : rects[rects.length - 1];
+      }
+    } catch(e) {}
+
+    // Fallback for a WebKit version that exposes no rect for the selection.
     try {
       var point = document.createRange();
       if (which === 'start') {
@@ -571,15 +582,6 @@ fn inject_reading_shell(
       point.collapse(true);
       var pointRects = point.getClientRects();
       if (pointRects && pointRects.length) return pointRects[0];
-    } catch(e) {}
-
-    // Some WebKit versions do not expose a rect for a collapsed range at the
-    // edge of a text node. The first/last line is a good visual fallback.
-    try {
-      var rects = range.getClientRects();
-      if (rects && rects.length) {
-        return which === 'start' ? rects[0] : rects[rects.length - 1];
-      }
       var fallback = range.getBoundingClientRect();
       if (fallback) return fallback;
     } catch(e) {}
