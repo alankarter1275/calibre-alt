@@ -530,7 +530,10 @@ fn goal_card(catalog: &Arc<Catalog>) -> gtk::Box {
 /// Horizontal, scrollable row of book cards. Hovering a card reveals a
 /// circular play button (resume in the reader); clicking the card opens the
 /// book float.
-fn continue_strip(books: &[Book], sender: &ComponentSender<LibraryPageModel>) -> gtk::ScrolledWindow {
+fn continue_strip(
+    books: &[Book],
+    sender: &ComponentSender<LibraryPageModel>,
+) -> gtk::ScrolledWindow {
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
     row.set_halign(gtk::Align::Start);
     for book in books {
