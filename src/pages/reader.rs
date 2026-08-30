@@ -171,6 +171,7 @@ pub enum ReaderMsg {
     AnnotationsReload,
     DeleteAnnotation(i64),
     DeleteBookmark(i64),
+    JumpToAnnotation(i64),
     JumpToChapter(usize),
     JumpToLocation(usize, f64),
     DictSearch(String),
@@ -213,6 +214,7 @@ pub struct ReaderModel {
     webview: webkit6::WebView,
     chapter_annotations: Vec<Annotation>,
     all_book_annotations: Vec<Annotation>,
+    pending_annotation_jump: Option<i64>,
     bookmarks: Vec<ReadingBookmark>,
     saved_words: Vec<SavedWord>,
     dict_query: String,
@@ -714,6 +716,7 @@ impl Component for ReaderModel {
             webview: webview.clone(),
             chapter_annotations,
             all_book_annotations,
+            pending_annotation_jump: None,
             bookmarks,
             saved_words,
             dict_query: String::new(),
@@ -1007,6 +1010,36 @@ impl Component for ReaderModel {
                     refresh_chrome = true;
                 }
             }
+            ReaderMsg::JumpToAnnotation(id) => {
+                let Some(annotation) = self
+                    .all_book_annotations
+                    .iter()
+                    .find(|annotation| annotation.id == id)
+                    .cloned()
+                else {
+                    return;
+                };
+                let idx = annotation.chapter_index as usize;
+                if idx >= self.open.chapter_count() || self.loading {
+                    return;
+                }
+                self.right_tab = RightSidebarTab::Highlights;
+                self.right_sidebar_open = true;
+                self.cancel_right_close();
+                self.pending_annotation_jump = Some(annotation.id);
+                if idx != self.chapter {
+                    self.go_chapter(idx, 0.0);
+                    refresh_sidebar_header = true;
+                    refresh_toc = true;
+                    refresh_highlights = true;
+                    refresh_bookmarks = true;
+                    refresh_words = true;
+                    refresh_chrome = true;
+                } else {
+                    self.restore_pending_annotation();
+                }
+                refresh_tabs = true;
+            }
             ReaderMsg::JumpToLocation(idx, frac) => {
                 if idx < self.open.chapter_count() && !self.loading {
                     self.go_chapter(idx, frac);
@@ -1170,6 +1203,7 @@ impl Component for ReaderModel {
                 self.reload_bookmarks();
                 self.reload_saved_words();
                 self.inject_highlights();
+                self.restore_pending_annotation();
                 refresh_highlights = true;
                 refresh_bookmarks = true;
                 refresh_words = true;
@@ -1615,6 +1649,34 @@ impl ReaderModel {
             );
             eval_js(&self.webview, &script);
         }
+    }
+
+    fn restore_pending_annotation(&mut self) {
+        let Some(id) = self.pending_annotation_jump.take() else {
+            return;
+        };
+        let Some(annotation) = self
+            .all_book_annotations
+            .iter()
+            .find(|annotation| annotation.id == id)
+        else {
+            return;
+        };
+        let anchor = serde_json::json!({
+            "id": annotation.id,
+            "start_path": annotation.start_path,
+            "start_offset": annotation.start_offset,
+            "end_path": annotation.end_path,
+            "end_offset": annotation.end_offset,
+        });
+        let Ok(anchor_json) = serde_json::to_string(&anchor) else {
+            return;
+        };
+        let script = format!(
+            "setTimeout(function() {{ if (window.kalamRevealAnnotation) window.kalamRevealAnnotation({anchor}); }}, 90);",
+            anchor = anchor_json,
+        );
+        eval_js(&self.webview, &script);
     }
 
     fn show_dict_in_webview(&self, word: String, definition: String, rect_json: Option<String>) {
@@ -3107,9 +3169,9 @@ fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderM
         text_col.append(&meta);
         row.append(&text_col);
         jump.set_child(Some(&row));
-        let ch = anno.chapter_index as usize;
+        let id = anno.id;
         let s = sender.clone();
-        jump.connect_clicked(move |_| s.input(ReaderMsg::JumpToChapter(ch)));
+        jump.connect_clicked(move |_| s.input(ReaderMsg::JumpToAnnotation(id)));
         outer.append(&jump);
 
         let delete = gtk::Button::new();

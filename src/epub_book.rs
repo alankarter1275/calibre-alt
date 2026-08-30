@@ -1177,6 +1177,48 @@ if (!window.kalamReaderShellLoaded) {
     } catch(e){ console.log('single inject failed', e); }
   };
 
+  // ---- Exact annotation navigation ----
+  // Prefer the persisted highlight span after chapter annotations are injected.
+  // This keeps the jump stable even though wrapping a range changes child-node
+  // positions. The saved path remains a fallback for older or failed wraps.
+  window.kalamRevealAnnotation = function(annotation) {
+    if (!annotation) return false;
+    var target = null;
+    var spans = document.querySelectorAll('span.kalam-hl[data-annotation-id]');
+    for (var i = 0; i < spans.length; i++) {
+      if (String(spans[i].dataset.annotationId) === String(annotation.id)) {
+        target = spans[i];
+        break;
+      }
+    }
+    if (target) {
+      try {
+        target.scrollIntoView({block:'center', inline:'nearest', behavior:'auto'});
+        return true;
+      } catch(e) {
+        try { target.scrollIntoView(); return true; } catch(e2) {}
+      }
+    }
+
+    // Fallback for an annotation whose saved range could not be wrapped.
+    try {
+      var startNode = nodeFromPath(annotation.start_path);
+      var endNode = nodeFromPath(annotation.end_path);
+      if (!startNode || !endNode) return false;
+      var range = document.createRange();
+      range.setStart(startNode, annotation.start_offset || 0);
+      range.setEnd(endNode, annotation.end_offset || 0);
+      var rect = range.getBoundingClientRect();
+      if (!rect || (!rect.width && !rect.height)) return false;
+      var topDelta = rect.top - (window.innerHeight - rect.height) / 2;
+      var leftDelta = rect.left - (window.innerWidth - rect.width) / 2;
+      window.scrollBy({top: topDelta, left: leftDelta, behavior:'auto'});
+      return true;
+    } catch(e) {
+      return false;
+    }
+  };
+
   // ---- Selection listeners ----
   var selTimeout = null;
   document.addEventListener('mouseup', function(e){
