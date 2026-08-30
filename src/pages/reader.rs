@@ -1749,6 +1749,7 @@ impl ReaderModel {
                     "end_path": a.end_path,
                     "end_offset": a.end_offset,
                     "color": a.color,
+                    "text_excerpt": a.text_excerpt,
                 })
             })
             .collect();
@@ -1782,6 +1783,7 @@ impl ReaderModel {
             "start_offset": annotation.start_offset,
             "end_path": annotation.end_path,
             "end_offset": annotation.end_offset,
+            "text_excerpt": annotation.text_excerpt,
         });
         let Ok(anchor_json) = serde_json::to_string(&anchor) else {
             return;

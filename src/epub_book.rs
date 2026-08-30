@@ -912,15 +912,159 @@ if (!window.kalamReaderShellLoaded) {
     scheduleSelectionHandlePosition();
   }
 
-  function wrapRangeByPaths(startPath, startOffset, endPath, endOffset, color, annId) {
+  function excerptText(text) {
+    return String(text || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function isWordCharacter(ch) {
+    if (!ch) return false;
+    return ch.toLowerCase() !== ch.toUpperCase() || /[0-9_]/.test(ch);
+  }
+
+  function ignoredExcerptNode(node) {
+    var parent = node && node.parentElement;
+    if (!parent || !parent.closest) return false;
+    return !!parent.closest('script, style, noscript, template, #kalam-chip, #kalam-dict-popup, #kalam-selection-bands, #kalam-annotation-focus-layer, .kalam-selection-handle');
+  }
+
+  function excerptBlock(node) {
+    var parent = node && node.parentElement;
+    if (!parent || !parent.closest) return null;
+    return parent.closest('p, li, blockquote, pre, h1, h2, h3, h4, h5, h6, dt, dd, td, th, div, section, article, main');
+  }
+
+  function appendExcerptCharacter(normalized, entries, character, startNode, startOffset, endNode, endOffset) {
+    if (/\s/.test(character)) {
+      if (normalized.value && normalized.value.charAt(normalized.value.length - 1) === ' ') {
+        entries[entries.length - 1].endNode = endNode;
+        entries[entries.length - 1].endOffset = endOffset;
+        return;
+      }
+      character = ' ';
+    }
+    normalized.value += character;
+    entries.push({
+      startNode: startNode,
+      startOffset: startOffset,
+      endNode: endNode,
+      endOffset: endOffset,
+    });
+  }
+
+  function rangeFromExcerpt(excerpt) {
+    var needle = excerptText(excerpt);
+    if (!needle || !document.body) return null;
+
+    var walker;
+    try {
+      walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+    } catch(e) {
+      return null;
+    }
+
+    var nodes = [];
+    var node;
+    while ((node = walker.nextNode())) {
+      if (!node.nodeValue || !node.nodeValue.length || ignoredExcerptNode(node)) continue;
+      nodes.push(node);
+    }
+    if (!nodes.length) return null;
+
+    var normalized = {value: ''};
+    var entries = [];
+    var previousNode = null;
+    for (var n = 0; n < nodes.length; n++) {
+      node = nodes[n];
+      var value = node.nodeValue || '';
+      if (previousNode) {
+        var previousValue = previousNode.nodeValue || '';
+        var previousBlock = excerptBlock(previousNode);
+        var currentBlock = excerptBlock(node);
+        if (previousBlock && currentBlock && previousBlock !== currentBlock &&
+            previousValue.length && value.length &&
+            !/\s/.test(previousValue.charAt(previousValue.length - 1)) &&
+            !/\s/.test(value.charAt(0))) {
+          appendExcerptCharacter(normalized, entries, ' ', previousNode, previousValue.length, node, 0);
+        }
+      }
+      for (var i = 0; i < value.length; i++) {
+        appendExcerptCharacter(normalized, entries, value.charAt(i), node, i, node, i + 1);
+      }
+      previousNode = node;
+    }
+
+    var index = normalized.value.indexOf(needle);
+    while (index >= 0) {
+      var before = index > 0 ? normalized.value.charAt(index - 1) : '';
+      var afterIndex = index + needle.length;
+      var after = afterIndex < normalized.value.length ? normalized.value.charAt(afterIndex) : '';
+      var startsInsideWord = isWordCharacter(before) && isWordCharacter(needle.charAt(0));
+      var endsInsideWord = isWordCharacter(after) && isWordCharacter(needle.charAt(needle.length - 1));
+      if (!startsInsideWord && !endsInsideWord) {
+        var first = entries[index];
+        var last = entries[afterIndex - 1];
+        if (first && last) {
+          try {
+            var range = document.createRange();
+            range.setStart(first.startNode, first.startOffset);
+            range.setEnd(last.endNode, last.endOffset);
+            if (!range.collapsed) return range;
+          } catch(e) {}
+        }
+      }
+      index = normalized.value.indexOf(needle, index + 1);
+    }
+    return null;
+  }
+
+  function validNodeOffset(node, offset) {
+    var numeric = Number(offset);
+    if (!node || !isFinite(numeric) || numeric < 0 || Math.floor(numeric) !== numeric) return false;
+    var limit = node.nodeType === 3 ? (node.nodeValue || '').length : (node.childNodes ? node.childNodes.length : 0);
+    return numeric <= limit;
+  }
+
+  function rangeFromPaths(startPath, startOffset, endPath, endOffset) {
     var startNode = nodeFromPath(startPath);
     var endNode = nodeFromPath(endPath);
-    if (!startNode || !endNode) { console.log('kalam wrap: nodes not found', startPath, endPath); return false; }
+    if (!validNodeOffset(startNode, startOffset) || !validNodeOffset(endNode, endOffset)) return null;
     try {
       var range = document.createRange();
-      range.setStart(startNode, startOffset);
-      range.setEnd(endNode, endOffset);
-      if (range.collapsed) return false;
+      range.setStart(startNode, Number(startOffset));
+      range.setEnd(endNode, Number(endOffset));
+      return range.collapsed ? null : range;
+    } catch(e) {
+      return null;
+    }
+  }
+
+  function rangeMatchesExcerpt(range, excerpt) {
+    var needle = excerptText(excerpt);
+    if (!needle) return true;
+    try {
+      return excerptText(range.toString()) === needle;
+    } catch(e) {
+      return false;
+    }
+  }
+
+  function annotationRange(startPath, startOffset, endPath, endOffset, excerpt) {
+    // Keep the original path/offset anchor authoritative when it still points
+    // to the saved text. The excerpt is used when the saved DOM location no
+    // longer exists or now points at different text.
+    var pathRange = rangeFromPaths(startPath, startOffset, endPath, endOffset);
+    if (pathRange && rangeMatchesExcerpt(pathRange, excerpt)) return pathRange;
+    return rangeFromExcerpt(excerpt);
+  }
+
+  function wrapRangeByPaths(startPath, startOffset, endPath, endOffset, color, annId, excerpt) {
+    if (document.querySelector('span.kalam-hl[data-annotation-id=\"'+annId+'\"]')) return true;
+    var range = annotationRange(startPath, startOffset, endPath, endOffset, excerpt);
+    if (!range) {
+      console.log('kalam wrap: saved anchor and excerpt not found', startPath, endPath);
+      return false;
+    }
+    try {
       // Do not wrap if already inside same annotation
       var existing = range.commonAncestorContainer;
       if (existing && existing.nodeType !== 1) existing = existing.parentElement;
@@ -939,9 +1083,8 @@ if (!window.kalamReaderShellLoaded) {
         range.insertNode(span);
       } catch(e) {
         try {
-          var range2 = document.createRange();
-          range2.setStart(nodeFromPath(startPath), startOffset);
-          range2.setEnd(nodeFromPath(endPath), endOffset);
+          var range2 = annotationRange(startPath, startOffset, endPath, endOffset, excerpt);
+          if (!range2) return false;
           var span2 = document.createElement('span');
           span2.className = 'kalam-hl kalam-hl-' + color;
           span2.dataset.annotationId = annId;
@@ -1166,14 +1309,14 @@ if (!window.kalamReaderShellLoaded) {
       var arr = JSON.parse(jsonStr);
       arr.forEach(function(a){
         if (document.querySelector('span.kalam-hl[data-annotation-id=\"'+a.id+'\"]')) return;
-        wrapRangeByPaths(a.start_path, a.start_offset, a.end_path, a.end_offset, a.color, a.id);
+        wrapRangeByPaths(a.start_path, a.start_offset, a.end_path, a.end_offset, a.color, a.id, a.text_excerpt);
       });
     } catch(e){ console.log('kalam inject highlights failed', e, jsonStr?.slice(0,200)); }
   };
   window.kalamInjectSingleHighlight = function(aJson) {
     try {
       var a = JSON.parse(aJson);
-      wrapRangeByPaths(a.start_path, a.start_offset, a.end_path, a.end_offset, a.color, a.id);
+      wrapRangeByPaths(a.start_path, a.start_offset, a.end_path, a.end_offset, a.color, a.id, a.text_excerpt);
     } catch(e){ console.log('single inject failed', e); }
   };
 
@@ -1269,14 +1412,17 @@ if (!window.kalamReaderShellLoaded) {
       } catch(e) {}
     }
 
-    // Fallback for an annotation whose saved range could not be wrapped.
+    // Use the saved path and offsets next, then fall back to the saved excerpt
+    // when the chapter's DOM has changed since the annotation was created.
+    var range = annotationRange(
+      annotation.start_path,
+      annotation.start_offset,
+      annotation.end_path,
+      annotation.end_offset,
+      annotation.text_excerpt
+    );
+    if (!range) return false;
     try {
-      var startNode = nodeFromPath(annotation.start_path);
-      var endNode = nodeFromPath(annotation.end_path);
-      if (!startNode || !endNode) return false;
-      var range = document.createRange();
-      range.setStart(startNode, annotation.start_offset || 0);
-      range.setEnd(endNode, annotation.end_offset || 0);
       var rect = range.getBoundingClientRect();
       if (!rect || (!rect.width && !rect.height)) return false;
       scrollAnnotationNearTop(rect);
