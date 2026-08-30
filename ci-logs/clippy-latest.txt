@@ -1,4 +1,8 @@
-src/db/annotations.rs:107:31: [1m[91merror[E0277][0m: the trait bound `std::path::PathBuf: rusqlite::types::FromSql` is not satisfied: the trait `rusqlite::types::FromSql` is not implemented for `std::path::PathBuf`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error; 1 warning emitted
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error; 2 warnings emitted
---- run 33319079869 ---
+src/pages/library.rs:591:45: [1m[91merror[E0308][0m: arguments to this method are incorrect
+src/pages/library.rs:592:22: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found integer
+src/pages/library.rs:592:32: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `i32`
+src/pages/library.rs:592:58: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found integer
+src/pages/library.rs:592:68: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `i32`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors; 2 warnings emitted
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors; 1 warning emitted
+--- run 33320317202 ---
