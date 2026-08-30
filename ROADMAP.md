@@ -174,7 +174,7 @@ Shelves rules engine, network metadata, comics import.
 - [ ] Near-end auto-advance (JS bridge removed for CI stability; use N/›)
 - [ ] True multi-chapter DOM buffer (still one chapter WebView load)
 - [ ] Instant CSS var updates without reload (currently reload chapter on Aa/theme)
-- [ ] Selection toolbar (P3)
+- [x] Selection toolbar: compact themed icon actions with tooltips (P3)
 
 ### Arch check
 
@@ -199,6 +199,9 @@ Daily-driver EPUB reading without annotations — **met for P2 scope**.
 - [x] Persist annotations: chapter_index + DOM path (nodePath) + offsets, color, text_excerpt, note, kind
 - [x] Reinject highlights on chapter load (`kalamInjectHighlights` + `wrapRangeByPaths`)
 - [x] Annotations list: reader bottom pill **✎** shows highlights/quotes for current book, Jump & Delete
+- [x] Reader selection toolbar uses compact themed icon actions with useful tooltips; default WebKit context menus are suppressed without changing text selection or the automatic selection-actions toolbar
+- [x] Annotation workflow: exact cross-chapter jumps, near-top positioning, temporary focus emphasis, and annotation-ID-first restoration
+- [x] Annotation cards: dark rounded cards with subtle pastel tints, colored left edges, saved note previews, expandable multiline note editing, and autosave without Save/Cancel controls
 - [x] My Library → **Saved quotes** (real data, search, delete, Export Markdown → `~/Quotes.md`)
 - [x] My Library → **Saved words** (real data, search, delete, saved from dict lookup with context)
 - [x] Export quotes → Markdown with book title, chapter, color, timestamp, quote block
@@ -221,8 +224,8 @@ Daily-driver EPUB reading without annotations — **met for P2 scope**.
 
 ### Out (deferred)
 
-- Full EPUB HTML editing, sync, collaborative notes, note editing UI (note field exists but no inline editor yet)
-- CFI spec (using path+offset, robust enough for P3; CFI reserved for later)
+- Full EPUB HTML editing, sync, and collaborative notes
+- CFI spec (using path+offset for now; excerpt fallback is tracked in the reader-improvements section below)
 - Dictionary definition HTML rendering (currently stripped to plain text for GTK popover, WebView popup escapes HTML)
 
 ### Arch check
@@ -243,6 +246,50 @@ Annotations trustworthy enough you stop using another app for EPUB markup — **
 - `set_data`/`data` require unsafe blocks in gtk-rs 0.9; handled via `unsafe {}` 
 - CI now auto-formats and pushes fix commits (`cargo fmt --all` + push) to avoid fmt blockers in sandbox without rustfmt binary
 - Clippy -D warnings enforced; dead_code allowed for some P3 structs/methods still evolving
+
+---
+
+## Reader improvements — current track  ◀ active
+
+This is the focused follow-up to the shipped P2/P3 text reader. We finish and
+validate the reader workflow before starting another reader or a broad UI
+screen.
+
+### Current position
+
+- [x] Selection toolbar redesign: compact icon actions, useful tooltips,
+      round-ended application-theme surface, and no decorative pointer
+- [x] Default WebKit context menu suppressed only; text selection and the
+      automatic selection-actions toolbar remain available
+- [x] Exact annotation jumps across chapters, near-top positioning, temporary
+      emphasis, and annotation-ID-first restoration
+- [x] Dark rounded annotation cards with subtle pastel tint, colored left edge,
+      no color dot, saved note previews, and expandable multiline editors
+- [x] Autosave note editing on focus loss, navigation, filter/tab changes,
+      reader setting changes, sidebar closure, and reader shutdown
+- [x] Reader-local hover styling fixed so annotation quote buttons do not add a
+      second light highlight
+- [x] CI green for the current reader changes: rustfmt, Clippy with warnings
+      denied, debug build, and release build
+- [ ] Arch UX sign-off for the completed workflow
+
+### Next reader implementation
+
+1. **Text-excerpt fallback anchoring** — keep the current annotation-ID and
+   DOM-path/offset lookup first. If those locations fail after an EPUB’s HTML
+   changes, search the saved text excerpt within the chapter, then restore near the top
+   and apply the same temporary emphasis. This is a fallback, not a replacement
+   for the current anchoring system.
+2. Revisit the known WebKit triple-click selection colour mismatch.
+3. Consider draggable selection handles only after they can be added without
+   disrupting native selection or the automatic selection-actions toolbar.
+
+### Deliberately later
+
+- Do not add multi-chapter buffering until annotation anchoring and progress
+  behaviour are settled.
+- Do not reintroduce an always-running background progress timer; use event-based
+  or debounced persistence if progress work needs another pass.
 
 ---
 
@@ -611,12 +658,15 @@ Deps include `webkitgtk-6.0` for P2+.
 
 ## Immediate next steps
 
-1. **UI overhaul** once the Figma designs are final (see `docs/design/`).
-   `library_look.png` shows a two-column dashboard; the app is currently a
-   single vertical stack. Known divergence, deliberately deferred.
-2. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
-3. Keep refining text-reader polish only if you file specific UX bugs (note editing UI, CFI, dict HTML rendering)
-4. **P8** when you want comics for real (UI target already specified above)  
+1. **Reader improvements:** run the completed annotation workflow on Arch and
+   record your sign-off or change requests.
+2. **Next reader implementation:** add text-excerpt fallback anchoring while
+   preserving the current annotation-ID and DOM-path/offset lookup.
+3. **UI overhaul:** after the reader track is signed off, continue the
+   mockup-first screen work. `library_look.png` shows a two-column dashboard;
+   the app is currently a single vertical stack.
+4. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
+5. **P8** when you want comics for real (UI target already specified above).
 
 ---
 
@@ -651,3 +701,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-28 | P5.5 Settings window redesigned: 220px 6-tab navigation rail + rounded cards layout |
 | 2026-08-26 | P5.5 button hierarchy + chip + serif-title classes adopted from user style pass (`d545d28`) |
 | 2026-08-26 | Settings v2 shipped: grouped nav, section cards, family theme picker, pill switches, export card — mockup-first, CI green |
+| 2026-08-30 | Reader-improvements track recorded: themed selection toolbar, context-menu suppression, exact annotation jumps, temporary emphasis, dark annotation cards, note previews, multiline autosave, and hover/warning cleanup; next reader work is excerpt fallback anchoring |
