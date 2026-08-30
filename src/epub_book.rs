@@ -530,6 +530,153 @@ fn inject_reading_shell(
   }
   window.kalamGetSelectionData = getSelectionData;
 
+  // ---- Temporary selection band ----
+  // WebKit's native ::selection background does not expose a height control:
+  // inline styles can make later line fragments taller than the first. Keep
+  // native selection for copy/drag behavior, but paint the visible band with
+  // one consistent height of our own.
+  var selectionBandLayer = null;
+  var selectionBandsVisible = false;
+  var selectionBandFrame = null;
+
+  function ensureSelectionBandLayer() {
+    if (selectionBandLayer) return;
+    selectionBandLayer = document.createElement('div');
+    selectionBandLayer.id = 'kalam-selection-bands';
+    selectionBandLayer.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(selectionBandLayer);
+  }
+
+  function clearSelectionBands() {
+    if (!selectionBandLayer) return;
+    while (selectionBandLayer.firstChild) {
+      selectionBandLayer.removeChild(selectionBandLayer.firstChild);
+    }
+  }
+
+  function hideSelectionBands() {
+    selectionBandsVisible = false;
+    if (selectionBandFrame !== null) {
+      cancelAnimationFrame(selectionBandFrame);
+      selectionBandFrame = null;
+    }
+    clearSelectionBands();
+    if (selectionBandLayer) selectionBandLayer.style.display = 'none';
+  }
+
+  function selectionTextBlock(range) {
+    var node = range.startContainer;
+    var element = node && node.nodeType === 1 ? node : node && node.parentElement;
+    if (!element) return document.body;
+    var block = element.closest && element.closest('p, li, blockquote, pre, h1, h2, h3, h4, h5, h6, dt, dd, td, th');
+    if (block) return block;
+    return (element.closest && element.closest('div, section, article, main')) || document.body;
+  }
+
+  function firstReadableTextNode(root) {
+    if (!root) return null;
+    try {
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+      var node;
+      while ((node = walker.nextNode())) {
+        if (!node.nodeValue || !node.nodeValue.trim()) continue;
+        var parent = node.parentElement;
+        if (parent && parent.closest && (parent.closest('#kalam-chip') || parent.closest('#kalam-dict-popup') || parent.closest('#kalam-selection-bands') || parent.closest('.kalam-selection-handle'))) continue;
+        return node;
+      }
+    } catch(e) {}
+    return null;
+  }
+
+  function selectionReferenceHeight(range, rects) {
+    // Measure the first real character of the containing paragraph. This is
+    // deliberately independent of where the user started selecting, so a
+    // second-line or italic selection cannot choose its own taller height.
+    try {
+      var first = firstReadableTextNode(selectionTextBlock(range));
+      if (first) {
+        var value = first.nodeValue || '';
+        var offset = 0;
+        while (offset < value.length && /\s/.test(value.charAt(offset))) offset++;
+        if (offset < value.length) {
+          var firstChar = document.createRange();
+          firstChar.setStart(first, offset);
+          firstChar.setEnd(first, Math.min(offset + 1, value.length));
+          var firstRects = firstChar.getClientRects();
+          if (firstRects && firstRects.length && firstRects[0].height > 0) {
+            return firstRects[0].height;
+          }
+        }
+      }
+    } catch(e) {}
+
+    try {
+      var element = selectionTextBlock(range);
+      var lineHeight = parseFloat(window.getComputedStyle(element).lineHeight);
+      if (isFinite(lineHeight) && lineHeight > 0) return lineHeight;
+    } catch(e) {}
+
+    return rects && rects.length ? rects[0].height : 0;
+  }
+
+  function positionSelectionBands() {
+    selectionBandFrame = null;
+    if (!selectionBandsVisible || !selectionBandLayer) return;
+
+    var data = getSelectionData();
+    var sel = window.getSelection();
+    if (!data || !sel || sel.rangeCount === 0 || sel.isCollapsed) {
+      hideSelectionBands();
+      return;
+    }
+
+    var range = sel.getRangeAt(0);
+    var rects;
+    try {
+      rects = range.getClientRects();
+    } catch(e) {
+      hideSelectionBands();
+      return;
+    }
+    if (!rects || !rects.length) {
+      hideSelectionBands();
+      return;
+    }
+
+    var referenceHeight = selectionReferenceHeight(range, rects);
+    if (!referenceHeight || referenceHeight <= 0) {
+      hideSelectionBands();
+      return;
+    }
+
+    clearSelectionBands();
+    selectionBandLayer.style.display = 'block';
+    var scrollX = window.scrollX || 0;
+    var scrollY = window.scrollY || 0;
+    for (var i = 0; i < rects.length; i++) {
+      var rect = rects[i];
+      if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+      var band = document.createElement('div');
+      band.className = 'kalam-selection-band';
+      band.style.left = (scrollX + rect.left) + 'px';
+      band.style.top = (scrollY + rect.top + (rect.height - referenceHeight) / 2) + 'px';
+      band.style.width = Math.max(1, rect.width) + 'px';
+      band.style.height = Math.max(1, referenceHeight) + 'px';
+      selectionBandLayer.appendChild(band);
+    }
+  }
+
+  function scheduleSelectionBandPosition() {
+    if (!selectionBandsVisible || selectionBandFrame !== null) return;
+    selectionBandFrame = requestAnimationFrame(positionSelectionBands);
+  }
+
+  function showSelectionBands() {
+    ensureSelectionBandLayer();
+    selectionBandsVisible = true;
+    scheduleSelectionBandPosition();
+  }
+
   // ---- Temporary selection handles ----
   // The browser owns the selection itself. These two small elements mirror its
   // endpoint edges without replacing native selection, copy, or highlight behavior.
@@ -611,20 +758,24 @@ fn inject_reading_shell(
       return;
     }
 
-    // Use the first selected line as the height reference for both edges. A
-    // later line can report a taller fragment in WebKit; using that fragment
-    // directly made the two handles change size as the selection moved down a
-    // paragraph.
-    var referenceHeight = startRect.height > 0 ? startRect.height : endRect.height;
+    // Use the containing paragraph's first readable line as the height
+    // reference for both edges. A later line can report a taller fragment in
+    // WebKit; using that fragment directly made the handles grow on line two.
+    var selectionRects = null;
+    try { selectionRects = range.getClientRects(); } catch(e) {}
+    var referenceHeight = selectionReferenceHeight(range, selectionRects);
+    if (!referenceHeight || referenceHeight <= 0) {
+      referenceHeight = startRect.height > 0 ? startRect.height : endRect.height;
+    }
     var startTop = startRect.top + (startRect.height - referenceHeight) / 2;
     var endTop = endRect.top + (endRect.height - referenceHeight) / 2;
     var endX = endRect.width > 0 ? endRect.right : endRect.left;
     selectionHandleStart.style.left = (window.scrollX + startRect.left - 1.5) + 'px';
     selectionHandleStart.style.top = (window.scrollY + startTop) + 'px';
-    selectionHandleStart.style.height = Math.max(1, Math.ceil(referenceHeight)) + 'px';
+    selectionHandleStart.style.height = Math.max(1, referenceHeight) + 'px';
     selectionHandleEnd.style.left = (window.scrollX + endX - 1.5) + 'px';
     selectionHandleEnd.style.top = (window.scrollY + endTop) + 'px';
-    selectionHandleEnd.style.height = Math.max(1, Math.ceil(referenceHeight)) + 'px';
+    selectionHandleEnd.style.height = Math.max(1, referenceHeight) + 'px';
     selectionHandleStart.style.display = 'block';
     selectionHandleEnd.style.display = 'block';
   }
@@ -740,6 +891,8 @@ fn inject_reading_shell(
     if (c) c.addEventListener('click', function(){
       var sel = window.getSelection(); if (sel) { try{ document.execCommand('copy'); }catch(e){} }
       hideChip();
+      hideSelectionBands();
+      hideSelectionHandles();
     });
     return chip;
   }
@@ -779,6 +932,7 @@ fn inject_reading_shell(
     var ok = wrapRangeByPaths(data.startPath, data.startOffset, data.endPath, data.endOffset, color, provisional);
     if (!ok) return;
     hideChip();
+    hideSelectionBands();
     hideSelectionHandles();
     kalamBridge({type:'highlight', color:color, text:data.text, startPath:data.startPath, startOffset:data.startOffset, endPath:data.endPath, endOffset:data.endOffset, tmpId:provisional});
   };
@@ -786,6 +940,7 @@ fn inject_reading_shell(
     var data = getSelectionData();
     if (!data) return;
     hideChip();
+    hideSelectionBands();
     hideSelectionHandles();
     kalamBridge({type:'quote', text:data.text, startPath:data.startPath, startOffset:data.startOffset, endPath:data.endPath, endOffset:data.endOffset});
   };
@@ -808,6 +963,7 @@ fn inject_reading_shell(
     }
     if (!word) return;
     hideChip();
+    hideSelectionBands();
     hideSelectionHandles();
     kalamBridge({type:'dict-lookup', word:word, context:ctx, rect:rect});
   };
@@ -888,10 +1044,12 @@ fn inject_reading_shell(
     selTimeout = setTimeout(function(){
       var data = getSelectionData();
       if (data && data.text && data.text.trim().length>0 && data.text.trim().length < 2000) {
+        showSelectionBands();
         showSelectionHandles();
         showChipAt(data.rect);
         kalamBridge({type:'selection', text:data.text});
       } else {
+        hideSelectionBands();
         hideSelectionHandles();
         // do not hide immediately if dict is open
         var dict = document.getElementById('kalam-dict-popup');
@@ -905,21 +1063,30 @@ fn inject_reading_shell(
   document.addEventListener('mousedown', function(e){
     if (e.target.closest && (e.target.closest('#kalam-chip') || e.target.closest('#kalam-dict-popup'))) return;
     hideChip();
+    hideSelectionBands();
     hideSelectionHandles();
     // don't hide dict on mousedown inside content
   });
 
   document.addEventListener('selectionchange', function(){
-    if (!selectionHandlesVisible) return;
+    if (!selectionBandsVisible && !selectionHandlesVisible) return;
     var data = getSelectionData();
     if (data && data.text && data.text.trim()) {
-      scheduleSelectionHandlePosition();
+      if (selectionBandsVisible) scheduleSelectionBandPosition();
+      if (selectionHandlesVisible) scheduleSelectionHandlePosition();
     } else {
+      hideSelectionBands();
       hideSelectionHandles();
     }
   });
-  window.addEventListener('scroll', scheduleSelectionHandlePosition, {passive:true});
-  window.addEventListener('resize', scheduleSelectionHandlePosition, {passive:true});
+  window.addEventListener('scroll', function(){
+    scheduleSelectionBandPosition();
+    scheduleSelectionHandlePosition();
+  }, {passive:true});
+  window.addEventListener('resize', function(){
+    scheduleSelectionBandPosition();
+    scheduleSelectionHandlePosition();
+  }, {passive:true});
 
   document.addEventListener('keydown', function(e){
     if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -935,6 +1102,7 @@ fn inject_reading_shell(
     }
     if (e.key === 'Escape') {
       hideChip();
+      hideSelectionBands();
       hideSelectionHandles();
       hideDict();
     }
@@ -1172,11 +1340,38 @@ img, svg {{
   height: auto !important;
   -webkit-text-fill-color: initial !important;
 }}
-/* Temporary selection — each reading theme supplies its own soft band. */
+/* The native selection remains active for copy and future dragging, but its
+   background is hidden because WebKit gives different line fragments
+   different heights. Kalam paints the visible band below. */
 ::selection {{
-  background: {selection_bg} !important;
+  background: transparent !important;
   color: {fg} !important;
   -webkit-text-fill-color: {fg} !important;
+}}
+
+/* ── temporary selection band ── */
+#kalam-selection-bands {{
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: visible !important;
+  z-index: 999996 !important;
+  pointer-events: none !important;
+}}
+.kalam-selection-band {{
+  position: absolute !important;
+  display: block !important;
+  min-width: 1px !important;
+  min-height: 1px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 2px !important;
+  background: {selection_bg} !important;
+  background-color: {selection_bg} !important;
+  pointer-events: none !important;
 }}
 
 /* ── temporary selection handles ──
