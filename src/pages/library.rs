@@ -412,8 +412,13 @@ fn now_reading_card(
             };
             dot.add_css_class(dot_class);
             if *i < current {
-                let check = gtk::Label::new(Some("\u{2713}"));
-                check.add_css_class("kalam-nr-dot-check");
+                // A symbolic image, not a text glyph: labels sit high in the
+                // line box and the check would drift off-centre.
+                let check = crate::icons::symbolic_with_classes(
+                    "object-select-symbolic",
+                    9,
+                    &["kalam-nr-dot-check"],
+                );
                 check.set_halign(gtk::Align::Center);
                 check.set_valign(gtk::Align::Center);
                 dot.append(&check);
@@ -718,7 +723,7 @@ fn history_feed(catalog: &Arc<Catalog>, limit: usize) -> Vec<FeedItem> {
                     .get_reading_progress(e.book_id)
                     .ok()
                     .flatten()
-                    .map(|(ci, _)| format!("Resumed at Chapter {}", ci + 1))
+                    .map(|(_, frac)| format!("Resumed at {}%", (frac * 100.0).round() as i64))
                     .unwrap_or_default(),
                 EventKind::Finished => {
                     if e.detail == "auto" {
@@ -799,7 +804,7 @@ fn history_row(item: &FeedItem, sender: &ComponentSender<LibraryPageModel>) -> g
     badge.add_css_class("kalam-hist-badge");
     badge.add_css_class(item.tint);
     let icon =
-        crate::icons::symbolic_with_classes(item.icon, 15, &["kalam-event-icon", item.icon_tint]);
+        crate::icons::symbolic_with_classes(item.icon, 17, &["kalam-event-icon", item.icon_tint]);
     icon.set_halign(gtk::Align::Center);
     icon.set_valign(gtk::Align::Center);
     badge.append(&icon);
