@@ -171,9 +171,9 @@ pub enum ReaderMsg {
     AnnotationsReload,
     DeleteAnnotation(i64),
     DeleteBookmark(i64),
-    JumpToAnnotation(i64),
+    ToggleAnnotation(i64),
+    AnnotationNoteChanged(i64, String),
     SaveAnnotationNote(i64, String),
-    CancelAnnotationNote,
     JumpToChapter(usize),
     JumpToLocation(usize, f64),
     DictSearch(String),
@@ -218,6 +218,7 @@ pub struct ReaderModel {
     all_book_annotations: Vec<Annotation>,
     pending_annotation_jump: Option<i64>,
     editing_annotation: Option<i64>,
+    annotation_note_draft: Option<(i64, String)>,
     bookmarks: Vec<ReadingBookmark>,
     saved_words: Vec<SavedWord>,
     dict_query: String,
@@ -721,6 +722,7 @@ impl Component for ReaderModel {
             all_book_annotations,
             pending_annotation_jump: None,
             editing_annotation: None,
+            annotation_note_draft: None,
             bookmarks,
             saved_words,
             dict_query: String::new(),
@@ -992,6 +994,7 @@ impl Component for ReaderModel {
 
         match msg {
             ReaderMsg::Close => {
+                self.close_annotation_editor();
                 if self.left_sidebar_open || self.right_sidebar_open {
                     self.close_sidebars();
                     refresh_tabs = true;
@@ -1005,6 +1008,9 @@ impl Component for ReaderModel {
             }
             ReaderMsg::TocSelect(idx) | ReaderMsg::JumpToChapter(idx) => {
                 if idx < self.open.chapter_count() && idx != self.chapter && !self.loading {
+                    self.flush_annotation_note_draft();
+                    self.editing_annotation = None;
+                    self.pending_annotation_jump = None;
                     self.go_chapter(idx, 0.0);
                     refresh_sidebar_header = true;
                     refresh_toc = true;
@@ -1014,7 +1020,7 @@ impl Component for ReaderModel {
                     refresh_chrome = true;
                 }
             }
-            ReaderMsg::JumpToAnnotation(id) => {
+            ReaderMsg::ToggleAnnotation(id) => {
                 let Some(annotation) = self
                     .all_book_annotations
                     .iter()
@@ -1027,27 +1033,39 @@ impl Component for ReaderModel {
                 if idx >= self.open.chapter_count() || self.loading {
                     return;
                 }
-                self.right_tab = RightSidebarTab::Highlights;
-                self.right_sidebar_open = true;
-                self.cancel_right_close();
-                self.editing_annotation = Some(annotation.id);
-                self.pending_annotation_jump = Some(annotation.id);
-                if idx != self.chapter {
-                    self.go_chapter(idx, 0.0);
-                    refresh_sidebar_header = true;
-                    refresh_toc = true;
+                if self.editing_annotation == Some(annotation.id) {
+                    self.flush_annotation_note_draft();
+                    self.editing_annotation = None;
+                    self.pending_annotation_jump = None;
                     refresh_highlights = true;
-                    refresh_bookmarks = true;
-                    refresh_words = true;
-                    refresh_chrome = true;
+                    refresh_tabs = true;
                 } else {
-                    self.restore_pending_annotation();
+                    self.flush_annotation_note_draft();
+                    self.right_tab = RightSidebarTab::Highlights;
+                    self.right_sidebar_open = true;
+                    self.cancel_right_close();
+                    self.editing_annotation = Some(annotation.id);
+                    self.pending_annotation_jump = Some(annotation.id);
+                    if idx != self.chapter {
+                        self.go_chapter(idx, 0.0);
+                        refresh_sidebar_header = true;
+                        refresh_toc = true;
+                        refresh_highlights = true;
+                        refresh_bookmarks = true;
+                        refresh_words = true;
+                        refresh_chrome = true;
+                    } else {
+                        self.restore_pending_annotation();
+                    }
+                    refresh_tabs = true;
+                    refresh_highlights = true;
                 }
-                refresh_tabs = true;
-                refresh_highlights = true;
             }
             ReaderMsg::JumpToLocation(idx, frac) => {
                 if idx < self.open.chapter_count() && !self.loading {
+                    self.flush_annotation_note_draft();
+                    self.editing_annotation = None;
+                    self.pending_annotation_jump = None;
                     self.go_chapter(idx, frac);
                     refresh_sidebar_header = true;
                     refresh_toc = true;
@@ -1059,6 +1077,9 @@ impl Component for ReaderModel {
             }
             ReaderMsg::PrevChapter => {
                 if self.chapter > 0 && !self.loading {
+                    self.flush_annotation_note_draft();
+                    self.editing_annotation = None;
+                    self.pending_annotation_jump = None;
                     self.go_chapter(self.chapter - 1, 0.0);
                     refresh_sidebar_header = true;
                     refresh_toc = true;
@@ -1070,6 +1091,9 @@ impl Component for ReaderModel {
             }
             ReaderMsg::NextChapter => {
                 if self.chapter + 1 < self.open.chapter_count() && !self.loading {
+                    self.flush_annotation_note_draft();
+                    self.editing_annotation = None;
+                    self.pending_annotation_jump = None;
                     self.fraction = 1.0;
                     self.go_chapter(self.chapter + 1, 0.0);
                     refresh_sidebar_header = true;
@@ -1081,6 +1105,7 @@ impl Component for ReaderModel {
                 }
             }
             ReaderMsg::Theme(theme) => {
+                self.close_annotation_editor();
                 self.theme = theme;
                 self.catalog.set_pref("reader.theme", theme.as_str());
                 self.loading = true;
@@ -1092,6 +1117,7 @@ impl Component for ReaderModel {
             ReaderMsg::FontDelta(delta) => {
                 let next = (self.font_px as i32 + delta).clamp(13, 24) as u32;
                 if next != self.font_px {
+                    self.close_annotation_editor();
                     self.font_px = next;
                     self.catalog.set_pref("reader.font_px", &next.to_string());
                     self.loading = true;
@@ -1104,6 +1130,7 @@ impl Component for ReaderModel {
                 let next =
                     ((self.line_height * 10.0).round() as i32 + delta).clamp(13, 25) as f32 / 10.0;
                 if (next - self.line_height).abs() > f32::EPSILON {
+                    self.close_annotation_editor();
                     self.line_height = next;
                     self.catalog
                         .set_pref("reader.line_height", &format!("{next:.1}"));
@@ -1116,6 +1143,7 @@ impl Component for ReaderModel {
             ReaderMsg::ColumnWidthDelta(delta) => {
                 let next = (self.column_px as i32 + delta).clamp(400, 860) as u32;
                 if next != self.column_px {
+                    self.close_annotation_editor();
                     self.column_px = next;
                     self.catalog.set_pref("reader.column_px", &next.to_string());
                     self.loading = true;
@@ -1205,6 +1233,7 @@ impl Component for ReaderModel {
                 refresh_chrome = true;
             }
             ReaderMsg::AnnotationsReload => {
+                self.flush_annotation_note_draft();
                 self.reload_annotations();
                 self.reload_bookmarks();
                 self.reload_saved_words();
@@ -1215,12 +1244,14 @@ impl Component for ReaderModel {
                 refresh_words = true;
             }
             ReaderMsg::DeleteAnnotation(id) => {
+                self.flush_annotation_note_draft();
                 crate::notify::report(
                     self.catalog.delete_annotation(id),
                     "Could not delete the highlight",
                 );
                 if self.editing_annotation == Some(id) {
                     self.editing_annotation = None;
+                    self.annotation_note_draft = None;
                 }
                 self.reload_annotations();
                 let script = format!(
@@ -1230,27 +1261,20 @@ impl Component for ReaderModel {
                 eval_js(&self.webview, &script);
                 refresh_highlights = true;
             }
-            ReaderMsg::SaveAnnotationNote(id, note) => {
-                if self
-                    .all_book_annotations
-                    .iter()
-                    .any(|annotation| annotation.id == id)
-                {
-                    if crate::notify::outcome(
-                        self.catalog.update_annotation_note(id, note.trim()),
-                        "Note saved",
-                        "",
-                        "Could not save your note",
-                    ) {
-                        self.editing_annotation = None;
-                        self.reload_annotations();
-                        refresh_highlights = true;
-                    }
+            ReaderMsg::AnnotationNoteChanged(id, note) => {
+                if self.editing_annotation == Some(id) {
+                    self.annotation_note_draft = Some((id, note));
                 }
             }
-            ReaderMsg::CancelAnnotationNote => {
-                self.editing_annotation = None;
-                refresh_highlights = true;
+            ReaderMsg::SaveAnnotationNote(id, note) => {
+                if self.persist_annotation_note(id, &note)
+                    && matches!(
+                        self.annotation_note_draft.as_ref(),
+                        Some((draft_id, _)) if *draft_id == id
+                    )
+                {
+                    self.annotation_note_draft = None;
+                }
             }
             ReaderMsg::DeleteBookmark(id) => {
                 crate::notify::report(
@@ -1334,6 +1358,7 @@ impl Component for ReaderModel {
                 sender.output(ReaderOut::OpenAuthor { name }).ok();
             }
             ReaderMsg::OpenLeftSidebar => {
+                self.close_annotation_editor();
                 self.cancel_left_close();
                 self.right_sidebar_open = false;
                 self.cancel_right_close();
@@ -1351,6 +1376,7 @@ impl Component for ReaderModel {
                 refresh_tabs = true;
             }
             ReaderMsg::SwitchLeftTab(tab) => {
+                self.close_annotation_editor();
                 self.left_tab = tab;
                 self.cancel_left_close();
                 self.right_sidebar_open = false;
@@ -1365,6 +1391,9 @@ impl Component for ReaderModel {
                 }
             }
             ReaderMsg::SwitchRightTab(tab) => {
+                if !matches!(tab, RightSidebarTab::Highlights) {
+                    self.close_annotation_editor();
+                }
                 self.right_tab = tab;
                 self.right_sidebar_open = true;
                 self.cancel_right_close();
@@ -1378,6 +1407,7 @@ impl Component for ReaderModel {
                 }
             }
             ReaderMsg::SetHighlightFilter(filter) => {
+                self.close_annotation_editor();
                 self.highlight_filter = filter;
                 refresh_controls = true;
                 refresh_highlights = true;
@@ -1402,12 +1432,14 @@ impl Component for ReaderModel {
             }
             ReaderMsg::ForceCloseRight(token) => {
                 if token == self.right_close_token {
+                    self.close_annotation_editor();
                     self.right_sidebar_open = false;
                     self.right_close_timer = None;
                     refresh_tabs = true;
                 }
             }
             ReaderMsg::CloseSidebars => {
+                self.close_annotation_editor();
                 self.close_sidebars();
                 refresh_tabs = true;
             }
@@ -1469,6 +1501,7 @@ impl Component for ReaderModel {
     }
 
     fn shutdown(&mut self, _widgets: &mut Self::Widgets, _output: relm4::Sender<Self::Output>) {
+        self.close_annotation_editor();
         self.save_progress();
         self.close_session();
         self.cancel_left_close();
@@ -1613,6 +1646,57 @@ impl ReaderModel {
         self.right_sidebar_open = false;
         self.cancel_left_close();
         self.cancel_right_close();
+    }
+
+    fn flush_annotation_note_draft(&mut self) {
+        let Some((id, note)) = self.annotation_note_draft.take() else {
+            return;
+        };
+        if !self.persist_annotation_note(id, &note) {
+            self.annotation_note_draft = Some((id, note));
+        }
+    }
+
+    fn close_annotation_editor(&mut self) {
+        self.flush_annotation_note_draft();
+        self.editing_annotation = None;
+        self.pending_annotation_jump = None;
+    }
+
+    fn persist_annotation_note(&mut self, id: i64, note: &str) -> bool {
+        let normalized = note.trim();
+        if !self
+            .all_book_annotations
+            .iter()
+            .any(|annotation| annotation.id == id)
+        {
+            return false;
+        }
+        if self
+            .all_book_annotations
+            .iter()
+            .find(|annotation| annotation.id == id)
+            .is_some_and(|annotation| annotation.note == normalized)
+        {
+            return true;
+        }
+        if let Err(err) = self.catalog.update_annotation_note(id, normalized) {
+            crate::notify::error("Could not save your note", &err.to_string());
+            return false;
+        }
+
+        let saved_note = normalized.to_string();
+        for annotation in &mut self.all_book_annotations {
+            if annotation.id == id {
+                annotation.note = saved_note.clone();
+            }
+        }
+        for annotation in &mut self.chapter_annotations {
+            if annotation.id == id {
+                annotation.note = saved_note.clone();
+            }
+        }
+        true
     }
 
     fn cancel_left_close(&mut self) {
@@ -2263,10 +2347,6 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
     padding: {list_top}px {list_side}px;
 }}
 
-.kalam-reader-ui-live .kalam-reader-annotation-wrap {{
-    border-bottom: 1px solid alpha(@kalam_border, 0.72);
-}}
-
 .kalam-reader-ui-live button.kalam-reader-dim {{
     background: alpha(@kalam_bg, {dim_alpha:.2});
 }}
@@ -2307,34 +2387,39 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card {{
-    border: 1px solid alpha(#000, 0.14);
-    border-radius: 12px;
-    padding: 12px 14px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    overflow: hidden;
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card-yellow {{
-    background: #f4d35e;
-    color: #332900;
+    background: alpha(#f4d35e, 0.08);
+    border-color: alpha(#f4d35e, 0.16);
+    border-left: 3px solid alpha(#f4d35e, 0.55);
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card-green {{
-    background: #8acb9c;
-    color: #12301b;
+    background: alpha(#8acb9c, 0.08);
+    border-color: alpha(#8acb9c, 0.16);
+    border-left: 3px solid alpha(#8acb9c, 0.55);
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card-blue {{
-    background: #8bb7f2;
-    color: #102544;
+    background: alpha(#8bb7f2, 0.08);
+    border-color: alpha(#8bb7f2, 0.16);
+    border-left: 3px solid alpha(#8bb7f2, 0.55);
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card-pink {{
-    background: #e99bbd;
-    color: #3a1426;
+    background: alpha(#e99bbd, 0.08);
+    border-color: alpha(#e99bbd, 0.16);
+    border-left: 3px solid alpha(#e99bbd, 0.55);
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card-orange {{
-    background: #f2ae72;
-    color: #3a1d0b;
+    background: alpha(#f2ae72, 0.08);
+    border-color: alpha(#f2ae72, 0.16);
+    border-left: 3px solid alpha(#f2ae72, 0.55);
 }}
 
 .kalam-reader-ui-live button.kalam-reader-filter-chip.kalam-reader-filter-yellow.active {{
@@ -2367,54 +2452,80 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
     color: #f2ae72;
 }}
 
-.kalam-reader-ui-live .kalam-reader-annotation-card .kalam-reader-annotation-text,
-.kalam-reader-ui-live .kalam-reader-annotation-card .kalam-reader-annotation-meta {{
-    color: inherit;
+.kalam-reader-ui-live .kalam-reader-annotation-body {{
+    padding: 11px 12px 10px 13px;
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card button.kalam-reader-list-hit:hover {{
-    background: alpha(#000, 0.06);
+    background: alpha(@kalam_text, 0.04);
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card button.kalam-btn-icon {{
-    background: alpha(#000, 0.08);
-    border-color: alpha(#000, 0.18);
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: @kalam_danger;
+    opacity: 0;
 }}
 
-.kalam-reader-ui-live .kalam-reader-note-editor {{
-    padding: 2px 0 1px;
+.kalam-reader-ui-live .kalam-reader-annotation-card:hover button.kalam-btn-icon,
+.kalam-reader-ui-live .kalam-reader-annotation-card.open button.kalam-btn-icon {{
+    opacity: 1;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-note-preview {{
+    background: transparent;
+    border: none;
+    border-top: 1px solid alpha(@kalam_border, 0.4);
+    border-radius: 0;
+    padding: 6px 13px 8px;
+    color: @kalam_text_dim;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-note-preview:hover {{
+    background: alpha(@kalam_surface_2, 0.4);
+}}
+
+.kalam-reader-ui-live label.kalam-reader-note-preview-text {{
+    color: @kalam_text_dim;
+    font-size: 0.72rem;
+    font-style: italic;
+    line-height: 1.4;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-note-wrap {{
+    border-top: 1px solid alpha(@kalam_border, 0.4);
+    padding: 8px 13px 10px;
 }}
 
 .kalam-reader-ui-live label.kalam-reader-note-label {{
     color: @kalam_text_dim;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     font-weight: 700;
+    letter-spacing: 0.07em;
 }}
 
-.kalam-reader-ui-live entry.kalam-reader-note-entry {{
-    min-height: 30px;
-    padding: 4px 0;
+.kalam-reader-ui-live scrolledwindow.kalam-reader-note-scroll {{
+    min-height: 52px;
+    background: alpha(@kalam_bg, 0.2);
+    border: 1px solid alpha(@kalam_border, 0.55);
+    border-radius: 7px;
+}}
+
+.kalam-reader-ui-live textview.kalam-reader-note-view {{
+    min-height: 52px;
+    padding: 7px 10px;
     background: transparent;
     color: @kalam_text;
-    border: none;
-    border-bottom: 1px solid @kalam_border;
-    border-radius: 0;
-    box-shadow: none;
 }}
 
-.kalam-reader-ui-live entry.kalam-reader-note-entry > text {{
+.kalam-reader-ui-live textview.kalam-reader-note-view text {{
+    background: transparent;
     color: @kalam_text;
 }}
 
-.kalam-reader-ui-live entry.kalam-reader-note-entry:focus {{
-    border-bottom: 2px solid @kalam_accent;
-}}
-
-.kalam-reader-ui-live button.kalam-reader-note-action {{
-    min-height: 0;
-    padding: 6px 12px;
-    font-size: 0.78rem;
-}}
 "#,
         radius = prefs.sidebar_radius,
         shadow_y = shadow_y,
@@ -3265,6 +3376,12 @@ fn append_reader_empty(list: &gtk::Box, text: &str) {
     list.append(&wrap);
 }
 
+fn annotation_note_text(buffer: &gtk::TextBuffer) -> String {
+    let start = buffer.start_iter();
+    let end = buffer.end_iter();
+    buffer.text(&start, &end, false).to_string()
+}
+
 fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>) {
     while let Some(child) = model.highlights_list.first_child() {
         model.highlights_list.remove(&child);
@@ -3281,10 +3398,18 @@ fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderM
         let outer = gtk::Box::new(gtk::Orientation::Vertical, 8);
         outer.add_css_class("kalam-reader-annotation-wrap");
 
-        let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        top_row.add_css_class("kalam-reader-annotation-card");
-        top_row.add_css_class(color_card_class(&anno.color));
-        top_row.set_hexpand(true);
+        let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        card.add_css_class("kalam-reader-annotation-card");
+        card.add_css_class(color_card_class(&anno.color));
+        if selected {
+            card.add_css_class("open");
+        }
+        card.set_hexpand(true);
+
+        let body = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        body.add_css_class("kalam-reader-annotation-body");
+        body.set_hexpand(true);
+
         let jump = gtk::Button::new();
         jump.add_css_class("kalam-reader-list-hit");
         jump.set_hexpand(true);
@@ -3300,19 +3425,7 @@ fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderM
         text.set_xalign(0.0);
         text.set_halign(gtk::Align::Start);
         text_col.append(&text);
-        let meta_text = if anno.kind == "quote" {
-            format!(
-                "{} · quote",
-                chapter_label(model, anno.chapter_index as usize)
-            )
-        } else {
-            format!(
-                "{} · {}",
-                chapter_label(model, anno.chapter_index as usize),
-                anno.color
-            )
-        };
-        let meta = gtk::Label::new(Some(&meta_text));
+        let meta = gtk::Label::new(Some(&chapter_label(model, anno.chapter_index as usize)));
         meta.add_css_class("kalam-reader-annotation-meta");
         meta.set_halign(gtk::Align::Start);
         meta.set_xalign(0.0);
@@ -3320,12 +3433,13 @@ fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderM
         row.append(&text_col);
         jump.set_child(Some(&row));
         let s = sender.clone();
-        jump.connect_clicked(move |_| s.input(ReaderMsg::JumpToAnnotation(annotation_id)));
-        top_row.append(&jump);
+        jump.connect_clicked(move |_| s.input(ReaderMsg::ToggleAnnotation(annotation_id)));
+        body.append(&jump);
 
         let delete = gtk::Button::new();
         delete.add_css_class("kalam-btn-icon");
         delete.add_css_class("danger");
+        delete.set_focus_on_click(false);
         delete.set_tooltip_text(Some("Delete highlight"));
         delete.set_child(Some(&crate::icons::symbolic_with_classes(
             "user-trash-symbolic",
@@ -3334,62 +3448,82 @@ fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderM
         )));
         let s = sender.clone();
         delete.connect_clicked(move |_| s.input(ReaderMsg::DeleteAnnotation(annotation_id)));
-        top_row.append(&delete);
-        outer.append(&top_row);
+        body.append(&delete);
+        card.append(&body);
+        let mut note_view_to_focus = None;
 
         if selected {
-            let editor = gtk::Box::new(gtk::Orientation::Vertical, 5);
-            editor.add_css_class("kalam-reader-note-editor");
-            editor.set_hexpand(true);
+            let note_wrap = gtk::Box::new(gtk::Orientation::Vertical, 5);
+            note_wrap.add_css_class("kalam-reader-annotation-note-wrap");
+            note_wrap.set_hexpand(true);
 
             let note_label = gtk::Label::new(Some("Note"));
             note_label.add_css_class("kalam-reader-note-label");
             note_label.set_halign(gtk::Align::Start);
             note_label.set_xalign(0.0);
-            editor.append(&note_label);
+            note_wrap.append(&note_label);
 
-            let note_entry = gtk::Entry::new();
-            note_entry.add_css_class("kalam-reader-note-entry");
-            note_entry.set_hexpand(true);
-            note_entry.set_placeholder_text(Some("Add a note about this highlight"));
-            note_entry.set_text(&anno.note);
-            editor.append(&note_entry);
+            let note_view = gtk::TextView::new();
+            note_view.add_css_class("kalam-reader-note-view");
+            note_view.set_wrap_mode(gtk::WrapMode::WordChar);
+            note_view.set_hexpand(true);
+            note_view.set_vexpand(false);
+            let note_buffer = note_view.buffer();
+            note_buffer.set_text(&anno.note);
 
-            let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            actions.set_halign(gtk::Align::End);
+            let note_scroll = gtk::ScrolledWindow::builder()
+                .min_content_height(52)
+                .max_content_height(112)
+                .hscrollbar_policy(gtk::PolicyType::Never)
+                .vscrollbar_policy(gtk::PolicyType::Automatic)
+                .hexpand(true)
+                .child(&note_view)
+                .build();
+            note_scroll.add_css_class("kalam-reader-note-scroll");
+            note_wrap.append(&note_scroll);
 
-            let cancel = gtk::Button::with_label("Cancel");
-            cancel.add_css_class("kalam-btn-outlined");
-            cancel.add_css_class("kalam-reader-note-action");
-            let s = sender.clone();
-            cancel.connect_clicked(move |_| s.input(ReaderMsg::CancelAnnotationNote));
-            actions.append(&cancel);
-
-            let save = gtk::Button::with_label("Save");
-            save.add_css_class("kalam-btn-tonal");
-            save.add_css_class("kalam-reader-note-action");
-            let entry_for_save = note_entry.clone();
-            let s = sender.clone();
-            save.connect_clicked(move |_| {
-                s.input(ReaderMsg::SaveAnnotationNote(
+            let tx = sender.input_sender().clone();
+            note_buffer.connect_changed(move |buffer| {
+                let _ = tx.send(ReaderMsg::AnnotationNoteChanged(
                     annotation_id,
-                    entry_for_save.text().to_string(),
+                    annotation_note_text(buffer),
                 ));
             });
-            actions.append(&save);
 
-            let s = sender.clone();
-            note_entry.connect_activate(move |entry| {
-                s.input(ReaderMsg::SaveAnnotationNote(
+            let tx = sender.input_sender().clone();
+            let buffer_for_focus = note_buffer.clone();
+            note_view.connect_has_focus_notify(move |view| {
+                if view.has_focus() {
+                    return;
+                }
+                let _ = tx.send(ReaderMsg::SaveAnnotationNote(
                     annotation_id,
-                    entry.text().to_string(),
+                    annotation_note_text(&buffer_for_focus),
                 ));
             });
-            editor.append(&actions);
-            outer.append(&editor);
+            card.append(&note_wrap);
+            note_view_to_focus = Some(note_view);
+        } else if !anno.note.trim().is_empty() {
+            let preview = gtk::Button::new();
+            preview.add_css_class("kalam-reader-annotation-note-preview");
+            preview.set_hexpand(true);
+            preview.set_halign(gtk::Align::Fill);
+            let preview_text = gtk::Label::new(Some(&format!("Note: {}", anno.note.trim())));
+            preview_text.add_css_class("kalam-reader-note-preview-text");
+            preview_text.set_wrap(true);
+            preview_text.set_halign(gtk::Align::Start);
+            preview_text.set_xalign(0.0);
+            preview.set_child(Some(&preview_text));
+            let s = sender.clone();
+            preview.connect_clicked(move |_| s.input(ReaderMsg::ToggleAnnotation(annotation_id)));
+            card.append(&preview);
         }
 
+        outer.append(&card);
         model.highlights_list.append(&outer);
+        if let Some(note_view) = note_view_to_focus {
+            note_view.grab_focus();
+        }
     }
 }
 
