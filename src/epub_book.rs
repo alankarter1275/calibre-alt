@@ -542,6 +542,7 @@ if (!window.kalamReaderShellLoaded) {
   var selectionBandLayer = null;
   var selectionBandsVisible = false;
   var selectionBandFrame = null;
+  var selectionBandPadding = 2;
   var selectionInkStyles = [];
 
   function ensureSelectionBandLayer() {
@@ -721,7 +722,6 @@ if (!window.kalamReaderShellLoaded) {
     selectionBandLayer.style.display = 'block';
     // Give the band a little breathing room above and below the glyph line,
     // while keeping every selected line exactly the same height.
-    var selectionBandPadding = 2;
     var bandHeight = referenceHeight + selectionBandPadding * 2;
     var scrollX = window.scrollX || 0;
     var scrollY = window.scrollY || 0;
@@ -831,24 +831,25 @@ if (!window.kalamReaderShellLoaded) {
       return;
     }
 
-    // Use the containing paragraph's first readable line as the height
-    // reference for both edges. A later line can report a taller fragment in
-    // WebKit; using that fragment directly made the handles grow on line two.
+    // Use the same base reference and breathing room as the selection bands.
+    // A later line can report a taller fragment in WebKit, so it must not make
+    // either edge grow on line two.
     var selectionRects = null;
     try { selectionRects = range.getClientRects(); } catch(e) {}
     var referenceHeight = selectionReferenceHeight(range, selectionRects);
     if (!referenceHeight || referenceHeight <= 0) {
       referenceHeight = startRect.height > 0 ? startRect.height : endRect.height;
     }
-    var startTop = startRect.top + (startRect.height - referenceHeight) / 2;
-    var endTop = endRect.top + (endRect.height - referenceHeight) / 2;
+    var handleHeight = referenceHeight + selectionBandPadding * 2;
+    var startTop = startRect.top + (startRect.height - handleHeight) / 2;
+    var endTop = endRect.top + (endRect.height - handleHeight) / 2;
     var endX = endRect.width > 0 ? endRect.right : endRect.left;
     selectionHandleStart.style.left = (window.scrollX + startRect.left - 1) + 'px';
     selectionHandleStart.style.top = (window.scrollY + startTop) + 'px';
-    selectionHandleStart.style.height = Math.max(1, referenceHeight) + 'px';
+    selectionHandleStart.style.height = Math.max(1, handleHeight) + 'px';
     selectionHandleEnd.style.left = (window.scrollX + endX - 1) + 'px';
     selectionHandleEnd.style.top = (window.scrollY + endTop) + 'px';
-    selectionHandleEnd.style.height = Math.max(1, referenceHeight) + 'px';
+    selectionHandleEnd.style.height = Math.max(1, handleHeight) + 'px';
     selectionHandleStart.style.display = 'block';
     selectionHandleEnd.style.display = 'block';
   }
