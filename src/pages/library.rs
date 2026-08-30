@@ -588,8 +588,12 @@ fn continue_card(book: &Book, sender: &ComponentSender<LibraryPageModel>) -> gtk
     let click = gtk::GestureClick::new();
     click.set_button(1);
     click.connect_released(move |_, _, x, y| {
-        if let Some((px, py)) = overlay_ref.translate_coordinates(&play_ref, x as i32, y as i32) {
-            if px >= 0 && px < play_ref.width() && py >= 0 && py < play_ref.height() {
+        if let Some((px, py)) = overlay_ref.translate_coordinates(&play_ref, x, y) {
+            if px >= 0.0
+                && px < play_ref.width() as f64
+                && py >= 0.0
+                && py < play_ref.height() as f64
+            {
                 return;
             }
         }
