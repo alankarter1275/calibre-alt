@@ -558,6 +558,13 @@ if (!window.kalamReaderShellLoaded) {
     }
   }
 
+  function setSelectionBandStacking(active) {
+    var root = document.documentElement;
+    if (!root) return;
+    if (active) root.classList.add('kalam-selection-active');
+    else root.classList.remove('kalam-selection-active');
+  }
+
   function hideSelectionBands() {
     selectionBandsVisible = false;
     if (selectionBandFrame !== null) {
@@ -565,6 +572,7 @@ if (!window.kalamReaderShellLoaded) {
       selectionBandFrame = null;
     }
     clearSelectionBands();
+    setSelectionBandStacking(false);
     if (selectionBandLayer) selectionBandLayer.style.display = 'none';
   }
 
@@ -677,6 +685,7 @@ if (!window.kalamReaderShellLoaded) {
 
   function showSelectionBands() {
     ensureSelectionBandLayer();
+    setSelectionBandStacking(true);
     selectionBandsVisible = true;
     scheduleSelectionBandPosition();
   }
@@ -1218,10 +1227,9 @@ fn join_zip_path(dir: &str, href: &str) -> String {
 pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, column_px: u32) -> String {
     let (bg, fg) = theme.swatch();
     let (selection_bg, handle_color) = theme.selection_style();
-    // The custom selection band sits above the text so it can cross inline
-    // fragments. Blend it instead of covering the ink: multiply preserves
-    // dark text on light pages, while screen preserves bright text on dark
-    // pages.
+    // The custom selection band is layered under the chapter content so the
+    // highlight does not tint the glyphs. The blend mode keeps the band
+    // readable against each page theme.
     let selection_blend = match theme {
         ReadingTheme::Light | ReadingTheme::Sepia => "multiply",
         ReadingTheme::Dark | ReadingTheme::Ink => "screen",
@@ -1356,13 +1364,20 @@ img, svg {{
 /* The native selection remains active for copy and future dragging, but its
    background is hidden because WebKit gives different line fragments
    different heights. Kalam paints the visible band below. */
-::selection {{
+::selection,
+body *::selection {{
   background: transparent !important;
   color: {fg} !important;
   -webkit-text-fill-color: {fg} !important;
 }}
 
 /* ── temporary selection band ── */
+/* Keep the band under the chapter content. This prevents its colour from
+   being composited into the glyphs, which is especially visible in italics. */
+html.kalam-selection-active body > *:not(#kalam-selection-bands):not(#kalam-chip):not(#kalam-dict-popup):not(.kalam-selection-handle) {{
+  position: relative !important;
+  z-index: 1 !important;
+}}
 #kalam-selection-bands {{
   position: absolute !important;
   top: 0 !important;
@@ -1370,7 +1385,7 @@ img, svg {{
   width: 0 !important;
   height: 0 !important;
   overflow: visible !important;
-  z-index: 999996 !important;
+  z-index: 0 !important;
   pointer-events: none !important;
 }}
 .kalam-selection-band {{
