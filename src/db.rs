@@ -91,6 +91,16 @@ pub struct SavedWord {
     pub created_at: String,
 }
 
+/// Book identity attached to a saved quote — the library dashboard renders
+/// cover, book and author per quote card.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct QuoteRef {
+    pub title: String,
+    pub author: String,
+    pub cover_path: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct ReadingBookmark {
@@ -1733,7 +1743,7 @@ mod tests {
 
         let quotes = cat.recent_quotes(5).unwrap();
         assert_eq!(quotes.len(), 1);
-        assert_eq!(quotes[0].1, "Dune");
+        assert_eq!(quotes[0].1.title, "Dune");
         assert_eq!(cat.count_quotes().unwrap(), 1);
     }
 

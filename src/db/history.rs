@@ -15,6 +15,19 @@ pub struct SessionRow {
     pub seconds: i64,
 }
 
+/// A closed session with its book identity — the library dashboard merges
+/// sessions into its history feed.
+#[derive(Debug, Clone)]
+pub struct LibrarySession {
+    pub id: i64,
+    pub book_id: i64,
+    pub started_at: String,
+    pub seconds: i64,
+    pub end_pct: i64,
+    pub book_title: String,
+    pub book_authors: String,
+}
+
 impl Catalog {
     // -----------------------------------------------------------------------
     // P4: History (append-only event log)
@@ -305,6 +318,33 @@ impl Catalog {
                 started_at: r.get(2)?,
                 ended_at: r.get(3)?,
                 seconds: r.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Newest closed sessions across all books, with book identity — the
+    /// library dashboard's history feed merges these with the event log.
+    pub fn recent_sessions(&self, limit: usize) -> Result<Vec<LibrarySession>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT s.id, s.book_id, s.started_at, s.seconds, s.end_pct,
+                    books.title, books.authors
+             FROM reading_sessions s
+             JOIN books ON books.id = s.book_id
+             WHERE s.ended_at IS NOT NULL
+             ORDER BY s.started_at DESC, s.id DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |r| {
+            Ok(LibrarySession {
+                id: r.get(0)?,
+                book_id: r.get(1)?,
+                started_at: r.get(2)?,
+                seconds: r.get(3)?,
+                end_pct: r.get(4)?,
+                book_title: r.get(5)?,
+                book_authors: r.get(6)?,
             })
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)

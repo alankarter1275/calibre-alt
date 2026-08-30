@@ -350,7 +350,7 @@ impl AppModel {
                         LibraryOut::Section(sec) => AppMsg::Push(Route::LibrarySection(sec)),
                         LibraryOut::Book { book_id } => AppMsg::Push(Route::BookPage { book_id }),
                         LibraryOut::BookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
-                        LibraryOut::Tag { tag } => AppMsg::Push(Route::TagBooks { tag }),
+                        LibraryOut::Read { book_id } => AppMsg::OpenReader { book_id },
                     },
                 );
                 PageSlot::Library(ctrl)

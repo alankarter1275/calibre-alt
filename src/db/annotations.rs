@@ -86,12 +86,14 @@ impl Catalog {
 
     /// A few recent quotes with their book titles, in one query.
     /// The dashboard previously fetched 500 rows and then a book per card.
-    pub fn recent_quotes(&self, limit: usize) -> Result<Vec<(Annotation, String)>> {
+    /// Recent quotes/highlights with their book's identity (title, authors,
+    /// cover path) — the library dashboard renders a card per quote.
+    pub fn recent_quotes(&self, limit: usize) -> Result<Vec<(Annotation, QuoteRef)>> {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
             "SELECT a.id, a.book_id, a.kind, a.chapter_index, a.start_path, a.start_offset,
                     a.end_path, a.end_offset, a.color, a.text_excerpt, a.note, a.cfi,
-                    a.created_at, a.updated_at, books.title
+                    a.created_at, a.updated_at, books.title, books.authors, books.cover_path
              FROM annotations a
              JOIN books ON books.id = a.book_id
              WHERE a.kind IN ('quote','highlight') AND TRIM(a.text_excerpt) <> ''
@@ -99,7 +101,12 @@ impl Catalog {
              LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit as i64], |r| {
-            Ok((row_to_annotation(r)?, r.get::<_, String>(14)?))
+            let ref_ = QuoteRef {
+                title: r.get(14)?,
+                author: r.get(15)?,
+                cover_path: r.get(16)?,
+            };
+            Ok((row_to_annotation(r)?, ref_))
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
