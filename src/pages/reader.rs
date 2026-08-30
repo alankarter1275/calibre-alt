@@ -1231,7 +1231,11 @@ impl Component for ReaderModel {
                 refresh_highlights = true;
             }
             ReaderMsg::SaveAnnotationNote(id, note) => {
-                if self.all_book_annotations.iter().any(|annotation| annotation.id == id) {
+                if self
+                    .all_book_annotations
+                    .iter()
+                    .any(|annotation| annotation.id == id)
+                {
                     if crate::notify::outcome(
                         self.catalog.update_annotation_note(id, note.trim()),
                         "Note saved",
