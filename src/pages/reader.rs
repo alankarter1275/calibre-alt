@@ -1242,7 +1242,7 @@ impl Component for ReaderModel {
                         "",
                         "Could not save your note",
                     ) {
-                        self.editing_annotation = Some(id);
+                        self.editing_annotation = None;
                         self.reload_annotations();
                         refresh_highlights = true;
                     }
