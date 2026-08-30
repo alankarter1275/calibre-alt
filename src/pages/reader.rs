@@ -170,6 +170,7 @@ pub enum ReaderMsg {
     Progress(f64),
     AnnotationsReload,
     DeleteAnnotation(i64),
+    RecolorAnnotation(i64, HighlightColor),
     DeleteBookmark(i64),
     ToggleAnnotation(i64),
     AnnotationNoteChanged(i64, String),
@@ -1241,6 +1242,49 @@ impl Component for ReaderModel {
                 refresh_highlights = true;
                 refresh_bookmarks = true;
                 refresh_words = true;
+            }
+            ReaderMsg::RecolorAnnotation(id, color) => {
+                self.flush_annotation_note_draft();
+                let color_name = color.as_str();
+                let is_highlight = self
+                    .all_book_annotations
+                    .iter()
+                    .find(|annotation| annotation.id == id)
+                    .is_some_and(|annotation| annotation.kind == "highlight");
+                if !is_highlight {
+                    return;
+                }
+                let unchanged = self
+                    .all_book_annotations
+                    .iter()
+                    .find(|annotation| annotation.id == id)
+                    .is_some_and(|annotation| annotation.color.eq_ignore_ascii_case(color_name));
+                if unchanged {
+                    return;
+                }
+                match self.catalog.update_annotation_color(id, color_name) {
+                    Ok(()) => {
+                        for annotation in &mut self.all_book_annotations {
+                            if annotation.id == id {
+                                annotation.color = color_name.to_string();
+                            }
+                        }
+                        for annotation in &mut self.chapter_annotations {
+                            if annotation.id == id {
+                                annotation.color = color_name.to_string();
+                            }
+                        }
+                        let script = format!(
+                            "if (window.kalamRecolorHighlight) window.kalamRecolorHighlight({}, '{}');",
+                            id, color_name
+                        );
+                        eval_js(&self.webview, &script);
+                        refresh_highlights = true;
+                    }
+                    Err(err) => {
+                        crate::notify::error("Could not recolor the highlight", &err.to_string());
+                    }
+                }
             }
             ReaderMsg::DeleteAnnotation(id) => {
                 self.flush_annotation_note_draft();
@@ -2461,7 +2505,8 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
     box-shadow: none;
 }}
 
-.kalam-reader-ui-live .kalam-reader-annotation-card button.kalam-btn-icon {{
+.kalam-reader-ui-live .kalam-reader-annotation-card button.kalam-btn-icon,
+.kalam-reader-ui-live .kalam-reader-annotation-card menubutton.kalam-btn-icon {{
     min-width: 28px;
     min-height: 28px;
     padding: 0;
@@ -2472,7 +2517,9 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card:hover button.kalam-btn-icon,
-.kalam-reader-ui-live .kalam-reader-annotation-card.open button.kalam-btn-icon {{
+.kalam-reader-ui-live .kalam-reader-annotation-card.open button.kalam-btn-icon,
+.kalam-reader-ui-live .kalam-reader-annotation-card:hover menubutton.kalam-btn-icon,
+.kalam-reader-ui-live .kalam-reader-annotation-card.open menubutton.kalam-btn-icon {{
     opacity: 1;
 }}
 
@@ -2525,6 +2572,52 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
 .kalam-reader-ui-live textview.kalam-reader-note-view text {{
     background: transparent;
     color: @kalam_text;
+}}
+
+.kalam-reader-ui-live popover.kalam-reader-color-popover {{
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+}}
+
+.kalam-reader-ui-live box.kalam-reader-color-palette {{
+    padding: 6px;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice {{
+    min-width: 92px;
+    min-height: 30px;
+    padding: 5px 10px;
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 7px;
+    color: @kalam_text;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice:hover,
+.kalam-reader-ui-live button.kalam-reader-color-choice.active {{
+    background: alpha(@kalam_surface_2, 0.9);
+    border-color: @kalam_accent;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice-yellow {{
+    color: #f4d35e;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice-green {{
+    color: #8acb9c;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice-blue {{
+    color: #8bb7f2;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice-pink {{
+    color: #e99bbd;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice-orange {{
+    color: #f2ae72;
 }}
 
 "#,
@@ -3383,6 +3476,75 @@ fn annotation_note_text(buffer: &gtk::TextBuffer) -> String {
     buffer.text(&start, &end, false).to_string()
 }
 
+fn annotation_recolor_button(
+    annotation_id: i64,
+    current_color: HighlightColor,
+    sender: &ComponentSender<ReaderModel>,
+) -> gtk::MenuButton {
+    let recolor = gtk::MenuButton::new();
+    recolor.add_css_class("kalam-btn-icon");
+    recolor.set_can_focus(false);
+    recolor.set_always_show_arrow(false);
+    recolor.set_tooltip_text(Some("Change highlight color"));
+    recolor.set_child(Some(&crate::icons::symbolic_with_classes(
+        "applications-graphics-symbolic",
+        16,
+        &["kalam-inline-icon"],
+    )));
+
+    let popover = gtk::Popover::new();
+    popover.add_css_class("kalam-reader-color-popover");
+    popover.set_has_arrow(false);
+    let palette = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    palette.add_css_class("kalam-reader-color-palette");
+
+    for color in HighlightColor::ALL.iter().copied() {
+        let choice = gtk::Button::with_label(highlight_color_label(color));
+        choice.add_css_class("kalam-reader-color-choice");
+        choice.add_css_class(highlight_color_choice_class(color));
+        if color == current_color {
+            choice.add_css_class("active");
+        }
+        choice.set_hexpand(true);
+        choice.set_halign(gtk::Align::Fill);
+        choice.set_tooltip_text(Some(&format!(
+            "Use {} highlight",
+            highlight_color_label(color)
+        )));
+        let s = sender.clone();
+        let popover_to_close = popover.clone();
+        choice.connect_clicked(move |_| {
+            s.input(ReaderMsg::RecolorAnnotation(annotation_id, color));
+            popover_to_close.popdown();
+        });
+        palette.append(&choice);
+    }
+
+    popover.set_child(Some(&palette));
+    recolor.set_popover(Some(&popover));
+    recolor
+}
+
+fn highlight_color_label(color: HighlightColor) -> &'static str {
+    match color {
+        HighlightColor::Yellow => "Yellow",
+        HighlightColor::Green => "Green",
+        HighlightColor::Blue => "Blue",
+        HighlightColor::Pink => "Pink",
+        HighlightColor::Orange => "Orange",
+    }
+}
+
+fn highlight_color_choice_class(color: HighlightColor) -> &'static str {
+    match color {
+        HighlightColor::Yellow => "kalam-reader-color-choice-yellow",
+        HighlightColor::Green => "kalam-reader-color-choice-green",
+        HighlightColor::Blue => "kalam-reader-color-choice-blue",
+        HighlightColor::Pink => "kalam-reader-color-choice-pink",
+        HighlightColor::Orange => "kalam-reader-color-choice-orange",
+    }
+}
+
 fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>) {
     while let Some(child) = model.highlights_list.first_child() {
         model.highlights_list.remove(&child);
@@ -3436,6 +3598,15 @@ fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderM
         let s = sender.clone();
         jump.connect_clicked(move |_| s.input(ReaderMsg::ToggleAnnotation(annotation_id)));
         body.append(&jump);
+
+        if anno.kind == "highlight" {
+            let recolor = annotation_recolor_button(
+                annotation_id,
+                HighlightColor::from_str_lossy(&anno.color),
+                sender,
+            );
+            body.append(&recolor);
+        }
 
         let delete = gtk::Button::new();
         delete.add_css_class("kalam-btn-icon");

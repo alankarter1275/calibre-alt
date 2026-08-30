@@ -1114,6 +1114,19 @@ if (!window.kalamReaderShellLoaded) {
     });
   };
 
+  window.kalamRecolorHighlight = function(annId, color) {
+    var allowed = ['yellow', 'green', 'blue', 'pink', 'orange'];
+    if (allowed.indexOf(color) === -1) return;
+    var nodes = document.querySelectorAll('span.kalam-hl[data-annotation-id=\"'+annId+'\"]');
+    nodes.forEach(function(n){
+      for (var i = 0; i < allowed.length; i++) {
+        n.classList.remove('kalam-hl-' + allowed[i]);
+      }
+      n.classList.add('kalam-hl-' + color);
+      n.dataset.color = color;
+    });
+  };
+
   // ---- UI: selection toolbar ----
   function ensureChip() {
     var chip = document.getElementById('kalam-chip');
