@@ -22,10 +22,16 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub enum LibraryOut {
     Section(LibrarySection),
-    Book { book_id: i64 },
-    BookDialog { book_id: i64 },
+    Book {
+        book_id: i64,
+    },
+    BookDialog {
+        book_id: i64,
+    },
     /// Resume reading a book (the continue-reading play buttons).
-    Read { book_id: i64 },
+    Read {
+        book_id: i64,
+    },
 }
 
 pub struct LibraryPageModel {
@@ -258,7 +264,8 @@ fn build_dashboard(
             let click = gtk::GestureClick::new();
             click.set_button(1);
             click.connect_released(move |_, _, _, _| {
-                s.output(LibraryOut::Section(LibrarySection::SavedWords)).ok();
+                s.output(LibraryOut::Section(LibrarySection::SavedWords))
+                    .ok();
             });
             pill.add_controller(click);
             pill.set_cursor_from_name(Some("pointer"));
@@ -478,7 +485,10 @@ fn stat_card(label: &str, value: &str, unit: &str, series: &[i64], spark_class: 
 fn goal_card(catalog: &Arc<Catalog>) -> gtk::Box {
     let goal = catalog.reading_goal();
     let done = catalog.finished_this_year();
-    let year = crate::db::iso_days_ago(0).get(..4).unwrap_or("").to_string();
+    let year = crate::db::iso_days_ago(0)
+        .get(..4)
+        .unwrap_or("")
+        .to_string();
 
     let card = gtk::Box::new(gtk::Orientation::Vertical, 4);
     card.add_css_class("kalam-lib-stat-card");
@@ -503,7 +513,11 @@ fn goal_card(catalog: &Arc<Catalog>) -> gtk::Box {
 
     let bar = gtk::ProgressBar::new();
     bar.add_css_class("kalam-goal-bar");
-    let frac = if goal > 0 { (done as f64 / goal as f64).clamp(0.0, 1.0) } else { 0.0 };
+    let frac = if goal > 0 {
+        (done as f64 / goal as f64).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     bar.set_fraction(frac);
     bar.set_vexpand(true);
     bar.set_valign(gtk::Align::End);
@@ -553,7 +567,10 @@ fn continue_card(book: &Book, sender: &ComponentSender<LibraryPageModel>) -> gtk
     play.set_margin_bottom(8);
     play.set_margin_end(8);
     play.set_tooltip_text(Some("Resume reading"));
-    play.set_child(Some(&crate::icons::symbolic("media-playback-start-symbolic", 14)));
+    play.set_child(Some(&crate::icons::symbolic(
+        "media-playback-start-symbolic",
+        14,
+    )));
     let id_play = book.id;
     let s_play = sender.clone();
     play.connect_clicked(move |_| {
@@ -786,7 +803,8 @@ fn history_row(item: &FeedItem, sender: &ComponentSender<LibraryPageModel>) -> g
     let badge = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     badge.add_css_class("kalam-hist-badge");
     badge.add_css_class(item.tint);
-    let icon = crate::icons::symbolic_with_classes(item.icon, 15, &["kalam-event-icon", item.icon_tint]);
+    let icon =
+        crate::icons::symbolic_with_classes(item.icon, 15, &["kalam-event-icon", item.icon_tint]);
     icon.set_halign(gtk::Align::Center);
     icon.set_valign(gtk::Align::Center);
     badge.append(&icon);
