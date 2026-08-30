@@ -719,6 +719,10 @@ if (!window.kalamReaderShellLoaded) {
 
     clearSelectionBands();
     selectionBandLayer.style.display = 'block';
+    // Give the band a little breathing room above and below the glyph line,
+    // while keeping every selected line exactly the same height.
+    var selectionBandPadding = 2;
+    var bandHeight = referenceHeight + selectionBandPadding * 2;
     var scrollX = window.scrollX || 0;
     var scrollY = window.scrollY || 0;
     for (var i = 0; i < rects.length; i++) {
@@ -727,9 +731,9 @@ if (!window.kalamReaderShellLoaded) {
       var band = document.createElement('div');
       band.className = 'kalam-selection-band';
       band.style.left = (scrollX + rect.left) + 'px';
-      band.style.top = (scrollY + rect.top + (rect.height - referenceHeight) / 2) + 'px';
+      band.style.top = (scrollY + rect.top + (rect.height - bandHeight) / 2) + 'px';
       band.style.width = Math.max(1, rect.width) + 'px';
-      band.style.height = Math.max(1, referenceHeight) + 'px';
+      band.style.height = Math.max(1, bandHeight) + 'px';
       selectionBandLayer.appendChild(band);
     }
   }
