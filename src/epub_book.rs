@@ -395,7 +395,11 @@ fn inject_reading_shell(
 ) -> String {
     let restore = restore_fraction.clamp(0.0, 1.0);
     let core_js = r#"
-(function() {
+// The shell is injected in both head and body so its CSS wins, but the
+// JavaScript must only install one set of listeners and one selection layer.
+if (!window.kalamReaderShellLoaded) {
+  window.kalamReaderShellLoaded = true;
+  (function() {
   window.kalam = window.kalam || {};
   window.kalam._lastProgress = -1;
   window.kalam._advanced = false;
@@ -1109,7 +1113,8 @@ fn inject_reading_shell(
   });
 
   // ---- Existing progress restore already handled above ----
-})();
+  })();
+}
 "#;
     let js = core_js.replace("%RESTORE%", &restore.to_string());
 
