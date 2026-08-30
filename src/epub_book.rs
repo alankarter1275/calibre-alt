@@ -1177,10 +1177,79 @@ if (!window.kalamReaderShellLoaded) {
     } catch(e){ console.log('single inject failed', e); }
   };
 
-  // ---- Exact annotation navigation ----
+  // ---- Exact annotation navigation + temporary emphasis ----
   // Prefer the persisted highlight span after chapter annotations are injected.
   // This keeps the jump stable even though wrapping a range changes child-node
   // positions. The saved path remains a fallback for older or failed wraps.
+  var annotationFocusLayer = null;
+  var annotationFocusTimer = null;
+
+  function ensureAnnotationFocusLayer() {
+    if (annotationFocusLayer) return;
+    annotationFocusLayer = document.createElement('div');
+    annotationFocusLayer.id = 'kalam-annotation-focus-layer';
+    annotationFocusLayer.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(annotationFocusLayer);
+  }
+
+  function clearAnnotationFocus() {
+    if (annotationFocusTimer !== null) {
+      clearTimeout(annotationFocusTimer);
+      annotationFocusTimer = null;
+    }
+    if (!annotationFocusLayer) return;
+    while (annotationFocusLayer.firstChild) {
+      annotationFocusLayer.removeChild(annotationFocusLayer.firstChild);
+    }
+    annotationFocusLayer.style.display = 'none';
+  }
+
+  function showAnnotationFocus(target, range) {
+    ensureAnnotationFocusLayer();
+    clearAnnotationFocus();
+    var rects = null;
+    try {
+      rects = target ? target.getClientRects() : range.getClientRects();
+    } catch(e) {}
+    if (!rects || !rects.length) return;
+
+    var scrollX = window.scrollX || 0;
+    var scrollY = window.scrollY || 0;
+    for (var i = 0; i < rects.length; i++) {
+      var rect = rects[i];
+      if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+      var focus = document.createElement('div');
+      focus.className = 'kalam-annotation-focus';
+      focus.style.left = (scrollX + rect.left - 3) + 'px';
+      focus.style.top = (scrollY + rect.top - 3) + 'px';
+      focus.style.width = (rect.width + 6) + 'px';
+      focus.style.height = (rect.height + 6) + 'px';
+      annotationFocusLayer.appendChild(focus);
+    }
+    if (!annotationFocusLayer.firstChild) return;
+    annotationFocusLayer.style.display = 'block';
+    annotationFocusTimer = setTimeout(clearAnnotationFocus, 1500);
+  }
+
+  function scrollAnnotationNearTop(rect) {
+    if (!rect) return;
+    var topInset = Math.max(64, Math.min(112, window.innerHeight * 0.14));
+    var topDelta = rect.top - topInset;
+    try {
+      window.scrollBy({top: topDelta, left: 0, behavior:'auto'});
+    } catch(e) {
+      window.scrollBy(0, topDelta);
+    }
+  }
+
+  function showAnnotationFocusAfterScroll(target, range) {
+    if (window.requestAnimationFrame) {
+      window.requestAnimationFrame(function(){ showAnnotationFocus(target, range); });
+    } else {
+      setTimeout(function(){ showAnnotationFocus(target, range); }, 0);
+    }
+  }
+
   window.kalamRevealAnnotation = function(annotation) {
     if (!annotation) return false;
     var target = null;
@@ -1193,11 +1262,11 @@ if (!window.kalamReaderShellLoaded) {
     }
     if (target) {
       try {
-        target.scrollIntoView({block:'center', inline:'nearest', behavior:'auto'});
+        var targetRect = target.getBoundingClientRect();
+        scrollAnnotationNearTop(targetRect);
+        showAnnotationFocusAfterScroll(target, null);
         return true;
-      } catch(e) {
-        try { target.scrollIntoView(); return true; } catch(e2) {}
-      }
+      } catch(e) {}
     }
 
     // Fallback for an annotation whose saved range could not be wrapped.
@@ -1210,9 +1279,8 @@ if (!window.kalamReaderShellLoaded) {
       range.setEnd(endNode, annotation.end_offset || 0);
       var rect = range.getBoundingClientRect();
       if (!rect || (!rect.width && !rect.height)) return false;
-      var topDelta = rect.top - (window.innerHeight - rect.height) / 2;
-      var leftDelta = rect.left - (window.innerWidth - rect.width) / 2;
-      window.scrollBy({top: topDelta, left: leftDelta, behavior:'auto'});
+      scrollAnnotationNearTop(rect);
+      showAnnotationFocusAfterScroll(null, range);
       return true;
     } catch(e) {
       return false;
@@ -1623,6 +1691,27 @@ html.kalam-selection-active body * ::selection {{
 .kalam-selection-handle-end::after {{
   bottom: -3px !important;
   transform: translateX(-50%) rotate(135deg) !important;
+}}
+
+/* ── temporary annotation focus ── */
+#kalam-annotation-focus-layer {{
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: visible !important;
+  z-index: 999996 !important;
+  pointer-events: none !important;
+}}
+.kalam-annotation-focus {{
+  position: absolute !important;
+  display: block !important;
+  border: 2px solid {handle_color} !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  pointer-events: none !important;
 }}
 
 /* ── P3 highlights ── */
