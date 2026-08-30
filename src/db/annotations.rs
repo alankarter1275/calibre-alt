@@ -93,7 +93,8 @@ impl Catalog {
         let mut stmt = conn.prepare_cached(
             "SELECT a.id, a.book_id, a.kind, a.chapter_index, a.start_path, a.start_offset,
                     a.end_path, a.end_offset, a.color, a.text_excerpt, a.note, a.cfi,
-                    a.created_at, a.updated_at, books.title, books.authors, books.cover_path
+                    a.created_at, a.updated_at, books.title, books.authors,
+                    books.uuid, books.cover_name
              FROM annotations a
              JOIN books ON books.id = a.book_id
              WHERE a.kind IN ('quote','highlight') AND TRIM(a.text_excerpt) <> ''
@@ -101,10 +102,12 @@ impl Catalog {
              LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit as i64], |r| {
+            let cover_name: Option<String> = r.get(17)?;
+            let uuid: String = r.get(16)?;
             let ref_ = QuoteRef {
                 title: r.get(14)?,
                 author: r.get(15)?,
-                cover_path: r.get(16)?,
+                cover_path: cover_name.map(|name| book_dir(&uuid).join(name)),
             };
             Ok((row_to_annotation(r)?, ref_))
         })?;
