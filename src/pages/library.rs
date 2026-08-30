@@ -503,11 +503,7 @@ fn goal_card(catalog: &Arc<Catalog>) -> gtk::Box {
 
     let bar = gtk::ProgressBar::new();
     bar.add_css_class("kalam-goal-bar");
-    let frac = if goal > 0 {
-        (done as f64 / goal as f64).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
+    let frac = if goal > 0 { (done as f64 / goal as f64).clamp(0.0, 1.0) } else { 0.0 };
     bar.set_fraction(frac);
     bar.set_vexpand(true);
     bar.set_valign(gtk::Align::End);
@@ -790,8 +786,7 @@ fn history_row(item: &FeedItem, sender: &ComponentSender<LibraryPageModel>) -> g
     let badge = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     badge.add_css_class("kalam-hist-badge");
     badge.add_css_class(item.tint);
-    let icon =
-        crate::icons::symbolic_with_classes(item.icon, 15, &["kalam-event-icon", item.icon_tint]);
+    let icon = crate::icons::symbolic_with_classes(item.icon, 15, &["kalam-event-icon", item.icon_tint]);
     icon.set_halign(gtk::Align::Center);
     icon.set_valign(gtk::Align::Center);
     badge.append(&icon);
