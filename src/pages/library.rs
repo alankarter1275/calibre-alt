@@ -580,20 +580,18 @@ fn continue_card(book: &Book, sender: &ComponentSender<LibraryPageModel>) -> gtk
     overlay.add_overlay(&play);
 
     // Card click — but a press landing inside the play button belongs to the
-    // play button, so check the allocation first.
+    // play button, so convert the point into the play button's own space.
     let id = book.id;
     let s = sender.clone();
     let play_ref = play.clone();
+    let overlay_ref = overlay.clone();
     let click = gtk::GestureClick::new();
     click.set_button(1);
     click.connect_released(move |_, _, x, y| {
-        let a = play_ref.allocation();
-        if (x as i32) >= a.x()
-            && (x as i32) < a.x() + a.width()
-            && (y as i32) >= a.y()
-            && (y as i32) < a.y() + a.height()
-        {
-            return;
+        if let Some((px, py)) = overlay_ref.translate_coordinates(&play_ref, x as i32, y as i32) {
+            if px >= 0 && px < play_ref.width() && py >= 0 && py < play_ref.height() {
+                return;
+            }
         }
         s.output(LibraryOut::BookDialog { book_id: id }).ok();
     });
