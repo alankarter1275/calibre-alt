@@ -3343,8 +3343,6 @@ button.kalam-journey-more:hover {
 }
 
 /* ── end P5.5 ──────────────────────────────────────────── */
-"#;
-
 /* ── My Library v5 (docs/files/kalam_my_library_v5.html) ─────── */
 
 /* Top row: now reading card. */
@@ -3612,3 +3610,4 @@ button.kalam-lib-play {
     font-size: 0.7rem;
     color: @kalam_accent;
 }
+"#;
