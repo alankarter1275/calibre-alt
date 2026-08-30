@@ -2257,10 +2257,14 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
     padding: {toc_top}px {toc_side}px;
 }}
 
-.kalam-reader-ui-live .kalam-reader-annotation-row,
+.kalam-reader-ui-live .kalam-reader-annotation-wrap,
 .kalam-reader-ui-live .kalam-reader-bookmark-row,
 .kalam-reader-ui-live .kalam-reader-word-row {{
     padding: {list_top}px {list_side}px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-wrap {{
+    border-bottom: 1px solid alpha(@kalam_border, 0.72);
 }}
 
 .kalam-reader-ui-live button.kalam-reader-dim {{
@@ -2302,9 +2306,49 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
     -gtk-icon-size: {back_icon}px;
 }}
 
-.kalam-reader-ui-live .kalam-reader-annotation-row-selected {{
-    background: alpha(@kalam_accent, 0.07);
-    border-bottom-color: alpha(@kalam_accent, 0.55);
+.kalam-reader-ui-live .kalam-reader-annotation-card {{
+    border: 1px solid alpha(#000, 0.14);
+    border-radius: 12px;
+    padding: 12px 14px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card-yellow {{
+    background: #fef08a;
+    color: #1a1a12;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card-green {{
+    background: #bbf7d0;
+    color: #0e1a12;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card-blue {{
+    background: #bfdbfe;
+    color: #0e141e;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card-pink {{
+    background: #fbcfe8;
+    color: #1e1216;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card-orange {{
+    background: #fed7aa;
+    color: #1e1410;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card .kalam-reader-annotation-text,
+.kalam-reader-ui-live .kalam-reader-annotation-card .kalam-reader-annotation-meta {{
+    color: inherit;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card button.kalam-reader-list-hit:hover {{
+    background: alpha(#000, 0.06);
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card button.kalam-btn-icon {{
+    background: alpha(#000, 0.08);
+    border-color: alpha(#000, 0.18);
 }}
 
 .kalam-reader-ui-live .kalam-reader-note-editor {{
@@ -2319,15 +2363,21 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
 
 .kalam-reader-ui-live entry.kalam-reader-note-entry {{
     min-height: 30px;
-    padding: 5px 9px;
-    background: @kalam_bg;
+    padding: 4px 0;
+    background: transparent;
     color: @kalam_text;
-    border: 1px solid @kalam_border;
-    border-radius: 8px;
+    border: none;
+    border-bottom: 1px solid @kalam_border;
+    border-radius: 0;
+    box-shadow: none;
+}}
+
+.kalam-reader-ui-live entry.kalam-reader-note-entry > text {{
+    color: @kalam_text;
 }}
 
 .kalam-reader-ui-live entry.kalam-reader-note-entry:focus {{
-    border-color: @kalam_accent;
+    border-bottom: 2px solid @kalam_accent;
 }}
 
 .kalam-reader-ui-live button.kalam-reader-note-action {{
@@ -3198,13 +3248,12 @@ fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderM
     for anno in annos.into_iter().take(150) {
         let annotation_id = anno.id;
         let selected = model.editing_annotation == Some(annotation_id);
-        let outer = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        outer.add_css_class("kalam-reader-annotation-row");
-        if selected {
-            outer.add_css_class("kalam-reader-annotation-row-selected");
-        }
+        let outer = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        outer.add_css_class("kalam-reader-annotation-wrap");
 
         let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        top_row.add_css_class("kalam-reader-annotation-card");
+        top_row.add_css_class(color_card_class(&anno.color));
         top_row.set_hexpand(true);
         let jump = gtk::Button::new();
         jump.add_css_class("kalam-reader-list-hit");
@@ -3212,10 +3261,6 @@ fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderM
         jump.set_halign(gtk::Align::Fill);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         row.set_hexpand(true);
-        let bar = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        bar.add_css_class("kalam-reader-annotation-bar");
-        bar.add_css_class(color_bar_class(&anno.color));
-        row.append(&bar);
 
         let text_col = gtk::Box::new(gtk::Orientation::Vertical, 4);
         text_col.set_hexpand(true);
@@ -3471,13 +3516,13 @@ fn chapter_label(model: &ReaderModel, chapter_index: usize) -> String {
     }
 }
 
-fn color_bar_class(color: &str) -> &'static str {
+fn color_card_class(color: &str) -> &'static str {
     match HighlightColor::from_str_lossy(color) {
-        HighlightColor::Yellow => "kalam-reader-bar-yellow",
-        HighlightColor::Green => "kalam-reader-bar-green",
-        HighlightColor::Blue => "kalam-reader-bar-blue",
-        HighlightColor::Pink => "kalam-reader-bar-pink",
-        HighlightColor::Orange => "kalam-reader-bar-orange",
+        HighlightColor::Yellow => "kalam-reader-annotation-card-yellow",
+        HighlightColor::Green => "kalam-reader-annotation-card-green",
+        HighlightColor::Blue => "kalam-reader-annotation-card-blue",
+        HighlightColor::Pink => "kalam-reader-annotation-card-pink",
+        HighlightColor::Orange => "kalam-reader-annotation-card-orange",
     }
 }
 
