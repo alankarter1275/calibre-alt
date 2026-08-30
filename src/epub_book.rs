@@ -983,11 +983,11 @@ if (!window.kalamReaderShellLoaded) {
       + '<path d=\"m15 4 5 5-9 9H6v-5l9-9Z\"></path><path d=\"m13 6 5 5\"></path><path d=\"M4 20h8\"></path>'
       + '</svg></button>'
       + '<div class=\"kalam-chip-colors\" id=\"kalam-chip-colors\">'
-      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"yellow\" title=\"Highlight yellow\" aria-label=\"Highlight yellow\" style=\"background:#fef08a\"></button>'
-      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"green\" title=\"Highlight green\" aria-label=\"Highlight green\" style=\"background:#bbf7d0\"></button>'
-      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"blue\" title=\"Highlight blue\" aria-label=\"Highlight blue\" style=\"background:#bfdbfe\"></button>'
-      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"pink\" title=\"Highlight pink\" aria-label=\"Highlight pink\" style=\"background:#fbcfe8\"></button>'
-      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"orange\" title=\"Highlight orange\" aria-label=\"Highlight orange\" style=\"background:#fed7aa\"></button>'
+      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"yellow\" title=\"Highlight yellow\" aria-label=\"Highlight yellow\" style=\"background:#f4d35e\"></button>'
+      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"green\" title=\"Highlight green\" aria-label=\"Highlight green\" style=\"background:#8acb9c\"></button>'
+      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"blue\" title=\"Highlight blue\" aria-label=\"Highlight blue\" style=\"background:#8bb7f2\"></button>'
+      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"pink\" title=\"Highlight pink\" aria-label=\"Highlight pink\" style=\"background:#e99bbd\"></button>'
+      + '<button type=\"button\" class=\"kalam-chip-btn\" data-color=\"orange\" title=\"Highlight orange\" aria-label=\"Highlight orange\" style=\"background:#f2ae72\"></button>'
       + '</div>'
       + '<div class=\"kalam-chip-sep\"></div>'
       + '<button type=\"button\" class=\"kalam-chip-action\" id=\"kalam-chip-quote\" title=\"Save quote\" aria-label=\"Save quote\">'
@@ -1724,24 +1724,24 @@ html.kalam-selection-active body * ::selection {{
   -webkit-box-decoration-break: clone !important;
 }}
 .kalam-hl-yellow {{
-  background: rgba(254, 240, 138, 0.62) !important;
-  background-color: rgba(254, 240, 138, 0.62) !important;
+  background: rgba(244, 211, 94, 0.64) !important;
+  background-color: rgba(244, 211, 94, 0.64) !important;
 }}
 .kalam-hl-green {{
-  background: rgba(187, 247, 208, 0.62) !important;
-  background-color: rgba(187, 247, 208, 0.62) !important;
+  background: rgba(138, 203, 156, 0.64) !important;
+  background-color: rgba(138, 203, 156, 0.64) !important;
 }}
 .kalam-hl-blue {{
-  background: rgba(191, 219, 254, 0.62) !important;
-  background-color: rgba(191, 219, 254, 0.62) !important;
+  background: rgba(139, 183, 242, 0.64) !important;
+  background-color: rgba(139, 183, 242, 0.64) !important;
 }}
 .kalam-hl-pink {{
-  background: rgba(251, 207, 232, 0.70) !important;
-  background-color: rgba(251, 207, 232, 0.70) !important;
+  background: rgba(233, 155, 189, 0.68) !important;
+  background-color: rgba(233, 155, 189, 0.68) !important;
 }}
 .kalam-hl-orange {{
-  background: rgba(254, 215, 170, 0.62) !important;
-  background-color: rgba(254, 215, 170, 0.62) !important;
+  background: rgba(242, 174, 114, 0.64) !important;
+  background-color: rgba(242, 174, 114, 0.64) !important;
 }}
 .kalam-hl:hover {{
   filter: brightness(0.98) !important;

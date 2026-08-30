@@ -2313,28 +2313,58 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card-yellow {{
-    background: #fef08a;
-    color: #1a1a12;
+    background: #f4d35e;
+    color: #332900;
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card-green {{
-    background: #bbf7d0;
-    color: #0e1a12;
+    background: #8acb9c;
+    color: #12301b;
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card-blue {{
-    background: #bfdbfe;
-    color: #0e141e;
+    background: #8bb7f2;
+    color: #102544;
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card-pink {{
-    background: #fbcfe8;
-    color: #1e1216;
+    background: #e99bbd;
+    color: #3a1426;
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card-orange {{
-    background: #fed7aa;
-    color: #1e1410;
+    background: #f2ae72;
+    color: #3a1d0b;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-filter-chip.kalam-reader-filter-yellow.active {{
+    background: alpha(#f4d35e, 0.18);
+    border-color: #f4d35e;
+    color: #f4d35e;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-filter-chip.kalam-reader-filter-green.active {{
+    background: alpha(#8acb9c, 0.18);
+    border-color: #8acb9c;
+    color: #8acb9c;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-filter-chip.kalam-reader-filter-blue.active {{
+    background: alpha(#8bb7f2, 0.18);
+    border-color: #8bb7f2;
+    color: #8bb7f2;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-filter-chip.kalam-reader-filter-pink.active {{
+    background: alpha(#e99bbd, 0.18);
+    border-color: #e99bbd;
+    color: #e99bbd;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-filter-chip.kalam-reader-filter-orange.active {{
+    background: alpha(#f2ae72, 0.18);
+    border-color: #f2ae72;
+    color: #f2ae72;
 }}
 
 .kalam-reader-ui-live .kalam-reader-annotation-card .kalam-reader-annotation-text,
