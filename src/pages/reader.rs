@@ -1414,7 +1414,13 @@ impl Component for ReaderModel {
 
 impl ReaderModel {
     fn css(&self) -> String {
-        reading_css(self.theme, self.font_px, self.line_height, self.column_px)
+        reading_css(
+            self.theme,
+            self.font_px,
+            self.line_height,
+            self.column_px,
+            crate::theme::current(&self.catalog),
+        )
     }
 
     fn progress_pct(&self) -> i64 {

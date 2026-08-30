@@ -1352,7 +1352,13 @@ fn join_zip_path(dir: &str, href: &str) -> String {
 /// Many commercial EPUBs wrap almost every paragraph in `<a>` with blue
 /// link styling. We nuke link chrome entirely for reading. P3 adds highlight
 /// and chip styling.
-pub fn reading_css(theme: ReadingTheme, font_px: u32, line_height: f32, column_px: u32) -> String {
+pub fn reading_css(
+    theme: ReadingTheme,
+    font_px: u32,
+    line_height: f32,
+    column_px: u32,
+    chrome_theme: crate::theme::Theme,
+) -> String {
     let (bg, fg) = theme.swatch();
     let (selection_bg, handle_color) = theme.selection_style();
     // The custom selection band is layered under the chapter content so the
@@ -1615,9 +1621,7 @@ html.kalam-selection-active body * ::selection {{
   position: absolute !important;
   z-index: 999999 !important;
   background: var(--kalam-chip-bg) !important;
-  background: color-mix(in srgb, var(--kalam-chip-fg) 8%, var(--kalam-chip-bg)) !important;
-  border: 1px solid var(--kalam-chip-fg) !important;
-  border-color: color-mix(in srgb, var(--kalam-chip-fg) 18%, var(--kalam-chip-bg)) !important;
+  border: 1px solid var(--kalam-chip-border) !important;
   border-radius: 999px !important;
   padding: 4px !important;
   display: none;
@@ -1625,9 +1629,8 @@ html.kalam-selection-active body * ::selection {{
   align-items: center !important;
   gap: 2px !important;
   box-shadow: none !important;
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--kalam-chip-fg) 24%, transparent) !important;
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--kalam-chip-shadow) 26%, transparent) !important;
   font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif !important;
-  color-scheme: light dark !important;
   backdrop-filter: blur(16px) !important;
   -webkit-backdrop-filter: blur(16px) !important;
 }}
@@ -1647,20 +1650,20 @@ html.kalam-selection-active body * ::selection {{
   width: 20px !important;
   height: 20px !important;
   border-radius: 999px !important;
-  border: 2px solid var(--kalam-chip-fg) !important;
-  border-color: color-mix(in srgb, var(--kalam-chip-fg) 20%, transparent) !important;
+  border: 2px solid var(--kalam-chip-border) !important;
+  border-color: color-mix(in srgb, var(--kalam-chip-border) 70%, transparent) !important;
   cursor: pointer !important;
   padding: 0 !important;
   margin: 0 !important;
 }}
 .kalam-chip-btn:hover {{
   transform: scale(1.18) !important;
-  border-color: var(--kalam-chip-fg) !important;
+  border-color: var(--kalam-chip-border) !important;
 }}
 .kalam-chip-sep {{
   width: 1px !important;
   height: 20px !important;
-  background: var(--kalam-chip-fg) !important;
+  background: var(--kalam-chip-border) !important;
   opacity: 0.18 !important;
   margin: 0 2px !important;
 }}
@@ -1670,7 +1673,7 @@ html.kalam-selection-active body * ::selection {{
   border-radius: 999px !important;
   border: none !important;
   background: transparent !important;
-  color: var(--kalam-chip-fg) !important;
+  color: var(--kalam-chip-text) !important;
   cursor: pointer !important;
   padding: 0 !important;
   margin: 0 !important;
@@ -1680,11 +1683,11 @@ html.kalam-selection-active body * ::selection {{
   flex: 0 0 32px !important;
 }}
 .kalam-chip-action:hover {{
-  background: color-mix(in srgb, var(--kalam-chip-fg) 12%, transparent) !important;
-  color: var(--kalam-chip-fg) !important;
+  background: var(--kalam-chip-hover) !important;
+  color: var(--kalam-chip-text) !important;
 }}
 .kalam-chip-action:focus-visible {{
-  outline: 2px solid var(--kalam-chip-fg) !important;
+  outline: 2px solid var(--kalam-chip-accent) !important;
   outline-offset: 1px !important;
 }}
 .kalam-chip-icon {{
@@ -1696,33 +1699,44 @@ html.kalam-selection-active body * ::selection {{
   overflow: visible !important;
   opacity: 1 !important;
   visibility: visible !important;
-  color: var(--kalam-chip-fg) !important;
+  color: var(--kalam-chip-text) !important;
   fill: none !important;
-  stroke: var(--kalam-chip-fg) !important;
+  stroke: var(--kalam-chip-text) !important;
   stroke-width: 1.8 !important;
   stroke-linecap: round !important;
   stroke-linejoin: round !important;
   pointer-events: none !important;
 }}
 .kalam-chip-icon path, .kalam-chip-icon rect {{
-  stroke: var(--kalam-chip-fg) !important;
+  stroke: var(--kalam-chip-text) !important;
   stroke-width: 1.8 !important;
   stroke-linecap: round !important;
   stroke-linejoin: round !important;
 }}
 .kalam-chip-icon-fill, .kalam-chip-icon-letters {{
-  fill: var(--kalam-chip-fg) !important;
+  fill: var(--kalam-chip-text) !important;
   stroke: none !important;
 }}
 .kalam-chip-icon-fill path, .kalam-chip-icon-letters text {{
-  fill: var(--kalam-chip-fg) !important;
+  fill: var(--kalam-chip-text) !important;
   stroke: none !important;
 }}
 .kalam-chip-icon-letters {{
   font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif !important;
 }}
 .kalam-chip-action-accent {{
-  color: var(--kalam-chip-fg) !important;
+  color: var(--kalam-chip-accent) !important;
+}}
+.kalam-chip-action-accent .kalam-chip-icon {{
+  color: var(--kalam-chip-accent) !important;
+  stroke: var(--kalam-chip-accent) !important;
+}}
+.kalam-chip-action-accent .kalam-chip-icon path {{
+  stroke: var(--kalam-chip-accent) !important;
+}}
+.kalam-chip-action-accent .kalam-chip-icon-fill path,
+.kalam-chip-action-accent .kalam-chip-icon-letters text {{
+  fill: var(--kalam-chip-accent) !important;
 }}
 
 /* ── dictionary popup inside WebView ── */
@@ -1804,18 +1818,32 @@ html.kalam-selection-active body * ::selection {{
   background: rgba(255,255,255,0.20) !important;
 }}
 
-/* Final override — keep reader controls aligned with the active reading theme */
+/* Final override — use the same system-theme tokens as the GTK reader chrome */
 #kalam-chip {{
-  --kalam-chip-bg: {bg};
-  --kalam-chip-fg: {fg};
-  color-scheme: light dark !important;
-  color: var(--kalam-chip-fg) !important;
+  --kalam-chip-bg: {app_surface};
+  --kalam-chip-text: {app_text};
+  --kalam-chip-border: {app_border};
+  --kalam-chip-hover: {app_surface_2};
+  --kalam-chip-shadow: {app_bg};
+  --kalam-chip-accent: {app_accent};
+  color: var(--kalam-chip-text) !important;
   background: var(--kalam-chip-bg) !important;
-  background: color-mix(in srgb, var(--kalam-chip-fg) 8%, var(--kalam-chip-bg)) !important;
 }}
 #kalam-chip, #kalam-chip * {{
-  color: var(--kalam-chip-fg) !important;
-  -webkit-text-fill-color: var(--kalam-chip-fg) !important;
+  color: var(--kalam-chip-text) !important;
+  -webkit-text-fill-color: var(--kalam-chip-text) !important;
+}}
+#kalam-chip .kalam-chip-action-accent,
+#kalam-chip .kalam-chip-action-accent * {{
+  color: var(--kalam-chip-accent) !important;
+  -webkit-text-fill-color: var(--kalam-chip-accent) !important;
+}}
+#kalam-chip .kalam-chip-action-accent .kalam-chip-icon path {{
+  stroke: var(--kalam-chip-accent) !important;
+}}
+#kalam-chip .kalam-chip-action-accent .kalam-chip-icon-fill path,
+#kalam-chip .kalam-chip-action-accent .kalam-chip-icon-letters text {{
+  fill: var(--kalam-chip-accent) !important;
 }}
 #kalam-dict-popup, #kalam-dict-popup * {{
   color: #f5f5f4 !important;
@@ -1831,6 +1859,12 @@ html.kalam-selection-active body * ::selection {{
 "#,
         bg = bg,
         fg = fg,
+        app_bg = chrome_theme.bg,
+        app_surface = chrome_theme.surface,
+        app_surface_2 = chrome_theme.surface_2,
+        app_border = chrome_theme.border,
+        app_text = chrome_theme.text,
+        app_accent = chrome_theme.accent,
         selection_bg = selection_bg,
         selection_blend = selection_blend,
         handle_color = handle_color,
