@@ -611,18 +611,20 @@ fn inject_reading_shell(
       return;
     }
 
-    // Each handle is now the complete vertical edge of the endpoint line box.
-    // The start edge is on the left and the end edge is on the right; their
-    // tiny teardrops are positioned by CSS at the top and bottom respectively.
-    // Coordinates are document-relative because the handles are absolutely
-    // positioned inside the chapter body.
+    // Use the first selected line as the height reference for both edges. A
+    // later line can report a taller fragment in WebKit; using that fragment
+    // directly made the two handles change size as the selection moved down a
+    // paragraph.
+    var referenceHeight = startRect.height > 0 ? startRect.height : endRect.height;
+    var startTop = startRect.top + (startRect.height - referenceHeight) / 2;
+    var endTop = endRect.top + (endRect.height - referenceHeight) / 2;
     var endX = endRect.width > 0 ? endRect.right : endRect.left;
     selectionHandleStart.style.left = (window.scrollX + startRect.left - 1.5) + 'px';
-    selectionHandleStart.style.top = (window.scrollY + startRect.top) + 'px';
-    selectionHandleStart.style.height = Math.max(1, Math.ceil(startRect.height)) + 'px';
+    selectionHandleStart.style.top = (window.scrollY + startTop) + 'px';
+    selectionHandleStart.style.height = Math.max(1, Math.ceil(referenceHeight)) + 'px';
     selectionHandleEnd.style.left = (window.scrollX + endX - 1.5) + 'px';
-    selectionHandleEnd.style.top = (window.scrollY + endRect.top) + 'px';
-    selectionHandleEnd.style.height = Math.max(1, Math.ceil(endRect.height)) + 'px';
+    selectionHandleEnd.style.top = (window.scrollY + endTop) + 'px';
+    selectionHandleEnd.style.height = Math.max(1, Math.ceil(referenceHeight)) + 'px';
     selectionHandleStart.style.display = 'block';
     selectionHandleEnd.style.display = 'block';
   }
