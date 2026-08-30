@@ -269,8 +269,9 @@ A user can:
 
 This uses the existing chapter index, DOM paths, start/end offsets, text
 excerpt, note field, and `update_annotation_note`. The current restoration
-prefers the injected annotation ID and existing DOM path/offset data; saved
-text-excerpt fallback is intentionally still separate and remains next.
+prefers an injected annotation ID when available, then validates the existing
+DOM path/offset range against the saved excerpt. If that anchor is missing or
+points to different text, it falls back to matching the saved text excerpt.
 
 Related reader work already completed:
 
@@ -290,13 +291,14 @@ Related reader work already completed:
 
 ### After milestone 1 — agreed order
 
-1. **Hybrid anchoring**  ◀ next reader implementation
-   - [ ] Try the existing DOM path and start/end offsets first.
-   - [ ] Fall back to matching the saved text excerpt when that location fails.
-   - [ ] Keep full EPUB CFI for later; do not replace the current system in one
-         risky step.
+1. **Hybrid anchoring**  ✅ complete
+   - [x] Try the existing DOM path and start/end offsets first.
+   - [x] Validate that path result against the saved text excerpt.
+   - [x] Fall back to matching the saved text excerpt when that location is
+         missing or points to different text.
+   - [x] Keep full EPUB CFI for later; the current system was not replaced.
 
-2. **Improve annotation controls**
+2. **Improve annotation controls**  ◀ next reader work
    - [x] Edit notes.
    - [ ] Recolor existing highlights.
    - [x] Show note indicators through saved note previews.
@@ -692,18 +694,19 @@ Deps include `webkitgtk-6.0` for P2+.
 
 1. **Reader milestone 1 validation:** run the completed annotation workflow on
    Arch and record your sign-off or change requests.
-2. **Reader milestone 2:** add hybrid anchoring — DOM path and offsets first,
-   saved text excerpt as the fallback.
-3. Finish the agreed annotation-control improvements, then improve dictionary
-   behaviour.
-4. Only after those reader milestones, consider multi-chapter buffering,
+2. **Reader milestone 2 validation:** test hybrid anchoring with an EPUB whose
+   chapter HTML has changed, then record your sign-off or change requests.
+3. **Next reader work:** improve annotation controls — recolor existing
+   highlights and add text search while preserving the current filters.
+4. Improve dictionary behaviour in the agreed order.
+5. Only after those reader milestones, consider multi-chapter buffering,
    continuous book-wide scrolling, chapter auto-advance redesign, or advanced
    CFI.
-5. **UI overhaul:** after the reader track is signed off, continue the
+6. **UI overhaul:** after the reader track is signed off, continue the
    mockup-first screen work. `library_look.png` shows a two-column dashboard;
    the app is currently a single vertical stack.
-6. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
-7. **P8** when you want comics for real (UI target already specified above).
+7. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
+8. **P8** when you want comics for real (UI target already specified above).
 
 ---
 
@@ -738,4 +741,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-28 | P5.5 Settings window redesigned: 220px 6-tab navigation rail + rounded cards layout |
 | 2026-08-26 | P5.5 button hierarchy + chip + serif-title classes adopted from user style pass (`d545d28`) |
 | 2026-08-26 | Settings v2 shipped: grouped nav, section cards, family theme picker, pill switches, export card — mockup-first, CI green |
-| 2026-08-30 | Reader-improvements track recorded: annotation workflow milestone complete; next is hybrid anchoring (DOM path and offsets first, saved text excerpt fallback), followed by annotation controls, dictionary improvements, and only later reader architecture changes |
+| 2026-08-30 | Reader-improvements track recorded: annotation workflow and hybrid anchoring are complete; next is annotation controls (recolor existing highlights and text search), followed by dictionary improvements and only later reader architecture changes |
