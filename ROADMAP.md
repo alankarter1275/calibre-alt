@@ -195,6 +195,7 @@ Daily-driver EPUB reading without annotations — **met for P2 scope**.
 - [x] Selection in WebView → floating chip: **Highlight** (yellow/green/blue/pink/orange) / **Save quote** (❝) / **Dictionary** (Aa) / copy
 - [x] Shortcut **`d`** → dictionary popover near word (via JS + GTK popover search)
 - [x] Offline dict packs: **StarDict** (.ifo/.idx/.dict[.dz]), **SQLite** .db with entries(word,definition), **TSV** (word<TAB>def)
+- [x] Bundled English WordNet 2025 starter pack (about 127k headwords, about 4.2 MB compressed), enabled on first run with attribution and licence notices
 - [x] Import via Settings → Offline dictionaries → + Import dictionary; list & remove
 - [x] Persist annotations: chapter_index + DOM path (nodePath) + offsets, color, text_excerpt, note, kind
 - [x] Reinject highlights on chapter load (`kalamInjectHighlights` + `wrapRangeByPaths`)
@@ -708,7 +709,7 @@ Deps include `webkitgtk-6.0` for P2+.
 3. **Reader milestone 3 validation:** test phrase preservation,
    punctuation/inflection normalization, and multiple dictionary results
    together; record your sign-off or change requests.
-4. **Next reader work:** choose the default bundled dictionary languages and
+4. **Next reader work:** choose any additional bundled dictionary languages and
    verify each pack's redistribution licence and size before adding data to the
    base app. Keep the existing offline import flow for all other packs.
 5. After the reader feature work is complete, return to the deferred annotation
@@ -758,5 +759,5 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-08-26 | Settings v2 shipped: grouped nav, section cards, family theme picker, pill switches, export card — mockup-first, CI green |
 | 2026-08-30 | Reader-improvements track recorded: annotation workflow and hybrid anchoring are complete; recoloring existing highlights is shipped, with text search next, followed by dictionary improvements and only later reader architecture changes |
 | 2026-08-31 | Reader annotation search shipped across saved highlight text and notes; color/type filters remain available, and annotation design polish is deferred until feature work is complete |
-| 2026-08-31 | Dictionary lookup now keeps the selected phrase intact and normalizes surrounding punctuation plus common simple inflections; multiple results are next |
-| 2026-08-31 | Dictionary popup now displays up to five matching results with separate save/copy actions; default bundled packs remain pending language and licence confirmation |
+| 2026-08-31 | Dictionary lookup keeps the selected phrase intact and normalizes surrounding punctuation plus common simple inflections |
+| 2026-08-31 | Dictionary popup displays up to five matching results with separate save/copy actions; the clearly licensed English WordNet 2025 starter pack is bundled and enabled on first run |

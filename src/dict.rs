@@ -23,6 +23,63 @@ pub struct DictSearchResult {
     pub dict_name: String,
 }
 
+const BUNDLED_WORDNET_NAME: &str = "English WordNet 2025";
+const BUNDLED_WORDNET_PREF: &str = "bundled_dictionary_english_wordnet_2025";
+const BUNDLED_WORDNET_TSV_GZ: &[u8] =
+    include_bytes!("../resources/dictionaries/english-wordnet-2025.tsv.gz");
+
+/// Install the small, redistributable English dictionary shipped with Kalam.
+///
+/// The preference makes this a first-run action rather than a migration that
+/// re-adds a pack after the user removes it. The compressed source is kept in
+/// the binary so the default dictionary works without a download.
+pub fn install_bundled_dictionaries(catalog: &Catalog) -> Result<()> {
+    if catalog.get_pref(BUNDLED_WORDNET_PREF).as_deref() == Some("installed") {
+        return Ok(());
+    }
+
+    // This also handles an upgrade from a build that seeded the row before it
+    // stored the first-run marker.
+    if catalog
+        .list_dictionaries()?
+        .iter()
+        .any(|dict| dict.name == BUNDLED_WORDNET_NAME)
+    {
+        catalog.set_pref(BUNDLED_WORDNET_PREF, "installed");
+        return Ok(());
+    }
+
+    let decoder = flate2::read::GzDecoder::new(BUNDLED_WORDNET_TSV_GZ);
+    let reader = BufReader::new(decoder);
+    let mut entries = Vec::new();
+    for line in std::io::BufRead::lines(reader) {
+        let line = line?;
+        let Some((word, definition)) = line.split_once('\t') else {
+            continue;
+        };
+        let word = word.trim();
+        let definition = definition.trim();
+        if !word.is_empty() && !definition.is_empty() {
+            entries.push((word.to_string(), definition.to_string()));
+        }
+    }
+    if entries.is_empty() {
+        return Err(anyhow!("bundled English WordNet pack is empty"));
+    }
+
+    let dict_id = catalog.insert_dictionary(
+        BUNDLED_WORDNET_NAME,
+        Some("en"),
+        entries.len() as i64,
+    )?;
+    catalog.clear_dict_entries(dict_id)?;
+    for chunk in entries.chunks(2000) {
+        catalog.batch_insert_dict_entries(dict_id, chunk)?;
+    }
+    catalog.set_pref(BUNDLED_WORDNET_PREF, "installed");
+    Ok(())
+}
+
 /// Import a dictionary pack into the catalog.
 ///
 /// Supports:

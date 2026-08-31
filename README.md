@@ -210,12 +210,24 @@ not safe to bundle without a separate redistribution licence.
 
 ### Bundled dictionaries
 
-Default packs are deliberately not bundled yet. The language choices and the
-exact pack licences still need to be agreed, and a large dictionary would make
-the base app unnecessarily big. The safe packaging plan is to choose a small
-set of clearly redistributable packs, keep each pack's licence and source link
-in the app, show them as enabled on first run, and publish their exact versions
-and checksums. No proprietary or unclear-licence dictionary data will be added.
+The base app now includes **English WordNet 2025**, an English-only pack with
+about 127,000 headwords and a compressed size of about 4.2 MB. It is installed
+and enabled on the first run, works without a download, and appears in
+**Settings → Dictionaries**. If you remove it, Kalam remembers that choice and
+does not silently add it back.
+
+This pack is a format conversion of the [Open English Wordnet 2025
+Edition](https://github.com/globalwordnet/english-wordnet/releases/tag/2025-edition),
+which is derived from Princeton WordNet. The bundled source revision,
+checksums, attribution, and complete licence notices are kept in
+`resources/dictionaries/`. The data is covered by CC BY 4.0 for the Open
+English Wordnet work plus the underlying WordNet licence; keep those notices
+with any redistribution. No proprietary or unclear-licence dictionary data is
+included.
+
+Additional language packs can be added later after choosing the languages and
+checking each pack's licence and size. The existing import flow remains the
+way to add those packs now.
 
 ## License
 
