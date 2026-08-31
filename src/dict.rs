@@ -31,6 +31,14 @@ const BUNDLED_IDIOMS_NAME: &str = "English Idioms and Expressions";
 const BUNDLED_IDIOMS_PREF: &str = "bundled_dictionary_english_idioms_2024";
 const BUNDLED_IDIOMS_TSV_GZ: &[u8] =
     include_bytes!("../resources/dictionaries/english-idioms-2024.tsv.gz");
+const BUNDLED_SYNONYMS_NAME: &str = "English Synonyms (WordNet 3.0)";
+const BUNDLED_SYNONYMS_PREF: &str = "bundled_dictionary_english_synonyms_3_0";
+const BUNDLED_SYNONYMS_TSV_GZ: &[u8] =
+    include_bytes!("../resources/dictionaries/english-synonyms-3.0.tsv.gz");
+const BUNDLED_ANTONYMS_NAME: &str = "English Antonyms (WordNet 3.0)";
+const BUNDLED_ANTONYMS_PREF: &str = "bundled_dictionary_english_antonyms_3_0";
+const BUNDLED_ANTONYMS_TSV_GZ: &[u8] =
+    include_bytes!("../resources/dictionaries/english-antonyms-3.0.tsv.gz");
 
 /// Install the small, redistributable English dictionaries shipped with Kalam.
 ///
@@ -49,6 +57,18 @@ pub fn install_bundled_dictionaries(catalog: &Catalog) -> Result<()> {
         BUNDLED_IDIOMS_NAME,
         BUNDLED_IDIOMS_PREF,
         BUNDLED_IDIOMS_TSV_GZ,
+    )?;
+    install_bundled_tsv(
+        catalog,
+        BUNDLED_SYNONYMS_NAME,
+        BUNDLED_SYNONYMS_PREF,
+        BUNDLED_SYNONYMS_TSV_GZ,
+    )?;
+    install_bundled_tsv(
+        catalog,
+        BUNDLED_ANTONYMS_NAME,
+        BUNDLED_ANTONYMS_PREF,
+        BUNDLED_ANTONYMS_TSV_GZ,
     )?;
     Ok(())
 }

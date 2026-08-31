@@ -216,20 +216,26 @@ not safe to bundle without a separate redistribution licence.
 
 ### Bundled dictionaries
 
-The base app includes two small English-only starter packs. **English WordNet
+The base app includes four small English-only starter packs. **English WordNet
 2025** has about 127,000 headwords and is about 4.2 MB compressed. **English
 Idioms and Expressions** adds 1,024 phrase-to-meaning entries and is about
-16 KB compressed. Both packs are installed and enabled on the first run, work
-without a download, and appear separately in **Settings → Dictionaries**. If
-you remove either pack, Kalam remembers that choice and does not silently add
-it back.
+16 KB compressed. **English Synonyms (WordNet 3.0)** covers 110,000+ words
+with their synset companions (about 1.7 MB compressed), and **English
+Antonyms (WordNet 3.0)** adds 6,600+ antonym pairs (about 50 KB compressed).
+All four packs are installed and enabled on the first run (new packs also
+appear automatically on the first launch after this update), work without a
+download, and appear separately in **Settings → Dictionaries**. If you remove
+a pack, Kalam remembers that choice and does not silently add it back.
 
 The WordNet pack is a format conversion of the [Open English Wordnet 2025
 Edition](https://github.com/globalwordnet/english-wordnet/releases/tag/2025-edition),
 which is derived from Princeton WordNet. Kalam also bundles the Princeton
 WordNet 3.0 morphological exception lists (`noun.exc`, `verb.exc`, `adj.exc`,
-`adv.exc`, gzipped) to resolve irregular lookup forms such as `went` → `go`;
-their source, checksums and licence note are kept beside the packed lists.
+`adv.exc`, gzipped) to resolve irregular lookup forms such as `went` → `go`,
+and the English Synonyms and English Antonyms packs, which are derived from
+the Princeton WordNet 3.0 synset and antonym-pointer data; their source,
+checksums and licence note are kept beside the packed lists
+(`wordnet-3.0-exc.NOTICE.txt`, `wordnet-3.0-synonyms.NOTICE.txt`).
 The idiom pack is a format conversion
 of [`baiango/english_idioms`](https://github.com/baiango/english_idioms), using
 commit `d47bfb40a3f76d0f08ba1867016c383d3c21c596`. Its upstream repository

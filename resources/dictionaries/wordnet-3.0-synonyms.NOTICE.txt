@@ -1,0 +1,38 @@
+Kalam bundled dictionary notice — WordNet synonyms & antonyms
+=============================================================
+
+Data name: Kalam English Synonyms 3.0 / Kalam English Antonyms 3.0
+Data format: generated TSV (word<TAB>definition), gzip-compressed
+
+These two packs are derived from the Princeton WordNet 3.0 database:
+
+- english-synonyms-3.0.tsv.gz — for every WordNet word, the other words
+  that share one of its synsets, rendered as
+  `word<TAB>synonyms: a, b, c` (up to 20, deduplicated, underscores in
+  multi-word terms replaced with spaces). 110,365 entries.
+- english-antonyms-3.0.tsv.gz — word pairs linked by the WordNet `!`
+  (antonym) pointer, rendered as `word<TAB>antonyms: a, b`.
+  6,621 entries.
+
+Upstream source:
+Princeton WordNet 3.0, Princeton University (wordnet.princeton.edu). The
+data files (data.noun, data.verb, data.adj, data.adv) were obtained from
+the NLTK wordnet corpus mirror (github.com/nltk/nltk_data,
+packages/corpora/wordnet.zip), which packages the unmodified Princeton
+WordNet 3.0 database alongside the WordNet licence text.
+
+Attribution:
+- Princeton WordNet, Princeton University (WordNet 3.0, Copyright 2006)
+
+Licence:
+- The WordNet licence. The complete licence text is kept beside the other
+  WordNet-derived resources in this directory as
+  english-wordnet-2025.WNDB_License.txt and applies to these packs.
+
+Checksums (SHA-256, uncompressed contents; gzip streams are reproducible
+with gzip -9 / Python gzip.compress(..., 9)):
+
+english-synonyms-3.0.tsv.gz   110,365 entries, 5,857,015 raw bytes
+  sha256 c4a780fe296c7231928c8608172b63ea615beef67127477d0c7f152ab80b2c85
+english-antonyms-3.0.tsv.gz     6,621 entries,   210,427 raw bytes
+  sha256 f487b3ce12e70fb7d2dea2552804c945daf0f2447917643903033be59932f711
