@@ -1247,14 +1247,18 @@ if (!window.kalamReaderShellLoaded) {
     var ctx = '';
     var rect = null;
     if (data) {
-      word = data.text.trim().split(/\s+/)[0] || '';
+      // Keep a short phrase intact. The dictionary can contain multi-word
+      // entries, and reducing the selection to its first word made phrase
+      // lookup depend on an arbitrary selection boundary.
+      word = data.text.replace(/\s+/g, ' ').trim();
       ctx = data.text;
       rect = data.rect;
     } else {
       var sel = window.getSelection();
       if (sel && sel.toString()) {
-        word = sel.toString().trim().split(/\s+/)[0];
-        ctx = sel.toString();
+        var selectedText = sel.toString();
+        word = selectedText.replace(/\s+/g, ' ').trim();
+        ctx = selectedText;
         try { var r = sel.getRangeAt(0).getBoundingClientRect(); rect = {x:r.left, y:r.top, w:r.width, h:r.height, bottom:r.bottom}; } catch(e){}
       }
     }
