@@ -1786,39 +1786,84 @@ if (!window.kalamReaderShellLoaded) {
 
   // ---- Selection listeners ----
   var selTimeout = null;
-  document.addEventListener('mouseup', function(e){
-    if (e.target.closest && (e.target.closest('#kalam-chip') || e.target.closest('#kalam-dict-popup') || e.target.closest('.kalam-selection-handle'))) return;
+  var nativeSelectionDragActive = false;
+
+  function showCompletedSelection() {
+    var data = getSelectionData();
+    if (data && data.text && data.text.trim() && data.text.trim().length < 2000) {
+      showSelectionBands();
+      showSelectionHandles();
+      showChipAt(data.rect);
+      kalamBridge({type:'selection', text:data.text});
+    } else {
+      hideSelectionBands();
+      hideSelectionHandles();
+    }
+  }
+
+  function beginNativeSelectionDrag(event) {
+    if (nativeSelectionDragActive || selectionHandleDrag || !event || event.isPrimary === false) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (isSelectionUiNode(event.target)) return;
+    nativeSelectionDragActive = true;
     clearTimeout(selTimeout);
-    selTimeout = setTimeout(function(){
-      var data = getSelectionData();
-      if (data && data.text && data.text.trim().length>0 && data.text.trim().length < 2000) {
-        showSelectionBands();
-        showSelectionHandles();
-        showChipAt(data.rect);
-        kalamBridge({type:'selection', text:data.text});
-      } else {
-        hideSelectionBands();
-        hideSelectionHandles();
-        // do not hide immediately if dict is open
-        var dict = document.getElementById('kalam-dict-popup');
-        if (!dict || dict.style.display==='none') {
-          // keep chip if already visible? hide after delay
-          // hideChip();
-        }
-      }
-    }, 160);
-  });
-  document.addEventListener('mousedown', function(e){
-    if (e.target.closest && (e.target.closest('#kalam-chip') || e.target.closest('#kalam-dict-popup') || e.target.closest('.kalam-selection-handle'))) return;
     hideChip();
     hideSelectionBands();
     hideSelectionHandles();
+  }
+
+  function finishNativeSelectionDrag(showToolbar) {
+    if (!nativeSelectionDragActive) return;
+    nativeSelectionDragActive = false;
+    if (showToolbar) showCompletedSelection();
+    else {
+      hideSelectionBands();
+      hideSelectionHandles();
+    }
+  }
+
+  document.addEventListener('pointerdown', function(e){
+    beginNativeSelectionDrag(e);
+  });
+  document.addEventListener('pointerup', function(e){
+    if (isSelectionUiNode(e.target)) return;
+    finishNativeSelectionDrag(true);
+  });
+  document.addEventListener('pointercancel', function(e){
+    if (isSelectionUiNode(e.target)) return;
+    finishNativeSelectionDrag(false);
+  });
+
+  document.addEventListener('mouseup', function(e){
+    if (window.PointerEvent) return;
+    if (e.target.closest && (e.target.closest('#kalam-chip') || e.target.closest('#kalam-dict-popup') || e.target.closest('.kalam-selection-handle'))) return;
+    clearTimeout(selTimeout);
+    selTimeout = setTimeout(function(){
+      showCompletedSelection();
+    }, 160);
+  });
+  document.addEventListener('mousedown', function(e){
+    if (window.PointerEvent) return;
+    if (e.target.closest && (e.target.closest('#kalam-chip') || e.target.closest('#kalam-dict-popup') || e.target.closest('.kalam-selection-handle'))) return;
+    beginNativeSelectionDrag(e);
     // don't hide dict on mousedown inside content
   });
 
   document.addEventListener('selectionchange', function(){
-    if (!selectionBandsVisible && !selectionHandlesVisible) return;
     var data = getSelectionData();
+    if (nativeSelectionDragActive) {
+      // Keep the custom selection band live while the browser is extending a
+      // fresh selection. Handles and the action chip wait until pointer-up so
+      // they cannot intercept the native drag.
+      if (data && data.text && data.text.trim()) {
+        showSelectionBands();
+        scheduleSelectionBandPosition();
+      } else if (selectionBandsVisible) {
+        hideSelectionBands();
+      }
+      return;
+    }
+    if (!selectionBandsVisible && !selectionHandlesVisible) return;
     if (data && data.text && data.text.trim()) {
       if (selectionBandsVisible) scheduleSelectionBandPosition();
       if (selectionHandlesVisible) scheduleSelectionHandlePosition();

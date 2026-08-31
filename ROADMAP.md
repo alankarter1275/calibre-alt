@@ -280,6 +280,8 @@ Related reader work already completed:
       decorative pointer.
 - [x] Temporary selection handles are draggable for pointer/touch input while
       preserving native selection, copy, and annotation actions.
+- [x] Temporary selection bands update live while a fresh mouse/touch selection
+      is being extended; handles and actions wait until pointer-up.
 - [x] Default WebKit context menu suppressed without affecting text selection
       or the automatic selection-actions toolbar.
 - [x] Dark rounded annotation cards with subtle pastel tints, colored left
@@ -1095,3 +1097,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-08-31 | Bundled the separate English Idioms and Expressions pack (1,024 phrase-to-meaning entries) with its upstream Unlicense notice, source revision, checksum, and first-run removal marker |
 | 2026-08-31 | Dictionary overhaul plan extended with deferred Phase 5.5 POS grouping and transparent, optional Lesk sense hints; all matched senses remain visible |
 | 2026-08-31 | Temporary selection handles now support pointer/touch dragging without changing native selection or saving annotations implicitly; triple-click rendering remains deferred |
+| 2026-08-31 | Fresh text selections now paint their custom selection bands live during mouse/touch drag; the toolbar and handles still wait for release |
