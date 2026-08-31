@@ -41,7 +41,9 @@ fn wordnet_exceptions() -> &'static HashMap<String, Vec<String>> {
             let reader = std::io::BufReader::new(decoder);
             for line in std::io::BufRead::lines(reader).map_while(|line| line.ok()) {
                 let mut parts = line.split_whitespace();
-                let Some(surface) = parts.next() else { continue };
+                let Some(surface) = parts.next() else {
+                    continue;
+                };
                 let lemmas: Vec<String> = parts.map(str::to_string).collect();
                 if !lemmas.is_empty() {
                     map.entry(surface.to_string()).or_default().extend(lemmas);
@@ -558,7 +560,10 @@ mod tests {
         cat.batch_insert_dict_entries(
             dict_id,
             &[
-                ("go".to_string(), "to move from one place to another".to_string()),
+                (
+                    "go".to_string(),
+                    "to move from one place to another".to_string(),
+                ),
                 ("mouse".to_string(), "a small rodent".to_string()),
                 ("good".to_string(), "having desirable qualities".to_string()),
                 ("run".to_string(), "to move fast".to_string()),
