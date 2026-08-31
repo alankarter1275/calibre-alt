@@ -801,6 +801,12 @@ impl Component for AppModel {
                 Arc::new(Catalog::open().expect("catalog open"))
             }
         };
+        if let Err(err) = crate::dict::install_bundled_dictionaries(&catalog) {
+            crate::notify::error(
+                "Could not install the bundled dictionaries",
+                &err.to_string(),
+            );
+        }
 
         let initial_route = Route::Module(NavItem::Home);
         let page = Self::build_page(&catalog, &initial_route, &sender);
