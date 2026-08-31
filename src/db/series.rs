@@ -50,7 +50,11 @@ pub fn series_key(series: &str, first_author: &str) -> String {
             .filter(|c| c.is_alphanumeric())
             .collect::<String>()
     };
-    format!("{}|{}", norm(strip_leading_article(series)), norm(first_author))
+    format!(
+        "{}|{}",
+        norm(strip_leading_article(series)),
+        norm(first_author)
+    )
 }
 
 /// Drop a leading "the"/"a"/"an" token, when there is more than one word.
