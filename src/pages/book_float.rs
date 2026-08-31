@@ -5,7 +5,7 @@
 
 use crate::db::Catalog;
 use crate::models::Book;
-use crate::pages::{book::open_shelf_menu, metadata_editor::open_metadata_editor};
+use crate::pages::metadata_editor::open_metadata_editor;
 use crate::widgets::book_row::{cover_widget, invalidate_cover_cache};
 use crate::widgets::charts::star_picker;
 use gtk::prelude::*;
@@ -32,6 +32,8 @@ pub enum BookFloatOut {
     OpenAuthor {
         name: String,
     },
+    /// Open the shelves checklist panel (in-app float).
+    ShowShelves,
     Deleted {
         #[allow(dead_code)]
         book_id: i64,
@@ -623,18 +625,7 @@ impl Component for BookFloatModel {
                 }
             }
             BookFloatMsg::ShowShelfMenu => {
-                if let Some(book) = &self.book {
-                    let id = book.id;
-                    let s = sender.clone();
-                    open_shelf_menu(
-                        root.root()
-                            .and_then(|r| r.downcast::<gtk::Window>().ok())
-                            .as_ref(),
-                        self.catalog.clone(),
-                        id,
-                        move || s.input(BookFloatMsg::Refresh),
-                    );
-                }
+                sender.output(BookFloatOut::ShowShelves).ok();
             }
             BookFloatMsg::Refresh => {
                 if let Some(book) = &self.book {

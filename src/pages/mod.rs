@@ -14,6 +14,7 @@ pub mod reader;
 pub mod reading_list;
 pub mod saved_quotes;
 pub mod saved_words;
+pub mod series_float;
 pub mod settings;
 pub mod shelf_detail;
 pub mod shelf_editor;

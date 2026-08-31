@@ -67,16 +67,72 @@ impl Catalog {
             )?;
         }
 
-        // Tags orphaned by this edit would otherwise clutter the tag browser.
-        conn.execute(
-            "DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM book_tags)",
-            [],
-        )?;
         drop(conn);
+
+        self.prune_orphan_tags()?;
 
         // Remember the result so removing and re-importing this file does not
         // silently discard the edit.
         self.remember_overrides(book_id)?;
+        Ok(())
+    }
+
+    /// Add one tag from the book page's tag chip without touching the other
+    /// metadata fields.
+    pub fn add_book_tag(&self, book_id: i64, tag: &str) -> Result<()> {
+        let tag = tag.trim();
+        if tag.is_empty() {
+            return Ok(());
+        }
+        let conn = self.conn();
+        conn.execute(
+            "INSERT OR IGNORE INTO tags (name) VALUES (?1)",
+            params![tag],
+        )?;
+        let tag_id: i64 = conn.query_row(
+            "SELECT id FROM tags WHERE name = ?1 COLLATE NOCASE",
+            params![tag],
+            |r| r.get(0),
+        )?;
+        conn.execute(
+            "INSERT OR IGNORE INTO book_tags (book_id, tag_id) VALUES (?1, ?2)",
+            params![book_id, tag_id],
+        )?;
+        drop(conn);
+
+        self.prune_orphan_tags()?;
+        self.remember_overrides(book_id)?;
+        Ok(())
+    }
+
+    /// Remove one tag by name (case-insensitive) from the book page's chip.
+    pub fn remove_book_tag(&self, book_id: i64, tag: &str) -> Result<()> {
+        let tag = tag.trim();
+        if tag.is_empty() {
+            return Ok(());
+        }
+        let conn = self.conn();
+        conn.execute(
+            "DELETE FROM book_tags
+             WHERE book_id = ?1 AND tag_id IN
+                   (SELECT id FROM tags WHERE name = ?2 COLLATE NOCASE)",
+            params![book_id, tag],
+        )?;
+        drop(conn);
+
+        self.prune_orphan_tags()?;
+        self.remember_overrides(book_id)?;
+        Ok(())
+    }
+
+    /// Drop tags no book references — orphaned ones would clutter the tag
+    /// browser.
+    fn prune_orphan_tags(&self) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "DELETE FROM tags WHERE id NOT IN (SELECT tag_id FROM book_tags)",
+            [],
+        )?;
         Ok(())
     }
 

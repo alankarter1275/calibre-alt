@@ -16,6 +16,7 @@ use crate::pages::{
     reading_list::{ReadingListModel, ReadingListOut},
     saved_quotes::{SavedQuotesModel, SavedQuotesOut},
     saved_words::{SavedWordsModel, SavedWordsOut},
+    series_float::{SeriesFloatModel, SeriesFloatOut},
     settings::SettingsPageModel,
     shelf_detail::{ShelfDetailModel, ShelfDetailOut},
     shelves_grid::{ShelvesGridModel, ShelvesOut},
@@ -38,6 +39,25 @@ pub enum AppMsg {
         book_id: i64,
     },
     CloseBookDialog,
+    /// Open the series float from the book page's Series link.
+    OpenSeriesFloat {
+        series: String,
+        first_author: String,
+    },
+    /// Open the highlights & quotes panel (in-app float) from the book page.
+    OpenAnnotationsFloat {
+        book_id: i64,
+    },
+    /// Open the shelves checklist panel (in-app float).
+    OpenShelvesFloat {
+        book_id: i64,
+        /// True when opened from the book float — closing returns there.
+        from_book_float: bool,
+    },
+    /// Open the tags panel (in-app float) from the book page.
+    OpenTagsFloat {
+        book_id: i64,
+    },
     /// Rebuild the page on screen if the catalog changed under it.
     RefreshCurrentPage,
     /// Open immersive reader for book_id.
@@ -90,8 +110,22 @@ impl PageSlot {
     }
 }
 
-struct FloatingBook {
-    _controller: Controller<BookFloatModel>,
+/// Which float is on screen — only one at a time. The controller is held
+/// (never read) purely to keep the component alive until the float closes.
+#[allow(dead_code)]
+enum Floating {
+    Book(Controller<BookFloatModel>),
+    Series(Controller<SeriesFloatModel>),
+    /// Highlights & quotes — a plain widget panel, nothing to keep alive.
+    Annotations,
+    /// Shelves checklist — a plain widget panel, nothing to keep alive.
+    /// `return_to` holds the book id when the panel was opened from the book
+    /// float, so closing it hands control back to that float, not the page.
+    Shelves {
+        return_to: Option<i64>,
+    },
+    /// Tags panel — a plain widget panel, nothing to keep alive.
+    Tags,
 }
 
 pub struct AppModel {
@@ -100,7 +134,7 @@ pub struct AppModel {
     history: Vec<Route>,
     sidebar_override: Option<NavItem>,
     page: Option<PageSlot>,
-    floating: Option<FloatingBook>,
+    floating: Option<Floating>,
     float_scrim: gtk::Box,
     float_host: gtk::Box,
     /// Pages kept alive between visits, keyed by route.
@@ -163,13 +197,17 @@ impl AppModel {
 
         let ctrl = BookFloatModel::builder()
             .launch((self.catalog.clone(), book_id))
-            .forward(sender.input_sender(), |out| match out {
+            .forward(sender.input_sender(), move |out| match out {
                 BookFloatOut::Close | BookFloatOut::Deleted { .. } => AppMsg::CloseBookDialog,
                 BookFloatOut::OpenReader { book_id } => AppMsg::OpenReader { book_id },
                 BookFloatOut::OpenFullPage { book_id } => AppMsg::FloatOpenFull { book_id },
                 BookFloatOut::OpenAuthor { name } => {
                     AppMsg::Push(Route::AuthorPage { author: name })
                 }
+                BookFloatOut::ShowShelves => AppMsg::OpenShelvesFloat {
+                    book_id,
+                    from_book_float: true,
+                },
             });
 
         let float = ctrl.widget().clone();
@@ -183,7 +221,110 @@ impl AppModel {
         self.float_host.set_visible(true);
         float.grab_focus();
 
-        self.floating = Some(FloatingBook { _controller: ctrl });
+        self.floating = Some(Floating::Book(ctrl));
+    }
+
+    /// The series float, opened from the book page's Series link.
+    fn open_series_floating(
+        &mut self,
+        series: String,
+        first_author: String,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.close_floating();
+
+        let ctrl = SeriesFloatModel::builder()
+            .launch((self.catalog.clone(), series, first_author))
+            .forward(sender.input_sender(), |out| match out {
+                SeriesFloatOut::Close => AppMsg::CloseBookDialog,
+                SeriesFloatOut::OpenBook { book_id } => AppMsg::FloatOpenFull { book_id },
+            });
+
+        let float = ctrl.widget().clone();
+        float.set_size_request(560, 560);
+        float.set_hexpand(false);
+        float.set_vexpand(false);
+        float.set_halign(gtk::Align::Center);
+        float.set_valign(gtk::Align::Center);
+        self.float_host.append(&float);
+        self.float_scrim.set_visible(true);
+        self.float_host.set_visible(true);
+        float.grab_focus();
+
+        self.floating = Some(Floating::Series(ctrl));
+    }
+
+    /// The highlights & quotes panel, opened from the book page. Like the
+    /// other floats it lives in the in-app float layer — never a separate
+    /// window — so the compositor can't move it to another workspace.
+    fn open_annotations_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
+        self.close_floating();
+
+        let s = sender.clone();
+        let panel =
+            crate::pages::book::build_annotations_panel(self.catalog.clone(), book_id, move || {
+                s.input(AppMsg::CloseBookDialog)
+            });
+        panel.set_size_request(460, 480);
+        panel.set_hexpand(false);
+        panel.set_vexpand(false);
+        panel.set_halign(gtk::Align::Center);
+        panel.set_valign(gtk::Align::Center);
+        self.float_host.append(&panel);
+        self.float_scrim.set_visible(true);
+        self.float_host.set_visible(true);
+        panel.grab_focus();
+
+        self.floating = Some(Floating::Annotations);
+    }
+
+    fn open_shelves_floating(
+        &mut self,
+        book_id: i64,
+        from_book_float: bool,
+        sender: &ComponentSender<Self>,
+    ) {
+        self.close_floating();
+
+        let s = sender.clone();
+        let panel =
+            crate::pages::book::build_shelves_panel(self.catalog.clone(), book_id, move || {
+                s.input(AppMsg::CloseBookDialog)
+            });
+        panel.set_size_request(380, 420);
+        panel.set_hexpand(false);
+        panel.set_vexpand(false);
+        panel.set_halign(gtk::Align::Center);
+        panel.set_valign(gtk::Align::Center);
+        self.float_host.append(&panel);
+        self.float_scrim.set_visible(true);
+        self.float_host.set_visible(true);
+        panel.grab_focus();
+
+        self.floating = Some(Floating::Shelves {
+            return_to: from_book_float.then_some(book_id),
+        });
+    }
+
+    fn open_tags_floating(&mut self, book_id: i64, sender: &ComponentSender<Self>) {
+        self.close_floating();
+
+        let s = sender.clone();
+        let panel =
+            crate::pages::book::build_tags_panel(self.catalog.clone(), book_id, move || {
+                s.input(AppMsg::CloseBookDialog)
+            });
+        panel.set_size_request(380, 420);
+        panel.set_hexpand(false);
+        panel.set_vexpand(false);
+        panel.set_halign(gtk::Align::Center);
+        panel.set_valign(gtk::Align::Center);
+        self.float_host.append(&panel);
+        self.float_scrim.set_visible(true);
+        self.float_host.set_visible(true);
+        panel.grab_focus();
+
+        self.floating = Some(Floating::Tags);
     }
 
     fn build_page(
@@ -209,7 +350,7 @@ impl AppModel {
                         LibraryOut::Section(sec) => AppMsg::Push(Route::LibrarySection(sec)),
                         LibraryOut::Book { book_id } => AppMsg::Push(Route::BookPage { book_id }),
                         LibraryOut::BookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
-                        LibraryOut::Tag { tag } => AppMsg::Push(Route::TagBooks { tag }),
+                        LibraryOut::Read { book_id } => AppMsg::OpenReader { book_id },
                     },
                 );
                 PageSlot::Library(ctrl)
@@ -346,11 +487,24 @@ impl AppModel {
                 let ctrl = BookPageModel::builder()
                     .launch((catalog.clone(), id))
                     .forward(sender.input_sender(), move |out| match out {
-                        BookPageOut::Back => AppMsg::Back,
                         BookPageOut::OpenReader => AppMsg::OpenReader { book_id: id },
                         BookPageOut::OpenAuthor { name } => {
                             AppMsg::Push(Route::AuthorPage { author: name })
                         }
+                        BookPageOut::OpenBook { book_id } => AppMsg::FloatOpenFull { book_id },
+                        BookPageOut::OpenSeries {
+                            series,
+                            first_author,
+                        } => AppMsg::OpenSeriesFloat {
+                            series,
+                            first_author,
+                        },
+                        BookPageOut::ViewHighlights => AppMsg::OpenAnnotationsFloat { book_id: id },
+                        BookPageOut::ShowShelves => AppMsg::OpenShelvesFloat {
+                            book_id: id,
+                            from_book_float: false,
+                        },
+                        BookPageOut::ShowTags => AppMsg::OpenTagsFloat { book_id: id },
                         BookPageOut::Deleted { .. } => AppMsg::Back,
                     });
                 PageSlot::Book(ctrl)
@@ -487,6 +641,9 @@ impl Component for AppModel {
             set_title: Some("Kalam"),
             set_default_width: 1100,
             set_default_height: 720,
+            // No titlebar at all — not even the transparent strip with
+            // window controls. The page runs edge to edge; Alt+F4 closes.
+            set_decorated: false,
 
             // One root overlay: main app under it, then a dimmed in-app book
             // panel, then toasts on top.
@@ -791,6 +948,20 @@ impl Component for AppModel {
             AppMsg::OpenBookDialog { book_id } => {
                 self.open_floating(book_id, &sender);
             }
+            AppMsg::OpenSeriesFloat {
+                series,
+                first_author,
+            } => {
+                self.open_series_floating(series, first_author, &sender);
+            }
+            AppMsg::OpenAnnotationsFloat { book_id } => {
+                self.open_annotations_floating(book_id, &sender);
+            }
+            AppMsg::OpenShelvesFloat {
+                book_id,
+                from_book_float,
+            } => self.open_shelves_floating(book_id, from_book_float, &sender),
+            AppMsg::OpenTagsFloat { book_id } => self.open_tags_floating(book_id, &sender),
             AppMsg::FloatOpenFull { book_id } => {
                 self.close_floating();
                 self.swap_page(
@@ -801,7 +972,18 @@ impl Component for AppModel {
                 );
             }
             AppMsg::CloseBookDialog => {
+                // A shelves panel opened from the book float hands control
+                // back to that float — not straight down to the page.
+                let return_to_book = match self.floating {
+                    Some(Floating::Shelves {
+                        return_to: Some(book_id),
+                    }) => Some(book_id),
+                    _ => None,
+                };
                 self.close_floating();
+                if let Some(book_id) = return_to_book {
+                    self.open_floating(book_id, &sender);
+                }
                 // The float can delete a book, so the page underneath may now
                 // be showing something that no longer exists. Deferred to the
                 // next main-loop turn: rebuilding here would dispose widgets

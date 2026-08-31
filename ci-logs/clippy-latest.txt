@@ -1,13 +1,8 @@
-src/app.rs:492:31: [1m[91merror[0m: expected identifier
-src/app.rs:503:31: [1m[91merror[0m: expected identifier
-src/app.rs:692:17: [1m[91merror[E0609][0m: no field `float_scrim` on type `app::AppModelWidgets`: unknown field
-src/app.rs:696:34: [1m[91merror[E0609][0m: no field `float_host` on type `app::AppModelWidgets`: unknown field
-src/app.rs:762:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
-src/app.rs:766:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
-src/app.rs:786:45: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
-src/app.rs:789:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
-src/app.rs:798:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
-src/app.rs:813:46: [1m[91merror[E0609][0m: no field `float_host` on type `&mut app::AppModelWidgets`: unknown field
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 10 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 10 previous errors
---- run 33149743095 ---
+src/pages/library.rs:591:45: [1m[91merror[E0308][0m: arguments to this method are incorrect
+src/pages/library.rs:592:22: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found integer
+src/pages/library.rs:592:32: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `i32`
+src/pages/library.rs:592:58: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found integer
+src/pages/library.rs:592:68: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `i32`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors; 2 warnings emitted
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors; 1 warning emitted
+--- run 33320317202 ---
