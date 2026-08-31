@@ -415,7 +415,10 @@ mod tests {
             dict_id,
             &[
                 ("run".to_string(), "to move fast".to_string()),
-                ("Rúnestone".to_string(), "a stone carved with runes".to_string()),
+                (
+                    "Rúnestone".to_string(),
+                    "a stone carved with runes".to_string(),
+                ),
             ],
         )
         .unwrap();
