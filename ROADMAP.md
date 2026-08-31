@@ -477,10 +477,14 @@ a headword (unit-tested against the shipped lists); regular cases still work.
       omitted from the breakdown.
 - [x] `PhraseLookup` enum: `Phrase(Vec<DictEntry>)` vs
       `Breakdown(Vec<(token, entries)>)` vs `Empty`.
-- [x] Reader `dict-lookup` bridge routes queries with `>1` token through
-      `search_phrase`; a breakdown renders as each token's best hit in the
-      existing popup (capped at five) until Phase 5's popup redesign turns
-      it into clickable breakdown chips. Single-word lookups are unchanged.
+- [x] Every reader lookup path routes through the shared phrase pipeline
+      (`lookup_dict`): the selection popup's `dict-lookup` bridge and the
+      sidebar Words search box both call `search_phrase` for queries with
+      `>1` token, so a phrase typed in the sidebar never dead-ends either.
+      A breakdown renders each token's best hit in the existing popup /
+      sidebar list (capped at five / thirty) until Phase 5's popup redesign
+      turns it into clickable breakdown chips. Single-word lookups are
+      unchanged.
 - [x] Unit tests: full-phrase headword, contained phrase headword,
       per-token breakdown, tokens without hits omitted, irregular token
       inside a phrase, and the empty case.
@@ -1143,3 +1147,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-09-01 | Fixed dormant test failures/warnings found by the first real `cargo test` run: `series_key` now strips leading series articles (The/A/An) so article variants share one series-cache key, while author names are never article-stripped; the series ordering test helper now stores the series index it was passed, making the indexed-vs-unindexed ordering assertion real instead of vacuous |
 | 2026-09-01 | Fixed the flaky cover-override tests: all three cover tests seeded the same book title, so in parallel `cargo test` runs they raced on the same real filesystem paths (shared stashed cover `covers/hash-A.png` and book dir). Each test now seeds a unique title, isolating its uuid/hash paths |
 | 2026-09-01 | Dictionary overhaul Phase 3 shipped: `search_phrase` in the catalog (full phrase → longest contained phrase headword via sliding window → per-token breakdown with lemmatization), `PhraseLookup` enum, and the reader's dict-lookup bridge routes multi-token queries through it. `odd mixture` now yields cards for `odd` and `mixture`; `run out of steam today` resolves to the `run out of steam` entry |
+| 2026-09-01 | Phase 3 follow-up: the sidebar Words search box still used the single-word path, so phrases typed there dead-ended with "No matches". All lookup paths now share one phrase-aware pipeline (`lookup_dict`) — sidebar search and selection popup behave identically |

@@ -1345,7 +1345,7 @@ impl Component for ReaderModel {
                 if q.trim().is_empty() {
                     self.dict_results.clear();
                 } else {
-                    self.dict_results = self.catalog.search_dict(&q, 30).unwrap_or_default();
+                    self.dict_results = self.lookup_dict(&q, 30);
                 }
                 refresh_words = true;
             }
@@ -1852,6 +1852,31 @@ impl ReaderModel {
         eval_js(&self.webview, &script);
     }
 
+    /// Run a dictionary lookup through the Phase-3 phrase pipeline when the
+    /// query has more than one token (whole phrase → contained phrase
+    /// headword → per-token breakdown); plain single-word search otherwise.
+    /// Every lookup path — the selection popup and the sidebar Words search —
+    /// goes through here so phrases never dead-end.
+    fn lookup_dict(&self, query: &str, limit: usize) -> Vec<DictEntry> {
+        if query.split_whitespace().count() > 1 {
+            match self
+                .catalog
+                .search_phrase(query, limit)
+                .unwrap_or(PhraseLookup::Empty)
+            {
+                PhraseLookup::Phrase(hits) => hits,
+                PhraseLookup::Breakdown(parts) => parts
+                    .iter()
+                    .filter_map(|(_, hits)| hits.first().cloned())
+                    .take(limit)
+                    .collect(),
+                PhraseLookup::Empty => Vec::new(),
+            }
+        } else {
+            self.catalog.search_dict(query, limit).unwrap_or_default()
+        }
+    }
+
     fn show_dict_in_webview(&self, query: &str, results: &[DictEntry], rect_json: Option<String>) {
         let query_json = serde_json::to_string(query).unwrap_or_else(|_| "\"\"".into());
         let popup_results: Vec<_> = results
@@ -1966,27 +1991,10 @@ impl ReaderModel {
                 }
                 self.dict_context = context.clone();
                 self.dict_lookup_rect_json = rect_json.clone();
-                // Phrases go through search_phrase: the whole phrase first,
-                // then a contained phrase headword, then per-token results
-                // (Phase 3 of the dictionary overhaul). Single words keep
-                // the plain path.
-                let results: Vec<DictEntry> = if word.split_whitespace().count() > 1 {
-                    match self
-                        .catalog
-                        .search_phrase(&word, 5)
-                        .unwrap_or(PhraseLookup::Empty)
-                    {
-                        PhraseLookup::Phrase(hits) => hits,
-                        PhraseLookup::Breakdown(parts) => parts
-                            .iter()
-                            .filter_map(|(_, hits)| hits.first().cloned())
-                            .take(5)
-                            .collect(),
-                        PhraseLookup::Empty => Vec::new(),
-                    }
-                } else {
-                    self.catalog.search_dict(&word, 5).unwrap_or_default()
-                };
+                // Phrases go through the shared lookup pipeline (whole phrase
+                // first, then a contained phrase headword, then per-token
+                // results); single words keep the plain path.
+                let results = self.lookup_dict(&word, 5);
                 if let Some(entry) = results.first() {
                     self.dict_lookup_word = Some(entry.word.clone());
                     self.dict_lookup_def = Some(entry.definition.clone());
