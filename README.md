@@ -18,7 +18,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **Import EPUB** (My Library → All books → “+ Import EPUB”)
 - **EPUB reader** (WebKitGTK): chapter-wise scroll, TOC, themes, font size, progress restore
 - **Highlights & quotes**: select text → floating chip (yellow/green/blue/pink/orange), save quote (❝), copy
-- **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip or `D` shortcut, definition popup near selection, save word
+- **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip or `D` shortcut, a popup with up to five matching results, save/copy each result
 - **Annotations list**: reader bottom pill ✎ shows highlights/quotes for current book, jump & delete
 - **Library hub**: My Library → Saved quotes (real data) → export to Markdown (`~/Quotes.md`), Saved words (real data)
 - **Settings**: dictionary packs import (+ Import dictionary), list & remove, data paths
@@ -160,6 +160,89 @@ src/
 ~/.config/kalam/       (future)
 ~/Quotes.md            (export target)
 ```
+
+## Offline dictionaries
+
+Kalam does not fetch dictionary data from the internet. You add a pack once,
+then lookups work offline.
+
+### Import a pack
+
+1. Download a dictionary in one of the supported formats.
+2. Open **Settings → Dictionaries → Import dictionary**.
+3. For a StarDict pack, select its `.ifo`, `.idx`, or `.dict`/`.dict.dz`
+   file. Keep all three files together; Kalam finds the matching files beside
+   the one you select.
+4. For a SQLite pack, select the `.db` file. It should have a table with
+   `word` and `definition` columns.
+5. For a text pack, select a `.tsv` or `.txt` file with one entry per line:
+   `word<TAB>definition`.
+
+The imported entries are copied into Kalam's catalog database, so the original
+pack can be moved afterwards. Imported packs appear in the same Settings page
+and can be removed there. On Linux, the dictionary data directory is
+`~/.local/share/kalam/dictionaries`.
+
+In the reader, select a word or complete phrase and choose **Dictionary** (or
+press `D`). Kalam keeps the phrase, removes surrounding punctuation, and tries
+common simple forms such as `running` → `run`. When more than one dictionary
+entry matches, the popup shows up to five results. Each result has its own
+**Save word** and **Copy** buttons.
+
+### Reliable download sources
+
+- [FreeDict downloads](https://freedict.org/downloads/) provides StarDict
+  archives, SHA-512 checksums, many language pairs, and a direct link to the
+  source dictionary. FreeDict says that each dictionary has its own licence;
+  check the licence in the pack before redistributing it.
+- [Princeton WordNet downloads](https://wordnet.princeton.edu/download) is the
+  official source for the English WordNet database. It requires its licence
+  notice and acknowledgement. WordNet normally needs conversion to StarDict,
+  SQLite, or TSV before Kalam can import it.
+- [Wiktionary dumps](https://dumps.wikimedia.org/) are broad but are released
+  under CC BY-SA/GFDL terms. A redistributed extract needs attribution and
+  must follow the share-alike and source-copy requirements, so Wiktionary is
+  not silently bundled by Kalam.
+
+Avoid download sites that only say “free” without naming the copyright holder
+and licence. Oxford, Collins, Longman, and similar commercial dictionaries are
+not safe to bundle without a separate redistribution licence.
+
+### Bundled dictionaries
+
+The base app includes two small English-only starter packs. **English WordNet
+2025** has about 127,000 headwords and is about 4.2 MB compressed. **English
+Idioms and Expressions** adds 1,024 phrase-to-meaning entries and is about
+16 KB compressed. Both packs are installed and enabled on the first run, work
+without a download, and appear separately in **Settings → Dictionaries**. If
+you remove either pack, Kalam remembers that choice and does not silently add
+it back.
+
+The WordNet pack is a format conversion of the [Open English Wordnet 2025
+Edition](https://github.com/globalwordnet/english-wordnet/releases/tag/2025-edition),
+which is derived from Princeton WordNet. The idiom pack is a format conversion
+of [`baiango/english_idioms`](https://github.com/baiango/english_idioms), using
+commit `d47bfb40a3f76d0f08ba1867016c383d3c21c596`. Its upstream repository
+releases the data under The Unlicense. Its README says the list was collected
+with ChatGPT and may contain grammatical, factual, or literal-versus-figurative
+errors, so Kalam presents it as a supplemental phrase source rather than an
+authoritative dictionary. Selecting a complete phrase such as `break a leg`
+or `piece of cake` can now find that phrase in this pack. It does not make every
+ordinary word combination meaningful automatically: `odd mixture`, for example,
+remains two WordNet word entries unless a dictionary contains that exact phrase.
+
+The bundled source revisions, checksums, attribution, and complete licence
+notices are kept beside the generated packs in `resources/dictionaries/`.
+Keep the applicable notices with any redistribution. The WordNet files must
+remain because that data has both Open English WordNet and underlying Princeton
+WordNet terms; the idiom pack has its own upstream Unlicense notice. “Personal
+use” does not by itself remove licence obligations when data is committed to a
+public repository or shipped in an application. No proprietary or
+unclear-licence dictionary data is included.
+
+Additional language packs can be added later after choosing the languages and
+checking each pack's licence and size. The existing import flow remains the
+way to add those packs now.
 
 ## License
 

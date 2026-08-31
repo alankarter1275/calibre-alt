@@ -1,0 +1,37 @@
+Kalam bundled dictionary notice
+================================
+
+Data name: English Idioms and Expressions
+Data format: generated TSV (phrase<TAB>meaning), gzip-compressed
+
+This file is a format conversion of the idioms.csv file from the
+baiango/english_idioms repository. The upstream repository describes this as
+a list of more than 500 English idioms; the source revision used here has
+1,024 usable entries. It is a supplemental phrase source, not a complete or
+editorially authoritative dictionary. The upstream README notes that some
+entries may be incorrect or have both literal and figurative meanings.
+
+The generated pack keeps duplicate phrase meanings when the source provides
+different definitions. The conversion filters rows without a phrase or
+meaning, rejects embedded control characters or unmatched quotes, and removes
+an obvious unmatched terminal quote from otherwise valid upstream CSV rows.
+
+Upstream source:
+https://github.com/baiango/english_idioms
+
+Upstream source revision used for this conversion:
+d47bfb40a3f76d0f08ba1867016c383d3c21c596
+
+Upstream idioms.csv SHA-256:
+634eab318172901300bfe15eb7f309d5e6e11fb701888f703d67b089b9b355e0
+
+Licence: The Unlicense (public domain dedication where applicable).
+The complete upstream notice is included beside this file as:
+english-idioms-2024.LICENSE.md
+
+The generated TSV is a format conversion with the validation and cleanup
+steps described above. Keep this notice with any redistribution of the bundled
+data.
+
+Generated pack checksum (SHA-256):
+699b284dca8e403765830a687d0379a735dadda407b61772f76db6d28bfc2686
