@@ -39,7 +39,10 @@ pub struct SeriesCacheEntry {
 }
 
 /// Normalised key for a series: what the listing is *about*, not how one
-/// book's OPF spells it.
+/// book's OPF spells it. A leading article is dropped from the series name
+/// so "The Kingkiller Chronicle" and "Kingkiller Chronicle" share one cache
+/// entry; the author part is only case/punctuation-normalised, never
+/// article-stripped ("A. A. Milne" stays under the a's).
 pub fn series_key(series: &str, first_author: &str) -> String {
     let norm = |s: &str| {
         s.to_lowercase()
@@ -47,7 +50,21 @@ pub fn series_key(series: &str, first_author: &str) -> String {
             .filter(|c| c.is_alphanumeric())
             .collect::<String>()
     };
-    format!("{}|{}", norm(series), norm(first_author))
+    format!("{}|{}", norm(strip_leading_article(series)), norm(first_author))
+}
+
+/// Drop a leading "the"/"a"/"an" token, when there is more than one word.
+fn strip_leading_article(series: &str) -> &str {
+    let trimmed = series.trim_start();
+    let mut words = trimmed.splitn(2, char::is_whitespace);
+    match (words.next(), words.next()) {
+        (Some(first), Some(rest))
+            if matches!(first.to_ascii_lowercase().as_str(), "the" | "a" | "an") =>
+        {
+            rest.trim_start()
+        }
+        _ => trimmed,
+    }
 }
 
 impl Catalog {
@@ -136,19 +153,29 @@ mod tests {
 
     fn seed_series(cat: &Catalog, title: &str, series: Option<&str>, index: f32) -> i64 {
         let uuid = format!("uuid-{}", title.to_lowercase());
-        cat.insert_book(
-            &uuid,
-            title,
-            "Some Author",
-            series,
-            "",
-            BookFormat::Epub,
-            "book.epub",
-            &format!("hash-{}", title.to_lowercase()),
-            None,
-            &[],
-        )
-        .expect("insert")
+        let id = cat
+            .insert_book(
+                &uuid,
+                title,
+                "Some Author",
+                series,
+                "",
+                BookFormat::Epub,
+                "book.epub",
+                &format!("hash-{}", title.to_lowercase()),
+                None,
+                &[],
+            )
+            .expect("insert");
+        // insert_book does not take a series index; set it directly so the
+        // ordering test exercises real series_index values.
+        cat.conn()
+            .execute(
+                "UPDATE books SET series_index = ?1 WHERE id = ?2",
+                params![index, id],
+            )
+            .expect("set series index");
+        id
     }
 
     #[test]
@@ -204,6 +231,26 @@ mod tests {
             series_key("Narnia", "Lewis"),
             series_key("Narnia", "Tolkien"),
         );
+    }
+
+    #[test]
+    fn series_key_strips_articles_from_series_not_authors() {
+        // Leading articles in the series name collapse to one key...
+        assert_eq!(
+            series_key("The Wheel of Time", "Jordan"),
+            series_key("wheel of time", "Jordan"),
+        );
+        assert_eq!(
+            series_key("A Game of Thrones", "Martin"),
+            series_key("game of thrones", "Martin"),
+        );
+        // ...but author initials must not be eaten ("A. A. Milne" != "Milne").
+        assert_ne!(
+            series_key("Narnia", "A. A. Milne"),
+            series_key("Narnia", "Milne"),
+        );
+        // A lone article is not a series name to strip.
+        assert_eq!(series_key("The", "Author"), "the|author");
     }
 
     #[test]
