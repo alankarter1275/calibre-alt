@@ -804,20 +804,35 @@ if (!window.kalamReaderShellLoaded) {
   var selectionHandleEnd = null;
   var selectionHandlesVisible = false;
   var selectionHandleFrame = null;
+  var selectionHandleDrag = null;
+  var selectionHandleAutoScrollFrame = null;
 
   function ensureSelectionHandles() {
     if (selectionHandleStart && selectionHandleEnd) return;
     selectionHandleStart = document.createElement('div');
     selectionHandleStart.className = 'kalam-selection-handle kalam-selection-handle-start';
     selectionHandleStart.setAttribute('aria-hidden', 'true');
+    selectionHandleStart.setAttribute('data-selection-edge', 'start');
     selectionHandleEnd = document.createElement('div');
     selectionHandleEnd.className = 'kalam-selection-handle kalam-selection-handle-end';
     selectionHandleEnd.setAttribute('aria-hidden', 'true');
+    selectionHandleEnd.setAttribute('data-selection-edge', 'end');
     document.body.appendChild(selectionHandleStart);
     document.body.appendChild(selectionHandleEnd);
+    selectionHandleStart.addEventListener('pointerdown', handleSelectionHandlePointerDown);
+    selectionHandleEnd.addEventListener('pointerdown', handleSelectionHandlePointerDown);
+    selectionHandleStart.addEventListener('pointermove', handleSelectionHandlePointerMove);
+    selectionHandleEnd.addEventListener('pointermove', handleSelectionHandlePointerMove);
+    selectionHandleStart.addEventListener('pointerup', handleSelectionHandlePointerUp);
+    selectionHandleEnd.addEventListener('pointerup', handleSelectionHandlePointerUp);
+    selectionHandleStart.addEventListener('pointercancel', handleSelectionHandlePointerCancel);
+    selectionHandleEnd.addEventListener('pointercancel', handleSelectionHandlePointerCancel);
+    selectionHandleStart.addEventListener('lostpointercapture', handleSelectionHandleLostCapture);
+    selectionHandleEnd.addEventListener('lostpointercapture', handleSelectionHandleLostCapture);
   }
 
   function hideSelectionHandles() {
+    cancelSelectionHandleDrag(false);
     selectionHandlesVisible = false;
     if (selectionHandleFrame !== null) {
       cancelAnimationFrame(selectionHandleFrame);
@@ -887,18 +902,12 @@ if (!window.kalamReaderShellLoaded) {
     if (!referenceHeight || referenceHeight <= 0) {
       referenceHeight = startRect.height > 0 ? startRect.height : endRect.height;
     }
-    var handleHeight = referenceHeight + selectionBandPadding * 2;
-    var startTop = startRect.top + (startRect.height - handleHeight) / 2;
-    var endTop = endRect.top + (endRect.height - handleHeight) / 2;
-    var endX = endRect.width > 0 ? endRect.right : endRect.left;
-    selectionHandleStart.style.left = (window.scrollX + startRect.left - 1) + 'px';
-    selectionHandleStart.style.top = (window.scrollY + startTop) + 'px';
-    selectionHandleStart.style.height = Math.max(1, handleHeight) + 'px';
-    selectionHandleEnd.style.left = (window.scrollX + endX - 1) + 'px';
-    selectionHandleEnd.style.top = (window.scrollY + endTop) + 'px';
-    selectionHandleEnd.style.height = Math.max(1, handleHeight) + 'px';
-    selectionHandleStart.style.display = 'block';
-    selectionHandleEnd.style.display = 'block';
+    var handleElements = selectionHandlePositionForDrag(range, sel) || {
+      startElement: selectionHandleStart,
+      endElement: selectionHandleEnd
+    };
+    setSelectionHandlePosition(handleElements.startElement, startRect, 'start', referenceHeight);
+    setSelectionHandlePosition(handleElements.endElement, endRect, 'end', referenceHeight);
   }
 
   function scheduleSelectionHandlePosition() {
@@ -910,6 +919,296 @@ if (!window.kalamReaderShellLoaded) {
     ensureSelectionHandles();
     selectionHandlesVisible = true;
     scheduleSelectionHandlePosition();
+  }
+
+  function compareCaretPoints(leftPoint, rightPoint) {
+    if (!leftPoint || !rightPoint || !leftPoint.node || !rightPoint.node) return 0;
+    try {
+      var left = document.createRange();
+      left.setStart(leftPoint.node, leftPoint.offset);
+      left.collapse(true);
+      var right = document.createRange();
+      right.setStart(rightPoint.node, rightPoint.offset);
+      right.collapse(true);
+      return left.compareBoundaryPoints(window.Range.START_TO_START, right);
+    } catch(e) {
+      return 0;
+    }
+  }
+
+  function sameCaretPoint(leftPoint, rightPoint) {
+    return compareCaretPoints(leftPoint, rightPoint) === 0;
+  }
+
+  function isSelectionUiNode(node) {
+    var element = node && node.nodeType === 1 ? node : node && node.parentElement;
+    if (!element || !element.closest) return false;
+    return !!element.closest('#kalam-chip, #kalam-dict-popup, #kalam-selection-bands, .kalam-selection-handle');
+  }
+
+  function withSelectionHandlesHidden(callback) {
+    var elements = [selectionHandleStart, selectionHandleEnd];
+    var saved = [];
+    for (var i = 0; i < elements.length; i++) {
+      var element = elements[i];
+      if (!element) continue;
+      var style = element.style;
+      saved.push({
+        element: element,
+        value: style.getPropertyValue('pointer-events'),
+        priority: style.getPropertyPriority('pointer-events')
+      });
+      style.setProperty('pointer-events', 'none', 'important');
+    }
+
+    var result = null;
+    try { result = callback(); } catch(e) {}
+    for (var j = 0; j < saved.length; j++) {
+      var previous = saved[j];
+      if (previous.value) previous.element.style.setProperty('pointer-events', previous.value, previous.priority);
+      else previous.element.style.removeProperty('pointer-events');
+    }
+    return result;
+  }
+
+  function caretFromPoint(clientX, clientY) {
+    return withSelectionHandlesHidden(function() {
+      try {
+        if (document.caretRangeFromPoint) {
+          var range = document.caretRangeFromPoint(clientX, clientY);
+          if (range && !isSelectionUiNode(range.startContainer)) {
+            return {node: range.startContainer, offset: range.startOffset};
+          }
+        }
+      } catch(e) {}
+
+      try {
+        if (document.caretPositionFromPoint) {
+          var position = document.caretPositionFromPoint(clientX, clientY);
+          if (position && position.offsetNode && !isSelectionUiNode(position.offsetNode)) {
+            return {node: position.offsetNode, offset: position.offset};
+          }
+        }
+      } catch(e) {}
+      return null;
+    });
+  }
+
+  function setNativeSelection(anchorPoint, focusPoint) {
+    if (!anchorPoint || !focusPoint || !anchorPoint.node || !focusPoint.node) return false;
+    var sel = window.getSelection();
+    if (!sel) return false;
+
+    try {
+      if (typeof sel.setBaseAndExtent === 'function') {
+        sel.setBaseAndExtent(
+          anchorPoint.node,
+          anchorPoint.offset,
+          focusPoint.node,
+          focusPoint.offset
+        );
+        return true;
+      }
+    } catch(e) {}
+
+    try {
+      var range = document.createRange();
+      if (compareCaretPoints(anchorPoint, focusPoint) <= 0) {
+        range.setStart(anchorPoint.node, anchorPoint.offset);
+        range.setEnd(focusPoint.node, focusPoint.offset);
+      } else {
+        range.setStart(focusPoint.node, focusPoint.offset);
+        range.setEnd(anchorPoint.node, anchorPoint.offset);
+      }
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return true;
+    } catch(e) {
+      return false;
+    }
+  }
+
+  function setSelectionHandlePosition(element, rect, edge, referenceHeight) {
+    if (!element || !rect) return;
+    element.classList.remove('kalam-selection-handle-start', 'kalam-selection-handle-end');
+    element.classList.add(edge === 'start' ? 'kalam-selection-handle-start' : 'kalam-selection-handle-end');
+    element.setAttribute('data-selection-edge', edge);
+    var endX = edge === 'end' && rect.width > 0 ? rect.right : rect.left;
+    var handleHeight = Math.max(1, referenceHeight) + selectionBandPadding * 2;
+    var top = rect.top + (rect.height - handleHeight) / 2;
+    element.style.left = (window.scrollX + endX - 1) + 'px';
+    element.style.top = (window.scrollY + top) + 'px';
+    element.style.height = handleHeight + 'px';
+    element.style.display = 'block';
+  }
+
+  function selectionHandlePositionForDrag(range, sel) {
+    var drag = selectionHandleDrag;
+    if (!drag || !drag.element) return null;
+    var active = drag.lastCaret;
+    if (!active && sel && sel.focusNode) {
+      active = {node: sel.focusNode, offset: sel.focusOffset};
+    }
+    if (!active) {
+      active = drag.side === 'start'
+        ? {node: range.startContainer, offset: range.startOffset}
+        : {node: range.endContainer, offset: range.endOffset};
+    }
+    var start = {node: range.startContainer, offset: range.startOffset};
+    var end = {node: range.endContainer, offset: range.endOffset};
+    var other = drag.element === selectionHandleStart ? selectionHandleEnd : selectionHandleStart;
+    if (sameCaretPoint(active, start)) {
+      return {startElement: drag.element, endElement: other};
+    }
+    if (sameCaretPoint(active, end)) {
+      return {startElement: other, endElement: drag.element};
+    }
+    return null;
+  }
+
+  function stopSelectionHandleAutoScroll() {
+    if (selectionHandleAutoScrollFrame !== null) {
+      cancelAnimationFrame(selectionHandleAutoScrollFrame);
+      selectionHandleAutoScrollFrame = null;
+    }
+  }
+
+  function scheduleSelectionHandleAutoScroll() {
+    if (!selectionHandleDrag || selectionHandleAutoScrollFrame !== null) return;
+    selectionHandleAutoScrollFrame = requestAnimationFrame(function() {
+      selectionHandleAutoScrollFrame = null;
+      var drag = selectionHandleDrag;
+      if (!drag) return;
+      var edge = 44;
+      var delta = 0;
+      if (drag.lastY < edge) {
+        delta = -Math.max(1, Math.ceil((edge - drag.lastY) / 4));
+      } else if (window.innerHeight - drag.lastY < edge) {
+        delta = Math.max(1, Math.ceil((edge - (window.innerHeight - drag.lastY)) / 4));
+      }
+      if (!delta) return;
+      window.scrollBy(0, delta);
+      updateSelectionHandleFromPoint(drag.lastX, drag.lastY);
+      scheduleSelectionHandleAutoScroll();
+    });
+  }
+
+  function updateSelectionHandleFromPoint(clientX, clientY) {
+    var drag = selectionHandleDrag;
+    if (!drag) return false;
+    var caret = caretFromPoint(clientX, clientY);
+    if (!caret) return false;
+    if (!setNativeSelection(drag.fixed, caret)) return false;
+    drag.lastCaret = caret;
+    drag.lastX = clientX;
+    drag.lastY = clientY;
+    drag.moved = true;
+    scheduleSelectionBandPosition();
+    scheduleSelectionHandlePosition();
+    return true;
+  }
+
+  function beginSelectionHandleDrag(element, event) {
+    if (selectionHandleDrag || !element || !event || event.isPrimary === false) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    var data = getSelectionData();
+    if (!data) return;
+
+    var range = sel.getRangeAt(0);
+    var edge = element.getAttribute('data-selection-edge');
+    if (edge !== 'start' && edge !== 'end') {
+      edge = element === selectionHandleStart ? 'start' : 'end';
+    }
+    var active = edge === 'start'
+      ? {node: range.startContainer, offset: range.startOffset}
+      : {node: range.endContainer, offset: range.endOffset};
+    var fixed = edge === 'start'
+      ? {node: range.endContainer, offset: range.endOffset}
+      : {node: range.startContainer, offset: range.startOffset};
+
+    selectionHandleDrag = {
+      element: element,
+      pointerId: event.pointerId,
+      side: edge,
+      fixed: fixed,
+      lastCaret: active,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      moved: false,
+      originalAnchor: sel.anchorNode ? {node: sel.anchorNode, offset: sel.anchorOffset} : null,
+      originalFocus: sel.focusNode ? {node: sel.focusNode, offset: sel.focusOffset} : null
+    };
+    hideChip();
+    event.preventDefault();
+    event.stopPropagation();
+    try { element.setPointerCapture(event.pointerId); } catch(e) {}
+  }
+
+  function endSelectionHandleDrag(restore, showToolbar) {
+    var drag = selectionHandleDrag;
+    if (!drag) return;
+    selectionHandleDrag = null;
+    stopSelectionHandleAutoScroll();
+    try {
+      if (drag.element.hasPointerCapture && drag.element.hasPointerCapture(drag.pointerId)) {
+        drag.element.releasePointerCapture(drag.pointerId);
+      }
+    } catch(e) {}
+
+    if (restore && drag.originalAnchor && drag.originalFocus) {
+      setNativeSelection(drag.originalAnchor, drag.originalFocus);
+    }
+
+    var data = getSelectionData();
+    if (showToolbar && data && data.text && data.text.trim() && data.text.trim().length < 2000) {
+      showSelectionBands();
+      showSelectionHandles();
+      showChipAt(data.rect);
+      kalamBridge({type:'selection', text:data.text});
+    } else if (!data) {
+      hideSelectionBands();
+      hideSelectionHandles();
+      hideChip();
+    }
+  }
+
+  function cancelSelectionHandleDrag(restore) {
+    endSelectionHandleDrag(restore, false);
+  }
+
+  function handleSelectionHandlePointerDown(event) {
+    beginSelectionHandleDrag(event.currentTarget, event);
+  }
+
+  function handleSelectionHandlePointerMove(event) {
+    if (!selectionHandleDrag || event.pointerId !== selectionHandleDrag.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    selectionHandleDrag.lastX = event.clientX;
+    selectionHandleDrag.lastY = event.clientY;
+    updateSelectionHandleFromPoint(event.clientX, event.clientY);
+    scheduleSelectionHandleAutoScroll();
+  }
+
+  function handleSelectionHandlePointerUp(event) {
+    if (!selectionHandleDrag || event.pointerId !== selectionHandleDrag.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    endSelectionHandleDrag(false, true);
+  }
+
+  function handleSelectionHandlePointerCancel(event) {
+    if (!selectionHandleDrag || event.pointerId !== selectionHandleDrag.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    endSelectionHandleDrag(true, true);
+  }
+
+  function handleSelectionHandleLostCapture(event) {
+    if (!selectionHandleDrag || event.pointerId !== selectionHandleDrag.pointerId) return;
+    endSelectionHandleDrag(false, true);
   }
 
   function excerptText(text) {
@@ -1488,7 +1787,7 @@ if (!window.kalamReaderShellLoaded) {
   // ---- Selection listeners ----
   var selTimeout = null;
   document.addEventListener('mouseup', function(e){
-    if (e.target.closest && (e.target.closest('#kalam-chip') || e.target.closest('#kalam-dict-popup'))) return;
+    if (e.target.closest && (e.target.closest('#kalam-chip') || e.target.closest('#kalam-dict-popup') || e.target.closest('.kalam-selection-handle'))) return;
     clearTimeout(selTimeout);
     selTimeout = setTimeout(function(){
       var data = getSelectionData();
@@ -1510,7 +1809,7 @@ if (!window.kalamReaderShellLoaded) {
     }, 160);
   });
   document.addEventListener('mousedown', function(e){
-    if (e.target.closest && (e.target.closest('#kalam-chip') || e.target.closest('#kalam-dict-popup'))) return;
+    if (e.target.closest && (e.target.closest('#kalam-chip') || e.target.closest('#kalam-dict-popup') || e.target.closest('.kalam-selection-handle'))) return;
     hideChip();
     hideSelectionBands();
     hideSelectionHandles();
@@ -1550,11 +1849,15 @@ if (!window.kalamReaderShellLoaded) {
       }
     }
     if (e.key === 'Escape') {
+      cancelSelectionHandleDrag(true);
       hideChip();
       hideSelectionBands();
       hideSelectionHandles();
       hideDict();
     }
+  });
+  window.addEventListener('blur', function(){
+    cancelSelectionHandleDrag(true);
   });
 
   // ---- Existing progress restore already handled above ----
@@ -1858,7 +2161,8 @@ html.kalam-selection-active body * ::selection {{
    These are deliberately a different colour from the selection band: near
    black on Light/Sepia, bright on Dark/Ink. The edge line spans the complete
    line box at the selection endpoint; the teardrop is intentionally tiny.
-   This first pass keeps pointer events out of the way of normal selection. */
+   Only the visible handles receive pointer input; the browser still owns the
+   selection range itself. */
 .kalam-selection-handle {{
   position: absolute !important;
   z-index: 999997 !important;
@@ -1867,10 +2171,26 @@ html.kalam-selection-active body * ::selection {{
   height: 0;
   padding: 0 !important;
   margin: 0 !important;
-  pointer-events: none !important;
+  pointer-events: auto !important;
+  touch-action: none !important;
+  user-select: none !important;
+  cursor: grab !important;
   background: {handle_color} !important;
   border: none !important;
   border-radius: 999px !important;
+}}
+.kalam-selection-handle::before {{
+  content: '' !important;
+  position: absolute !important;
+  left: 50% !important;
+  top: -12px !important;
+  width: 24px !important;
+  height: calc(100% + 24px) !important;
+  transform: translateX(-50%) !important;
+  pointer-events: auto !important;
+}}
+.kalam-selection-handle:active {{
+  cursor: grabbing !important;
 }}
 .kalam-selection-handle::after {{
   content: '' !important;

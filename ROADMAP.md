@@ -222,7 +222,6 @@ Daily-driver EPUB reading without annotations — **met for P2 scope**.
 ### Known issue (deferred)
 
 - [ ] Triple-click paragraph selection can still render an italic run in a different temporary selection text colour from the preceding roman text. Revisit the WebKit selection rendering later.
-- [ ] Make temporary selection handles draggable for pointer/touch input without disrupting native selection.
 
 ### Out (deferred)
 
@@ -279,6 +278,8 @@ Related reader work already completed:
 
 - [x] Compact themed selection toolbar with tooltips, rounded ends, and no
       decorative pointer.
+- [x] Temporary selection handles are draggable for pointer/touch input while
+      preserving native selection, copy, and annotation actions.
 - [x] Default WebKit context menu suppressed without affecting text selection
       or the automatic selection-actions toolbar.
 - [x] Dark rounded annotation cards with subtle pastel tints, colored left
@@ -291,7 +292,7 @@ Related reader work already completed:
       highlight.
 - [x] CI green for the current reader changes: rustfmt, Clippy with `-D
       warnings`, debug build, and release build.
-- [ ] Arch UX sign-off for this completed milestone.
+- [x] Arch UX sign-off for this completed milestone.
 
 ### After milestone 1 — agreed order
 
@@ -1031,8 +1032,8 @@ Deps include `webkitgtk-6.0` for P2+.
 
 ## Immediate next steps
 
-1. **Reader milestone 1 validation:** run the completed annotation workflow on
-   Arch and record your sign-off or change requests.
+1. **Reader milestone 1 validation:** ✅ completed on Arch; the current
+   annotation workflow was tested and works as expected.
 2. **Reader milestone 2 validation:** test hybrid anchoring with an EPUB whose
    chapter HTML has changed, then record your sign-off or change requests.
 3. **Reader milestone 3 validation:** test phrase preservation,
@@ -1093,3 +1094,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-08-31 | Dictionary popup displays up to five matching results with separate save/copy actions; the clearly licensed English WordNet 2025 starter pack is bundled and enabled on first run |
 | 2026-08-31 | Bundled the separate English Idioms and Expressions pack (1,024 phrase-to-meaning entries) with its upstream Unlicense notice, source revision, checksum, and first-run removal marker |
 | 2026-08-31 | Dictionary overhaul plan extended with deferred Phase 5.5 POS grouping and transparent, optional Lesk sense hints; all matched senses remain visible |
+| 2026-08-31 | Temporary selection handles now support pointer/touch dragging without changing native selection or saving annotations implicitly; triple-click rendering remains deferred |
