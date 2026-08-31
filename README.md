@@ -18,7 +18,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **Import EPUB** (My Library → All books → “+ Import EPUB”)
 - **EPUB reader** (WebKitGTK): chapter-wise scroll, TOC, themes, font size, progress restore
 - **Highlights & quotes**: select text → floating chip (yellow/green/blue/pink/orange), save quote (❝), copy
-- **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip or `D` shortcut, definition popup near selection, save word
+- **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip or `D` shortcut, a popup with up to five matching results, save/copy each result
 - **Annotations list**: reader bottom pill ✎ shows highlights/quotes for current book, jump & delete
 - **Library hub**: My Library → Saved quotes (real data) → export to Markdown (`~/Quotes.md`), Saved words (real data)
 - **Settings**: dictionary packs import (+ Import dictionary), list & remove, data paths
@@ -160,6 +160,62 @@ src/
 ~/.config/kalam/       (future)
 ~/Quotes.md            (export target)
 ```
+
+## Offline dictionaries
+
+Kalam does not fetch dictionary data from the internet. You add a pack once,
+then lookups work offline.
+
+### Import a pack
+
+1. Download a dictionary in one of the supported formats.
+2. Open **Settings → Dictionaries → Import dictionary**.
+3. For a StarDict pack, select its `.ifo`, `.idx`, or `.dict`/`.dict.dz`
+   file. Keep all three files together; Kalam finds the matching files beside
+   the one you select.
+4. For a SQLite pack, select the `.db` file. It should have a table with
+   `word` and `definition` columns.
+5. For a text pack, select a `.tsv` or `.txt` file with one entry per line:
+   `word<TAB>definition`.
+
+The imported entries are copied into Kalam's catalog database, so the original
+pack can be moved afterwards. Imported packs appear in the same Settings page
+and can be removed there. On Linux, the dictionary data directory is
+`~/.local/share/kalam/dictionaries`.
+
+In the reader, select a word or complete phrase and choose **Dictionary** (or
+press `D`). Kalam keeps the phrase, removes surrounding punctuation, and tries
+common simple forms such as `running` → `run`. When more than one dictionary
+entry matches, the popup shows up to five results. Each result has its own
+**Save word** and **Copy** buttons.
+
+### Reliable download sources
+
+- [FreeDict downloads](https://freedict.org/downloads/) provides StarDict
+  archives, SHA-512 checksums, many language pairs, and a direct link to the
+  source dictionary. FreeDict says that each dictionary has its own licence;
+  check the licence in the pack before redistributing it.
+- [Princeton WordNet downloads](https://wordnet.princeton.edu/download) is the
+  official source for the English WordNet database. It requires its licence
+  notice and acknowledgement. WordNet normally needs conversion to StarDict,
+  SQLite, or TSV before Kalam can import it.
+- [Wiktionary dumps](https://dumps.wikimedia.org/) are broad but are released
+  under CC BY-SA/GFDL terms. A redistributed extract needs attribution and
+  must follow the share-alike and source-copy requirements, so Wiktionary is
+  not silently bundled by Kalam.
+
+Avoid download sites that only say “free” without naming the copyright holder
+and licence. Oxford, Collins, Longman, and similar commercial dictionaries are
+not safe to bundle without a separate redistribution licence.
+
+### Bundled dictionaries
+
+Default packs are deliberately not bundled yet. The language choices and the
+exact pack licences still need to be agreed, and a large dictionary would make
+the base app unnecessarily big. The safe packaging plan is to choose a small
+set of clearly redistributable packs, keep each pack's licence and source link
+in the app, show them as enabled on first run, and publish their exact versions
+and checksums. No proprietary or unclear-licence dictionary data will be added.
 
 ## License
 

@@ -1352,7 +1352,7 @@ impl Component for ReaderModel {
                 if let Some(entry) = results.first() {
                     self.dict_lookup_word = Some(entry.word.clone());
                     self.dict_lookup_def = Some(entry.definition.clone());
-                    self.show_dict_in_webview(entry.word.clone(), entry.definition.clone(), None);
+                    self.show_dict_in_webview(&word, &results, None);
                     self.right_tab = RightSidebarTab::Words;
                     self.right_sidebar_open = true;
                     refresh_tabs = true;
@@ -1850,27 +1850,32 @@ impl ReaderModel {
         eval_js(&self.webview, &script);
     }
 
-    fn show_dict_in_webview(&self, word: String, definition: String, rect_json: Option<String>) {
-        let word_esc = word
-            .replace('\\', "\\\\")
-            .replace('\'', "\\'")
-            .replace('\n', "\\n");
-        let def_esc = definition
-            .replace('\\', "\\\\")
-            .replace('\'', "\\'")
-            .replace('\n', "\\n")
-            .chars()
-            .take(2000)
-            .collect::<String>();
-        let rect_part = if let Some(rect) = rect_json {
-            let rect_esc = rect.replace('\\', "\\\\").replace('\'', "\\'");
-            format!("'{}'", rect_esc)
-        } else {
-            "null".to_string()
-        };
+    fn show_dict_in_webview(
+        &self,
+        query: &str,
+        results: &[DictEntry],
+        rect_json: Option<String>,
+    ) {
+        let query_json = serde_json::to_string(query).unwrap_or_else(|_| "\"\"".into());
+        let popup_results: Vec<_> = results
+            .iter()
+            .take(5)
+            .map(|entry| {
+                serde_json::json!({
+                    "word": entry.word,
+                    "definition": entry.definition.chars().take(2000).collect::<String>(),
+                })
+            })
+            .collect();
+        let results_json =
+            serde_json::to_string(&popup_results).unwrap_or_else(|_| "[]".into());
+        let rect_part = rect_json
+            .as_deref()
+            .map(|rect| serde_json::to_string(rect).unwrap_or_else(|_| "null".into()))
+            .unwrap_or_else(|| "null".into());
         let script = format!(
-            "if (window.kalamShowDict) window.kalamShowDict('{}', '{}', {});",
-            word_esc, def_esc, rect_part
+            "if (window.kalamShowDict) window.kalamShowDict({}, {}, {});",
+            query_json, results_json, rect_part
         );
         eval_js(&self.webview, &script);
     }
@@ -1969,11 +1974,7 @@ impl ReaderModel {
                 if let Some(entry) = results.first() {
                     self.dict_lookup_word = Some(entry.word.clone());
                     self.dict_lookup_def = Some(entry.definition.clone());
-                    self.show_dict_in_webview(
-                        entry.word.clone(),
-                        entry.definition.clone(),
-                        rect_json,
-                    );
+                    self.show_dict_in_webview(&word, &results, rect_json);
                 } else {
                     let def = format!(
                         "No definition found for '{}'. Total dict entries: {}",
@@ -1982,7 +1983,13 @@ impl ReaderModel {
                     );
                     self.dict_lookup_word = Some(word.clone());
                     self.dict_lookup_def = Some(def.clone());
-                    self.show_dict_in_webview(word, def, rect_json);
+                    let fallback = DictEntry {
+                        id: 0,
+                        dict_id: 0,
+                        word: word.clone(),
+                        definition: def,
+                    };
+                    self.show_dict_in_webview(&word, std::slice::from_ref(&fallback), rect_json);
                 }
             }
             "save-word" => {

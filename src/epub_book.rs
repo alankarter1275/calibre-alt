@@ -1279,45 +1279,80 @@ if (!window.kalamReaderShellLoaded) {
     document.body.appendChild(p);
     return p;
   }
-  function showDictPopup(word, definition, rect) {
+  function showDictPopup(word, results, rect) {
     var p = ensureDictPopup();
     function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-    p.innerHTML = '<div class=\"kalam-dict-head\"><div><div class=\"kalam-dict-word\">'+esc(word)+'</div><div class=\"kalam-dict-sub\">Dictionary</div></div><button class=\"kalam-dict-close\" onclick=\"window.kalamHideDict()\">Close</button></div>'
-      + '<div class=\"kalam-dict-body\">'+esc(definition)+'</div>'
-      + '<div class=\"kalam-dict-actions\"><button id=\"kalam-dict-save\" class=\"kalam-dict-save\">Save word</button><button id=\"kalam-dict-copy\" class=\"kalam-dict-copy\">Copy</button></div>';
-    p.dataset.word = word;
-    p.dataset.definition = definition;
+    var entries = [];
+    if (Array.isArray(results)) {
+      results.forEach(function(entry) {
+        if (entry && entry.word && entry.definition) {
+          entries.push({word:String(entry.word), definition:String(entry.definition)});
+        }
+      });
+    } else if (typeof results === 'string' && results.trim()) {
+      // Keep compatibility with older callers that supplied one definition.
+      entries.push({word:word, definition:results});
+    }
+    var countLabel = entries.length === 1 ? '1 result' : entries.length + ' results';
+    var resultHtml = '';
+    entries.forEach(function(entry, index) {
+      resultHtml += '<article class="kalam-dict-result">'
+        + '<div class="kalam-dict-result-head"><div class="kalam-dict-word">'+esc(entry.word)+'</div><div class="kalam-dict-sub">Result '+(index + 1)+'</div></div>'
+        + '<div class="kalam-dict-body">'+esc(entry.definition)+'</div>'
+        + '<div class="kalam-dict-actions"><button class="kalam-dict-save" data-result-index="'+index+'">Save word</button><button class="kalam-dict-copy" data-result-index="'+index+'">Copy</button></div>'
+        + '</article>';
+    });
+    p.innerHTML = '<div class="kalam-dict-head"><div><div class="kalam-dict-word">'+esc(word)+'</div><div class="kalam-dict-sub">Dictionary · '+countLabel+'</div></div><button class="kalam-dict-close" onclick="window.kalamHideDict()">Close</button></div>'
+      + '<div class="kalam-dict-results">'+resultHtml+'</div>';
+    p.style.display = 'block';
+    var popupHeight = Math.min(p.offsetHeight || 220, Math.max(120, window.innerHeight - 16));
+    var popupWidth = Math.min(300, window.innerWidth * 0.84);
+    var minLeft = window.scrollX + 8;
+    var maxLeft = window.scrollX + window.innerWidth - popupWidth - 8;
     var top, left;
     if (rect) {
       top = window.scrollY + rect.y + rect.h + 10;
       left = window.scrollX + rect.x;
-      if (left < 8) left = 8;
-      var maxLeft = window.scrollX + window.innerWidth - 320;
-      if (left > maxLeft) left = maxLeft;
-      if (top + 220 > window.scrollY + window.innerHeight) {
-        top = window.scrollY + rect.y - 220;
+      if (left < minLeft) left = minLeft;
+      if (left > maxLeft) left = Math.max(minLeft, maxLeft);
+      if (top + popupHeight > window.scrollY + window.innerHeight - 8) {
+        top = window.scrollY + rect.y - popupHeight - 10;
       }
+      if (top < window.scrollY + 8) top = window.scrollY + 8;
     } else {
       top = window.scrollY + 180;
-      left = window.scrollX + 40;
+      left = minLeft + 32;
     }
     p.style.top = top + 'px';
     p.style.left = left + 'px';
-    p.style.display = 'block';
-    var save = document.getElementById('kalam-dict-save');
-    if (save) save.addEventListener('click', function(){ kalamBridge({type:'save-word', word:p.dataset.word, definition:p.dataset.definition}); hideDict(); });
-    var cp = document.getElementById('kalam-dict-copy');
-    if (cp) cp.addEventListener('click', function(){ try{ navigator.clipboard.writeText(p.dataset.definition); }catch(e){} hideDict(); });
+    var saves = p.querySelectorAll('.kalam-dict-save');
+    for (var i = 0; i < saves.length; i++) {
+      saves[i].addEventListener('click', function() {
+        var entry = entries[Number(this.getAttribute('data-result-index'))];
+        if (!entry) return;
+        kalamBridge({type:'save-word', word:entry.word, definition:entry.definition});
+        hideDict();
+      });
+    }
+    var copies = p.querySelectorAll('.kalam-dict-copy');
+    for (var j = 0; j < copies.length; j++) {
+      copies[j].addEventListener('click', function() {
+        var entry = entries[Number(this.getAttribute('data-result-index'))];
+        if (!entry) return;
+        try{ navigator.clipboard.writeText(entry.definition); }catch(e){}
+        hideDict();
+      });
+    }
   }
   function hideDict() {
     var p = document.getElementById('kalam-dict-popup');
     if (p) p.style.display='none';
   }
   window.kalamHideDict = hideDict;
-  window.kalamShowDict = function(word, definition, rectJson) {
+  window.kalamShowDict = function(word, results, rectJson) {
     var rect = null;
     try { if (rectJson) rect = JSON.parse(rectJson); } catch(e){}
-    showDictPopup(word, definition, rect);
+    showDictPopup(word, results, rect);
   };
 
   // ---- Highlights injection from Rust ----
@@ -2061,6 +2096,17 @@ html.kalam-selection-active body * ::selection {{
   color: #fafaf9 !important;
   font-size: 15px !important;
   font-weight: 700 !important;
+  overflow-wrap: anywhere !important;
+}}
+.kalam-dict-result-head {{
+  padding: 10px 14px 0 14px !important;
+}}
+.kalam-dict-results {{
+  max-height: 420px !important;
+  overflow-y: auto !important;
+}}
+.kalam-dict-result + .kalam-dict-result {{
+  border-top: 1px solid rgba(255,255,255,0.10) !important;
 }}
 .kalam-dict-sub {{
   color: rgba(255,255,255,0.45) !important;

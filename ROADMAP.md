@@ -206,7 +206,7 @@ Daily-driver EPUB reading without annotations — **met for P2 scope**.
 - [x] My Library → **Saved words** (real data, search, delete, saved from dict lookup with context)
 - [x] Export quotes → Markdown with book title, chapter, color, timestamp, quote block
 - [x] Selection chip UI: semi-transparent dark pill above selection, color dots + ❝ Aa ⧉
-- [x] Dictionary popup inside WebView: shows definition near selection rect, Save word / Copy
+- [x] Dictionary popup inside WebView: shows up to five matching entries near the selection rect, with separate Save word / Copy actions for each result
 - [x] Reader typography popover now includes dictionary search (prefix → substring fallback) + Save/Clear
 - [x] Highlight storage: SQLite `annotations` table, `saved_words`, `dictionaries`, `dict_entries`
 - [x] CSS: soft highlight tints (yellow 0.62, green, blue, pink 0.70, orange), chip & dict popup styling, badge colors for annotation list, P3 GTK rows
@@ -705,19 +705,23 @@ Deps include `webkitgtk-6.0` for P2+.
    Arch and record your sign-off or change requests.
 2. **Reader milestone 2 validation:** test hybrid anchoring with an EPUB whose
    chapter HTML has changed, then record your sign-off or change requests.
-3. **Next reader work:** show multiple dictionary results while preserving
-   exact-match priority and the existing offline lookup flow.
-4. After the reader feature work is complete, return to the deferred annotation
+3. **Reader milestone 3 validation:** test phrase preservation,
+   punctuation/inflection normalization, and multiple dictionary results
+   together; record your sign-off or change requests.
+4. **Next reader work:** choose the default bundled dictionary languages and
+   verify each pack's redistribution licence and size before adding data to the
+   base app. Keep the existing offline import flow for all other packs.
+5. After the reader feature work is complete, return to the deferred annotation
    design polish without changing saved-highlight anchoring or temporary
    emphasis.
-5. Only after those reader milestones, consider multi-chapter buffering,
+6. Only after those reader milestones, consider multi-chapter buffering,
    continuous book-wide scrolling, chapter auto-advance redesign, or advanced
    CFI.
-6. **UI overhaul:** after the reader track is signed off, continue the
+7. **UI overhaul:** after the reader track is signed off, continue the
    mockup-first screen work. `library_look.png` shows a two-column dashboard;
    the app is currently a single vertical stack.
-7. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
-8. **P8** when you want comics for real (UI target already specified above).
+8. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
+9. **P8** when you want comics for real (UI target already specified above).
 
 ---
 
@@ -755,3 +759,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-08-30 | Reader-improvements track recorded: annotation workflow and hybrid anchoring are complete; recoloring existing highlights is shipped, with text search next, followed by dictionary improvements and only later reader architecture changes |
 | 2026-08-31 | Reader annotation search shipped across saved highlight text and notes; color/type filters remain available, and annotation design polish is deferred until feature work is complete |
 | 2026-08-31 | Dictionary lookup now keeps the selected phrase intact and normalizes surrounding punctuation plus common simple inflections; multiple results are next |
+| 2026-08-31 | Dictionary popup now displays up to five matching results with separate save/copy actions; default bundled packs remain pending language and licence confirmation |
