@@ -1787,6 +1787,44 @@ if (!window.kalamReaderShellLoaded) {
   // ---- Selection listeners ----
   var selTimeout = null;
   var nativeSelectionDragActive = false;
+  var nativeSelectionDragStart = null;
+  var nativeSelectionDragChanged = false;
+
+  function selectionSnapshot() {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    return {
+      anchorNode: sel.anchorNode,
+      anchorOffset: sel.anchorOffset,
+      focusNode: sel.focusNode,
+      focusOffset: sel.focusOffset,
+      text: sel.toString(),
+      collapsed: sel.isCollapsed
+    };
+  }
+
+  function nativeSelectionChangedSinceStart() {
+    var current = selectionSnapshot();
+    var initial = nativeSelectionDragStart;
+    if (!initial) return !!current && !current.collapsed && !!current.text.trim();
+    if (!current) return true;
+    if (initial.text !== current.text || initial.collapsed !== current.collapsed) return true;
+    if (!sameCaretPoint(
+      {node: initial.anchorNode, offset: initial.anchorOffset},
+      {node: current.anchorNode, offset: current.anchorOffset}
+    )) return true;
+    return !sameCaretPoint(
+      {node: initial.focusNode, offset: initial.focusOffset},
+      {node: current.focusNode, offset: current.focusOffset}
+    );
+  }
+
+  function clearNativeSelection() {
+    var sel = window.getSelection();
+    if (sel) {
+      try { sel.removeAllRanges(); } catch(e) {}
+    }
+  }
 
   function showCompletedSelection() {
     var data = getSelectionData();
@@ -1806,6 +1844,8 @@ if (!window.kalamReaderShellLoaded) {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     if (isSelectionUiNode(event.target)) return;
     nativeSelectionDragActive = true;
+    nativeSelectionDragStart = selectionSnapshot();
+    nativeSelectionDragChanged = false;
     clearTimeout(selTimeout);
     hideChip();
     hideSelectionBands();
@@ -1814,9 +1854,13 @@ if (!window.kalamReaderShellLoaded) {
 
   function finishNativeSelectionDrag(showToolbar) {
     if (!nativeSelectionDragActive) return;
+    var changed = nativeSelectionDragChanged || nativeSelectionChangedSinceStart();
     nativeSelectionDragActive = false;
-    if (showToolbar) showCompletedSelection();
+    nativeSelectionDragStart = null;
+    nativeSelectionDragChanged = false;
+    if (showToolbar && changed) showCompletedSelection();
     else {
+      if (showToolbar && !changed) clearNativeSelection();
       hideSelectionBands();
       hideSelectionHandles();
     }
@@ -1852,10 +1896,12 @@ if (!window.kalamReaderShellLoaded) {
   document.addEventListener('selectionchange', function(){
     var data = getSelectionData();
     if (nativeSelectionDragActive) {
+      if (nativeSelectionChangedSinceStart()) nativeSelectionDragChanged = true;
       // Keep the custom selection band live while the browser is extending a
       // fresh selection. Handles and the action chip wait until pointer-up so
-      // they cannot intercept the native drag.
-      if (data && data.text && data.text.trim()) {
+      // they cannot intercept the native drag. If the pointer only clicked
+      // elsewhere, the old selection remains hidden and is cleared on release.
+      if (nativeSelectionDragChanged && data && data.text && data.text.trim()) {
         showSelectionBands();
         scheduleSelectionBandPosition();
       } else if (selectionBandsVisible) {
