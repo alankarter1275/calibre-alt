@@ -226,7 +226,10 @@ commit `d47bfb40a3f76d0f08ba1867016c383d3c21c596`. Its upstream repository
 releases the data under The Unlicense. Its README says the list was collected
 with ChatGPT and may contain grammatical, factual, or literal-versus-figurative
 errors, so Kalam presents it as a supplemental phrase source rather than an
-authoritative dictionary.
+authoritative dictionary. Selecting a complete phrase such as `break a leg`
+or `piece of cake` can now find that phrase in this pack. It does not make every
+ordinary word combination meaningful automatically: `odd mixture`, for example,
+remains two WordNet word entries unless a dictionary contains that exact phrase.
 
 The bundled source revisions, checksums, attribution, and complete licence
 notices are kept beside the generated packs in `resources/dictionaries/`.
