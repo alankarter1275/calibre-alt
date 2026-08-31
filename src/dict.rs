@@ -89,7 +89,9 @@ fn install_bundled_tsv(
         }
     }
     if entries.is_empty() {
-        return Err(anyhow!("bundled dictionary pack '{dictionary_name}' is empty"));
+        return Err(anyhow!(
+            "bundled dictionary pack '{dictionary_name}' is empty"
+        ));
     }
 
     let dict_id = catalog.insert_dictionary(dictionary_name, Some("en"), entries.len() as i64)?;
