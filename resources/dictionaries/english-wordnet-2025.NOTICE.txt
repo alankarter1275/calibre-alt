@@ -1,0 +1,36 @@
+Kalam bundled dictionary notice
+================================
+
+Data name: Kalam English WordNet 2025
+Data format: generated TSV (word<TAB>definition), gzip-compressed
+
+This file is a compact conversion of the Open English Wordnet 2025 Edition
+core YAML files. It contains English headwords and their WordNet definitions;
+it does not contain the relation graph or source YAML files.
+
+Upstream source:
+https://github.com/globalwordnet/english-wordnet/releases/tag/2025-edition
+https://en-word.net/
+
+Upstream source revision used for this conversion:
+dc343f2683279ecbb13fab4e2fd778d7b162d287
+
+Attribution:
+- Princeton WordNet, Princeton University
+- The Open English Wordnet team
+
+Licence:
+- Open English Wordnet additions: Creative Commons Attribution 4.0
+  International (CC BY 4.0).
+- Underlying Princeton WordNet data: the WordNet licence.
+
+The complete upstream notices are included beside this file as:
+- english-wordnet-2025.LICENSE.md
+- english-wordnet-2025.WNDB_License.txt
+
+Generated pack checksum (SHA-256):
+7de48552c5a817e704ef6c1f71d455f2b05e29277574669dc6a21e4a9dc5d3be
+
+The generated TSV is a format conversion only. Kalam's code does not change
+the dictionary text. Keep these notices with any redistribution of the
+bundled data.

@@ -170,7 +170,12 @@ pub enum ReaderMsg {
     Progress(f64),
     AnnotationsReload,
     DeleteAnnotation(i64),
+    RecolorAnnotation(i64, HighlightColor),
+    AnnotationSearchChanged(String),
     DeleteBookmark(i64),
+    ToggleAnnotation(i64),
+    AnnotationNoteChanged(i64, String),
+    SaveAnnotationNote(i64, String),
     JumpToChapter(usize),
     JumpToLocation(usize, f64),
     DictSearch(String),
@@ -213,6 +218,10 @@ pub struct ReaderModel {
     webview: webkit6::WebView,
     chapter_annotations: Vec<Annotation>,
     all_book_annotations: Vec<Annotation>,
+    annotation_search_query: String,
+    pending_annotation_jump: Option<i64>,
+    editing_annotation: Option<i64>,
+    annotation_note_draft: Option<(i64, String)>,
     bookmarks: Vec<ReadingBookmark>,
     saved_words: Vec<SavedWord>,
     dict_query: String,
@@ -546,6 +555,9 @@ impl Component for ReaderModel {
     ) -> ComponentParts<Self> {
         let book = catalog.get_book(book_id).ok().flatten();
         let webview = webkit6::WebView::new();
+        // The reader is not a browser: suppress WebKit's Back/Forward/Stop/
+        // Reload context menu so a right-click cannot navigate the EPUB view.
+        webview.connect_context_menu(|_, _, _| true);
         webview.set_hexpand(true);
         webview.set_vexpand(true);
 
@@ -711,6 +723,10 @@ impl Component for ReaderModel {
             webview: webview.clone(),
             chapter_annotations,
             all_book_annotations,
+            annotation_search_query: String::new(),
+            pending_annotation_jump: None,
+            editing_annotation: None,
+            annotation_note_draft: None,
             bookmarks,
             saved_words,
             dict_query: String::new(),
@@ -982,6 +998,7 @@ impl Component for ReaderModel {
 
         match msg {
             ReaderMsg::Close => {
+                self.close_annotation_editor();
                 if self.left_sidebar_open || self.right_sidebar_open {
                     self.close_sidebars();
                     refresh_tabs = true;
@@ -995,6 +1012,9 @@ impl Component for ReaderModel {
             }
             ReaderMsg::TocSelect(idx) | ReaderMsg::JumpToChapter(idx) => {
                 if idx < self.open.chapter_count() && idx != self.chapter && !self.loading {
+                    self.flush_annotation_note_draft();
+                    self.editing_annotation = None;
+                    self.pending_annotation_jump = None;
                     self.go_chapter(idx, 0.0);
                     refresh_sidebar_header = true;
                     refresh_toc = true;
@@ -1004,8 +1024,51 @@ impl Component for ReaderModel {
                     refresh_chrome = true;
                 }
             }
+            ReaderMsg::ToggleAnnotation(id) => {
+                let Some(annotation) = self
+                    .all_book_annotations
+                    .iter()
+                    .find(|annotation| annotation.id == id)
+                    .cloned()
+                else {
+                    return;
+                };
+                let idx = annotation.chapter_index as usize;
+                if idx >= self.open.chapter_count() || self.loading {
+                    return;
+                }
+                if self.editing_annotation == Some(annotation.id) {
+                    self.flush_annotation_note_draft();
+                    self.editing_annotation = None;
+                    self.pending_annotation_jump = None;
+                    refresh_highlights = true;
+                    refresh_tabs = true;
+                } else {
+                    self.flush_annotation_note_draft();
+                    self.right_tab = RightSidebarTab::Highlights;
+                    self.right_sidebar_open = true;
+                    self.cancel_right_close();
+                    self.editing_annotation = Some(annotation.id);
+                    self.pending_annotation_jump = Some(annotation.id);
+                    if idx != self.chapter {
+                        self.go_chapter(idx, 0.0);
+                        refresh_sidebar_header = true;
+                        refresh_toc = true;
+                        refresh_bookmarks = true;
+                        refresh_words = true;
+                        refresh_chrome = true;
+                    } else {
+                        self.restore_pending_annotation();
+                    }
+                    refresh_tabs = true;
+                    refresh_highlights = true;
+                }
+            }
             ReaderMsg::JumpToLocation(idx, frac) => {
                 if idx < self.open.chapter_count() && !self.loading {
+                    self.flush_annotation_note_draft();
+                    self.editing_annotation = None;
+                    self.pending_annotation_jump = None;
                     self.go_chapter(idx, frac);
                     refresh_sidebar_header = true;
                     refresh_toc = true;
@@ -1017,6 +1080,9 @@ impl Component for ReaderModel {
             }
             ReaderMsg::PrevChapter => {
                 if self.chapter > 0 && !self.loading {
+                    self.flush_annotation_note_draft();
+                    self.editing_annotation = None;
+                    self.pending_annotation_jump = None;
                     self.go_chapter(self.chapter - 1, 0.0);
                     refresh_sidebar_header = true;
                     refresh_toc = true;
@@ -1028,6 +1094,9 @@ impl Component for ReaderModel {
             }
             ReaderMsg::NextChapter => {
                 if self.chapter + 1 < self.open.chapter_count() && !self.loading {
+                    self.flush_annotation_note_draft();
+                    self.editing_annotation = None;
+                    self.pending_annotation_jump = None;
                     self.fraction = 1.0;
                     self.go_chapter(self.chapter + 1, 0.0);
                     refresh_sidebar_header = true;
@@ -1039,6 +1108,7 @@ impl Component for ReaderModel {
                 }
             }
             ReaderMsg::Theme(theme) => {
+                self.close_annotation_editor();
                 self.theme = theme;
                 self.catalog.set_pref("reader.theme", theme.as_str());
                 self.loading = true;
@@ -1050,6 +1120,7 @@ impl Component for ReaderModel {
             ReaderMsg::FontDelta(delta) => {
                 let next = (self.font_px as i32 + delta).clamp(13, 24) as u32;
                 if next != self.font_px {
+                    self.close_annotation_editor();
                     self.font_px = next;
                     self.catalog.set_pref("reader.font_px", &next.to_string());
                     self.loading = true;
@@ -1062,6 +1133,7 @@ impl Component for ReaderModel {
                 let next =
                     ((self.line_height * 10.0).round() as i32 + delta).clamp(13, 25) as f32 / 10.0;
                 if (next - self.line_height).abs() > f32::EPSILON {
+                    self.close_annotation_editor();
                     self.line_height = next;
                     self.catalog
                         .set_pref("reader.line_height", &format!("{next:.1}"));
@@ -1074,6 +1146,7 @@ impl Component for ReaderModel {
             ReaderMsg::ColumnWidthDelta(delta) => {
                 let next = (self.column_px as i32 + delta).clamp(400, 860) as u32;
                 if next != self.column_px {
+                    self.close_annotation_editor();
                     self.column_px = next;
                     self.catalog.set_pref("reader.column_px", &next.to_string());
                     self.loading = true;
@@ -1163,19 +1236,77 @@ impl Component for ReaderModel {
                 refresh_chrome = true;
             }
             ReaderMsg::AnnotationsReload => {
+                self.flush_annotation_note_draft();
                 self.reload_annotations();
                 self.reload_bookmarks();
                 self.reload_saved_words();
                 self.inject_highlights();
+                self.restore_pending_annotation();
                 refresh_highlights = true;
                 refresh_bookmarks = true;
                 refresh_words = true;
             }
+            ReaderMsg::RecolorAnnotation(id, color) => {
+                self.flush_annotation_note_draft();
+                let color_name = color.as_str();
+                let is_highlight = self
+                    .all_book_annotations
+                    .iter()
+                    .find(|annotation| annotation.id == id)
+                    .is_some_and(|annotation| annotation.kind == "highlight");
+                if !is_highlight {
+                    return;
+                }
+                let unchanged = self
+                    .all_book_annotations
+                    .iter()
+                    .find(|annotation| annotation.id == id)
+                    .is_some_and(|annotation| annotation.color.eq_ignore_ascii_case(color_name));
+                if unchanged {
+                    return;
+                }
+                match self.catalog.update_annotation_color(id, color_name) {
+                    Ok(()) => {
+                        for annotation in &mut self.all_book_annotations {
+                            if annotation.id == id {
+                                annotation.color = color_name.to_string();
+                            }
+                        }
+                        for annotation in &mut self.chapter_annotations {
+                            if annotation.id == id {
+                                annotation.color = color_name.to_string();
+                            }
+                        }
+                        let script = format!(
+                            "if (window.kalamRecolorHighlight) window.kalamRecolorHighlight({}, '{}');",
+                            id, color_name
+                        );
+                        eval_js(&self.webview, &script);
+                        refresh_highlights = true;
+                    }
+                    Err(err) => {
+                        crate::notify::error("Could not recolor the highlight", &err.to_string());
+                    }
+                }
+            }
+            ReaderMsg::AnnotationSearchChanged(query) => {
+                self.close_annotation_editor();
+                let query = query.trim().to_string();
+                if query != self.annotation_search_query {
+                    self.annotation_search_query = query;
+                    refresh_highlights = true;
+                }
+            }
             ReaderMsg::DeleteAnnotation(id) => {
+                self.flush_annotation_note_draft();
                 crate::notify::report(
                     self.catalog.delete_annotation(id),
                     "Could not delete the highlight",
                 );
+                if self.editing_annotation == Some(id) {
+                    self.editing_annotation = None;
+                    self.annotation_note_draft = None;
+                }
                 self.reload_annotations();
                 let script = format!(
                     "if (window.kalamRemoveHighlight) window.kalamRemoveHighlight('{}');",
@@ -1183,6 +1314,21 @@ impl Component for ReaderModel {
                 );
                 eval_js(&self.webview, &script);
                 refresh_highlights = true;
+            }
+            ReaderMsg::AnnotationNoteChanged(id, note) => {
+                if self.editing_annotation == Some(id) {
+                    self.annotation_note_draft = Some((id, note));
+                }
+            }
+            ReaderMsg::SaveAnnotationNote(id, note) => {
+                if self.persist_annotation_note(id, &note)
+                    && matches!(
+                        self.annotation_note_draft.as_ref(),
+                        Some((draft_id, _)) if *draft_id == id
+                    )
+                {
+                    self.annotation_note_draft = None;
+                }
             }
             ReaderMsg::DeleteBookmark(id) => {
                 crate::notify::report(
@@ -1206,7 +1352,7 @@ impl Component for ReaderModel {
                 if let Some(entry) = results.first() {
                     self.dict_lookup_word = Some(entry.word.clone());
                     self.dict_lookup_def = Some(entry.definition.clone());
-                    self.show_dict_in_webview(entry.word.clone(), entry.definition.clone(), None);
+                    self.show_dict_in_webview(&word, &results, None);
                     self.right_tab = RightSidebarTab::Words;
                     self.right_sidebar_open = true;
                     refresh_tabs = true;
@@ -1266,6 +1412,7 @@ impl Component for ReaderModel {
                 sender.output(ReaderOut::OpenAuthor { name }).ok();
             }
             ReaderMsg::OpenLeftSidebar => {
+                self.close_annotation_editor();
                 self.cancel_left_close();
                 self.right_sidebar_open = false;
                 self.cancel_right_close();
@@ -1283,6 +1430,7 @@ impl Component for ReaderModel {
                 refresh_tabs = true;
             }
             ReaderMsg::SwitchLeftTab(tab) => {
+                self.close_annotation_editor();
                 self.left_tab = tab;
                 self.cancel_left_close();
                 self.right_sidebar_open = false;
@@ -1297,6 +1445,9 @@ impl Component for ReaderModel {
                 }
             }
             ReaderMsg::SwitchRightTab(tab) => {
+                if !matches!(tab, RightSidebarTab::Highlights) {
+                    self.close_annotation_editor();
+                }
                 self.right_tab = tab;
                 self.right_sidebar_open = true;
                 self.cancel_right_close();
@@ -1310,6 +1461,7 @@ impl Component for ReaderModel {
                 }
             }
             ReaderMsg::SetHighlightFilter(filter) => {
+                self.close_annotation_editor();
                 self.highlight_filter = filter;
                 refresh_controls = true;
                 refresh_highlights = true;
@@ -1334,12 +1486,14 @@ impl Component for ReaderModel {
             }
             ReaderMsg::ForceCloseRight(token) => {
                 if token == self.right_close_token {
+                    self.close_annotation_editor();
                     self.right_sidebar_open = false;
                     self.right_close_timer = None;
                     refresh_tabs = true;
                 }
             }
             ReaderMsg::CloseSidebars => {
+                self.close_annotation_editor();
                 self.close_sidebars();
                 refresh_tabs = true;
             }
@@ -1401,6 +1555,7 @@ impl Component for ReaderModel {
     }
 
     fn shutdown(&mut self, _widgets: &mut Self::Widgets, _output: relm4::Sender<Self::Output>) {
+        self.close_annotation_editor();
         self.save_progress();
         self.close_session();
         self.cancel_left_close();
@@ -1411,7 +1566,13 @@ impl Component for ReaderModel {
 
 impl ReaderModel {
     fn css(&self) -> String {
-        reading_css(self.theme, self.font_px, self.line_height, self.column_px)
+        reading_css(
+            self.theme,
+            self.font_px,
+            self.line_height,
+            self.column_px,
+            crate::theme::current(&self.catalog),
+        )
     }
 
     fn progress_pct(&self) -> i64 {
@@ -1541,6 +1702,57 @@ impl ReaderModel {
         self.cancel_right_close();
     }
 
+    fn flush_annotation_note_draft(&mut self) {
+        let Some((id, note)) = self.annotation_note_draft.take() else {
+            return;
+        };
+        if !self.persist_annotation_note(id, &note) {
+            self.annotation_note_draft = Some((id, note));
+        }
+    }
+
+    fn close_annotation_editor(&mut self) {
+        self.flush_annotation_note_draft();
+        self.editing_annotation = None;
+        self.pending_annotation_jump = None;
+    }
+
+    fn persist_annotation_note(&mut self, id: i64, note: &str) -> bool {
+        let normalized = note.trim();
+        if !self
+            .all_book_annotations
+            .iter()
+            .any(|annotation| annotation.id == id)
+        {
+            return false;
+        }
+        if self
+            .all_book_annotations
+            .iter()
+            .find(|annotation| annotation.id == id)
+            .is_some_and(|annotation| annotation.note == normalized)
+        {
+            return true;
+        }
+        if let Err(err) = self.catalog.update_annotation_note(id, normalized) {
+            crate::notify::error("Could not save your note", &err.to_string());
+            return false;
+        }
+
+        let saved_note = normalized.to_string();
+        for annotation in &mut self.all_book_annotations {
+            if annotation.id == id {
+                annotation.note = saved_note.clone();
+            }
+        }
+        for annotation in &mut self.chapter_annotations {
+            if annotation.id == id {
+                annotation.note = saved_note.clone();
+            }
+        }
+        true
+    }
+
     fn cancel_left_close(&mut self) {
         self.left_close_token = self.left_close_token.wrapping_add(1);
         self.left_close_timer = None;
@@ -1592,6 +1804,7 @@ impl ReaderModel {
                     "end_path": a.end_path,
                     "end_offset": a.end_offset,
                     "color": a.color,
+                    "text_excerpt": a.text_excerpt,
                 })
             })
             .collect();
@@ -1608,27 +1821,55 @@ impl ReaderModel {
         }
     }
 
-    fn show_dict_in_webview(&self, word: String, definition: String, rect_json: Option<String>) {
-        let word_esc = word
-            .replace('\\', "\\\\")
-            .replace('\'', "\\'")
-            .replace('\n', "\\n");
-        let def_esc = definition
-            .replace('\\', "\\\\")
-            .replace('\'', "\\'")
-            .replace('\n', "\\n")
-            .chars()
-            .take(2000)
-            .collect::<String>();
-        let rect_part = if let Some(rect) = rect_json {
-            let rect_esc = rect.replace('\\', "\\\\").replace('\'', "\\'");
-            format!("'{}'", rect_esc)
-        } else {
-            "null".to_string()
+    fn restore_pending_annotation(&mut self) {
+        let Some(id) = self.pending_annotation_jump.take() else {
+            return;
+        };
+        let Some(annotation) = self
+            .all_book_annotations
+            .iter()
+            .find(|annotation| annotation.id == id)
+        else {
+            return;
+        };
+        let anchor = serde_json::json!({
+            "id": annotation.id,
+            "start_path": annotation.start_path,
+            "start_offset": annotation.start_offset,
+            "end_path": annotation.end_path,
+            "end_offset": annotation.end_offset,
+            "text_excerpt": annotation.text_excerpt,
+        });
+        let Ok(anchor_json) = serde_json::to_string(&anchor) else {
+            return;
         };
         let script = format!(
-            "if (window.kalamShowDict) window.kalamShowDict('{}', '{}', {});",
-            word_esc, def_esc, rect_part
+            "setTimeout(function() {{ if (window.kalamRevealAnnotation) window.kalamRevealAnnotation({anchor}); }}, 90);",
+            anchor = anchor_json,
+        );
+        eval_js(&self.webview, &script);
+    }
+
+    fn show_dict_in_webview(&self, query: &str, results: &[DictEntry], rect_json: Option<String>) {
+        let query_json = serde_json::to_string(query).unwrap_or_else(|_| "\"\"".into());
+        let popup_results: Vec<_> = results
+            .iter()
+            .take(5)
+            .map(|entry| {
+                serde_json::json!({
+                    "word": entry.word,
+                    "definition": entry.definition.chars().take(2000).collect::<String>(),
+                })
+            })
+            .collect();
+        let results_json = serde_json::to_string(&popup_results).unwrap_or_else(|_| "[]".into());
+        let rect_part = rect_json
+            .as_deref()
+            .map(|rect| serde_json::to_string(rect).unwrap_or_else(|_| "null".into()))
+            .unwrap_or_else(|| "null".into());
+        let script = format!(
+            "if (window.kalamShowDict) window.kalamShowDict({}, {}, {});",
+            query_json, results_json, rect_part
         );
         eval_js(&self.webview, &script);
     }
@@ -1727,11 +1968,7 @@ impl ReaderModel {
                 if let Some(entry) = results.first() {
                     self.dict_lookup_word = Some(entry.word.clone());
                     self.dict_lookup_def = Some(entry.definition.clone());
-                    self.show_dict_in_webview(
-                        entry.word.clone(),
-                        entry.definition.clone(),
-                        rect_json,
-                    );
+                    self.show_dict_in_webview(&word, &results, rect_json);
                 } else {
                     let def = format!(
                         "No definition found for '{}'. Total dict entries: {}",
@@ -1740,7 +1977,13 @@ impl ReaderModel {
                     );
                     self.dict_lookup_word = Some(word.clone());
                     self.dict_lookup_def = Some(def.clone());
-                    self.show_dict_in_webview(word, def, rect_json);
+                    let fallback = DictEntry {
+                        id: 0,
+                        dict_id: 0,
+                        word: word.clone(),
+                        definition: def,
+                    };
+                    self.show_dict_in_webview(&word, std::slice::from_ref(&fallback), rect_json);
                 }
             }
             "save-word" => {
@@ -1790,26 +2033,34 @@ impl ReaderModel {
     }
 
     fn filtered_annotations(&self) -> Vec<&Annotation> {
+        let query = self.annotation_search_query.trim().to_lowercase();
         self.all_book_annotations
             .iter()
-            .filter(|anno| match self.highlight_filter {
-                HighlightFilter::All => anno.kind == "highlight" || anno.kind == "quote",
-                HighlightFilter::Yellow => {
-                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("yellow")
+            .filter(|anno| {
+                let matches_filter = match self.highlight_filter {
+                    HighlightFilter::All => anno.kind == "highlight" || anno.kind == "quote",
+                    HighlightFilter::Yellow => {
+                        anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("yellow")
+                    }
+                    HighlightFilter::Green => {
+                        anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("green")
+                    }
+                    HighlightFilter::Blue => {
+                        anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("blue")
+                    }
+                    HighlightFilter::Pink => {
+                        anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("pink")
+                    }
+                    HighlightFilter::Orange => {
+                        anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("orange")
+                    }
+                    HighlightFilter::Quotes => anno.kind == "quote",
+                };
+                if !matches_filter || query.is_empty() {
+                    return matches_filter;
                 }
-                HighlightFilter::Green => {
-                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("green")
-                }
-                HighlightFilter::Blue => {
-                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("blue")
-                }
-                HighlightFilter::Pink => {
-                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("pink")
-                }
-                HighlightFilter::Orange => {
-                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("orange")
-                }
-                HighlightFilter::Quotes => anno.kind == "quote",
+                anno.text_excerpt.to_lowercase().contains(&query)
+                    || anno.note.to_lowercase().contains(&query)
             })
             .collect()
     }
@@ -2155,7 +2406,7 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
     padding: {toc_top}px {toc_side}px;
 }}
 
-.kalam-reader-ui-live .kalam-reader-annotation-row,
+.kalam-reader-ui-live .kalam-reader-annotation-wrap,
 .kalam-reader-ui-live .kalam-reader-bookmark-row,
 .kalam-reader-ui-live .kalam-reader-word-row {{
     padding: {list_top}px {list_side}px;
@@ -2199,6 +2450,196 @@ fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
 .kalam-reader-ui-live .kalam-reader-back image {{
     -gtk-icon-size: {back_icon}px;
 }}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card {{
+    border: 1px solid transparent;
+    border-radius: 10px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card-yellow {{
+    background: alpha(#f4d35e, 0.08);
+    border-color: alpha(#f4d35e, 0.16);
+    border-left: 3px solid alpha(#f4d35e, 0.55);
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card-green {{
+    background: alpha(#8acb9c, 0.08);
+    border-color: alpha(#8acb9c, 0.16);
+    border-left: 3px solid alpha(#8acb9c, 0.55);
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card-blue {{
+    background: alpha(#8bb7f2, 0.08);
+    border-color: alpha(#8bb7f2, 0.16);
+    border-left: 3px solid alpha(#8bb7f2, 0.55);
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card-pink {{
+    background: alpha(#e99bbd, 0.08);
+    border-color: alpha(#e99bbd, 0.16);
+    border-left: 3px solid alpha(#e99bbd, 0.55);
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card-orange {{
+    background: alpha(#f2ae72, 0.08);
+    border-color: alpha(#f2ae72, 0.16);
+    border-left: 3px solid alpha(#f2ae72, 0.55);
+}}
+
+.kalam-reader-ui-live button.kalam-reader-filter-chip.kalam-reader-filter-yellow.active {{
+    background: alpha(#f4d35e, 0.18);
+    border-color: #f4d35e;
+    color: #f4d35e;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-filter-chip.kalam-reader-filter-green.active {{
+    background: alpha(#8acb9c, 0.18);
+    border-color: #8acb9c;
+    color: #8acb9c;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-filter-chip.kalam-reader-filter-blue.active {{
+    background: alpha(#8bb7f2, 0.18);
+    border-color: #8bb7f2;
+    color: #8bb7f2;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-filter-chip.kalam-reader-filter-pink.active {{
+    background: alpha(#e99bbd, 0.18);
+    border-color: #e99bbd;
+    color: #e99bbd;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-filter-chip.kalam-reader-filter-orange.active {{
+    background: alpha(#f2ae72, 0.18);
+    border-color: #f2ae72;
+    color: #f2ae72;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-body {{
+    padding: 11px 12px 10px 13px;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card button.kalam-reader-list-hit:hover {{
+    background: transparent;
+    box-shadow: none;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card button.kalam-btn-icon,
+.kalam-reader-ui-live .kalam-reader-annotation-card menubutton.kalam-btn-icon {{
+    min-width: 28px;
+    min-height: 28px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: @kalam_danger;
+    opacity: 0;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-card:hover button.kalam-btn-icon,
+.kalam-reader-ui-live .kalam-reader-annotation-card.open button.kalam-btn-icon,
+.kalam-reader-ui-live .kalam-reader-annotation-card:hover menubutton.kalam-btn-icon,
+.kalam-reader-ui-live .kalam-reader-annotation-card.open menubutton.kalam-btn-icon {{
+    opacity: 1;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-note-preview {{
+    background: transparent;
+    border: none;
+    border-top: 1px solid alpha(@kalam_border, 0.4);
+    border-radius: 0;
+    padding: 6px 13px 8px;
+    color: @kalam_text_dim;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-note-preview:hover {{
+    background: alpha(@kalam_surface_2, 0.4);
+}}
+
+.kalam-reader-ui-live label.kalam-reader-note-preview-text {{
+    color: @kalam_text_dim;
+    font-size: 0.72rem;
+    font-style: italic;
+    line-height: 1.4;
+}}
+
+.kalam-reader-ui-live .kalam-reader-annotation-note-wrap {{
+    border-top: 1px solid alpha(@kalam_border, 0.4);
+    padding: 8px 13px 10px;
+}}
+
+.kalam-reader-ui-live label.kalam-reader-note-label {{
+    color: @kalam_text_dim;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+}}
+
+.kalam-reader-ui-live scrolledwindow.kalam-reader-note-scroll {{
+    min-height: 52px;
+    background: alpha(@kalam_bg, 0.2);
+    border: 1px solid alpha(@kalam_border, 0.55);
+    border-radius: 7px;
+}}
+
+.kalam-reader-ui-live textview.kalam-reader-note-view {{
+    min-height: 52px;
+    padding: 7px 10px;
+    background: transparent;
+    color: @kalam_text;
+}}
+
+.kalam-reader-ui-live textview.kalam-reader-note-view text {{
+    background: transparent;
+    color: @kalam_text;
+}}
+
+.kalam-reader-ui-live popover.kalam-reader-color-popover {{
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+}}
+
+.kalam-reader-ui-live box.kalam-reader-color-palette {{
+    padding: 6px;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice {{
+    min-width: 92px;
+    min-height: 30px;
+    padding: 5px 10px;
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 7px;
+    color: @kalam_text;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice:hover,
+.kalam-reader-ui-live button.kalam-reader-color-choice.active {{
+    background: alpha(@kalam_surface_2, 0.9);
+    border-color: @kalam_accent;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice-yellow {{
+    color: #f4d35e;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice-green {{
+    color: #8acb9c;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice-blue {{
+    color: #8bb7f2;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice-pink {{
+    color: #e99bbd;
+}}
+
+.kalam-reader-ui-live button.kalam-reader-color-choice-orange {{
+    color: #f2ae72;
+}}
+
 "#,
         radius = prefs.sidebar_radius,
         shadow_y = shadow_y,
@@ -2656,6 +3097,21 @@ fn build_highlights_panel(
 ) -> (gtk::Box, Vec<(HighlightFilter, gtk::Button)>) {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
+    let search_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    search_row.add_css_class("kalam-reader-search-row");
+    search_row.set_margin_all(12);
+    let search = gtk::SearchEntry::new();
+    search.set_placeholder_text(Some("Search highlights and notes…"));
+    search.set_tooltip_text(Some("Search saved highlight text and notes"));
+    search.set_hexpand(true);
+    search.add_css_class("kalam-reader-search");
+    let s = sender.clone();
+    search.connect_search_changed(move |entry| {
+        s.input(ReaderMsg::AnnotationSearchChanged(entry.text().to_string()));
+    });
+    search_row.append(&search);
+    wrap.append(&search_row);
+
     let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     chips.add_css_class("kalam-reader-filter-row");
     chips.set_margin_top(10);
@@ -3049,27 +3505,140 @@ fn append_reader_empty(list: &gtk::Box, text: &str) {
     list.append(&wrap);
 }
 
+fn annotation_note_text(buffer: &gtk::TextBuffer) -> String {
+    let start = buffer.start_iter();
+    let end = buffer.end_iter();
+    buffer.text(&start, &end, false).to_string()
+}
+
+fn annotation_recolor_button(
+    annotation_id: i64,
+    current_color: HighlightColor,
+    sender: &ComponentSender<ReaderModel>,
+) -> gtk::MenuButton {
+    let recolor = gtk::MenuButton::new();
+    recolor.add_css_class("kalam-btn-icon");
+    recolor.set_can_focus(false);
+    recolor.set_always_show_arrow(false);
+    recolor.set_tooltip_text(Some("Change highlight color"));
+    recolor.set_child(Some(&crate::icons::symbolic_with_classes(
+        "applications-graphics-symbolic",
+        16,
+        &["kalam-inline-icon"],
+    )));
+
+    let popover = gtk::Popover::new();
+    popover.add_css_class("kalam-reader-color-popover");
+    popover.set_has_arrow(false);
+    // Keep the palette beside the control inside the right panel. The reader
+    // sidebars close when the pointer leaves them, so the default popover
+    // placement can otherwise make the palette look detached at the window's
+    // top-left corner before the sidebar closes.
+    popover.set_position(gtk::PositionType::Left);
+    let palette = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    palette.add_css_class("kalam-reader-color-palette");
+
+    for color in HighlightColor::ALL.iter().copied() {
+        let choice = gtk::Button::with_label(highlight_color_label(color));
+        choice.add_css_class("kalam-reader-color-choice");
+        choice.add_css_class(highlight_color_choice_class(color));
+        if color == current_color {
+            choice.add_css_class("active");
+        }
+        choice.set_hexpand(true);
+        choice.set_halign(gtk::Align::Fill);
+        choice.set_tooltip_text(Some(&format!(
+            "Use {} highlight",
+            highlight_color_label(color)
+        )));
+        let s = sender.clone();
+        let popover_to_close = popover.clone();
+        choice.connect_clicked(move |_| {
+            s.input(ReaderMsg::RecolorAnnotation(annotation_id, color));
+            popover_to_close.popdown();
+        });
+        palette.append(&choice);
+    }
+
+    popover.set_child(Some(&palette));
+    recolor.set_popover(Some(&popover));
+
+    // The palette is a separate popup surface. Keep the hover-open sidebar
+    // alive while the pointer moves from the button into that surface.
+    let tx = sender.input_sender().clone();
+    recolor.connect_active_notify(move |button| {
+        if button.is_active() {
+            let _ = tx.send(ReaderMsg::OpenRightSidebar);
+        }
+    });
+    connect_hover_zone(
+        &popover,
+        sender,
+        ReaderMsg::OpenRightSidebar,
+        ReaderMsg::ScheduleCloseRight,
+    );
+    recolor
+}
+
+fn highlight_color_label(color: HighlightColor) -> &'static str {
+    match color {
+        HighlightColor::Yellow => "Yellow",
+        HighlightColor::Green => "Green",
+        HighlightColor::Blue => "Blue",
+        HighlightColor::Pink => "Pink",
+        HighlightColor::Orange => "Orange",
+    }
+}
+
+fn highlight_color_choice_class(color: HighlightColor) -> &'static str {
+    match color {
+        HighlightColor::Yellow => "kalam-reader-color-choice-yellow",
+        HighlightColor::Green => "kalam-reader-color-choice-green",
+        HighlightColor::Blue => "kalam-reader-color-choice-blue",
+        HighlightColor::Pink => "kalam-reader-color-choice-pink",
+        HighlightColor::Orange => "kalam-reader-color-choice-orange",
+    }
+}
+
 fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderModel>) {
     while let Some(child) = model.highlights_list.first_child() {
         model.highlights_list.remove(&child);
     }
     let annos = model.filtered_annotations();
     if annos.is_empty() {
-        append_reader_empty(&model.highlights_list, "No highlights yet in this view.");
+        let empty_message = if model.annotation_search_query.trim().is_empty() {
+            "No highlights yet in this view."
+        } else {
+            "No matching highlights or notes."
+        };
+        append_reader_empty(&model.highlights_list, empty_message);
         return;
     }
 
     for anno in annos.into_iter().take(150) {
-        let outer = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        outer.add_css_class("kalam-reader-annotation-row");
+        let annotation_id = anno.id;
+        let selected = model.editing_annotation == Some(annotation_id);
+        let outer = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        outer.add_css_class("kalam-reader-annotation-wrap");
+
+        let card = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        card.add_css_class("kalam-reader-annotation-card");
+        card.add_css_class(color_card_class(&anno.color));
+        if selected {
+            card.add_css_class("open");
+        }
+        card.set_hexpand(true);
+
+        let body = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        body.add_css_class("kalam-reader-annotation-body");
+        body.set_hexpand(true);
 
         let jump = gtk::Button::new();
         jump.add_css_class("kalam-reader-list-hit");
+        jump.set_hexpand(true);
+        jump.set_halign(gtk::Align::Fill);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-        let bar = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        bar.add_css_class("kalam-reader-annotation-bar");
-        bar.add_css_class(color_bar_class(&anno.color));
-        row.append(&bar);
+        row.set_hexpand(true);
 
         let text_col = gtk::Box::new(gtk::Orientation::Vertical, 4);
         text_col.set_hexpand(true);
@@ -3079,44 +3648,114 @@ fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderM
         text.set_xalign(0.0);
         text.set_halign(gtk::Align::Start);
         text_col.append(&text);
-        let meta_text = if anno.kind == "quote" {
-            format!(
-                "{} · quote",
-                chapter_label(model, anno.chapter_index as usize)
-            )
-        } else {
-            format!(
-                "{} · {}",
-                chapter_label(model, anno.chapter_index as usize),
-                anno.color
-            )
-        };
-        let meta = gtk::Label::new(Some(&meta_text));
+        let meta = gtk::Label::new(Some(&chapter_label(model, anno.chapter_index as usize)));
         meta.add_css_class("kalam-reader-annotation-meta");
         meta.set_halign(gtk::Align::Start);
         meta.set_xalign(0.0);
         text_col.append(&meta);
         row.append(&text_col);
         jump.set_child(Some(&row));
-        let ch = anno.chapter_index as usize;
         let s = sender.clone();
-        jump.connect_clicked(move |_| s.input(ReaderMsg::JumpToChapter(ch)));
-        outer.append(&jump);
+        jump.connect_clicked(move |_| s.input(ReaderMsg::ToggleAnnotation(annotation_id)));
+        body.append(&jump);
+
+        if anno.kind == "highlight" {
+            let recolor = annotation_recolor_button(
+                annotation_id,
+                HighlightColor::from_str_lossy(&anno.color),
+                sender,
+            );
+            body.append(&recolor);
+        }
 
         let delete = gtk::Button::new();
         delete.add_css_class("kalam-btn-icon");
         delete.add_css_class("danger");
+        delete.set_focus_on_click(false);
+        delete.set_tooltip_text(Some("Delete highlight"));
         delete.set_child(Some(&crate::icons::symbolic_with_classes(
             "user-trash-symbolic",
             16,
             &["kalam-inline-icon"],
         )));
-        let id = anno.id;
         let s = sender.clone();
-        delete.connect_clicked(move |_| s.input(ReaderMsg::DeleteAnnotation(id)));
-        outer.append(&delete);
+        delete.connect_clicked(move |_| s.input(ReaderMsg::DeleteAnnotation(annotation_id)));
+        body.append(&delete);
+        card.append(&body);
+        let mut note_view_to_focus = None;
 
+        if selected {
+            let note_wrap = gtk::Box::new(gtk::Orientation::Vertical, 5);
+            note_wrap.add_css_class("kalam-reader-annotation-note-wrap");
+            note_wrap.set_hexpand(true);
+
+            let note_label = gtk::Label::new(Some("Note"));
+            note_label.add_css_class("kalam-reader-note-label");
+            note_label.set_halign(gtk::Align::Start);
+            note_label.set_xalign(0.0);
+            note_wrap.append(&note_label);
+
+            let note_view = gtk::TextView::new();
+            note_view.add_css_class("kalam-reader-note-view");
+            note_view.set_wrap_mode(gtk::WrapMode::WordChar);
+            note_view.set_hexpand(true);
+            note_view.set_vexpand(false);
+            let note_buffer = note_view.buffer();
+            note_buffer.set_text(&anno.note);
+
+            let note_scroll = gtk::ScrolledWindow::builder()
+                .min_content_height(52)
+                .max_content_height(112)
+                .hscrollbar_policy(gtk::PolicyType::Never)
+                .vscrollbar_policy(gtk::PolicyType::Automatic)
+                .hexpand(true)
+                .child(&note_view)
+                .build();
+            note_scroll.add_css_class("kalam-reader-note-scroll");
+            note_wrap.append(&note_scroll);
+
+            let tx = sender.input_sender().clone();
+            note_buffer.connect_changed(move |buffer| {
+                let _ = tx.send(ReaderMsg::AnnotationNoteChanged(
+                    annotation_id,
+                    annotation_note_text(buffer),
+                ));
+            });
+
+            let tx = sender.input_sender().clone();
+            let buffer_for_focus = note_buffer.clone();
+            note_view.connect_has_focus_notify(move |view| {
+                if view.has_focus() {
+                    return;
+                }
+                let _ = tx.send(ReaderMsg::SaveAnnotationNote(
+                    annotation_id,
+                    annotation_note_text(&buffer_for_focus),
+                ));
+            });
+            card.append(&note_wrap);
+            note_view_to_focus = Some(note_view);
+        } else if !anno.note.trim().is_empty() {
+            let preview = gtk::Button::new();
+            preview.add_css_class("kalam-reader-annotation-note-preview");
+            preview.set_hexpand(true);
+            preview.set_halign(gtk::Align::Fill);
+            let preview_text = gtk::Label::new(Some(&format!("Note: {}", anno.note.trim())));
+            preview_text.add_css_class("kalam-reader-note-preview-text");
+            preview_text.set_wrap(true);
+            preview_text.set_halign(gtk::Align::Start);
+            preview_text.set_xalign(0.0);
+            preview.set_child(Some(&preview_text));
+            let s = sender.clone();
+            preview.connect_clicked(move |_| s.input(ReaderMsg::ToggleAnnotation(annotation_id)));
+            card.append(&preview);
+        }
+
+        outer.append(&card);
         model.highlights_list.append(&outer);
+        if let Some(note_view) = note_view_to_focus {
+            note_view.grab_focus();
+        }
     }
 }
 
@@ -3273,13 +3912,13 @@ fn chapter_label(model: &ReaderModel, chapter_index: usize) -> String {
     }
 }
 
-fn color_bar_class(color: &str) -> &'static str {
+fn color_card_class(color: &str) -> &'static str {
     match HighlightColor::from_str_lossy(color) {
-        HighlightColor::Yellow => "kalam-reader-bar-yellow",
-        HighlightColor::Green => "kalam-reader-bar-green",
-        HighlightColor::Blue => "kalam-reader-bar-blue",
-        HighlightColor::Pink => "kalam-reader-bar-pink",
-        HighlightColor::Orange => "kalam-reader-bar-orange",
+        HighlightColor::Yellow => "kalam-reader-annotation-card-yellow",
+        HighlightColor::Green => "kalam-reader-annotation-card-green",
+        HighlightColor::Blue => "kalam-reader-annotation-card-blue",
+        HighlightColor::Pink => "kalam-reader-annotation-card-pink",
+        HighlightColor::Orange => "kalam-reader-annotation-card-orange",
     }
 }
 

@@ -174,7 +174,7 @@ Shelves rules engine, network metadata, comics import.
 - [ ] Near-end auto-advance (JS bridge removed for CI stability; use N/›)
 - [ ] True multi-chapter DOM buffer (still one chapter WebView load)
 - [ ] Instant CSS var updates without reload (currently reload chapter on Aa/theme)
-- [ ] Selection toolbar (P3)
+- [x] Selection toolbar: compact themed icon actions with tooltips (P3)
 
 ### Arch check
 
@@ -195,15 +195,20 @@ Daily-driver EPUB reading without annotations — **met for P2 scope**.
 - [x] Selection in WebView → floating chip: **Highlight** (yellow/green/blue/pink/orange) / **Save quote** (❝) / **Dictionary** (Aa) / copy
 - [x] Shortcut **`d`** → dictionary popover near word (via JS + GTK popover search)
 - [x] Offline dict packs: **StarDict** (.ifo/.idx/.dict[.dz]), **SQLite** .db with entries(word,definition), **TSV** (word<TAB>def)
+- [x] Bundled English WordNet 2025 starter pack (about 127k headwords, about 4.2 MB compressed), enabled on first run with attribution and licence notices
+- [x] Bundled English Idioms and Expressions pack (1,024 phrase-to-meaning entries, about 16 KB compressed), kept separate and enabled on first run with source-quality and licence notices
 - [x] Import via Settings → Offline dictionaries → + Import dictionary; list & remove
 - [x] Persist annotations: chapter_index + DOM path (nodePath) + offsets, color, text_excerpt, note, kind
 - [x] Reinject highlights on chapter load (`kalamInjectHighlights` + `wrapRangeByPaths`)
 - [x] Annotations list: reader bottom pill **✎** shows highlights/quotes for current book, Jump & Delete
+- [x] Reader selection toolbar uses compact themed icon actions with useful tooltips; default WebKit context menus are suppressed without changing text selection or the automatic selection-actions toolbar
+- [x] Annotation workflow: exact cross-chapter jumps, near-top positioning, temporary focus emphasis, and annotation-ID-first restoration
+- [x] Annotation cards: dark rounded cards with subtle pastel tints, colored left edges, saved note previews, expandable multiline note editing, and autosave without Save/Cancel controls
 - [x] My Library → **Saved quotes** (real data, search, delete, Export Markdown → `~/Quotes.md`)
 - [x] My Library → **Saved words** (real data, search, delete, saved from dict lookup with context)
 - [x] Export quotes → Markdown with book title, chapter, color, timestamp, quote block
 - [x] Selection chip UI: semi-transparent dark pill above selection, color dots + ❝ Aa ⧉
-- [x] Dictionary popup inside WebView: shows definition near selection rect, Save word / Copy
+- [x] Dictionary popup inside WebView: shows up to five matching entries near the selection rect, with separate Save word / Copy actions for each result
 - [x] Reader typography popover now includes dictionary search (prefix → substring fallback) + Save/Clear
 - [x] Highlight storage: SQLite `annotations` table, `saved_words`, `dictionaries`, `dict_entries`
 - [x] CSS: soft highlight tints (yellow 0.62, green, blue, pink 0.70, orange), chip & dict popup styling, badge colors for annotation list, P3 GTK rows
@@ -214,10 +219,14 @@ Daily-driver EPUB reading without annotations — **met for P2 scope**.
 - Highlight colors soft (incl. pink/rose option like reference photo) — `kalam-hl-pink` rgba(251,207,232,0.70)
 - Must not reintroduce blue underlines on body text — preserved via reading CSS `!important`
 
+### Known issue (deferred)
+
+- [ ] Triple-click paragraph selection can still render an italic run in a different temporary selection text colour from the preceding roman text. Revisit the WebKit selection rendering later.
+
 ### Out (deferred)
 
-- Full EPUB HTML editing, sync, collaborative notes, note editing UI (note field exists but no inline editor yet)
-- CFI spec (using path+offset, robust enough for P3; CFI reserved for later)
+- Full EPUB HTML editing, sync, and collaborative notes
+- CFI spec (using path+offset for now; excerpt fallback is tracked in the reader-improvements section below)
 - Dictionary definition HTML rendering (currently stripped to plain text for GTK popover, WebView popup escapes HTML)
 
 ### Arch check
@@ -240,6 +249,425 @@ Annotations trustworthy enough you stop using another app for EPUB markup — **
 - Clippy -D warnings enforced; dead_code allowed for some P3 structs/methods still evolving
 
 ---
+
+## Reader improvements — annotation workflow  ◀ current track
+
+This track follows the shipped P2/P3 text reader. It keeps the work in the
+order we agreed: finish the annotation workflow first, then improve anchoring,
+annotation controls, and dictionary behaviour. Larger reader architecture
+changes come last.
+
+### Milestone 1 — annotation workflow  ✅ complete
+
+A user can:
+
+1. [x] Click an annotation in the right panel.
+2. [x] Load its chapter when necessary.
+3. [x] Restore the exact saved text location.
+4. [x] Scroll that location into view near the top.
+5. [x] Briefly emphasize the location without changing the permanent highlight.
+6. [x] Edit the annotation note in an expandable multiline editor with autosave.
+
+This uses the existing chapter index, DOM paths, start/end offsets, text
+excerpt, note field, and `update_annotation_note`. The current restoration
+prefers an injected annotation ID when available, then validates the existing
+DOM path/offset range against the saved excerpt. If that anchor is missing or
+points to different text, it falls back to matching the saved text excerpt.
+
+Related reader work already completed:
+
+- [x] Compact themed selection toolbar with tooltips, rounded ends, and no
+      decorative pointer.
+- [x] Temporary selection handles are draggable for pointer/touch input while
+      preserving native selection, copy, and annotation actions.
+- [x] Temporary selection bands update live while a fresh mouse/touch selection
+      is being extended; handles and actions wait until pointer-up.
+- [x] Default WebKit context menu suppressed without affecting text selection
+      or the automatic selection-actions toolbar.
+- [x] Dark rounded annotation cards with subtle pastel tints, colored left
+      edges, no color dot, and improved quote presentation.
+- [x] Saved note previews as note indicators.
+- [x] Annotation filtering by color/type.
+- [x] Existing highlights can be recolored from each card using the current
+      pastel palette.
+- [x] Annotation hover styling fixed so quote buttons do not add a second light
+      highlight.
+- [x] CI green for the current reader changes: rustfmt, Clippy with `-D
+      warnings`, debug build, and release build.
+- [x] Arch UX sign-off for this completed milestone.
+
+### After milestone 1 — agreed order
+
+1. **Hybrid anchoring**  ✅ complete
+   - [x] Try the existing DOM path and start/end offsets first.
+   - [x] Validate that path result against the saved text excerpt.
+   - [x] Fall back to matching the saved text excerpt when that location is
+         missing or points to different text.
+   - [x] Keep full EPUB CFI for later; the current system was not replaced.
+
+2. **Improve annotation controls**  ◀ current reader work
+   - [x] Edit notes.
+   - [x] Recolor existing highlights.
+   - [x] Show note indicators through saved note previews.
+   - [x] Add text search across saved highlight text and notes; keep the
+         existing color/type filters.
+   - [x] Improve quote/highlight presentation with the approved dark card design.
+
+   The next isolated reader change is dictionary behavior. Annotation-control
+   design polish remains deferred until the feature work is complete.
+
+3. **Improve dictionary behavior**
+   - [x] Better phrase selection: dictionary lookup preserves the selected
+         phrase instead of reducing it to the first word.
+   - [x] Punctuation and simple inflection handling for lookup terms.
+   - [x] Multiple results, with up to five entries and separate save/copy
+         actions.
+   - [x] Safe formatting for dictionary text shown in the WebView popup.
+   - [x] Separate bundled English idiom and expression entries, while keeping
+         ordinary phrase lookup and future phrase-composition policy separate.
+
+   Dictionary feature work is deferred for now. When it resumes, follow the
+   planned dictionary overhaul below in phase order; the bundled phrase pack
+   still does not make every compositional phrase meaningful automatically.
+
+4. **Only later consider architecture changes**
+   - [ ] Multi-chapter buffering.
+   - [ ] Book-wide continuous scrolling.
+   - [ ] Automatic chapter advance redesign.
+   - [ ] Advanced CFI support.
+
+### Reader constraints that remain locked
+
+- Keep temporary text selection separate from permanent saved highlights.
+- Do not add multi-chapter buffering until anchoring and progress behaviour are
+  settled.
+- Do not reintroduce an always-running background progress timer; use
+  event-based or debounced persistence instead.
+
+---
+
+## Dictionary overhaul — planned reader-improvement track
+
+**Status: planned; not started.** The dictionary features below are deliberately
+scheduled for later. They are recorded here as the implementation brief for a
+future isolated reader-improvement phase.
+
+### Implementation brief: Kalam dictionary overhaul
+
+#### Context for the implementing AI
+
+Kalam is a Rust + GTK4 + Relm4 + WebKitGTK ebook reader. Work on branch
+`arena/01a0487b-calibre-alt`. The dictionary spans three areas:
+
+- `src/db.rs` — schema/migrations. `migrate()` uses `CREATE TABLE IF NOT EXISTS`
+  plus guarded `ALTER TABLE ... ADD COLUMN` plus a `SCHEMA_VERSION` constant /
+  `schema_version` table. Structs: `DictEntry { id, dict_id, word, definition }`,
+  `Dictionary { id, name, lang, entry_count, added_at }`, `SavedWord`.
+  `dict_entries(id, dict_id, word, definition)`;
+  `saved_words(id, word, definition, dict_name, book_id, chapter_index,
+  context_text, created_at)`.
+
+- `src/db/dictionaries.rs` — `search_dict`, `search_dict_exact_or_prefix`,
+  `search_dict_substring`, and query-planning helpers
+  `dictionary_query_variants`, `normalize_dictionary_term`,
+  `dictionary_possessive_base`, `simple_inflection_variants`.
+
+- `src/dict.rs` — importers (`import_stardict`/`import_sqlite_pack`/`import_tsv`),
+  `install_bundled_dictionaries` (WordNet + idioms shipped as
+  `resources/dictionaries/*.tsv.gz` via `include_bytes!`), and
+  `strip_dict_html`.
+
+- `src/epub_book.rs` — reader WebView JS + CSS: `kalamHandleDict`,
+  `showDictPopup`/`ensureDictPopup`, `window.kalamShowDict`, and the
+  `#kalam-dict-popup` / `.kalam-dict-*` CSS.
+
+- `src/pages/reader.rs` — Relm4 messages `ReaderMsg::DictSearch`,
+  `DictSearchSelect`, the `dict-lookup` and `save-word` bridge handlers,
+  `show_dict_in_webview(...)`, and fields `dict_lookup_word/def`, `dict_context`.
+
+#### Conventions to follow strictly
+
+- Migrations: add tables with `CREATE TABLE IF NOT EXISTS`, add columns with
+  guarded `ALTER TABLE`, bump `SCHEMA_VERSION`, and backfill existing rows
+  (users already have imported dicts + 127k-entry WordNet). Never drop/recreate
+  `dict_entries`.
+
+- All work is offline, single-process. No network calls, no new services.
+
+- The dictionary popup is app chrome: keep it dark regardless of the reader's
+  Light/Sepia/Dark paper theme. Match the existing chip:
+  `border-radius: 16px`, `backdrop-filter: blur(22px)`, the current shadow, and
+  `@kalam`/`--kalam-*` color variables. Do not introduce literal hex where a
+  theme variable exists (see `ARCH.md` note on `style.rs`).
+
+- Add `#[cfg(test)]` unit tests next to new pure functions (the query-planner
+  already has tests — extend them).
+
+- Verify with `cargo build` and `cargo test` after each phase.
+
+- Do **not** rewrite unrelated code. Keep diffs scoped.
+
+Build in the phase order below; each phase compiles and is independently useful.
+
+#### Phase 1 — Precomputed headword index
+
+**Goal:** exact/lemma lookups hit an index instead of `LIKE` scans; kill the
+`LENGTH(word)` tiebreak proxy.
+
+**Do:**
+
+- In `db.rs` `migrate()`: `ALTER TABLE dict_entries ADD COLUMN key TEXT`
+  (guarded — check `PRAGMA table_info`). Add
+  `CREATE INDEX IF NOT EXISTS idx_dict_entries_key ON dict_entries(key COLLATE NOCASE)`.
+  Bump `SCHEMA_VERSION`.
+
+- Add a normalization fn `fold_key(word) -> String`: lowercase, strip diacritics
+  (NFD + drop combining marks), collapse whitespace, trim surrounding
+  non-alphanumerics per token. Reuse/extend `normalize_dictionary_term`.
+
+- On import (all three importers in `dict.rs`) populate `key = fold_key(word)`
+  when inserting.
+
+- Backfill: after the migration, if any `dict_entries.key IS NULL`, run a
+  one-time `UPDATE` computing key for existing rows (batch in a transaction).
+  Guard so it runs once.
+
+- Rewrite `search_dict_exact_or_prefix` to match on `key = ?` (exact) then
+  `key LIKE ?||'%'` (prefix), ordering exact-first.
+
+**Acceptance:** looking up `Run`, `run`, `rún` all resolve to `run`; explain-plan
+uses `idx_dict_entries_key`; existing databases upgrade without reimport.
+
+#### Phase 2 — Real lemmatization from WordNet data
+
+**Goal:** irregulars resolve (`went→go`, `mice→mouse`, `better→good`), with suffix
+rules as fallback only.
+
+**Do:**
+
+- Ship WordNet's morphological exception lists (`noun.exc`, `verb.exc`,
+  `adj.exc`, `adv.exc`) as a gzipped resource under
+  `resources/dictionaries/`, embedded via `include_bytes!` like the existing
+  WordNet TSV.
+
+- Load them once into a `HashMap<String, Vec<String>>` (surface → lemmas),
+  lazily (`OnceLock`).
+
+- In `dictionary_query_variants`, consult the exception map before
+  `simple_inflection_variants`; keep the suffix rules as fallback. Preserve
+  existing dedup via `push_dictionary_variant`.
+
+- Extend the existing `#[cfg(test)]` tests with irregular cases.
+
+**Acceptance:** `went→go`, `mice→mouse`, `better→good`, `running→run` all return
+a headword; regular cases still work.
+
+#### Phase 3 — Phrase decomposition
+
+**Goal:** `odd mixture` yields something useful instead of a dead end.
+
+**Do:**
+
+- Add `search_phrase(phrase, limit) -> PhraseLookup` in
+  `db/dictionaries.rs`. Strategy: (a) try full phrase via `search_dict`; (b) try
+  the longest contained sub-phrase that is a headword (slide window from
+  longest to shortest — catches `run a risk`); (c) if neither, return per-token
+  results: for each token, run the single-word `search_dict`.
+
+- Define a return type distinguishing `Phrase(entries)` vs
+  `Breakdown(Vec<(token, entries)>)` vs `Empty`.
+
+- Wire reader.rs `dict-lookup` handler to call `search_phrase` when the query
+  has `>1` token.
+
+**Acceptance:** `odd mixture` (no headword) returns a breakdown for `odd` and
+`mixture`; `run a risk` (if present) returns the phrase entry; single words
+unchanged.
+
+#### Phase 4 — Source-aware results & ranking (monolingual-first)
+
+**Goal:** results carry their dictionary; ranked with the bundled monolingual
+WordNet first.
+
+**Do:**
+
+- `search_dict` currently returns `DictEntry` (no dict name). Change it (or add
+  a sibling returning a richer struct) to `JOIN dictionaries` and include
+  `dict_id + dict_name`. Update `DictEntry` or introduce
+  `DictHit { entry, dict_id, dict_name, tier }`.
+
+- Add per-dictionary priority: `ALTER TABLE dictionaries ADD COLUMN priority
+  INTEGER NOT NULL DEFAULT 100` (guarded; bump `SCHEMA_VERSION`). Default the
+  bundled WordNet to a higher priority (lower number = shown first) than
+  imported dicts, since the primary user wants monolingual first. Expose reorder
+  in Settings later (not required this phase).
+
+- Rank results by tuple: (match tier: exact > lemma > phrase > prefix > substring)
+  then (dictionary priority) then (word length). Gate the definition-substring
+  branch so it never outranks a headword hit.
+
+**Acceptance:** a word in both WordNet and an imported dict shows WordNet first;
+results expose their source name; substring-in-definition matches sink to the
+bottom.
+
+#### Phase 5 — Popup redesign (app chrome, dark)
+
+**Goal:** fix the fake result, structure the entry, label sources. All in
+`epub_book.rs` (`showDictPopup` + CSS) and the `reader.rs` handler that feeds it.
+
+**Do:**
+
+- Empty state: remove the `No definition found... Total dict entries: N` string
+  entirely. When there's no hit, render a distinct empty-state block (not a
+  `.kalam-dict-result`): a short `No entry for '{query}'.` plus, for phrases,
+  the breakdown chips from Phase 3 (`[odd] [mixture]`, each clickable → re-fires
+  `dict-lookup` for that token via `kalamBridge`). Also a `Search in book` action
+  (Phase 6).
+
+- Kill `RESULT n`: replace that subheading with the dictionary name. When
+  results span multiple dictionaries, render a segmented control / tabs at the
+  top switching source; single source → quiet subheading.
+
+- Structure the entry: headword once at top (drop the duplicate). If the
+  definition text carries POS/sense structure, render numbered senses with
+  italic examples. For imported HTML dicts, sanitize (allowlist
+  `b/i/em/strong/br/p/ul/li/span`, drop scripts/handlers) and render instead of
+  `strip_dict_html` flattening — add a `sanitize_dict_html` fn.
+
+- One action bar: a single Save / Copy / Highlight-in-book row acting on the
+  focused sense, instead of per-result button pairs.
+
+- Anchor discipline: keep the existing rect-anchored placement + above/below
+  flip; add a small caret pointing at the word and ensure it never overlaps the
+  selection rect (nudge if it would).
+
+- Theming: keep dark chrome on all paper themes. Reuse chip tokens (radius,
+  blur, shadow, `--kalam-*`). Add a subtle border for contrast over light/sepia
+  pages.
+
+**Acceptance:** the screenshot's fake `1 RESULT / No definition / Total dict
+entries` is gone; a real multi-source lookup shows tabs with dictionary names;
+phrase misses show tappable word chips; imported HTML renders formatted; popup
+stays dark on sepia.
+
+#### Phase 5.5 — POS grouping + Lesk "likely sense" hint
+
+**Goal:** make senses easier to scan by grouping on part of speech, and
+optionally mark the sense most likely to fit the reader's sentence — without
+ever hiding a sense. Fully offline, using WordNet data already shipped in
+`resources/dictionaries/`. Applies only to the bundled WordNet entries; imported
+dicts render as-is.
+
+**Hard rule for the implementing AI:** this feature may reorder or highlight
+senses; it must never remove or collapse them. Every sense that matched stays
+visible. A wrong guess must cost at most a misplaced highlight, never a hidden
+answer.
+
+**Do:**
+
+- **Expose the context sentence.** The `dict-lookup` bridge already sends
+  context (the surrounding text) and `reader.rs` stores it as `dict_context`.
+  Ensure the full sentence — not just the selected word — reaches the ranking
+  step. If tap-to-lookup (Phase 6) is present, use the sentence the tapped word
+  sits in.
+
+- **POS grouping (primary, low-risk).**
+
+  - Parse the WordNet definition text into senses tagged by part of speech.
+    WordNet glosses carry POS; if your bundled TSV flattened that, derive POS
+    from the WordNet data files instead (extend the resource shipped in Phase 2
+    to retain POS per sense).
+
+  - In the popup (`showDictPopup` in `epub_book.rs`), render senses grouped
+    under POS dividers — verb, noun, adjective, adverb — in that fixed order,
+    numbered within each group. This is the main clarity win and carries
+    essentially no risk.
+
+  - Optional light POS preference from context: if the token is preceded by an
+    article/adjective ("an odd mixture") lean noun; if by "to"/a subject
+    pronoun, lean verb. Use this only to decide which POS group is shown first,
+    never to drop groups. Keep the heuristic in a small pure fn with
+    `#[cfg(test)]` cases.
+
+- **Simplified Lesk soft-highlight (optional, transparent).**
+
+  - Add a pure fn `likely_sense(context_sentence, senses) -> Option<sense_index>`
+    in `db/dictionaries.rs` (or a new `wsd.rs`): lowercase + tokenize the
+    context sentence into a set; for each sense, build a bag of words from its
+    gloss and examples; score by set overlap (ignore stopwords — ship a tiny
+    stopword list). Return the top-scoring sense index, or `None` if the best
+    overlap is zero (no evidence → no hint).
+
+  - In the popup, mark that sense with a subtle "likely here" badge/accent (use
+    `--kalam-*` accent, app-chrome dark, consistent with the chip). Do not move
+    it out of its POS group and do not restyle the others into looking disabled.
+
+  - Ties or zero-overlap: show no hint rather than an arbitrary one.
+
+- **Settings toggle.** Add a pref (via the existing `app_prefs` table / prefs
+  module) `dict_sense_hint` defaulting to on, so the user can disable the Lesk
+  highlight while keeping POS grouping. POS grouping itself is always on.
+
+- **Tests.** Unit-test `likely_sense` on 2–3 hand-built cases (a sentence that
+  clearly favors one gloss returns that index; a neutral sentence returns
+  `None`). Unit-test the POS-preference heuristic.
+
+**Acceptance:**
+
+- WordNet lookups show senses grouped under POS headers, numbered within each
+  group; all senses remain visible.
+
+- With a context sentence that clearly matches one gloss, that sense gets a
+  "likely here" marker and its POS group sorts first; a neutral/empty context
+  produces no marker and no sense is hidden.
+
+- Turning off `dict_sense_hint` removes the highlight but keeps POS grouping.
+
+- No model files, no network, no new runtime dependency; `cargo build` and
+  `cargo test` pass.
+
+**Out of scope for this phase:** embedding/transformer WSD, knowledge-graph
+(UKB) methods, and anything that picks a single sense and hides the rest.
+
+#### Phase 6 — Interaction
+
+**Goal:** tap-to-look-up and keyboard parity.
+
+**Do:**
+
+- Tap-a-word: in `epub_book.rs`, on a plain click with no selection, resolve the
+  word under the caret (use `caretRangeFromPoint`/`caretPositionFromPoint`, expand
+  to word boundaries) and fire `dict-lookup` with that word + surrounding sentence
+  as context. Keep drag-select → phrase. (There's already a dict-shortcut bridge
+  path to model this on.)
+
+- Keyboard: Esc closes the popup; ←/→ switch dictionary tabs; ↑/↓ move senses;
+  Enter saves the focused sense. Wire in the popup JS.
+
+- Search-in-book action: from the popup, trigger the reader's existing in-book
+  search for the headword (reuse whatever find/search path `reader.rs` has; if
+  none, scope this to "highlight all occurrences in current chapter").
+
+**Acceptance:** single tap on a word opens the popup; Esc/arrows/Enter work;
+search-in-book jumps to occurrences.
+
+#### Phase 7 — Vocabulary tools (lower priority)
+
+**Goal:** make Saved Words more than a list. Only after 1–6.
+
+**Do:**
+
+- Saved Words already stores `word`, `definition`, `book_id`, `chapter_index`,
+  `context_text`. Add a Saved Words review view (in `src/pages/saved_words.rs`)
+  with "mark as known" (guarded `ALTER TABLE saved_words ADD COLUMN known INTEGER
+  DEFAULT 0`).
+
+- Add export: CSV (`word,definition,context`) and optionally Anki-importable
+  format, writing to a user-chosen path (mirror the existing `~/Quotes.md`
+  export pattern).
+
+**Acceptance:** saved words can be marked known and exported to CSV.
+
 
 ## P4 — Library depth  ✅ done
 
@@ -606,12 +1034,28 @@ Deps include `webkitgtk-6.0` for P2+.
 
 ## Immediate next steps
 
-1. **UI overhaul** once the Figma designs are final (see `docs/design/`).
-   `library_look.png` shows a two-column dashboard; the app is currently a
-   single vertical stack. Known divergence, deliberately deferred.
-2. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
-3. Keep refining text-reader polish only if you file specific UX bugs (note editing UI, CFI, dict HTML rendering)
-4. **P8** when you want comics for real (UI target already specified above)  
+1. **Reader milestone 1 validation:** ✅ completed on Arch; the current
+   annotation workflow was tested and works as expected.
+2. **Reader milestone 2 validation:** test hybrid anchoring with an EPUB whose
+   chapter HTML has changed, then record your sign-off or change requests.
+3. **Reader milestone 3 validation:** test phrase preservation,
+   punctuation/inflection normalization, and multiple dictionary results
+   together; record your sign-off or change requests.
+4. **Later dictionary work:** when it resumes, follow the planned dictionary
+   overhaul below in phase order, starting with Phase 1. Keep the existing
+   offline import flow for all other packs and do not infer definitions for
+   arbitrary compositional phrases before the planned phase addresses them.
+5. After the reader feature work is complete, return to the deferred annotation
+   design polish without changing saved-highlight anchoring or temporary
+   emphasis.
+6. Only after those reader milestones, consider multi-chapter buffering,
+   continuous book-wide scrolling, chapter auto-advance redesign, or advanced
+   CFI.
+7. **UI overhaul:** after the reader track is signed off, continue the
+   mockup-first screen work. `library_look.png` shows a two-column dashboard;
+   the app is currently a single vertical stack.
+8. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
+9. **P8** when you want comics for real (UI target already specified above).
 
 ---
 
@@ -646,3 +1090,11 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-07-28 | P5.5 Settings window redesigned: 220px 6-tab navigation rail + rounded cards layout |
 | 2026-08-26 | P5.5 button hierarchy + chip + serif-title classes adopted from user style pass (`d545d28`) |
 | 2026-08-26 | Settings v2 shipped: grouped nav, section cards, family theme picker, pill switches, export card — mockup-first, CI green |
+| 2026-08-30 | Reader-improvements track recorded: annotation workflow and hybrid anchoring are complete; recoloring existing highlights is shipped, with text search next, followed by dictionary improvements and only later reader architecture changes |
+| 2026-08-31 | Reader annotation search shipped across saved highlight text and notes; color/type filters remain available, and annotation design polish is deferred until feature work is complete |
+| 2026-08-31 | Dictionary lookup keeps the selected phrase intact and normalizes surrounding punctuation plus common simple inflections |
+| 2026-08-31 | Dictionary popup displays up to five matching results with separate save/copy actions; the clearly licensed English WordNet 2025 starter pack is bundled and enabled on first run |
+| 2026-08-31 | Bundled the separate English Idioms and Expressions pack (1,024 phrase-to-meaning entries) with its upstream Unlicense notice, source revision, checksum, and first-run removal marker |
+| 2026-08-31 | Dictionary overhaul plan extended with deferred Phase 5.5 POS grouping and transparent, optional Lesk sense hints; all matched senses remain visible |
+| 2026-08-31 | Temporary selection handles now support pointer/touch dragging without changing native selection or saving annotations implicitly; triple-click rendering remains deferred |
+| 2026-08-31 | Fresh text selections now paint their custom selection bands live during mouse/touch drag; the toolbar and handles still wait for release |
