@@ -323,9 +323,9 @@ Related reader work already completed:
    - [x] Separate bundled English idiom and expression entries, while keeping
          ordinary phrase lookup and future phrase-composition policy separate.
 
-   The next isolated dictionary task is to validate exact idiom lookups and
-   decide how unknown ordinary phrases should behave; the bundled phrase pack
-   does not make every compositional phrase meaningful automatically.
+   Dictionary feature work is deferred for now. When it resumes, follow the
+   planned dictionary overhaul below in phase order; the bundled phrase pack
+   still does not make every compositional phrase meaningful automatically.
 
 4. **Only later consider architecture changes**
    - [ ] Multi-chapter buffering.
@@ -342,6 +342,250 @@ Related reader work already completed:
   event-based or debounced persistence instead.
 
 ---
+
+## Dictionary overhaul — planned reader-improvement track
+
+**Status: planned; not started.** The dictionary features below are deliberately
+scheduled for later. They are recorded here as the implementation brief for a
+future isolated reader-improvement phase.
+
+### Implementation brief: Kalam dictionary overhaul
+
+#### Context for the implementing AI
+
+Kalam is a Rust + GTK4 + Relm4 + WebKitGTK ebook reader. Work on branch
+`arena/01a0487b-calibre-alt`. The dictionary spans three areas:
+
+- `src/db.rs` — schema/migrations. `migrate()` uses `CREATE TABLE IF NOT EXISTS`
+  plus guarded `ALTER TABLE ... ADD COLUMN` plus a `SCHEMA_VERSION` constant /
+  `schema_version` table. Structs: `DictEntry { id, dict_id, word, definition }`,
+  `Dictionary { id, name, lang, entry_count, added_at }`, `SavedWord`.
+  `dict_entries(id, dict_id, word, definition)`;
+  `saved_words(id, word, definition, dict_name, book_id, chapter_index,
+  context_text, created_at)`.
+
+- `src/db/dictionaries.rs` — `search_dict`, `search_dict_exact_or_prefix`,
+  `search_dict_substring`, and query-planning helpers
+  `dictionary_query_variants`, `normalize_dictionary_term`,
+  `dictionary_possessive_base`, `simple_inflection_variants`.
+
+- `src/dict.rs` — importers (`import_stardict`/`import_sqlite_pack`/`import_tsv`),
+  `install_bundled_dictionaries` (WordNet + idioms shipped as
+  `resources/dictionaries/*.tsv.gz` via `include_bytes!`), and
+  `strip_dict_html`.
+
+- `src/epub_book.rs` — reader WebView JS + CSS: `kalamHandleDict`,
+  `showDictPopup`/`ensureDictPopup`, `window.kalamShowDict`, and the
+  `#kalam-dict-popup` / `.kalam-dict-*` CSS.
+
+- `src/pages/reader.rs` — Relm4 messages `ReaderMsg::DictSearch`,
+  `DictSearchSelect`, the `dict-lookup` and `save-word` bridge handlers,
+  `show_dict_in_webview(...)`, and fields `dict_lookup_word/def`, `dict_context`.
+
+#### Conventions to follow strictly
+
+- Migrations: add tables with `CREATE TABLE IF NOT EXISTS`, add columns with
+  guarded `ALTER TABLE`, bump `SCHEMA_VERSION`, and backfill existing rows
+  (users already have imported dicts + 127k-entry WordNet). Never drop/recreate
+  `dict_entries`.
+
+- All work is offline, single-process. No network calls, no new services.
+
+- The dictionary popup is app chrome: keep it dark regardless of the reader's
+  Light/Sepia/Dark paper theme. Match the existing chip:
+  `border-radius: 16px`, `backdrop-filter: blur(22px)`, the current shadow, and
+  `@kalam`/`--kalam-*` color variables. Do not introduce literal hex where a
+  theme variable exists (see `ARCH.md` note on `style.rs`).
+
+- Add `#[cfg(test)]` unit tests next to new pure functions (the query-planner
+  already has tests — extend them).
+
+- Verify with `cargo build` and `cargo test` after each phase.
+
+- Do **not** rewrite unrelated code. Keep diffs scoped.
+
+Build in the phase order below; each phase compiles and is independently useful.
+
+#### Phase 1 — Precomputed headword index
+
+**Goal:** exact/lemma lookups hit an index instead of `LIKE` scans; kill the
+`LENGTH(word)` tiebreak proxy.
+
+**Do:**
+
+- In `db.rs` `migrate()`: `ALTER TABLE dict_entries ADD COLUMN key TEXT`
+  (guarded — check `PRAGMA table_info`). Add
+  `CREATE INDEX IF NOT EXISTS idx_dict_entries_key ON dict_entries(key COLLATE NOCASE)`.
+  Bump `SCHEMA_VERSION`.
+
+- Add a normalization fn `fold_key(word) -> String`: lowercase, strip diacritics
+  (NFD + drop combining marks), collapse whitespace, trim surrounding
+  non-alphanumerics per token. Reuse/extend `normalize_dictionary_term`.
+
+- On import (all three importers in `dict.rs`) populate `key = fold_key(word)`
+  when inserting.
+
+- Backfill: after the migration, if any `dict_entries.key IS NULL`, run a
+  one-time `UPDATE` computing key for existing rows (batch in a transaction).
+  Guard so it runs once.
+
+- Rewrite `search_dict_exact_or_prefix` to match on `key = ?` (exact) then
+  `key LIKE ?||'%'` (prefix), ordering exact-first.
+
+**Acceptance:** looking up `Run`, `run`, `rún` all resolve to `run`; explain-plan
+uses `idx_dict_entries_key`; existing databases upgrade without reimport.
+
+#### Phase 2 — Real lemmatization from WordNet data
+
+**Goal:** irregulars resolve (`went→go`, `mice→mouse`, `better→good`), with suffix
+rules as fallback only.
+
+**Do:**
+
+- Ship WordNet's morphological exception lists (`noun.exc`, `verb.exc`,
+  `adj.exc`, `adv.exc`) as a gzipped resource under
+  `resources/dictionaries/`, embedded via `include_bytes!` like the existing
+  WordNet TSV.
+
+- Load them once into a `HashMap<String, Vec<String>>` (surface → lemmas),
+  lazily (`OnceLock`).
+
+- In `dictionary_query_variants`, consult the exception map before
+  `simple_inflection_variants`; keep the suffix rules as fallback. Preserve
+  existing dedup via `push_dictionary_variant`.
+
+- Extend the existing `#[cfg(test)]` tests with irregular cases.
+
+**Acceptance:** `went→go`, `mice→mouse`, `better→good`, `running→run` all return
+a headword; regular cases still work.
+
+#### Phase 3 — Phrase decomposition
+
+**Goal:** `odd mixture` yields something useful instead of a dead end.
+
+**Do:**
+
+- Add `search_phrase(phrase, limit) -> PhraseLookup` in
+  `db/dictionaries.rs`. Strategy: (a) try full phrase via `search_dict`; (b) try
+  the longest contained sub-phrase that is a headword (slide window from
+  longest to shortest — catches `run a risk`); (c) if neither, return per-token
+  results: for each token, run the single-word `search_dict`.
+
+- Define a return type distinguishing `Phrase(entries)` vs
+  `Breakdown(Vec<(token, entries)>)` vs `Empty`.
+
+- Wire reader.rs `dict-lookup` handler to call `search_phrase` when the query
+  has `>1` token.
+
+**Acceptance:** `odd mixture` (no headword) returns a breakdown for `odd` and
+`mixture`; `run a risk` (if present) returns the phrase entry; single words
+unchanged.
+
+#### Phase 4 — Source-aware results & ranking (monolingual-first)
+
+**Goal:** results carry their dictionary; ranked with the bundled monolingual
+WordNet first.
+
+**Do:**
+
+- `search_dict` currently returns `DictEntry` (no dict name). Change it (or add
+  a sibling returning a richer struct) to `JOIN dictionaries` and include
+  `dict_id + dict_name`. Update `DictEntry` or introduce
+  `DictHit { entry, dict_id, dict_name, tier }`.
+
+- Add per-dictionary priority: `ALTER TABLE dictionaries ADD COLUMN priority
+  INTEGER NOT NULL DEFAULT 100` (guarded; bump `SCHEMA_VERSION`). Default the
+  bundled WordNet to a higher priority (lower number = shown first) than
+  imported dicts, since the primary user wants monolingual first. Expose reorder
+  in Settings later (not required this phase).
+
+- Rank results by tuple: (match tier: exact > lemma > phrase > prefix > substring)
+  then (dictionary priority) then (word length). Gate the definition-substring
+  branch so it never outranks a headword hit.
+
+**Acceptance:** a word in both WordNet and an imported dict shows WordNet first;
+results expose their source name; substring-in-definition matches sink to the
+bottom.
+
+#### Phase 5 — Popup redesign (app chrome, dark)
+
+**Goal:** fix the fake result, structure the entry, label sources. All in
+`epub_book.rs` (`showDictPopup` + CSS) and the `reader.rs` handler that feeds it.
+
+**Do:**
+
+- Empty state: remove the `No definition found... Total dict entries: N` string
+  entirely. When there's no hit, render a distinct empty-state block (not a
+  `.kalam-dict-result`): a short `No entry for '{query}'.` plus, for phrases,
+  the breakdown chips from Phase 3 (`[odd] [mixture]`, each clickable → re-fires
+  `dict-lookup` for that token via `kalamBridge`). Also a `Search in book` action
+  (Phase 6).
+
+- Kill `RESULT n`: replace that subheading with the dictionary name. When
+  results span multiple dictionaries, render a segmented control / tabs at the
+  top switching source; single source → quiet subheading.
+
+- Structure the entry: headword once at top (drop the duplicate). If the
+  definition text carries POS/sense structure, render numbered senses with
+  italic examples. For imported HTML dicts, sanitize (allowlist
+  `b/i/em/strong/br/p/ul/li/span`, drop scripts/handlers) and render instead of
+  `strip_dict_html` flattening — add a `sanitize_dict_html` fn.
+
+- One action bar: a single Save / Copy / Highlight-in-book row acting on the
+  focused sense, instead of per-result button pairs.
+
+- Anchor discipline: keep the existing rect-anchored placement + above/below
+  flip; add a small caret pointing at the word and ensure it never overlaps the
+  selection rect (nudge if it would).
+
+- Theming: keep dark chrome on all paper themes. Reuse chip tokens (radius,
+  blur, shadow, `--kalam-*`). Add a subtle border for contrast over light/sepia
+  pages.
+
+**Acceptance:** the screenshot's fake `1 RESULT / No definition / Total dict
+entries` is gone; a real multi-source lookup shows tabs with dictionary names;
+phrase misses show tappable word chips; imported HTML renders formatted; popup
+stays dark on sepia.
+
+#### Phase 6 — Interaction
+
+**Goal:** tap-to-look-up and keyboard parity.
+
+**Do:**
+
+- Tap-a-word: in `epub_book.rs`, on a plain click with no selection, resolve the
+  word under the caret (use `caretRangeFromPoint`/`caretPositionFromPoint`, expand
+  to word boundaries) and fire `dict-lookup` with that word + surrounding sentence
+  as context. Keep drag-select → phrase. (There's already a dict-shortcut bridge
+  path to model this on.)
+
+- Keyboard: Esc closes the popup; ←/→ switch dictionary tabs; ↑/↓ move senses;
+  Enter saves the focused sense. Wire in the popup JS.
+
+- Search-in-book action: from the popup, trigger the reader's existing in-book
+  search for the headword (reuse whatever find/search path `reader.rs` has; if
+  none, scope this to "highlight all occurrences in current chapter").
+
+**Acceptance:** single tap on a word opens the popup; Esc/arrows/Enter work;
+search-in-book jumps to occurrences.
+
+#### Phase 7 — Vocabulary tools (lower priority)
+
+**Goal:** make Saved Words more than a list. Only after 1–6.
+
+**Do:**
+
+- Saved Words already stores `word`, `definition`, `book_id`, `chapter_index`,
+  `context_text`. Add a Saved Words review view (in `src/pages/saved_words.rs`)
+  with "mark as known" (guarded `ALTER TABLE saved_words ADD COLUMN known INTEGER
+  DEFAULT 0`).
+
+- Add export: CSV (`word,definition,context`) and optionally Anki-importable
+  format, writing to a user-chosen path (mirror the existing `~/Quotes.md`
+  export pattern).
+
+**Acceptance:** saved words can be marked known and exported to CSV.
+
 
 ## P4 — Library depth  ✅ done
 
@@ -715,10 +959,10 @@ Deps include `webkitgtk-6.0` for P2+.
 3. **Reader milestone 3 validation:** test phrase preservation,
    punctuation/inflection normalization, and multiple dictionary results
    together; record your sign-off or change requests.
-4. **Next reader work:** validate the bundled English phrase pack with exact
-   idiom lookups, duplicate meanings, malformed-source filtering, and removal
-   from Settings. Keep the existing offline import flow for all other packs;
-   do not infer definitions for arbitrary compositional phrases yet.
+4. **Later dictionary work:** when it resumes, follow the planned dictionary
+   overhaul below in phase order, starting with Phase 1. Keep the existing
+   offline import flow for all other packs and do not infer definitions for
+   arbitrary compositional phrases before the planned phase addresses them.
 5. After the reader feature work is complete, return to the deferred annotation
    design polish without changing saved-highlight anchoring or temporary
    emphasis.
