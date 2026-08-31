@@ -1540,8 +1540,12 @@ mod tests {
 
     #[test]
     fn a_restored_book_keeps_its_cover() {
+        // NOTE: this test writes real files under the data dir (book cover +
+        // the stashed override copy). The seeded title must stay unique so
+        // its uuid/hash paths cannot collide with the other cover tests,
+        // which run in parallel.
         let cat = Catalog::open_in_memory().unwrap();
-        let id = seed(&cat, "A", "x", &[]);
+        let id = seed(&cat, "CoverRestored", "x", &[]);
         let book = cat.get_book(id).unwrap().unwrap();
         let hash = book.file_hash.clone();
 
@@ -1586,8 +1590,10 @@ mod tests {
         // The bug: editing metadata stashed the cover, then the new cover was
         // written afterwards, so the override kept the *previous* jacket and a
         // re-import restored the wrong image.
+        // Unique seeded title: this test writes real files (book dir + stashed
+        // override cover) and must not collide with the other cover tests.
         let cat = Catalog::open_in_memory().unwrap();
-        let id = seed(&cat, "A", "x", &[]);
+        let id = seed(&cat, "CoverSwap", "x", &[]);
         let book = cat.get_book(id).unwrap().unwrap();
         let hash = book.file_hash.clone();
         let dir = crate::paths::book_dir(&book.uuid);
@@ -1632,8 +1638,10 @@ mod tests {
         // edit path, which re-stashes. At that moment the book still has the
         // freshly-imported cover, so the saved image was overwritten with the
         // EPUB default a moment before it was due to be copied back.
+        // Unique seeded title: this test writes real files (book dir + stashed
+        // override cover) and must not collide with the other cover tests.
         let cat = Catalog::open_in_memory().unwrap();
-        let id = seed(&cat, "A", "x", &[]);
+        let id = seed(&cat, "CoverClobber", "x", &[]);
         let book = cat.get_book(id).unwrap().unwrap();
         let hash = book.file_hash.clone();
         let dir = crate::paths::book_dir(&book.uuid);
