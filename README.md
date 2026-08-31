@@ -185,7 +185,9 @@ and can be removed there. On Linux, the dictionary data directory is
 
 In the reader, select a word or complete phrase and choose **Dictionary** (or
 press `D`). Kalam keeps the phrase, removes surrounding punctuation, and tries
-common simple forms such as `running` → `run`. When more than one dictionary
+common simple forms such as `running` → `run`. Lookups are case- and
+diacritic-insensitive — `Run`, `RUN` and `rún` all find `run` — because every
+headword is indexed under a normalized key. When more than one dictionary
 entry matches, the popup shows up to five results. Each result has its own
 **Save word** and **Copy** buttons.
 

@@ -4,6 +4,23 @@
 //! the same methods on the same `Catalog`, moved verbatim.
 
 use super::*;
+use unicode_normalization::char::is_combining_mark;
+use unicode_normalization::UnicodeNormalization;
+
+/// Fold a headword into its canonical dictionary key.
+///
+/// Lowercases, strips diacritics (NFD + drop combining marks), collapses
+/// whitespace and trims surrounding non-alphanumerics per token, so `Run`,
+/// `run` and `rún` all fold to `run` and every lookup hits the same `key`
+/// column through `idx_dict_entries_key` instead of a case-insensitive
+/// scan over `word`.
+pub fn fold_key(word: &str) -> String {
+    normalize_dictionary_term(word)
+        .to_lowercase()
+        .nfd()
+        .filter(|ch| !is_combining_mark(*ch))
+        .collect()
+}
 
 impl Catalog {
     // -----------------------------------------------------------------------
@@ -71,8 +88,8 @@ impl Catalog {
     pub fn insert_dict_entry(&self, dict_id: i64, word: &str, definition: &str) -> Result<()> {
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO dict_entries (dict_id, word, definition) VALUES (?1, ?2, ?3)",
-            params![dict_id, word, definition],
+            "INSERT INTO dict_entries (dict_id, word, definition, key) VALUES (?1, ?2, ?3, ?4)",
+            params![dict_id, word, definition, fold_key(word)],
         )?;
         Ok(())
     }
@@ -86,10 +103,10 @@ impl Catalog {
         let tx = conn.transaction()?;
         {
             let mut stmt = tx.prepare(
-                "INSERT INTO dict_entries (dict_id, word, definition) VALUES (?1, ?2, ?3)",
+                "INSERT INTO dict_entries (dict_id, word, definition, key) VALUES (?1, ?2, ?3, ?4)",
             )?;
             for (w, d) in entries {
-                stmt.execute(params![dict_id, w, d])?;
+                stmt.execute(params![dict_id, w, d, fold_key(w)])?;
             }
         }
         tx.commit()?;
@@ -103,6 +120,35 @@ impl Catalog {
             params![dict_id],
         )?;
         Ok(())
+    }
+
+    /// One-time backfill of the `key` column for rows imported before the v11
+    /// migration. Guarded by `key IS NULL` so it runs at most once per
+    /// database and is a no-op on fresh installs (nothing imported yet).
+    /// Batched in small transactions because existing libraries can hold a
+    /// six-figure WordNet pack.
+    pub(crate) fn backfill_dict_entry_keys(&self) -> Result<()> {
+        let mut conn = self.conn();
+        loop {
+            let pending: Vec<(i64, String)> = {
+                let mut stmt = conn.prepare_cached(
+                    "SELECT id, word FROM dict_entries WHERE key IS NULL LIMIT 2000",
+                )?;
+                let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+                rows.collect::<std::result::Result<Vec<_>, _>>()?
+            };
+            if pending.is_empty() {
+                return Ok(());
+            }
+            let tx = conn.transaction()?;
+            {
+                let mut stmt = tx.prepare("UPDATE dict_entries SET key = ?1 WHERE id = ?2")?;
+                for (id, word) in &pending {
+                    stmt.execute(params![fold_key(word), id])?;
+                }
+            }
+            tx.commit()?;
+        }
     }
 
     pub fn search_dict(&self, word: &str, limit: usize) -> Result<Vec<DictEntry>> {
@@ -132,15 +178,26 @@ impl Catalog {
         self.search_dict_substring(fallback, lim)
     }
 
+    /// Exact headword hit, then prefix hit, both against the precomputed
+    /// `key` column (see `fold_key`) so the lookup is served by
+    /// `idx_dict_entries_key` instead of a `COLLATE NOCASE` scan over `word`.
+    /// Exact results always come first; the old `LENGTH(word)` tiebreak is
+    /// gone — prefix results simply follow index order.
     fn search_dict_exact_or_prefix(&self, clean: &str, limit: i64) -> Result<Vec<DictEntry>> {
+        let key = fold_key(clean);
+        if key.is_empty() {
+            return Ok(Vec::new());
+        }
         let conn = self.conn();
+
+        let like = format!("{}%", escape_like(&key));
+        let mut out = Vec::new();
         let mut stmt = conn.prepare_cached(
             "SELECT id, dict_id, word, definition FROM dict_entries
-             WHERE word = ?1 COLLATE NOCASE
+             WHERE key = ?1 COLLATE NOCASE
              ORDER BY word ASC LIMIT ?2",
         )?;
-        let mut out = Vec::new();
-        for r in stmt.query_map(params![clean, limit], |r| {
+        for r in stmt.query_map(params![key.as_str(), limit], |r| {
             Ok(DictEntry {
                 id: r.get(0)?,
                 dict_id: r.get(1)?,
@@ -154,13 +211,12 @@ impl Catalog {
             return Ok(out);
         }
 
-        let like = format!("{}%", escape_like(clean));
         let mut stmt2 = conn.prepare_cached(
             "SELECT id, dict_id, word, definition FROM dict_entries
-             WHERE word LIKE ?1 ESCAPE '\\' COLLATE NOCASE
-             ORDER BY LENGTH(word) ASC, word ASC LIMIT ?2",
+             WHERE key LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+             ORDER BY key COLLATE NOCASE ASC, word ASC LIMIT ?2",
         )?;
-        for r in stmt2.query_map(params![like, limit], |r| {
+        for r in stmt2.query_map(params![like.as_str(), limit], |r| {
             Ok(DictEntry {
                 id: r.get(0)?,
                 dict_id: r.get(1)?,
@@ -315,7 +371,91 @@ fn push_dictionary_variant(variants: &mut Vec<String>, candidate: String) {
 
 #[cfg(test)]
 mod tests {
-    use super::dictionary_query_variants;
+    use super::*;
+
+    #[test]
+    fn fold_key_normalizes_case_whitespace_and_diacritics() {
+        assert_eq!(fold_key("Run"), "run");
+        assert_eq!(fold_key("RUN"), "run");
+        assert_eq!(fold_key("rún"), "run");
+        assert_eq!(fold_key("ÉTÉ"), "ete");
+        assert_eq!(fold_key("  Hello,   World!!  "), "hello world");
+        assert_eq!(fold_key(""), "");
+        assert_eq!(fold_key("!!! ..."), "");
+    }
+
+    #[test]
+    fn inserted_entries_carry_folded_keys() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let dict_id = cat.insert_dictionary("Test pack", Some("en"), 2).unwrap();
+        cat.batch_insert_dict_entries(
+            dict_id,
+            &[
+                ("Rún".to_string(), "an Irish hero".to_string()),
+                ("Run".to_string(), "to move fast".to_string()),
+            ],
+        )
+        .unwrap();
+        let conn = cat.conn();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM dict_entries WHERE key = 'run'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn search_dict_folds_case_and_diacritics_into_keys() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let dict_id = cat.insert_dictionary("Test pack", Some("en"), 2).unwrap();
+        cat.batch_insert_dict_entries(
+            dict_id,
+            &[
+                ("run".to_string(), "to move fast".to_string()),
+                ("Rúnestone".to_string(), "a stone carved with runes".to_string()),
+            ],
+        )
+        .unwrap();
+
+        // Exact hit regardless of case.
+        let hits = cat.search_dict("Run", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].word, "run");
+
+        // Diacritics fold away.
+        let hits = cat.search_dict("rún", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].word, "run");
+
+        // Prefix fallback through the key column.
+        let hits = cat.search_dict("Rune", 10).unwrap();
+        assert!(hits.iter().any(|hit| hit.word == "Rúnestone"));
+    }
+
+    #[test]
+    fn exact_key_lookup_uses_the_key_index() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let dict_id = cat.insert_dictionary("Test pack", Some("en"), 1).unwrap();
+        cat.batch_insert_dict_entries(dict_id, &[("run".to_string(), "fast".to_string())])
+            .unwrap();
+        let conn = cat.conn();
+        let plan: String = conn
+            .query_row(
+                "EXPLAIN QUERY PLAN
+                 SELECT id, dict_id, word, definition FROM dict_entries
+                 WHERE key = ?1 COLLATE NOCASE",
+                params!["run"],
+                |r| r.get(3),
+            )
+            .unwrap();
+        assert!(
+            plan.contains("idx_dict_entries_key"),
+            "expected the key index in the query plan, got: {plan}"
+        );
+    }
 
     #[test]
     fn dictionary_variants_strip_outer_punctuation() {

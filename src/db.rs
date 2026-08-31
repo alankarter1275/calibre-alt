@@ -36,7 +36,8 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v5 = ratings + reading goals · v6 = publisher/published/series index
 /// · v7 = remembered metadata edits, keyed by file hash · v8 = reader bookmarks
 /// · v9 = cached author profiles and aliases · v10 = series cache (Open Library)
-pub const SCHEMA_VERSION: i64 = 10;
+/// · v11 = dictionary headword key (fold_key) + idx_dict_entries_key
+pub const SCHEMA_VERSION: i64 = 11;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -684,6 +685,27 @@ impl Catalog {
             CREATE INDEX IF NOT EXISTS idx_books_finished ON books(finished_at);
             ",
         )?;
+
+        // v11: precomputed dictionary headword key (fold_key — lowercased,
+        // diacritics stripped, whitespace collapsed) so exact/prefix lookups
+        // hit an index instead of a case-insensitive LIKE scan over word.
+        // Added after the CREATE TABLE because older databases were built
+        // without it, exactly like the books columns above.
+        add_column_if_missing(&conn, "dict_entries", "key", "TEXT")?;
+        conn.execute_batch(
+            "
+            CREATE INDEX IF NOT EXISTS idx_dict_entries_key ON dict_entries(key COLLATE NOCASE);
+            ",
+        )?;
+
+        // Backfill the key column for rows imported before v11. Computed in
+        // Rust (SQLite cannot strip diacritics), batched in small write
+        // transactions; guarded by `key IS NULL` so it runs at most once.
+        // The read guard is dropped first so the write transaction can take
+        // the connection.
+        drop(conn);
+        self.backfill_dict_entry_keys()?;
+        let conn = self.conn();
 
         let version: Option<i64> = conn
             .query_row("SELECT version FROM schema_version LIMIT 1", [], |r| {

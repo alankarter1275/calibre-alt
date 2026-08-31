@@ -329,6 +329,8 @@ Related reader work already completed:
    Dictionary feature work is deferred for now. When it resumes, follow the
    planned dictionary overhaul below in phase order; the bundled phrase pack
    still does not make every compositional phrase meaningful automatically.
+   **Phase 1 of that overhaul (precomputed headword key index) is shipped;
+   Phase 2 (WordNet exception-list lemmatization) is next.**
 
 4. **Only later consider architecture changes**
    - [ ] Multi-chapter buffering.
@@ -348,9 +350,9 @@ Related reader work already completed:
 
 ## Dictionary overhaul — planned reader-improvement track
 
-**Status: planned; not started.** The dictionary features below are deliberately
-scheduled for later. They are recorded here as the implementation brief for a
-future isolated reader-improvement phase.
+**Status: Phase 1 shipped (headword key index); Phases 2–7 still planned.**
+The remaining phases are recorded here as the implementation brief for
+future isolated reader-improvement steps.
 
 ### Implementation brief: Kalam dictionary overhaul
 
@@ -409,34 +411,31 @@ Kalam is a Rust + GTK4 + Relm4 + WebKitGTK ebook reader. Work on branch
 
 Build in the phase order below; each phase compiles and is independently useful.
 
-#### Phase 1 — Precomputed headword index
+#### Phase 1 — Precomputed headword index  ✅ complete
 
 **Goal:** exact/lemma lookups hit an index instead of `LIKE` scans; kill the
 `LENGTH(word)` tiebreak proxy.
 
-**Do:**
+- [x] `migrate()` adds `dict_entries.key TEXT` guarded by `PRAGMA table_info`
+      and `CREATE INDEX idx_dict_entries_key ON dict_entries(key COLLATE NOCASE)`;
+      `SCHEMA_VERSION` bumped to 11.
+- [x] `fold_key(word)` in `src/db/dictionaries.rs`: lowercase, NFD + drop
+      combining marks, collapse whitespace, trim surrounding non-alphanumerics
+      per token — reuses `normalize_dictionary_term`.
+- [x] All imports (StarDict / SQLite / TSV / bundled packs) write
+      `key = fold_key(word)` at insert time via
+      `insert_dict_entry` / `batch_insert_dict_entries`.
+- [x] One-time backfill for pre-v11 rows: batched in 2,000-row write
+      transactions, guarded by `key IS NULL` so it runs once and no-ops on
+      fresh databases.
+- [x] `search_dict_exact_or_prefix` matches `key = ?` (exact) then
+      `key LIKE ?||'%'` (prefix), exact-first; the `LENGTH(word)` tiebreak is
+      gone (prefix follows index order).
 
-- In `db.rs` `migrate()`: `ALTER TABLE dict_entries ADD COLUMN key TEXT`
-  (guarded — check `PRAGMA table_info`). Add
-  `CREATE INDEX IF NOT EXISTS idx_dict_entries_key ON dict_entries(key COLLATE NOCASE)`.
-  Bump `SCHEMA_VERSION`.
-
-- Add a normalization fn `fold_key(word) -> String`: lowercase, strip diacritics
-  (NFD + drop combining marks), collapse whitespace, trim surrounding
-  non-alphanumerics per token. Reuse/extend `normalize_dictionary_term`.
-
-- On import (all three importers in `dict.rs`) populate `key = fold_key(word)`
-  when inserting.
-
-- Backfill: after the migration, if any `dict_entries.key IS NULL`, run a
-  one-time `UPDATE` computing key for existing rows (batch in a transaction).
-  Guard so it runs once.
-
-- Rewrite `search_dict_exact_or_prefix` to match on `key = ?` (exact) then
-  `key LIKE ?||'%'` (prefix), ordering exact-first.
-
-**Acceptance:** looking up `Run`, `run`, `rún` all resolve to `run`; explain-plan
-uses `idx_dict_entries_key`; existing databases upgrade without reimport.
+**Acceptance:** `Run`, `run`, `rún` all resolve to `run` — unit-tested with an
+in-memory catalog, including an `EXPLAIN QUERY PLAN` assertion that the exact
+lookup uses `idx_dict_entries_key`; existing databases upgrade in place (no
+reimport, no re-download).
 
 #### Phase 2 — Real lemmatization from WordNet data
 
@@ -1062,10 +1061,15 @@ Deps include `webkitgtk-6.0` for P2+.
 3. **Reader milestone 3 validation:** test phrase preservation,
    punctuation/inflection normalization, and multiple dictionary results
    together; record your sign-off or change requests.
-4. **Later dictionary work:** when it resumes, follow the planned dictionary
-   overhaul below in phase order, starting with Phase 1. Keep the existing
-   offline import flow for all other packs and do not infer definitions for
-   arbitrary compositional phrases before the planned phase addresses them.
+4. **Later dictionary work:** Phase 1 (precomputed headword key index) is
+   shipped — `Run` / `run` / `rún` now resolve to `run` through
+   `idx_dict_entries_key`, and existing databases upgrade in place. When the
+   dictionary work resumes, continue with Phase 2: real lemmatization from
+   WordNet's `noun.exc` / `verb.exc` / `adj.exc` / `adv.exc` exception lists
+   (shipped as a gzipped resource), with the suffix rules as fallback only.
+   Keep the existing offline import flow for all other packs and do not infer
+   definitions for arbitrary compositional phrases before Phase 3 addresses
+   them.
 5. After the reader feature work is complete, return to the deferred annotation
    design polish without changing saved-highlight anchoring or temporary
    emphasis.
@@ -1119,3 +1123,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-08-31 | Dictionary overhaul plan extended with deferred Phase 5.5 POS grouping and transparent, optional Lesk sense hints; all matched senses remain visible |
 | 2026-08-31 | Temporary selection handles now support pointer/touch dragging without changing native selection or saving annotations implicitly; triple-click rendering remains deferred |
 | 2026-08-31 | Fresh text selections now paint their custom selection bands live during mouse/touch drag; the toolbar and handles still wait for release |
+| 2026-09-01 | Dictionary overhaul Phase 1 shipped: precomputed `fold_key` headword index (schema v11). Exact/prefix lookups use `idx_dict_entries_key`; `Run`/`run`/`rún` all resolve to `run`; existing databases backfill in place with no reimport |
