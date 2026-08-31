@@ -3495,6 +3495,11 @@ fn annotation_recolor_button(
     let popover = gtk::Popover::new();
     popover.add_css_class("kalam-reader-color-popover");
     popover.set_has_arrow(false);
+    // Keep the palette beside the control inside the right panel. The reader
+    // sidebars close when the pointer leaves them, so the default popover
+    // placement can otherwise make the palette look detached at the window's
+    // top-left corner before the sidebar closes.
+    popover.set_position(gtk::PositionType::Left);
     let palette = gtk::Box::new(gtk::Orientation::Vertical, 4);
     palette.add_css_class("kalam-reader-color-palette");
 
@@ -3522,6 +3527,21 @@ fn annotation_recolor_button(
 
     popover.set_child(Some(&palette));
     recolor.set_popover(Some(&popover));
+
+    // The palette is a separate popup surface. Keep the hover-open sidebar
+    // alive while the pointer moves from the button into that surface.
+    let tx = sender.input_sender().clone();
+    recolor.connect_active_notify(move |button| {
+        if button.is_active() {
+            let _ = tx.send(ReaderMsg::OpenRightSidebar);
+        }
+    });
+    connect_hover_zone(
+        &popover,
+        sender,
+        ReaderMsg::OpenRightSidebar,
+        ReaderMsg::ScheduleCloseRight,
+    );
     recolor
 }
 
