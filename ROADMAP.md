@@ -547,6 +547,85 @@ entries` is gone; a real multi-source lookup shows tabs with dictionary names;
 phrase misses show tappable word chips; imported HTML renders formatted; popup
 stays dark on sepia.
 
+#### Phase 5.5 — POS grouping + Lesk "likely sense" hint
+
+**Goal:** make senses easier to scan by grouping on part of speech, and
+optionally mark the sense most likely to fit the reader's sentence — without
+ever hiding a sense. Fully offline, using WordNet data already shipped in
+`resources/dictionaries/`. Applies only to the bundled WordNet entries; imported
+dicts render as-is.
+
+**Hard rule for the implementing AI:** this feature may reorder or highlight
+senses; it must never remove or collapse them. Every sense that matched stays
+visible. A wrong guess must cost at most a misplaced highlight, never a hidden
+answer.
+
+**Do:**
+
+- **Expose the context sentence.** The `dict-lookup` bridge already sends
+  context (the surrounding text) and `reader.rs` stores it as `dict_context`.
+  Ensure the full sentence — not just the selected word — reaches the ranking
+  step. If tap-to-lookup (Phase 6) is present, use the sentence the tapped word
+  sits in.
+
+- **POS grouping (primary, low-risk).**
+
+  - Parse the WordNet definition text into senses tagged by part of speech.
+    WordNet glosses carry POS; if your bundled TSV flattened that, derive POS
+    from the WordNet data files instead (extend the resource shipped in Phase 2
+    to retain POS per sense).
+
+  - In the popup (`showDictPopup` in `epub_book.rs`), render senses grouped
+    under POS dividers — verb, noun, adjective, adverb — in that fixed order,
+    numbered within each group. This is the main clarity win and carries
+    essentially no risk.
+
+  - Optional light POS preference from context: if the token is preceded by an
+    article/adjective ("an odd mixture") lean noun; if by "to"/a subject
+    pronoun, lean verb. Use this only to decide which POS group is shown first,
+    never to drop groups. Keep the heuristic in a small pure fn with
+    `#[cfg(test)]` cases.
+
+- **Simplified Lesk soft-highlight (optional, transparent).**
+
+  - Add a pure fn `likely_sense(context_sentence, senses) -> Option<sense_index>`
+    in `db/dictionaries.rs` (or a new `wsd.rs`): lowercase + tokenize the
+    context sentence into a set; for each sense, build a bag of words from its
+    gloss and examples; score by set overlap (ignore stopwords — ship a tiny
+    stopword list). Return the top-scoring sense index, or `None` if the best
+    overlap is zero (no evidence → no hint).
+
+  - In the popup, mark that sense with a subtle "likely here" badge/accent (use
+    `--kalam-*` accent, app-chrome dark, consistent with the chip). Do not move
+    it out of its POS group and do not restyle the others into looking disabled.
+
+  - Ties or zero-overlap: show no hint rather than an arbitrary one.
+
+- **Settings toggle.** Add a pref (via the existing `app_prefs` table / prefs
+  module) `dict_sense_hint` defaulting to on, so the user can disable the Lesk
+  highlight while keeping POS grouping. POS grouping itself is always on.
+
+- **Tests.** Unit-test `likely_sense` on 2–3 hand-built cases (a sentence that
+  clearly favors one gloss returns that index; a neutral sentence returns
+  `None`). Unit-test the POS-preference heuristic.
+
+**Acceptance:**
+
+- WordNet lookups show senses grouped under POS headers, numbered within each
+  group; all senses remain visible.
+
+- With a context sentence that clearly matches one gloss, that sense gets a
+  "likely here" marker and its POS group sorts first; a neutral/empty context
+  produces no marker and no sense is hidden.
+
+- Turning off `dict_sense_hint` removes the highlight but keeps POS grouping.
+
+- No model files, no network, no new runtime dependency; `cargo build` and
+  `cargo test` pass.
+
+**Out of scope for this phase:** embedding/transformer WSD, knowledge-graph
+(UKB) methods, and anything that picks a single sense and hides the rest.
+
 #### Phase 6 — Interaction
 
 **Goal:** tap-to-look-up and keyboard parity.
@@ -1013,3 +1092,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-08-31 | Dictionary lookup keeps the selected phrase intact and normalizes surrounding punctuation plus common simple inflections |
 | 2026-08-31 | Dictionary popup displays up to five matching results with separate save/copy actions; the clearly licensed English WordNet 2025 starter pack is bundled and enabled on first run |
 | 2026-08-31 | Bundled the separate English Idioms and Expressions pack (1,024 phrase-to-meaning entries) with its upstream Unlicense notice, source revision, checksum, and first-run removal marker |
+| 2026-08-31 | Dictionary overhaul plan extended with deferred Phase 5.5 POS grouping and transparent, optional Lesk sense hints; all matched senses remain visible |
