@@ -171,6 +171,7 @@ pub enum ReaderMsg {
     AnnotationsReload,
     DeleteAnnotation(i64),
     RecolorAnnotation(i64, HighlightColor),
+    AnnotationSearchChanged(String),
     DeleteBookmark(i64),
     ToggleAnnotation(i64),
     AnnotationNoteChanged(i64, String),
@@ -217,6 +218,7 @@ pub struct ReaderModel {
     webview: webkit6::WebView,
     chapter_annotations: Vec<Annotation>,
     all_book_annotations: Vec<Annotation>,
+    annotation_search_query: String,
     pending_annotation_jump: Option<i64>,
     editing_annotation: Option<i64>,
     annotation_note_draft: Option<(i64, String)>,
@@ -721,6 +723,7 @@ impl Component for ReaderModel {
             webview: webview.clone(),
             chapter_annotations,
             all_book_annotations,
+            annotation_search_query: String::new(),
             pending_annotation_jump: None,
             editing_annotation: None,
             annotation_note_draft: None,
@@ -1284,6 +1287,14 @@ impl Component for ReaderModel {
                     Err(err) => {
                         crate::notify::error("Could not recolor the highlight", &err.to_string());
                     }
+                }
+            }
+            ReaderMsg::AnnotationSearchChanged(query) => {
+                self.close_annotation_editor();
+                let query = query.trim().to_string();
+                if query != self.annotation_search_query {
+                    self.annotation_search_query = query;
+                    refresh_highlights = true;
                 }
             }
             ReaderMsg::DeleteAnnotation(id) => {
@@ -2021,26 +2032,34 @@ impl ReaderModel {
     }
 
     fn filtered_annotations(&self) -> Vec<&Annotation> {
+        let query = self.annotation_search_query.trim().to_lowercase();
         self.all_book_annotations
             .iter()
-            .filter(|anno| match self.highlight_filter {
-                HighlightFilter::All => anno.kind == "highlight" || anno.kind == "quote",
-                HighlightFilter::Yellow => {
-                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("yellow")
+            .filter(|anno| {
+                let matches_filter = match self.highlight_filter {
+                    HighlightFilter::All => anno.kind == "highlight" || anno.kind == "quote",
+                    HighlightFilter::Yellow => {
+                        anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("yellow")
+                    }
+                    HighlightFilter::Green => {
+                        anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("green")
+                    }
+                    HighlightFilter::Blue => {
+                        anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("blue")
+                    }
+                    HighlightFilter::Pink => {
+                        anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("pink")
+                    }
+                    HighlightFilter::Orange => {
+                        anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("orange")
+                    }
+                    HighlightFilter::Quotes => anno.kind == "quote",
+                };
+                if !matches_filter || query.is_empty() {
+                    return matches_filter;
                 }
-                HighlightFilter::Green => {
-                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("green")
-                }
-                HighlightFilter::Blue => {
-                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("blue")
-                }
-                HighlightFilter::Pink => {
-                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("pink")
-                }
-                HighlightFilter::Orange => {
-                    anno.kind == "highlight" && anno.color.eq_ignore_ascii_case("orange")
-                }
-                HighlightFilter::Quotes => anno.kind == "quote",
+                anno.text_excerpt.to_lowercase().contains(&query)
+                    || anno.note.to_lowercase().contains(&query)
             })
             .collect()
     }
@@ -3077,6 +3096,21 @@ fn build_highlights_panel(
 ) -> (gtk::Box, Vec<(HighlightFilter, gtk::Button)>) {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
+    let search_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    search_row.add_css_class("kalam-reader-search-row");
+    search_row.set_margin_all(12);
+    let search = gtk::SearchEntry::new();
+    search.set_placeholder_text(Some("Search highlights and notes…"));
+    search.set_tooltip_text(Some("Search saved highlight text and notes"));
+    search.set_hexpand(true);
+    search.add_css_class("kalam-reader-search");
+    let s = sender.clone();
+    search.connect_search_changed(move |entry| {
+        s.input(ReaderMsg::AnnotationSearchChanged(entry.text().to_string()));
+    });
+    search_row.append(&search);
+    wrap.append(&search_row);
+
     let chips = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     chips.add_css_class("kalam-reader-filter-row");
     chips.set_margin_top(10);
@@ -3571,7 +3605,12 @@ fn rebuild_highlights_list(model: &ReaderModel, sender: &ComponentSender<ReaderM
     }
     let annos = model.filtered_annotations();
     if annos.is_empty() {
-        append_reader_empty(&model.highlights_list, "No highlights yet in this view.");
+        let empty_message = if model.annotation_search_query.trim().is_empty() {
+            "No highlights yet in this view."
+        } else {
+            "No matching highlights or notes."
+        };
+        append_reader_empty(&model.highlights_list, empty_message);
         return;
     }
 

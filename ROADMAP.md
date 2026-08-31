@@ -304,11 +304,12 @@ Related reader work already completed:
    - [x] Edit notes.
    - [x] Recolor existing highlights.
    - [x] Show note indicators through saved note previews.
-   - [ ] Add text search; keep the existing color/type filters.
+   - [x] Add text search across saved highlight text and notes; keep the
+         existing color/type filters.
    - [x] Improve quote/highlight presentation with the approved dark card design.
 
-   The next isolated reader change is text search. Keep it separate from saved
-   highlight anchoring and temporary selection emphasis.
+   The next isolated reader change is dictionary behavior. Annotation-control
+   design polish remains deferred until the feature work is complete.
 
 3. **Improve dictionary behavior**
    - [ ] Better phrase selection.
@@ -701,9 +702,10 @@ Deps include `webkitgtk-6.0` for P2+.
    Arch and record your sign-off or change requests.
 2. **Reader milestone 2 validation:** test hybrid anchoring with an EPUB whose
    chapter HTML has changed, then record your sign-off or change requests.
-3. **Next reader work:** add text search while preserving the current
-   annotation filters, saved-highlight anchoring, and temporary emphasis.
-4. Improve dictionary behaviour in the agreed order.
+3. **Next reader work:** improve dictionary behaviour in the agreed order.
+4. After the reader feature work is complete, return to the deferred annotation
+   design polish without changing saved-highlight anchoring or temporary
+   emphasis.
 5. Only after those reader milestones, consider multi-chapter buffering,
    continuous book-wide scrolling, chapter auto-advance redesign, or advanced
    CFI.
@@ -747,3 +749,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-08-26 | P5.5 button hierarchy + chip + serif-title classes adopted from user style pass (`d545d28`) |
 | 2026-08-26 | Settings v2 shipped: grouped nav, section cards, family theme picker, pill switches, export card — mockup-first, CI green |
 | 2026-08-30 | Reader-improvements track recorded: annotation workflow and hybrid anchoring are complete; recoloring existing highlights is shipped, with text search next, followed by dictionary improvements and only later reader architecture changes |
+| 2026-08-31 | Reader annotation search shipped across saved highlight text and notes; color/type filters remain available, and annotation design polish is deferred until feature work is complete |
