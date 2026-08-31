@@ -210,20 +210,32 @@ not safe to bundle without a separate redistribution licence.
 
 ### Bundled dictionaries
 
-The base app now includes **English WordNet 2025**, an English-only pack with
-about 127,000 headwords and a compressed size of about 4.2 MB. It is installed
-and enabled on the first run, works without a download, and appears in
-**Settings → Dictionaries**. If you remove it, Kalam remembers that choice and
-does not silently add it back.
+The base app includes two small English-only starter packs. **English WordNet
+2025** has about 127,000 headwords and is about 4.2 MB compressed. **English
+Idioms and Expressions** adds 1,024 phrase-to-meaning entries and is about
+16 KB compressed. Both packs are installed and enabled on the first run, work
+without a download, and appear separately in **Settings → Dictionaries**. If
+you remove either pack, Kalam remembers that choice and does not silently add
+it back.
 
-This pack is a format conversion of the [Open English Wordnet 2025
+The WordNet pack is a format conversion of the [Open English Wordnet 2025
 Edition](https://github.com/globalwordnet/english-wordnet/releases/tag/2025-edition),
-which is derived from Princeton WordNet. The bundled source revision,
-checksums, attribution, and complete licence notices are kept in
-`resources/dictionaries/`. The data is covered by CC BY 4.0 for the Open
-English Wordnet work plus the underlying WordNet licence; keep those notices
-with any redistribution. No proprietary or unclear-licence dictionary data is
-included.
+which is derived from Princeton WordNet. The idiom pack is a format conversion
+of [`baiango/english_idioms`](https://github.com/baiango/english_idioms), using
+commit `d47bfb40a3f76d0f08ba1867016c383d3c21c596`. Its upstream repository
+releases the data under The Unlicense. Its README says the list was collected
+with ChatGPT and may contain grammatical, factual, or literal-versus-figurative
+errors, so Kalam presents it as a supplemental phrase source rather than an
+authoritative dictionary.
+
+The bundled source revisions, checksums, attribution, and complete licence
+notices are kept beside the generated packs in `resources/dictionaries/`.
+Keep the applicable notices with any redistribution. The WordNet files must
+remain because that data has both Open English WordNet and underlying Princeton
+WordNet terms; the idiom pack has its own upstream Unlicense notice. “Personal
+use” does not by itself remove licence obligations when data is committed to a
+public repository or shipped in an application. No proprietary or
+unclear-licence dictionary data is included.
 
 Additional language packs can be added later after choosing the languages and
 checking each pack's licence and size. The existing import flow remains the

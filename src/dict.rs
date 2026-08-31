@@ -27,14 +27,39 @@ const BUNDLED_WORDNET_NAME: &str = "English WordNet 2025";
 const BUNDLED_WORDNET_PREF: &str = "bundled_dictionary_english_wordnet_2025";
 const BUNDLED_WORDNET_TSV_GZ: &[u8] =
     include_bytes!("../resources/dictionaries/english-wordnet-2025.tsv.gz");
+const BUNDLED_IDIOMS_NAME: &str = "English Idioms and Expressions";
+const BUNDLED_IDIOMS_PREF: &str = "bundled_dictionary_english_idioms_2024";
+const BUNDLED_IDIOMS_TSV_GZ: &[u8] =
+    include_bytes!("../resources/dictionaries/english-idioms-2024.tsv.gz");
 
-/// Install the small, redistributable English dictionary shipped with Kalam.
+/// Install the small, redistributable English dictionaries shipped with Kalam.
 ///
-/// The preference makes this a first-run action rather than a migration that
-/// re-adds a pack after the user removes it. The compressed source is kept in
-/// the binary so the default dictionary works without a download.
+/// Each preference makes its pack a first-run action rather than a migration
+/// that re-adds a pack after the user removes it. The compressed sources are
+/// kept in the binary so the default dictionaries work without a download.
 pub fn install_bundled_dictionaries(catalog: &Catalog) -> Result<()> {
-    if catalog.get_pref(BUNDLED_WORDNET_PREF).as_deref() == Some("installed") {
+    install_bundled_tsv(
+        catalog,
+        BUNDLED_WORDNET_NAME,
+        BUNDLED_WORDNET_PREF,
+        BUNDLED_WORDNET_TSV_GZ,
+    )?;
+    install_bundled_tsv(
+        catalog,
+        BUNDLED_IDIOMS_NAME,
+        BUNDLED_IDIOMS_PREF,
+        BUNDLED_IDIOMS_TSV_GZ,
+    )?;
+    Ok(())
+}
+
+fn install_bundled_tsv(
+    catalog: &Catalog,
+    dictionary_name: &str,
+    installed_pref: &str,
+    compressed_tsv: &[u8],
+) -> Result<()> {
+    if catalog.get_pref(installed_pref).as_deref() == Some("installed") {
         return Ok(());
     }
 
@@ -43,13 +68,13 @@ pub fn install_bundled_dictionaries(catalog: &Catalog) -> Result<()> {
     if catalog
         .list_dictionaries()?
         .iter()
-        .any(|dict| dict.name == BUNDLED_WORDNET_NAME)
+        .any(|dict| dict.name == dictionary_name)
     {
-        catalog.set_pref(BUNDLED_WORDNET_PREF, "installed");
+        catalog.set_pref(installed_pref, "installed");
         return Ok(());
     }
 
-    let decoder = flate2::read::GzDecoder::new(BUNDLED_WORDNET_TSV_GZ);
+    let decoder = flate2::read::GzDecoder::new(compressed_tsv);
     let reader = BufReader::new(decoder);
     let mut entries = Vec::new();
     for line in std::io::BufRead::lines(reader) {
@@ -64,16 +89,15 @@ pub fn install_bundled_dictionaries(catalog: &Catalog) -> Result<()> {
         }
     }
     if entries.is_empty() {
-        return Err(anyhow!("bundled English WordNet pack is empty"));
+        return Err(anyhow!("bundled dictionary pack '{dictionary_name}' is empty"));
     }
 
-    let dict_id =
-        catalog.insert_dictionary(BUNDLED_WORDNET_NAME, Some("en"), entries.len() as i64)?;
+    let dict_id = catalog.insert_dictionary(dictionary_name, Some("en"), entries.len() as i64)?;
     catalog.clear_dict_entries(dict_id)?;
     for chunk in entries.chunks(2000) {
         catalog.batch_insert_dict_entries(dict_id, chunk)?;
     }
-    catalog.set_pref(BUNDLED_WORDNET_PREF, "installed");
+    catalog.set_pref(installed_pref, "installed");
     Ok(())
 }
 

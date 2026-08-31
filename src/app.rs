@@ -645,7 +645,7 @@ impl Component for AppModel {
             }
         };
         if let Err(err) = crate::dict::install_bundled_dictionaries(&catalog) {
-            crate::notify::error("Could not install the bundled dictionary", &err.to_string());
+            crate::notify::error("Could not install the bundled dictionaries", &err.to_string());
         }
 
         let initial_route = Route::Module(NavItem::Home);
