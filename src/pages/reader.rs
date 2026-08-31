@@ -1850,12 +1850,7 @@ impl ReaderModel {
         eval_js(&self.webview, &script);
     }
 
-    fn show_dict_in_webview(
-        &self,
-        query: &str,
-        results: &[DictEntry],
-        rect_json: Option<String>,
-    ) {
+    fn show_dict_in_webview(&self, query: &str, results: &[DictEntry], rect_json: Option<String>) {
         let query_json = serde_json::to_string(query).unwrap_or_else(|_| "\"\"".into());
         let popup_results: Vec<_> = results
             .iter()
@@ -1867,8 +1862,7 @@ impl ReaderModel {
                 })
             })
             .collect();
-        let results_json =
-            serde_json::to_string(&popup_results).unwrap_or_else(|_| "[]".into());
+        let results_json = serde_json::to_string(&popup_results).unwrap_or_else(|_| "[]".into());
         let rect_part = rect_json
             .as_deref()
             .map(|rect| serde_json::to_string(rect).unwrap_or_else(|_| "null".into()))
