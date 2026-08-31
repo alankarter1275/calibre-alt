@@ -67,11 +67,8 @@ pub fn install_bundled_dictionaries(catalog: &Catalog) -> Result<()> {
         return Err(anyhow!("bundled English WordNet pack is empty"));
     }
 
-    let dict_id = catalog.insert_dictionary(
-        BUNDLED_WORDNET_NAME,
-        Some("en"),
-        entries.len() as i64,
-    )?;
+    let dict_id =
+        catalog.insert_dictionary(BUNDLED_WORDNET_NAME, Some("en"), entries.len() as i64)?;
     catalog.clear_dict_entries(dict_id)?;
     for chunk in entries.chunks(2000) {
         catalog.batch_insert_dict_entries(dict_id, chunk)?;
