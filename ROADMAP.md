@@ -314,12 +314,11 @@ Related reader work already completed:
 3. **Improve dictionary behavior**
    - [x] Better phrase selection: dictionary lookup preserves the selected
          phrase instead of reducing it to the first word.
-   - [ ] Punctuation and simple inflection handling.
+   - [x] Punctuation and simple inflection handling for lookup terms.
    - [ ] Multiple results.
    - [ ] Safe formatting.
 
-   The next isolated dictionary change is punctuation and simple inflection
-   handling.
+   The next isolated dictionary change is multiple dictionary results.
 
 4. **Only later consider architecture changes**
    - [ ] Multi-chapter buffering.
@@ -706,8 +705,8 @@ Deps include `webkitgtk-6.0` for P2+.
    Arch and record your sign-off or change requests.
 2. **Reader milestone 2 validation:** test hybrid anchoring with an EPUB whose
    chapter HTML has changed, then record your sign-off or change requests.
-3. **Next reader work:** improve dictionary matching with punctuation and
-   simple inflection handling.
+3. **Next reader work:** show multiple dictionary results while preserving
+   exact-match priority and the existing offline lookup flow.
 4. After the reader feature work is complete, return to the deferred annotation
    design polish without changing saved-highlight anchoring or temporary
    emphasis.
@@ -755,4 +754,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-08-26 | Settings v2 shipped: grouped nav, section cards, family theme picker, pill switches, export card — mockup-first, CI green |
 | 2026-08-30 | Reader-improvements track recorded: annotation workflow and hybrid anchoring are complete; recoloring existing highlights is shipped, with text search next, followed by dictionary improvements and only later reader architecture changes |
 | 2026-08-31 | Reader annotation search shipped across saved highlight text and notes; color/type filters remain available, and annotation design polish is deferred until feature work is complete |
-| 2026-08-31 | Dictionary lookup now keeps the selected phrase intact instead of using only its first word; punctuation and simple inflection handling are next |
+| 2026-08-31 | Dictionary lookup now keeps the selected phrase intact and normalizes surrounding punctuation plus common simple inflections; multiple results are next |
