@@ -19,6 +19,7 @@ mod series;
 mod shelves;
 mod stats;
 
+pub use dictionaries::PhraseLookup;
 pub use series::{series_key, SeriesWork};
 
 #[derive(Debug, Error)]

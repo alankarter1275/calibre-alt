@@ -1,6 +1,8 @@
 //! Immersive EPUB reader.
 
-use crate::db::{Annotation, Catalog, DictEntry, HighlightColor, ReadingBookmark, SavedWord};
+use crate::db::{
+    Annotation, Catalog, DictEntry, HighlightColor, PhraseLookup, ReadingBookmark, SavedWord,
+};
 use crate::epub_book::{reading_css, OpenBook, ReadingTheme};
 use crate::models::Book;
 use crate::paths::reader_cache_dir;
@@ -1964,7 +1966,27 @@ impl ReaderModel {
                 }
                 self.dict_context = context.clone();
                 self.dict_lookup_rect_json = rect_json.clone();
-                let results = self.catalog.search_dict(&word, 5).unwrap_or_default();
+                // Phrases go through search_phrase: the whole phrase first,
+                // then a contained phrase headword, then per-token results
+                // (Phase 3 of the dictionary overhaul). Single words keep
+                // the plain path.
+                let results: Vec<DictEntry> = if word.split_whitespace().count() > 1 {
+                    match self
+                        .catalog
+                        .search_phrase(&word, 5)
+                        .unwrap_or(PhraseLookup::Empty)
+                    {
+                        PhraseLookup::Phrase(hits) => hits,
+                        PhraseLookup::Breakdown(parts) => parts
+                            .iter()
+                            .filter_map(|(_, hits)| hits.first().cloned())
+                            .take(5)
+                            .collect(),
+                        PhraseLookup::Empty => Vec::new(),
+                    }
+                } else {
+                    self.catalog.search_dict(&word, 5).unwrap_or_default()
+                };
                 if let Some(entry) = results.first() {
                     self.dict_lookup_word = Some(entry.word.clone());
                     self.dict_lookup_def = Some(entry.definition.clone());

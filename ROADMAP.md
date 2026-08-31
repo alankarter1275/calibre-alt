@@ -329,9 +329,9 @@ Related reader work already completed:
    Dictionary feature work is deferred for now. When it resumes, follow the
    planned dictionary overhaul below in phase order; the bundled phrase pack
    still does not make every compositional phrase meaningful automatically.
-   **Phases 1–2 of that overhaul are shipped (precomputed headword key
-   index, WordNet exception-list lemmatization); Phase 3 (phrase
-   decomposition) is next.**
+   **Phases 1–3 of that overhaul are shipped (precomputed headword key
+   index, WordNet exception-list lemmatization, phrase decomposition);
+   Phase 4 (source-aware ranking) is next.**
 
 4. **Only later consider architecture changes**
    - [ ] Multi-chapter buffering.
@@ -351,8 +351,8 @@ Related reader work already completed:
 
 ## Dictionary overhaul — planned reader-improvement track
 
-**Status: Phases 1–2 shipped (headword key index, WordNet exception
-lemmatization); Phases 3–7 still planned.**
+**Status: Phases 1–3 shipped (headword key index, WordNet exception
+lemmatization, phrase decomposition); Phases 4–7 still planned.**
 The remaining phases are recorded here as the implementation brief for
 future isolated reader-improvement steps.
 
@@ -463,23 +463,33 @@ rules as fallback only.
 **Acceptance:** `went→go`, `mice→mouse`, `better→good`, `running→run` all return
 a headword (unit-tested against the shipped lists); regular cases still work.
 
-#### Phase 3 — Phrase decomposition
+#### Phase 3 — Phrase decomposition  ✅ complete
 
 **Goal:** `odd mixture` yields something useful instead of a dead end.
 
-**Do:**
+- [x] `search_phrase(phrase, limit) -> PhraseLookup` in `db/dictionaries.rs`:
+      (a) the whole phrase as a headword via the query variants (exact then
+      prefix on the precomputed key); (b) the longest contained multi-word
+      headword, sliding a window from longest to shortest with an exact-only
+      lookup (catches `run out of steam` inside a longer selection);
+      (c) per-token single-word `search_dict` results (lemmas included, so
+      `went` inside a phrase still resolves to `go`). Tokens with no hits are
+      omitted from the breakdown.
+- [x] `PhraseLookup` enum: `Phrase(Vec<DictEntry>)` vs
+      `Breakdown(Vec<(token, entries)>)` vs `Empty`.
+- [x] Reader `dict-lookup` bridge routes queries with `>1` token through
+      `search_phrase`; a breakdown renders as each token's best hit in the
+      existing popup (capped at five) until Phase 5's popup redesign turns
+      it into clickable breakdown chips. Single-word lookups are unchanged.
+- [x] Unit tests: full-phrase headword, contained phrase headword,
+      per-token breakdown, tokens without hits omitted, irregular token
+      inside a phrase, and the empty case.
 
-- Add `search_phrase(phrase, limit) -> PhraseLookup` in
-  `db/dictionaries.rs`. Strategy: (a) try full phrase via `search_dict`; (b) try
-  the longest contained sub-phrase that is a headword (slide window from
-  longest to shortest — catches `run a risk`); (c) if neither, return per-token
-  results: for each token, run the single-word `search_dict`.
-
-- Define a return type distinguishing `Phrase(entries)` vs
-  `Breakdown(Vec<(token, entries)>)` vs `Empty`.
-
-- Wire reader.rs `dict-lookup` handler to call `search_phrase` when the query
-  has `>1` token.
+One deliberate deviation from the brief: step (a) uses the headword variants
+(exact/prefix) rather than `search_dict`'s definition-substring fallback, so
+a phrase lookup can never "match" an entry whose *definition* merely
+contains the words. Substring-in-definition results stay single-word-only
+until Phase 4 tiers them.
 
 **Acceptance:** `odd mixture` (no headword) returns a breakdown for `odd` and
 `mixture`; `run a risk` (if present) returns the phrase entry; single words
@@ -1063,17 +1073,18 @@ Deps include `webkitgtk-6.0` for P2+.
 3. **Reader milestone 3 validation:** test phrase preservation,
    punctuation/inflection normalization, and multiple dictionary results
    together; record your sign-off or change requests.
-4. **Later dictionary work:** Phases 1–2 of the dictionary overhaul are
+4. **Later dictionary work:** Phases 1–3 of the dictionary overhaul are
    shipped — headword keys (`Run` / `run` / `rún` → `run` through
-   `idx_dict_entries_key`, existing databases upgrade in place) and real
+   `idx_dict_entries_key`, existing databases upgrade in place), real
    lemmatization from the bundled WordNet 3.0 exception lists
    (`went→go`, `mice→mouse`, `better→good`, `running→run`, suffix rules as
-   fallback). When the dictionary work resumes, continue with Phase 3:
-   phrase decomposition (`search_phrase`) so `odd mixture` yields a
-   per-token breakdown and contained phrase headwords resolve as phrases.
-   Keep the existing offline import flow for all other packs and do not
-   infer definitions for arbitrary compositional phrases before Phase 3
-   addresses them.
+   fallback), and phrase decomposition (`search_phrase`: full phrase →
+   contained phrase headword → per-token breakdown). When the dictionary
+   work resumes, continue with Phase 4: source-aware results & ranking
+   (dictionary names and priority on each hit, bundled WordNet first,
+   definition-substring matches sunk to the bottom). Keep the existing
+   offline import flow for all other packs and do not infer definitions
+   for arbitrary compositional phrases.
 5. After the reader feature work is complete, return to the deferred annotation
    design polish without changing saved-highlight anchoring or temporary
    emphasis.
@@ -1131,3 +1142,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-09-01 | Dictionary overhaul Phase 2 shipped: real lemmatization from the bundled Princeton WordNet 3.0 exception lists (`noun.exc`/`verb.exc`/`adj.exc`/`adv.exc`, gzipped, with NOTICE + checksums). `went→go`, `mice→mouse`, `better→good`, `running→run` resolve to headwords; suffix rules remain the fallback |
 | 2026-09-01 | Fixed dormant test failures/warnings found by the first real `cargo test` run: `series_key` now strips leading series articles (The/A/An) so article variants share one series-cache key, while author names are never article-stripped; the series ordering test helper now stores the series index it was passed, making the indexed-vs-unindexed ordering assertion real instead of vacuous |
 | 2026-09-01 | Fixed the flaky cover-override tests: all three cover tests seeded the same book title, so in parallel `cargo test` runs they raced on the same real filesystem paths (shared stashed cover `covers/hash-A.png` and book dir). Each test now seeds a unique title, isolating its uuid/hash paths |
+| 2026-09-01 | Dictionary overhaul Phase 3 shipped: `search_phrase` in the catalog (full phrase → longest contained phrase headword via sliding window → per-token breakdown with lemmatization), `PhraseLookup` enum, and the reader's dict-lookup bridge routes multi-token queries through it. `odd mixture` now yields cards for `odd` and `mixture`; `run out of steam today` resolves to the `run out of steam` entry |

@@ -69,6 +69,20 @@ pub fn fold_key(word: &str) -> String {
         .collect()
 }
 
+/// Result of a phrase lookup: either the phrase (or a contained phrase
+/// headword) matched, or the phrase was broken down per token.
+#[derive(Debug, Clone)]
+pub enum PhraseLookup {
+    /// The full phrase — or the longest contained multi-word headword —
+    /// matched. Entries are the matched headwords.
+    Phrase(Vec<DictEntry>),
+    /// No phrase headword matched; per-token results. Tokens with no hits
+    /// are omitted.
+    Breakdown(Vec<(String, Vec<DictEntry>)>),
+    /// Nothing matched anywhere.
+    Empty,
+}
+
 impl Catalog {
     // -----------------------------------------------------------------------
     // P3: Dictionaries
@@ -225,25 +239,74 @@ impl Catalog {
         self.search_dict_substring(fallback, lim)
     }
 
-    /// Exact headword hit, then prefix hit, both against the precomputed
-    /// `key` column (see `fold_key`) so the lookup is served by
-    /// `idx_dict_entries_key` instead of a `COLLATE NOCASE` scan over `word`.
-    /// Exact results always come first; the old `LENGTH(word)` tiebreak is
-    /// gone — prefix results simply follow index order.
-    fn search_dict_exact_or_prefix(&self, clean: &str, limit: i64) -> Result<Vec<DictEntry>> {
+    /// Phrase lookup: try the whole phrase as a headword, then the longest
+    /// contained multi-word headword (slide a window from longest to
+    /// shortest — catches "run out of steam" inside a longer selection),
+    /// then per-token single-word results.
+    pub fn search_phrase(&self, phrase: &str, limit: usize) -> Result<PhraseLookup> {
+        let clean = phrase.trim();
+        if clean.is_empty() || limit == 0 {
+            return Ok(PhraseLookup::Empty);
+        }
+        let lim = limit as i64;
+
+        // (a) The whole phrase as a headword: try every normalized variant
+        // (exact then prefix). Definition-substring matches are deliberately
+        // excluded — a phrase lookup must stay headword-based.
+        for variant in dictionary_query_variants(clean) {
+            let hits = self.search_dict_exact_or_prefix(&variant, lim)?;
+            if !hits.is_empty() {
+                return Ok(PhraseLookup::Phrase(hits));
+            }
+        }
+
+        let tokens: Vec<&str> = clean.split_whitespace().collect();
+        if tokens.len() > 1 {
+            // (b) Longest contained multi-word headword, exact match only.
+            // The full phrase was already tried in (a), so windows start one
+            // token shorter.
+            for window_len in (2..tokens.len()).rev() {
+                for window in tokens.windows(window_len) {
+                    let candidate = window.join(" ");
+                    let hits = self.search_dict_exact(&candidate, lim)?;
+                    if !hits.is_empty() {
+                        return Ok(PhraseLookup::Phrase(hits));
+                    }
+                }
+            }
+        }
+
+        // (c) Per-token breakdown. `search_dict` handles each token's own
+        // lemmas and inflections (went -> go inside a phrase).
+        let mut breakdown = Vec::new();
+        for token in &tokens {
+            let hits = self.search_dict(token, limit)?;
+            if !hits.is_empty() {
+                breakdown.push((token.to_string(), hits));
+            }
+        }
+        if breakdown.is_empty() {
+            Ok(PhraseLookup::Empty)
+        } else {
+            Ok(PhraseLookup::Breakdown(breakdown))
+        }
+    }
+
+    /// Exact headword match only (precomputed `key = fold_key(clean)`), no
+    /// prefix fallback. Used by phrase window matching, where a contained
+    /// sub-phrase must be a real headword rather than a prefix.
+    fn search_dict_exact(&self, clean: &str, limit: i64) -> Result<Vec<DictEntry>> {
         let key = fold_key(clean);
         if key.is_empty() {
             return Ok(Vec::new());
         }
         let conn = self.conn();
-
-        let like = format!("{}%", escape_like(&key));
-        let mut out = Vec::new();
         let mut stmt = conn.prepare_cached(
             "SELECT id, dict_id, word, definition FROM dict_entries
              WHERE key = ?1 COLLATE NOCASE
              ORDER BY word ASC LIMIT ?2",
         )?;
+        let mut out = Vec::new();
         for r in stmt.query_map(params![key.as_str(), limit], |r| {
             Ok(DictEntry {
                 id: r.get(0)?,
@@ -254,10 +317,27 @@ impl Catalog {
         })? {
             out.push(r?);
         }
+        Ok(out)
+    }
+
+    /// Exact headword hit, then prefix hit, both against the precomputed
+    /// `key` column (see `fold_key`) so the lookup is served by
+    /// `idx_dict_entries_key` instead of a `COLLATE NOCASE` scan over `word`.
+    /// Exact results always come first; the old `LENGTH(word)` tiebreak is
+    /// gone — prefix results simply follow index order.
+    fn search_dict_exact_or_prefix(&self, clean: &str, limit: i64) -> Result<Vec<DictEntry>> {
+        let out = self.search_dict_exact(clean, limit)?;
         if !out.is_empty() {
             return Ok(out);
         }
 
+        let key = fold_key(clean);
+        if key.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn();
+        let like = format!("{}%", escape_like(&key));
+        let mut out = Vec::new();
         let mut stmt2 = conn.prepare_cached(
             "SELECT id, dict_id, word, definition FROM dict_entries
              WHERE key LIKE ?1 ESCAPE '\\' COLLATE NOCASE
@@ -586,6 +666,126 @@ mod tests {
         let hits = cat.search_dict("running", 10).unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].word, "run");
+    }
+
+    #[test]
+    fn search_phrase_returns_the_full_phrase_headword() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let dict_id = cat.insert_dictionary("Idioms", Some("en"), 3).unwrap();
+        cat.batch_insert_dict_entries(
+            dict_id,
+            &[
+                (
+                    "odd mixture".to_string(),
+                    "a strange combination".to_string(),
+                ),
+                ("odd".to_string(), "strange".to_string()),
+                ("mixture".to_string(), "a blend".to_string()),
+            ],
+        )
+        .unwrap();
+
+        match cat.search_phrase("odd mixture", 5).unwrap() {
+            PhraseLookup::Phrase(hits) => {
+                assert_eq!(hits.len(), 1);
+                assert_eq!(hits[0].word, "odd mixture");
+            }
+            other => panic!("expected Phrase, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn search_phrase_finds_a_contained_phrase_headword() {
+        // A longer selection still resolves to the contained headword.
+        let cat = Catalog::open_in_memory().unwrap();
+        let dict_id = cat.insert_dictionary("Idioms", Some("en"), 5).unwrap();
+        cat.batch_insert_dict_entries(
+            dict_id,
+            &[
+                ("run out of steam".to_string(), "lose energy".to_string()),
+                ("run".to_string(), "to move fast".to_string()),
+                ("out".to_string(), "away".to_string()),
+                ("of".to_string(), "belonging to".to_string()),
+                ("steam".to_string(), "water vapour".to_string()),
+            ],
+        )
+        .unwrap();
+
+        match cat.search_phrase("run out of steam today", 5).unwrap() {
+            PhraseLookup::Phrase(hits) => {
+                assert_eq!(hits[0].word, "run out of steam");
+            }
+            other => panic!("expected Phrase, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn search_phrase_breaks_down_when_no_phrase_headword() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let dict_id = cat.insert_dictionary("WordNet", Some("en"), 2).unwrap();
+        cat.batch_insert_dict_entries(
+            dict_id,
+            &[
+                ("odd".to_string(), "not divisible by two".to_string()),
+                ("mixture".to_string(), "a blend".to_string()),
+            ],
+        )
+        .unwrap();
+
+        match cat.search_phrase("odd mixture", 5).unwrap() {
+            PhraseLookup::Breakdown(parts) => {
+                let tokens: Vec<&str> = parts.iter().map(|(t, _)| t.as_str()).collect();
+                assert_eq!(tokens, vec!["odd", "mixture"]);
+                assert!(parts.iter().all(|(_, hits)| !hits.is_empty()));
+            }
+            other => panic!("expected Breakdown, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn search_phrase_omits_tokens_without_hits() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let dict_id = cat.insert_dictionary("WordNet", Some("en"), 1).unwrap();
+        cat.batch_insert_dict_entries(dict_id, &[("odd".to_string(), "strange".to_string())])
+            .unwrap();
+
+        match cat.search_phrase("odd mixture", 5).unwrap() {
+            PhraseLookup::Breakdown(parts) => {
+                assert_eq!(parts.len(), 1);
+                assert_eq!(parts[0].0, "odd");
+            }
+            other => panic!("expected Breakdown, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn search_phrase_handles_irregular_tokens_in_the_breakdown() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let dict_id = cat.insert_dictionary("WordNet", Some("en"), 1).unwrap();
+        cat.batch_insert_dict_entries(dict_id, &[("go".to_string(), "to move".to_string())])
+            .unwrap();
+
+        match cat.search_phrase("went home", 5).unwrap() {
+            PhraseLookup::Breakdown(parts) => {
+                assert_eq!(parts.len(), 1);
+                assert_eq!(parts[0].0, "went");
+                assert_eq!(parts[0].1[0].word, "go");
+            }
+            other => panic!("expected Breakdown, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn search_phrase_empty_when_nothing_matches() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let dict_id = cat.insert_dictionary("WordNet", Some("en"), 1).unwrap();
+        cat.batch_insert_dict_entries(dict_id, &[("go".to_string(), "to move".to_string())])
+            .unwrap();
+
+        assert!(matches!(
+            cat.search_phrase("zzzqqq nothing", 5).unwrap(),
+            PhraseLookup::Empty
+        ));
     }
 
     #[test]

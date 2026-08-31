@@ -189,9 +189,11 @@ lemmatizes the term before looking it up: WordNet's irregular exception lists
 resolve `went` → `go`, `mice` → `mouse`, `better` → `good` and `running` →
 `run`, with regular suffix rules as the fallback. Lookups are case- and
 diacritic-insensitive — `Run`, `RUN` and `rún` all find `run` — because every
-headword is indexed under a normalized key. When more than one dictionary
-entry matches, the popup shows up to five results. Each result has its own
-**Save word** and **Copy** buttons.
+headword is indexed under a normalized key. Selecting a phrase looks for the
+phrase itself first (so `run out of steam` resolves to the idiom entry), then
+falls back to per-word results (`odd mixture` yields `odd` and `mixture`).
+When more than one dictionary entry matches, the popup shows up to five
+results. Each result has its own **Save word** and **Copy** buttons.
 
 ### Reliable download sources
 
