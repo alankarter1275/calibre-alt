@@ -329,8 +329,9 @@ Related reader work already completed:
    Dictionary feature work is deferred for now. When it resumes, follow the
    planned dictionary overhaul below in phase order; the bundled phrase pack
    still does not make every compositional phrase meaningful automatically.
-   **Phase 1 of that overhaul (precomputed headword key index) is shipped;
-   Phase 2 (WordNet exception-list lemmatization) is next.**
+   **Phases 1–2 of that overhaul are shipped (precomputed headword key
+   index, WordNet exception-list lemmatization); Phase 3 (phrase
+   decomposition) is next.**
 
 4. **Only later consider architecture changes**
    - [ ] Multi-chapter buffering.
@@ -350,7 +351,8 @@ Related reader work already completed:
 
 ## Dictionary overhaul — planned reader-improvement track
 
-**Status: Phase 1 shipped (headword key index); Phases 2–7 still planned.**
+**Status: Phases 1–2 shipped (headword key index, WordNet exception
+lemmatization); Phases 3–7 still planned.**
 The remaining phases are recorded here as the implementation brief for
 future isolated reader-improvement steps.
 
@@ -437,29 +439,29 @@ in-memory catalog, including an `EXPLAIN QUERY PLAN` assertion that the exact
 lookup uses `idx_dict_entries_key`; existing databases upgrade in place (no
 reimport, no re-download).
 
-#### Phase 2 — Real lemmatization from WordNet data
+#### Phase 2 — Real lemmatization from WordNet data  ✅ complete
 
 **Goal:** irregulars resolve (`went→go`, `mice→mouse`, `better→good`), with suffix
 rules as fallback only.
 
-**Do:**
-
-- Ship WordNet's morphological exception lists (`noun.exc`, `verb.exc`,
-  `adj.exc`, `adv.exc`) as a gzipped resource under
-  `resources/dictionaries/`, embedded via `include_bytes!` like the existing
-  WordNet TSV.
-
-- Load them once into a `HashMap<String, Vec<String>>` (surface → lemmas),
-  lazily (`OnceLock`).
-
-- In `dictionary_query_variants`, consult the exception map before
-  `simple_inflection_variants`; keep the suffix rules as fallback. Preserve
-  existing dedup via `push_dictionary_variant`.
-
-- Extend the existing `#[cfg(test)]` tests with irregular cases.
+- [x] Princeton WordNet 3.0 exception lists (`noun.exc`, `verb.exc`,
+      `adj.exc`, `adv.exc`) shipped gzipped under `resources/dictionaries/`
+      as `wordnet-3.0-*.exc.gz`, embedded via `include_bytes!` like the
+      existing WordNet TSV. Provenance, SHA-256 checksums and the WordNet
+      licence reference live in `resources/dictionaries/wordnet-3.0-exc.NOTICE.txt`.
+- [x] Loaded once into a `HashMap<String, Vec<String>>` (surface → lemmas),
+      lazily via `OnceLock` in `src/db/dictionaries.rs`.
+- [x] `dictionary_query_variants` consults the exception map (lowercased
+      surface) before `simple_inflection_variants`; the suffix rules run only
+      when the surface is not in the lists. Dedup stays in
+      `push_dictionary_variant`.
+- [x] Tests extended: irregular variants (`went→go`, `mice→mouse`,
+      `better→good`+`well`, `children’s→child`, capitalized `Went`), the
+      suffix fallback (`walked→walk`), no junk stems on irregular hits
+      (`better` ≠ `bett`), and end-to-end `search_dict` resolution.
 
 **Acceptance:** `went→go`, `mice→mouse`, `better→good`, `running→run` all return
-a headword; regular cases still work.
+a headword (unit-tested against the shipped lists); regular cases still work.
 
 #### Phase 3 — Phrase decomposition
 
@@ -1061,15 +1063,17 @@ Deps include `webkitgtk-6.0` for P2+.
 3. **Reader milestone 3 validation:** test phrase preservation,
    punctuation/inflection normalization, and multiple dictionary results
    together; record your sign-off or change requests.
-4. **Later dictionary work:** Phase 1 (precomputed headword key index) is
-   shipped — `Run` / `run` / `rún` now resolve to `run` through
-   `idx_dict_entries_key`, and existing databases upgrade in place. When the
-   dictionary work resumes, continue with Phase 2: real lemmatization from
-   WordNet's `noun.exc` / `verb.exc` / `adj.exc` / `adv.exc` exception lists
-   (shipped as a gzipped resource), with the suffix rules as fallback only.
-   Keep the existing offline import flow for all other packs and do not infer
-   definitions for arbitrary compositional phrases before Phase 3 addresses
-   them.
+4. **Later dictionary work:** Phases 1–2 of the dictionary overhaul are
+   shipped — headword keys (`Run` / `run` / `rún` → `run` through
+   `idx_dict_entries_key`, existing databases upgrade in place) and real
+   lemmatization from the bundled WordNet 3.0 exception lists
+   (`went→go`, `mice→mouse`, `better→good`, `running→run`, suffix rules as
+   fallback). When the dictionary work resumes, continue with Phase 3:
+   phrase decomposition (`search_phrase`) so `odd mixture` yields a
+   per-token breakdown and contained phrase headwords resolve as phrases.
+   Keep the existing offline import flow for all other packs and do not
+   infer definitions for arbitrary compositional phrases before Phase 3
+   addresses them.
 5. After the reader feature work is complete, return to the deferred annotation
    design polish without changing saved-highlight anchoring or temporary
    emphasis.
@@ -1124,3 +1128,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-08-31 | Temporary selection handles now support pointer/touch dragging without changing native selection or saving annotations implicitly; triple-click rendering remains deferred |
 | 2026-08-31 | Fresh text selections now paint their custom selection bands live during mouse/touch drag; the toolbar and handles still wait for release |
 | 2026-09-01 | Dictionary overhaul Phase 1 shipped: precomputed `fold_key` headword index (schema v11). Exact/prefix lookups use `idx_dict_entries_key`; `Run`/`run`/`rún` all resolve to `run`; existing databases backfill in place with no reimport |
+| 2026-09-01 | Dictionary overhaul Phase 2 shipped: real lemmatization from the bundled Princeton WordNet 3.0 exception lists (`noun.exc`/`verb.exc`/`adj.exc`/`adv.exc`, gzipped, with NOTICE + checksums). `went→go`, `mice→mouse`, `better→good`, `running→run` resolve to headwords; suffix rules remain the fallback |

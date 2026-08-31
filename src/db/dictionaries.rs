@@ -4,8 +4,53 @@
 //! the same methods on the same `Catalog`, moved verbatim.
 
 use super::*;
+use std::collections::HashMap;
+use std::sync::OnceLock;
 use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
+
+/// Princeton WordNet 3.0 morphological exception lists (noun/verb/adj/adv),
+/// gzipped. Surface form → lemmas, one entry per line. See
+/// `resources/dictionaries/wordnet-3.0-exc.NOTICE.txt` for source, licence
+/// and checksums.
+const WORDNET_NOUN_EXC: &[u8] =
+    include_bytes!("../../resources/dictionaries/wordnet-3.0-noun.exc.gz");
+const WORDNET_VERB_EXC: &[u8] =
+    include_bytes!("../../resources/dictionaries/wordnet-3.0-verb.exc.gz");
+const WORDNET_ADJ_EXC: &[u8] =
+    include_bytes!("../../resources/dictionaries/wordnet-3.0-adj.exc.gz");
+const WORDNET_ADV_EXC: &[u8] =
+    include_bytes!("../../resources/dictionaries/wordnet-3.0-adv.exc.gz");
+
+/// WordNet exception lists, parsed once into surface form (lowercase) →
+/// lemma candidates. Consulted before the suffix-rule fallback so irregulars
+/// like `went → go`, `mice → mouse` and `better → good` resolve to a real
+/// headword instead of a dead end. Loaded lazily: a lookup that never needs
+/// lemmatization never pays the parse.
+fn wordnet_exceptions() -> &'static HashMap<String, Vec<String>> {
+    static EXC: OnceLock<HashMap<String, Vec<String>>> = OnceLock::new();
+    EXC.get_or_init(|| {
+        let mut map: HashMap<String, Vec<String>> = HashMap::new();
+        for bytes in [
+            WORDNET_NOUN_EXC,
+            WORDNET_VERB_EXC,
+            WORDNET_ADJ_EXC,
+            WORDNET_ADV_EXC,
+        ] {
+            let decoder = flate2::read::GzDecoder::new(bytes);
+            let reader = std::io::BufReader::new(decoder);
+            for line in std::io::BufRead::lines(reader).map_while(|line| line.ok()) {
+                let mut parts = line.split_whitespace();
+                let Some(surface) = parts.next() else { continue };
+                let lemmas: Vec<String> = parts.map(str::to_string).collect();
+                if !lemmas.is_empty() {
+                    map.entry(surface.to_string()).or_default().extend(lemmas);
+                }
+            }
+        }
+        map
+    })
+}
 
 /// Fold a headword into its canonical dictionary key.
 ///
@@ -280,8 +325,19 @@ fn dictionary_query_variants(term: &str) -> Vec<String> {
     if inflection_source.split_whitespace().count() == 1
         && inflection_source.chars().all(|ch| ch.is_alphabetic())
     {
-        for variant in simple_inflection_variants(&inflection_source) {
-            push_dictionary_variant(&mut variants, variant);
+        // Irregulars come from the WordNet exception lists first; the
+        // suffix rules below are the fallback for forms the lists do not
+        // cover. Both go through `push_dictionary_variant` so dedup stays
+        // case-insensitive.
+        let surface = inflection_source.to_lowercase();
+        if let Some(lemmas) = wordnet_exceptions().get(&surface) {
+            for lemma in lemmas {
+                push_dictionary_variant(&mut variants, lemma.clone());
+            }
+        } else {
+            for variant in simple_inflection_variants(&inflection_source) {
+                push_dictionary_variant(&mut variants, variant);
+            }
         }
     }
     variants
@@ -458,6 +514,73 @@ mod tests {
             plan.contains("idx_dict_entries_key"),
             "expected the key index in the query plan, got: {plan}"
         );
+    }
+
+    #[test]
+    fn dictionary_variants_resolve_irregulars_from_wordnet_exceptions() {
+        let went = dictionary_query_variants("went");
+        assert!(went.iter().any(|variant| variant == "go"));
+
+        let mice = dictionary_query_variants("mice");
+        assert!(mice.iter().any(|variant| variant == "mouse"));
+
+        // adj.exc lists two lemmas for `better`; both must surface.
+        let better = dictionary_query_variants("better");
+        assert!(better.iter().any(|variant| variant == "good"));
+        assert!(better.iter().any(|variant| variant == "well"));
+
+        // Possessive base resolves through the noun exceptions.
+        let childrens = dictionary_query_variants("children’s");
+        assert!(childrens.iter().any(|variant| variant == "child"));
+
+        // Capitalized surface still resolves (case-insensitive map lookup).
+        let went_cap = dictionary_query_variants("Went");
+        assert!(went_cap.iter().any(|variant| variant == "go"));
+    }
+
+    #[test]
+    fn dictionary_variants_keep_suffix_rules_as_fallback() {
+        // Forms the exception lists do not cover still go through the suffix
+        // rules (e.g. walked → walk).
+        let walked = dictionary_query_variants("walked");
+        assert!(walked.iter().any(|variant| variant == "walk"));
+
+        // The suffix rules must not add junk on top of an irregular hit:
+        // `better` resolves to its WordNet lemmas, not a guessed stem.
+        let better = dictionary_query_variants("better");
+        assert!(!better.iter().any(|variant| variant == "bett"));
+    }
+
+    #[test]
+    fn search_dict_resolves_irregulars_to_headwords() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let dict_id = cat.insert_dictionary("Test pack", Some("en"), 4).unwrap();
+        cat.batch_insert_dict_entries(
+            dict_id,
+            &[
+                ("go".to_string(), "to move from one place to another".to_string()),
+                ("mouse".to_string(), "a small rodent".to_string()),
+                ("good".to_string(), "having desirable qualities".to_string()),
+                ("run".to_string(), "to move fast".to_string()),
+            ],
+        )
+        .unwrap();
+
+        let hits = cat.search_dict("went", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].word, "go");
+
+        let hits = cat.search_dict("mice", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].word, "mouse");
+
+        let hits = cat.search_dict("better", 10).unwrap();
+        assert!(hits.iter().any(|hit| hit.word == "good"));
+
+        // Regular inflection still resolves through the suffix fallback.
+        let hits = cat.search_dict("running", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].word, "run");
     }
 
     #[test]

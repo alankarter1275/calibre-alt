@@ -1,0 +1,40 @@
+Kalam bundled dictionary notice — WordNet exception lists
+==========================================================
+
+Data name: Kalam WordNet 3.0 morphological exception lists
+Data format: gzip-compressed WordNet .exc files, one entry per line:
+surface-form<whitespace>lemma [lemma ...]  (lowercase)
+
+These four files are the Princeton WordNet 3.0 morphological exception
+lists (noun.exc, verb.exc, adj.exc, adv.exc). They map irregular surface
+forms to their lemmas (went -> go, mice -> mouse, better -> good) and are
+consulted by the reader's dictionary lookup before the regular suffix
+rules, so irregulars resolve to a headword instead of a dead end.
+
+Upstream source:
+Princeton WordNet 3.0, Princeton University — the .exc files ship in the
+official WordNet 3.0 distribution (wordnet.princeton.edu). The copies in
+this directory were obtained from the NLTK wordnet corpus mirror
+(github.com/nltk/nltk_data, packages/corpora/wordnet.zip), which packages
+the unmodified Princeton WordNet 3.0 dict files alongside the WordNet
+licence text.
+
+Attribution:
+- Princeton WordNet, Princeton University (WordNet 3.0, Copyright 2006)
+
+Licence:
+- The WordNet licence. The complete licence text is kept beside the other
+  WordNet-derived resources in this directory as
+  english-wordnet-2025.WNDB_License.txt and applies to these files.
+
+Checksums (SHA-256, uncompressed contents; gzip streams are reproducible
+with gzip -9 / Python gzip.compress(..., 9)):
+
+wordnet-3.0-noun.exc.gz   plain noun.exc   38301 bytes
+  sha256 2b5d675c380b39ecf595af9fa9d4e7feb1d58c643b0bff08c40ed5bfe41fab7a
+wordnet-3.0-verb.exc.gz   plain verb.exc   38033 bytes
+  sha256 dbbcf9a601b2d77e934e413b91d90e88ec7f933a8b77cfc00602a923b891b42c
+wordnet-3.0-adj.exc.gz    plain adj.exc    23019 bytes
+  sha256 8824cc24bbedd797b9702316b27f07cd4c2b76b629539f0a1276f03926758016
+wordnet-3.0-adv.exc.gz    plain adv.exc       85 bytes
+  sha256 e7291461b629abfe63301bbe1998cee09fd575ed7107abd7ea9763adb05bf0a8

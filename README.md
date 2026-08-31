@@ -184,8 +184,10 @@ and can be removed there. On Linux, the dictionary data directory is
 `~/.local/share/kalam/dictionaries`.
 
 In the reader, select a word or complete phrase and choose **Dictionary** (or
-press `D`). Kalam keeps the phrase, removes surrounding punctuation, and tries
-common simple forms such as `running` → `run`. Lookups are case- and
+press `D`). Kalam keeps the phrase, removes surrounding punctuation, and
+lemmatizes the term before looking it up: WordNet's irregular exception lists
+resolve `went` → `go`, `mice` → `mouse`, `better` → `good` and `running` →
+`run`, with regular suffix rules as the fallback. Lookups are case- and
 diacritic-insensitive — `Run`, `RUN` and `rún` all find `run` — because every
 headword is indexed under a normalized key. When more than one dictionary
 entry matches, the popup shows up to five results. Each result has its own
@@ -222,7 +224,11 @@ it back.
 
 The WordNet pack is a format conversion of the [Open English Wordnet 2025
 Edition](https://github.com/globalwordnet/english-wordnet/releases/tag/2025-edition),
-which is derived from Princeton WordNet. The idiom pack is a format conversion
+which is derived from Princeton WordNet. Kalam also bundles the Princeton
+WordNet 3.0 morphological exception lists (`noun.exc`, `verb.exc`, `adj.exc`,
+`adv.exc`, gzipped) to resolve irregular lookup forms such as `went` → `go`;
+their source, checksums and licence note are kept beside the packed lists.
+The idiom pack is a format conversion
 of [`baiango/english_idioms`](https://github.com/baiango/english_idioms), using
 commit `d47bfb40a3f76d0f08ba1867016c383d3c21c596`. Its upstream repository
 releases the data under The Unlicense. Its README says the list was collected
