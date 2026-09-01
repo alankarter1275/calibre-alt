@@ -117,7 +117,8 @@ impl Component for LookupHistoryModel {
         &mut self,
         widgets: &mut Self::Widgets,
         msg: Self::Input,
-        sender: ComponentSender<Self>,
+        _sender: ComponentSender<Self>,
+        _root: &Self::Root,
     ) {
         match msg {
             LookupHistoryMsg::SearchChanged(query) => {
@@ -146,7 +147,6 @@ impl Component for LookupHistoryModel {
                 populate_list(&widgets.list_box, &self.lookups);
             }
         }
-        let _ = sender;
     }
 }
 
@@ -231,11 +231,12 @@ fn build_row(lookup: &DictLookup) -> gtk::Box {
     text.append(&title_row);
 
     let context = lookup.context_text.trim();
-    let meta = gtk::Label::new(Some(if context.is_empty() {
+    let context_line = if context.is_empty() {
         "no context".to_string()
     } else {
         format!("“{}”", context)
-    }));
+    };
+    let meta = gtk::Label::new(Some(&context_line));
     meta.add_css_class("kalam-card-meta");
     meta.set_halign(gtk::Align::Start);
     meta.set_xalign(0.0);
