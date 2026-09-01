@@ -100,6 +100,11 @@ P11 Tools ───────────── convert (external), polish, Ca
 **Order lock:** P0→P5 stay sequential. P6–P11 may reorder after P3 if priorities shift.
 Comics UI design is frozen in this doc now; **implementation is P8**.
 
+> **Track phases are separate from P0–P11.** The dictionary overhaul uses its
+> own numbering (Phases 1–10, in the "Dictionary overhaul" section below) —
+> those are *not* P8/P9/P10. Global P8/P9/P10 remain Comics local / Comics
+> sources / PDF.
+
 ---
 
 ## P0 — Application shell  ✅ done
@@ -409,13 +414,15 @@ Related reader work already completed:
 
 ## Dictionary overhaul — planned reader-improvement track
 
-**Status: Phases 1–6 shipped (headword key index, WordNet exception
+**Status: Phases 1–7 shipped (headword key index, WordNet exception
 lemmatization, phrase decomposition, merged dictionary store, popup
-redesign, likely-sense hint — POS grouping dividers deferred — offline
-pronunciation, tap-to-look-up + popup keyboard + find in chapter) and
-Phase 7 (vocabulary review + CSV/Anki export) is shipped too — the
-dictionary overhaul is complete. The Settings reorder UI and POS
-grouping dividers remain deferred.** The
+redesign, likely-sense hint, offline pronunciation, tap-to-look-up +
+popup keyboard + find in chapter, vocabulary review + CSV/Anki export).
+The two items previously deferred are now scheduled as track phases:
+**Phase 8 — POS grouping dividers** (finishes P5.5) and **Phase 9 —
+Settings dictionary priority reorder UI**, with **Phase 10 — Lookup
+history** (optional) after them. Phase numbering is track-local —
+separate from the P0–P11 project phases.** The
 phases are recorded here as the implementation brief for future isolated
 reader-improvement steps.
 
@@ -846,6 +853,132 @@ occurrences and reports the count.
 **Acceptance:** saved words can be marked known (and back), filtered by
 review status, and exported to CSV and to Anki's TSV format.
 
+#### Phase 8 — POS grouping dividers (finishes P5.5)  ⏳ planned
+
+**Goal:** group the senses in the dictionary popup under part-of-speech
+dividers instead of one flat numbered list.
+
+**Already in place — do not rebuild:** `Sense { number, pos: Option<String>,
+def, example }` and `EntryData.pos: Vec<String>` are populated by
+`parse_pos_blob`/`distinct_pos` in `db/dictionaries.rs`, and `pos` already
+reaches the popup as `payload.pos` (per-entry at reader.rs:1927, per-sense at
+1930). This is a **rendering-only** change in `showDictPopup`
+(`src/epub_book.rs`, around the `defItem` helper) plus CSS.
+
+**Do:**
+
+1. In `showDictPopup`, group `senses` by `s.pos` and emit a divider row before
+   each group. Order groups: **noun, verb, adjective, adverb**, then any
+   remaining POS in first-appearance order. Senses with `pos == null` go in a
+   final unlabelled group.
+2. **Critical constraint — do not renumber senses per group.** `Sense.number`
+   is sequential across the whole entry, and `payload.hint` (the Lesk "likely
+   here" index) plus Phase 6's `dictCurrentSenses` keyboard navigation both
+   index the **flat** senses array. Grouping must not change indices,
+   numbering, or the flat traversal order used by ↑/↓.
+3. Add a `.k-pos-divider` CSS rule in the popup block. App chrome: use the
+   existing `--kalam-*` variables, same visual weight as other dividers in
+   the popup — a small uppercase label with a hairline rule, not a heavy
+   header.
+4. The header's `.k-pos` chip (`pos.join(' · ')`) becomes redundant once
+   dividers exist. Drop it when there are 2+ groups; keep it when there's
+   only one.
+
+**Acceptance:** a multi-POS word (e.g. `run`) shows `noun` / `verb` dividers
+with senses grouped beneath; sense numbers remain continuous 1..n across the
+whole entry; the "likely here" badge still lands on the same sense as before;
+↑/↓ still walks every sense in flat order; a single-POS word looks unchanged
+apart from one divider or the retained header chip.
+
+#### Phase 9 — Settings: dictionary priority reorder UI  ⏳ planned
+
+**Goal:** let the user order their dictionaries, so the merged store's
+"which dictionary speaks for this word" is user-controllable.
+
+**Context (verified against the code):** schema v12 added
+`dictionaries.priority` (lower = consulted first, imports default 100).
+`set_dictionary_priority()` and `rebuild_combined_dictionary()` exist and
+work. But **`priority` is currently write-only** — it is missing from the
+`Dictionary` struct (`db.rs:170` — only id, name, lang, entry_count,
+added_at) and from `list_dictionaries()` (`db/dictionaries.rs:122`, which
+selects no priority and orders by `name ASC`). The plumbing must be added,
+not just buttons. Verified already wired: `rebuild_combined_dictionary()`
+runs after import (`dict.rs:219`), bundled install (`dict.rs:95`) and
+removal (`db/dictionaries.rs:170`) — so step 4 below is about *priority
+changes*, not the other paths.
+
+**Do:**
+
+1. Add `pub priority: i64` to `Dictionary` in `src/db.rs`. Add it to the
+   `SELECT` in `list_dictionaries()` (`db/dictionaries.rs`) and change the
+   ordering to `ORDER BY priority ASC, name ASC` so list order *is* effective
+   order.
+2. In `src/pages/settings.rs`, `SettingsTab::Dictionaries` (the list built
+   from `catalog.list_dictionaries()`, refreshed in the reload path): add
+   **↑ / ↓** buttons per row. Follow the existing reading-list reorder
+   pattern rather than inventing one.
+3. On reorder: **renumber all dictionaries compactly** (0, 1, 2, …) via
+   `set_dictionary_priority()`, then call **`rebuild_combined_dictionary()`**,
+   then refresh the list. Disable ↑ on the first row and ↓ on the last.
+4. **`rebuild_combined_dictionary()` must run after every priority change.**
+   Skipping it leaves the merged `combined_words` store stale and the popup
+   will keep showing the old dictionary's entry. (Import/removal already
+   trigger the rebuild — verified.) Note: re-importing a pack keeps its
+   priority, because `insert_dictionary`'s `ON CONFLICT(name)` upsert does
+   not touch the priority column — user-set order survives re-imports.
+5. Show the order's meaning in the UI: mark the top row as the one that
+   speaks first (a quiet "speaks first" tag or a numbered column). Without
+   that, the ordering is unexplained.
+
+**Acceptance:** the Dictionaries tab lists packs in priority order; moving a
+pack to the top makes its definition the one the reader popup shows for a
+word both packs contain; the change survives a restart; importing a new pack
+lands it last, not first.
+
+#### Phase 10 — Lookup history (optional, lower priority)  ⏳ planned
+
+**Goal:** an append-only record of every dictionary lookup, separate from the
+deliberate saves in Saved Words. Enables "what was that word?", surfaces
+repeat lookups, and can propose study sets for the Phase 7 vocabulary tools.
+
+**Do:**
+
+1. New table at **schema v14**, mirroring the `reading_events` pattern:
+   `dict_lookups(id, word, book_id, chapter_index, context_text,
+   found INTEGER NOT NULL, at TEXT)`, with indices on
+   `word COLLATE NOCASE` and `at DESC`.
+2. Log **misses as well as hits** (`found = 0`) — a miss is the most useful
+   signal you have about gaps in the installed dictionaries. `found` is
+   `!entry.senses.is_empty()` on the `EntryData` from `lookup_entry`.
+3. Write the row on the lookup path in `src/pages/reader.rs` — in
+   `lookup_dict` (reader.rs:1880), the single funnel that both the
+   `"dict-lookup"` selection/tap path and the sidebar search go through
+   (logging only in the `"dict-lookup"` branch would silently skip sidebar
+   searches). Every field is already in hand there — word, `book_id`,
+   chapter, and the context sentence — the same values passed to
+   `insert_saved_word`.
+4. **Collapse repeats:** skip the insert if the same word was logged for the
+   same book within the last hour. `reading_events` already does exactly this
+   for repeat opens (13-char ISO-hour prefix compare); reuse that approach so
+   flipping back to a word doesn't flood the log.
+5. Pref `dict_history_enabled`, default `1`, via the existing
+   `get_pref_i64` / `set_pref` pattern (copy how `dict_sense_hint` is wired,
+   including the reader Settings toggle).
+6. Read-back UI: a list grouped by day, matching the existing History page's
+   grouping. Include a **"Clear history"** button.
+7. Add a query for words looked up more than once, ordered by count, and
+   offer it to the Phase 7 vocabulary review as a proposed study set.
+
+**Privacy requirement:** this is a silent log of words the user didn't know.
+The toggle in (5) and the clear action in (6) are not optional polish — ship
+them with the feature, not after.
+
+**Acceptance:** looking up a word writes one row; looking it up again
+immediately writes none; looking up a word with no definition writes a row
+with `found = 0`; disabling the pref stops all writes; clear empties the
+table; the day-grouped list renders and the repeat-lookups query returns
+sensible counts.
+
 
 ## P4 — Library depth  ✅ done
 
@@ -1240,12 +1373,18 @@ lives at `docs/ci/github-actions-ci.yml`; install it by copying over
 
 ## Immediate next steps
 
-1. **CI: workflow with the `cargo test` step — installed and green.** You
+1. **Dictionary track Phases 8–10 (planned, queued).** Phase 8 — POS
+   grouping dividers (finishes P5.5; rendering-only). Phase 9 — Settings
+   dictionary priority reorder UI (adds the missing `priority` plumbing —
+   write-only today — then ↑/↓ reorder + rebuild). Phase 10 — lookup
+   history (optional; schema v14, misses included, privacy toggle + clear
+   ship with the feature).
+3. **CI: workflow with the `cargo test` step — installed and green.** You
    applied it with your own account (`bc6473f`). The first real test run
    caught one failure — a bad escape in the `quote_ident` test literal —
    which was fixed (`1aae8f1`); all 154 unit tests now pass on the CI runner
    on every push, and failures publish to `ci-logs/test-latest.txt`.
-2. **Backend review — done (focused + full sweep).** The whole backend was
+4. **Backend review — done (focused + full sweep).** The whole backend was
    reviewed line-by-line: migrations/schema, `dictionaries.rs` (merged store,
    search/lookup chain, sense parsing), `dict.rs` importers, the reader ↔ JS
    bridge, shelves, history, metadata overrides, stats, authors, series,
@@ -1255,21 +1394,21 @@ lives at `docs/ci/github-actions-ci.yml`; install it by copying over
    `BOOK_COLUMNS`); the dict importers were hardened (read-only SQLite packs,
    identifier quoting, half-import rollback, catalog.db self-import guard);
    9 new unit tests. No other defects.
-3. **Reader milestones 1–3:** all shipped and CI-green — annotation workflow,
+5. **Reader milestones 1–3:** all shipped and CI-green — annotation workflow,
    hybrid anchoring, phrase preservation, punctuation/inflection
    normalization, multi-result dictionary popup. Arch re-validation is
    welcome whenever convenient but is not blocking anything.
-4. After the reader feature work is complete, return to the deferred annotation
+6. After the reader feature work is complete, return to the deferred annotation
    design polish without changing saved-highlight anchoring or temporary
    emphasis.
-5. Only after those reader milestones, consider multi-chapter buffering,
+7. Only after those reader milestones, consider multi-chapter buffering,
    continuous book-wide scrolling, chapter auto-advance redesign, or advanced
    CFI.
-6. **UI overhaul:** after the reader track is signed off, continue the
+8. **UI overhaul:** after the reader track is signed off, continue the
    mockup-first screen work. `library_look.png` shows a two-column dashboard;
    the app is currently a single vertical stack.
-7. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
-8. **P8** when you want comics for real (UI target already specified above).
+9. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
+10. **P8** when you want comics for real (UI target already specified above).
 
 ---
 
@@ -1327,3 +1466,4 @@ lives at `docs/ci/github-actions-ci.yml`; install it by copying over
 | 2026-09-01 | Backend review pass (focused + full sweep) shipped: dict importers hardened — SQLite packs are opened read-only (never modify the pack, no `-wal`/`-journal` sidecars), pack table/column identifiers are double-quoted against crafted names, failed imports roll back the dictionary row instead of leaving a half-import, and importing Kalam's own `catalog.db` as a pack is rejected via canonical path comparison. Fixed a latent bug: `list_reading_list` read `progress/rating/publisher` as `position/note/added_at` (column offset vs the 16-column `BOOK_COLUMNS`). 9 new unit tests; the rest of the sweep (shelves, history, metadata, stats, authors, series, annotations, prefs, pronunciation, `shelf_rules.rs`, schema/FKs) found no defects |
 | 2026-09-01 | CI workflow gains a `cargo test` step: compiles and runs all unit tests headless (in-memory SQLite), publishes failures to `ci-logs/test-latest.txt` and fails the run. The full workflow is staged at `docs/ci/github-actions-ci.yml` — the Arena App cannot push `.github/workflows/` changes, so the user installs it manually with their own account |
 | 2026-09-01 | The first real `cargo test` run on CI (user installed the workflow, `bc6473f`) caught exactly one failure: `quote_ident_escapes_embedded_quotes` — my test's expected string had one extra escaped quote (three quotes after the word instead of the correct two that SQLite identifier quoting produces). Function correct, test literal wrong; fixed (`1aae8f1`). All 154 unit tests now pass on every push |
+| 2026-09-01 | Dictionary track Phases 8–10 recorded in the roadmap (user-authored): Phase 8 — POS grouping dividers (finishes P5.5, rendering-only, flat-index invariant for hint + keyboard nav); Phase 9 — Settings dictionary priority reorder UI; Phase 10 — lookup history (optional, schema v14, logs misses, privacy toggle + clear ship with the feature). Verified against the code before recording: `priority` is write-only today (missing from `Dictionary` and `list_dictionaries()`, which also orders by name — plumbing required); import/removal already call `rebuild_combined_dictionary()`; `lookup_dict` (reader.rs:1880) is the single lookup funnel to log in; `pos` already reaches the popup per-sense. Track numbering is local, distinct from global P8/P9/P10 (comics/PDF) |
