@@ -207,9 +207,17 @@ mod tests {
         let filtered = cat.list_dict_lookups("seren", 100).unwrap();
         assert_eq!(filtered.len(), 2);
 
-        // Repeat study set: serendipity × 2 (grouped across books), miss × 1.
+        // Repeat study set: serendipity × 2 (grouped across books) and
+        // zzzqqq × 2 (a book row plus a no-book row are separate), both
+        // with equal frequency, listed most-frequent-first then A–Z.
         let repeats = cat.repeat_lookup_words(10).unwrap();
-        assert_eq!(repeats, vec![("serendipity".to_string(), 2)]);
+        assert_eq!(
+            repeats,
+            vec![
+                ("serendipity".to_string(), 2),
+                ("zzzqqq".to_string(), 2)
+            ]
+        );
 
         // Disabling the pref stops all writes.
         cat.set_pref("dict_history_enabled", "0");
