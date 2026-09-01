@@ -134,6 +134,97 @@ impl Catalog {
     pub fn delete_dictionary(&self, id: i64) -> Result<()> {
         let conn = self.conn();
         conn.execute("DELETE FROM dictionaries WHERE id = ?1", params![id])?;
+        drop(conn);
+        // A removed dictionary must stop speaking for its words immediately.
+        self.rebuild_combined_dictionary()?;
+        Ok(())
+    }
+
+    /// Priority for the merged store: lower numbers are consulted first, so
+    /// the dictionary that speaks for a shared word is the one with the
+    /// lowest priority (ties break by lowest id). Bundled packs get explicit
+    /// priorities at install time; imported packs keep the default 100.
+    pub fn set_dictionary_priority(&self, id: i64, priority: i64) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE dictionaries SET priority = ?1 WHERE id = ?2",
+            params![priority, id],
+        )?;
+        Ok(())
+    }
+
+    /// Rebuild the merged dictionary store from the raw entries.
+    ///
+    /// One row per headword key; the dictionary that speaks for a word is
+    /// the one with the lowest priority (ties: lowest id), and the senses
+    /// are that dictionary's definitions for the word, deduplicated, in
+    /// entry order. The reader never merges at lookup time — it reads this
+    /// table, so every word appears exactly once.
+    ///
+    /// Called automatically whenever the dictionary set changes (bundled
+    /// install, import, removal) and once at migration for existing
+    /// databases.
+    pub fn rebuild_combined_dictionary(&self) -> Result<()> {
+        struct Row {
+            key: String,
+            word: String,
+            dict_id: i64,
+            definition: String,
+        }
+        let mut conn = self.conn();
+
+        // One pass over every entry, ordered by priority then entry order:
+        // the first time a key appears it belongs to the winning dictionary.
+        let mut rows = Vec::new();
+        {
+            let mut stmt = conn.prepare_cached(
+                "SELECT e.key, e.word, e.dict_id, e.definition
+                 FROM dict_entries e
+                 JOIN dictionaries d ON d.id = e.dict_id
+                 WHERE e.key IS NOT NULL AND e.key <> ''
+                 ORDER BY d.priority ASC, d.id ASC, e.id ASC",
+            )?;
+            let mut query = stmt.query([])?;
+            while let Some(r) = query.next()? {
+                rows.push(Row {
+                    key: r.get(0)?,
+                    word: r.get(1)?,
+                    dict_id: r.get(2)?,
+                    definition: r.get(3)?,
+                });
+            }
+        }
+
+        // Merge in Rust: first key wins; identical definitions within the
+        // winning dictionary collapse into one sense.
+        let mut merged: Vec<(String, String, i64, Vec<String>)> = Vec::new();
+        let mut position: HashMap<String, usize> = HashMap::new();
+        for row in rows {
+            if let Some(&pos) = position.get(&row.key) {
+                if merged[pos].2 == row.dict_id {
+                    let senses = &mut merged[pos].3;
+                    if !senses.iter().any(|d| *d == row.definition) {
+                        senses.push(row.definition);
+                    }
+                }
+            } else {
+                position.insert(row.key.clone(), merged.len());
+                merged.push((row.key, row.word, row.dict_id, vec![row.definition]));
+            }
+        }
+
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM combined_words", [])?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO combined_words (key, word, dict_id, senses) VALUES (?1, ?2, ?3, ?4)",
+            )?;
+            for (key, word, dict_id, senses) in merged {
+                let json = serde_json::to_string(&senses).unwrap_or_else(|_| "[]".into());
+                stmt.execute(params![key, word, dict_id, json])?;
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -292,9 +383,10 @@ impl Catalog {
         }
     }
 
-    /// Exact headword match only (precomputed `key = fold_key(clean)`), no
-    /// prefix fallback. Used by phrase window matching, where a contained
-    /// sub-phrase must be a real headword rather than a prefix.
+    /// Exact headword match only (`key = fold_key(clean)`), no prefix
+    /// fallback. Used by phrase window matching, where a contained
+    /// sub-phrase must be a real headword rather than a prefix. Reads the
+    /// merged store, so each word comes back once with all its senses.
     fn search_dict_exact(&self, clean: &str, limit: i64) -> Result<Vec<DictEntry>> {
         let key = fold_key(clean);
         if key.is_empty() {
@@ -302,29 +394,20 @@ impl Catalog {
         }
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
-            "SELECT id, dict_id, word, definition FROM dict_entries
+            "SELECT rowid, dict_id, word, senses FROM combined_words
              WHERE key = ?1 COLLATE NOCASE
              ORDER BY word ASC LIMIT ?2",
         )?;
         let mut out = Vec::new();
-        for r in stmt.query_map(params![key.as_str(), limit], |r| {
-            Ok(DictEntry {
-                id: r.get(0)?,
-                dict_id: r.get(1)?,
-                word: r.get(2)?,
-                definition: r.get(3)?,
-            })
-        })? {
+        for r in stmt.query_map(params![key.as_str(), limit], |r| combined_row_to_entry(r))? {
             out.push(r?);
         }
         Ok(out)
     }
 
-    /// Exact headword hit, then prefix hit, both against the precomputed
-    /// `key` column (see `fold_key`) so the lookup is served by
-    /// `idx_dict_entries_key` instead of a `COLLATE NOCASE` scan over `word`.
-    /// Exact results always come first; the old `LENGTH(word)` tiebreak is
-    /// gone — prefix results simply follow index order.
+    /// Exact headword hit, then prefix hit, both against the merged store's
+    /// `key` column. Exact results always come first; prefix results follow
+    /// key order.
     fn search_dict_exact_or_prefix(&self, clean: &str, limit: i64) -> Result<Vec<DictEntry>> {
         let out = self.search_dict_exact(clean, limit)?;
         if !out.is_empty() {
@@ -339,18 +422,11 @@ impl Catalog {
         let like = format!("{}%", escape_like(&key));
         let mut out = Vec::new();
         let mut stmt2 = conn.prepare_cached(
-            "SELECT id, dict_id, word, definition FROM dict_entries
+            "SELECT rowid, dict_id, word, senses FROM combined_words
              WHERE key LIKE ?1 ESCAPE '\\' COLLATE NOCASE
              ORDER BY key COLLATE NOCASE ASC, word ASC LIMIT ?2",
         )?;
-        for r in stmt2.query_map(params![like.as_str(), limit], |r| {
-            Ok(DictEntry {
-                id: r.get(0)?,
-                dict_id: r.get(1)?,
-                word: r.get(2)?,
-                definition: r.get(3)?,
-            })
-        })? {
+        for r in stmt2.query_map(params![like.as_str(), limit], |r| combined_row_to_entry(r))? {
             out.push(r?);
         }
         Ok(out)
@@ -360,20 +436,13 @@ impl Catalog {
         let conn = self.conn();
         let like = format!("%{}%", escape_like(clean));
         let mut stmt = conn.prepare_cached(
-            "SELECT id, dict_id, word, definition FROM dict_entries
-             WHERE word LIKE ?1 ESCAPE '\\' COLLATE NOCASE
-                OR definition LIKE ?1 ESCAPE '\\'
-             ORDER BY LENGTH(word) ASC LIMIT ?2",
+            "SELECT rowid, dict_id, word, senses FROM combined_words
+             WHERE key LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+                OR senses LIKE ?1 ESCAPE '\\'
+             ORDER BY LENGTH(key) ASC, key COLLATE NOCASE ASC LIMIT ?2",
         )?;
         let mut out = Vec::new();
-        for r in stmt.query_map(params![like, limit], |r| {
-            Ok(DictEntry {
-                id: r.get(0)?,
-                dict_id: r.get(1)?,
-                word: r.get(2)?,
-                definition: r.get(3)?,
-            })
-        })? {
+        for r in stmt.query_map(params![like, limit], |r| combined_row_to_entry(r))? {
             out.push(r?);
         }
         Ok(out)
@@ -383,6 +452,35 @@ impl Catalog {
         let conn = self.conn();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM dict_entries", [], |r| r.get(0))?;
         Ok(n)
+    }
+}
+
+/// A combined_words row -> the entry the reader shows: the word once, its
+/// senses numbered in the definition text (a single sense is shown plain,
+/// without a number).
+fn combined_row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<DictEntry> {
+    let senses_json: String = row.get(3)?;
+    Ok(DictEntry {
+        id: row.get(0)?,
+        dict_id: row.get(1)?,
+        word: row.get(2)?,
+        definition: format_senses(&senses_json),
+    })
+}
+
+/// Turn a stored senses JSON array into the display definition: numbered
+/// lines for multiple senses, the plain text for a single sense.
+fn format_senses(senses_json: &str) -> String {
+    let senses: Vec<String> = serde_json::from_str(senses_json).unwrap_or_default();
+    match senses.len() {
+        0 => String::new(),
+        1 => senses[0].clone(),
+        _ => senses
+            .iter()
+            .enumerate()
+            .map(|(i, s)| format!("{}. {}", i + 1, s))
+            .collect::<Vec<_>>()
+            .join("\n"),
     }
 }
 
@@ -560,6 +658,7 @@ mod tests {
             ],
         )
         .unwrap();
+        cat.rebuild_combined_dictionary().unwrap();
 
         // Exact hit regardless of case.
         let hits = cat.search_dict("Run", 10).unwrap();
@@ -650,6 +749,7 @@ mod tests {
             ],
         )
         .unwrap();
+        cat.rebuild_combined_dictionary().unwrap();
 
         let hits = cat.search_dict("went", 10).unwrap();
         assert_eq!(hits.len(), 1);
@@ -684,6 +784,7 @@ mod tests {
             ],
         )
         .unwrap();
+        cat.rebuild_combined_dictionary().unwrap();
 
         match cat.search_phrase("odd mixture", 5).unwrap() {
             PhraseLookup::Phrase(hits) => {
@@ -710,6 +811,7 @@ mod tests {
             ],
         )
         .unwrap();
+        cat.rebuild_combined_dictionary().unwrap();
 
         match cat.search_phrase("run out of steam today", 5).unwrap() {
             PhraseLookup::Phrase(hits) => {
@@ -731,6 +833,7 @@ mod tests {
             ],
         )
         .unwrap();
+        cat.rebuild_combined_dictionary().unwrap();
 
         match cat.search_phrase("odd mixture", 5).unwrap() {
             PhraseLookup::Breakdown(parts) => {
@@ -748,6 +851,7 @@ mod tests {
         let dict_id = cat.insert_dictionary("WordNet", Some("en"), 1).unwrap();
         cat.batch_insert_dict_entries(dict_id, &[("odd".to_string(), "strange".to_string())])
             .unwrap();
+        cat.rebuild_combined_dictionary().unwrap();
 
         match cat.search_phrase("odd mixture", 5).unwrap() {
             PhraseLookup::Breakdown(parts) => {
@@ -764,6 +868,7 @@ mod tests {
         let dict_id = cat.insert_dictionary("WordNet", Some("en"), 1).unwrap();
         cat.batch_insert_dict_entries(dict_id, &[("go".to_string(), "to move".to_string())])
             .unwrap();
+        cat.rebuild_combined_dictionary().unwrap();
 
         match cat.search_phrase("went home", 5).unwrap() {
             PhraseLookup::Breakdown(parts) => {
@@ -781,11 +886,134 @@ mod tests {
         let dict_id = cat.insert_dictionary("WordNet", Some("en"), 1).unwrap();
         cat.batch_insert_dict_entries(dict_id, &[("go".to_string(), "to move".to_string())])
             .unwrap();
+        cat.rebuild_combined_dictionary().unwrap();
 
         assert!(matches!(
             cat.search_phrase("zzzqqq nothing", 5).unwrap(),
             PhraseLookup::Empty
         ));
+    }
+
+    // -----------------------------------------------------------------------
+    // Merged dictionary store (v12)
+    // -----------------------------------------------------------------------
+
+    fn seed_dict(cat: &Catalog, name: &str, priority: i64, entries: &[(&str, &str)]) -> i64 {
+        let id = cat.insert_dictionary(name, Some("en"), entries.len() as i64).unwrap();
+        cat.set_dictionary_priority(id, priority).unwrap();
+        cat.batch_insert_dict_entries(
+            id,
+            &entries
+                .iter()
+                .map(|(w, d)| (w.to_string(), d.to_string()))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        id
+    }
+
+    #[test]
+    fn combined_store_shows_only_the_highest_priority_dictionary() {
+        let cat = Catalog::open_in_memory().unwrap();
+        seed_dict(
+            &cat,
+            "WordNet",
+            10,
+            &[("set", "to put something in place"), ("set", "a group of things")],
+        );
+        seed_dict(
+            &cat,
+            "My Dictionary",
+            100,
+            &[
+                ("set", "my own meaning one"),
+                ("set", "my own meaning two"),
+                ("set", "my own meaning three"),
+            ],
+        );
+        cat.rebuild_combined_dictionary().unwrap();
+
+        let hits = cat.search_dict("set", 10).unwrap();
+        assert_eq!(hits.len(), 1, "one word must appear once");
+        assert_eq!(hits[0].word, "set");
+        let def = &hits[0].definition;
+        assert!(def.contains("to put something in place"));
+        assert!(def.contains("a group of things"));
+        assert!(
+            !def.contains("my own meaning"),
+            "lower-priority dictionary must stay hidden: {def}"
+        );
+        // Both senses of the winner are listed, numbered.
+        assert!(def.contains("1. to put something in place"));
+        assert!(def.contains("2. a group of things"));
+    }
+
+    #[test]
+    fn combined_store_falls_back_to_the_next_dictionary() {
+        let cat = Catalog::open_in_memory().unwrap();
+        seed_dict(&cat, "WordNet", 10, &[("set", "a group of things")]);
+        seed_dict(&cat, "My Dictionary", 100, &[("quokka", "a small wallaby")]);
+        cat.rebuild_combined_dictionary().unwrap();
+
+        // WordNet has no quokka; the imported dictionary speaks.
+        let hits = cat.search_dict("quokka", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].definition, "a small wallaby");
+    }
+
+    #[test]
+    fn combined_store_dedupes_identical_senses() {
+        let cat = Catalog::open_in_memory().unwrap();
+        seed_dict(
+            &cat,
+            "WordNet",
+            10,
+            &[
+                ("set", "to put something in place"),
+                ("set", "to put something in place"),
+            ],
+        );
+        cat.rebuild_combined_dictionary().unwrap();
+
+        let hits = cat.search_dict("set", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].definition, "to put something in place");
+    }
+
+    #[test]
+    fn combined_store_rebuilds_after_delete() {
+        let cat = Catalog::open_in_memory().unwrap();
+        seed_dict(&cat, "WordNet", 10, &[("set", "a group of things")]);
+        let other = seed_dict(&cat, "My Dictionary", 100, &[("quokka", "a small wallaby")]);
+        cat.rebuild_combined_dictionary().unwrap();
+        assert_eq!(cat.search_dict("quokka", 10).unwrap().len(), 1);
+
+        // Removing the only dictionary for a word drops the word entirely.
+        cat.delete_dictionary(other).unwrap();
+        assert!(cat.search_dict("quokka", 10).unwrap().is_empty());
+        assert_eq!(cat.search_dict("set", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn combined_store_priority_ignores_sense_counts() {
+        // The agreed rule: priority wins even when the lower-priority
+        // dictionary has more senses for the word.
+        let cat = Catalog::open_in_memory().unwrap();
+        seed_dict(&cat, "WordNet", 10, &[("set", "one")]);
+        seed_dict(
+            &cat,
+            "My Dictionary",
+            100,
+            &[
+                ("set", "one"), ("set", "two"), ("set", "three"),
+                ("set", "four"), ("set", "five"), ("set", "six"),
+            ],
+        );
+        cat.rebuild_combined_dictionary().unwrap();
+
+        let hits = cat.search_dict("set", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].definition, "one");
     }
 
     #[test]

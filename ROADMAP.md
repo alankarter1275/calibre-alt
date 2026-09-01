@@ -329,9 +329,9 @@ Related reader work already completed:
    Dictionary feature work is deferred for now. When it resumes, follow the
    planned dictionary overhaul below in phase order; the bundled phrase pack
    still does not make every compositional phrase meaningful automatically.
-   **Phases 1–3 of that overhaul are shipped (precomputed headword key
-   index, WordNet exception-list lemmatization, phrase decomposition);
-   Phase 4 (source-aware ranking) is next.**
+   **Phases 1–4 of that overhaul are shipped (precomputed headword key
+   index, WordNet exception-list lemmatization, phrase decomposition,
+   merged dictionary store). Phase 5 (popup redesign) is next.**
 
 4. **Only later consider architecture changes**
    - [ ] Multi-chapter buffering.
@@ -351,10 +351,10 @@ Related reader work already completed:
 
 ## Dictionary overhaul — planned reader-improvement track
 
-**Status: Phases 1–3 shipped (headword key index, WordNet exception
-lemmatization, phrase decomposition); Phases 4–7 still planned.**
-The remaining phases are recorded here as the implementation brief for
-future isolated reader-improvement steps.
+**Status: Phases 1–4 shipped (headword key index, WordNet exception
+lemmatization, phrase decomposition, merged dictionary store); Phases 5–7
+still planned.** The remaining phases are recorded here as the
+implementation brief for future isolated reader-improvement steps.
 
 ### Implementation brief: Kalam dictionary overhaul
 
@@ -499,31 +499,36 @@ until Phase 4 tiers them.
 `mixture`; `run a risk` (if present) returns the phrase entry; single words
 unchanged.
 
-#### Phase 4 — Source-aware results & ranking (monolingual-first)
+#### Phase 4 — Merged dictionary store (one word = one entry)  ✅ complete
 
-**Goal:** results carry their dictionary; ranked with the bundled monolingual
-WordNet first.
+**Goal (user decision):** one word appears exactly once, with one dictionary
+speaking for it — no duplicate cards, no per-dictionary boxes, no source
+clutter in the reader.
 
-**Do:**
+**Design (agreed):**
 
-- `search_dict` currently returns `DictEntry` (no dict name). Change it (or add
-  a sibling returning a richer struct) to `JOIN dictionaries` and include
-  `dict_id + dict_name`. Update `DictEntry` or introduce
-  `DictHit { entry, dict_id, dict_name, tier }`.
+- **Priority, not ranking.** Every dictionary has a `priority` (lower =
+  consulted first). The dictionary with the lowest priority that has the
+  word provides the whole entry — every sense of *that* dictionary's word.
+  Priority wins even when a lower-priority dictionary has more senses; the
+  other dictionaries' copies of the word stay in the database but are never
+  shown. If no dictionary has the word, the next in priority order speaks.
+- **A combined store.** `combined_words` (schema v12) holds one row per
+  headword key: the winning dictionary's id plus its senses as a JSON array
+  (deduplicated, in entry order). The reader searches only this table, never
+  the raw entries.
+- **Automatic rebuild.** The store is rebuilt whenever the dictionary set
+  changes — bundled install, import, removal — and once at migration for
+  existing databases. Rebuild is one pass over the entries ordered by
+  priority (first key seen wins) plus one bulk insert, all in one
+  transaction.
+- Bundled priorities: WordNet 10, Idioms 20, Synonyms 30, Antonyms 40;
+  imported packs default to 100. A Settings reorder UI is deferred.
 
-- Add per-dictionary priority: `ALTER TABLE dictionaries ADD COLUMN priority
-  INTEGER NOT NULL DEFAULT 100` (guarded; bump `SCHEMA_VERSION`). Default the
-  bundled WordNet to a higher priority (lower number = shown first) than
-  imported dicts, since the primary user wants monolingual first. Expose reorder
-  in Settings later (not required this phase).
-
-- Rank results by tuple: (match tier: exact > lemma > phrase > prefix > substring)
-  then (dictionary priority) then (word length). Gate the definition-substring
-  branch so it never outranks a headword hit.
-
-**Acceptance:** a word in both WordNet and an imported dict shows WordNet first;
-results expose their source name; substring-in-definition matches sink to the
-bottom.
+**Acceptance:** a word in both WordNet and an imported dictionary shows the
+WordNet entry only; `set` with 15 senses in one dictionary and 15 in another
+shows 15, not 30; removing a dictionary drops its words (or falls back to the
+next in priority); identical duplicate definitions collapse to one sense.
 
 #### Phase 5 — Popup redesign (app chrome, dark)
 
@@ -539,31 +544,31 @@ bottom.
   `dict-lookup` for that token via `kalamBridge`). Also a `Search in book` action
   (Phase 6).
 
-- Kill `RESULT n`: replace that subheading with the dictionary name. When
-  results span multiple dictionaries, render a segmented control / tabs at the
-  top switching source; single source → quiet subheading.
+- Kill `RESULT n` and the fake result: replace the subheading with a quiet
+  count line. The Phase 4 merged store means one entry per word, so the old
+  per-dictionary tabs idea is obsolete — do not reintroduce tabs.
 
-- Structure the entry: headword once at top (drop the duplicate). If the
-  definition text carries POS/sense structure, render numbered senses with
-  italic examples. For imported HTML dicts, sanitize (allowlist
-  `b/i/em/strong/br/p/ul/li/span`, drop scripts/handlers) and render instead of
-  `strip_dict_html` flattening — add a `sanitize_dict_html` fn.
+- Structure the entry: headword once at top. The senses now arrive numbered
+  from the merged store; render them as separate lines (the popup body
+  already preserves newlines). For imported HTML dicts, sanitize (allowlist
+  `b/i/em/strong/br/p/ul/li/span`, drop scripts/handlers) and render instead
+  of `strip_dict_html` flattening — add a `sanitize_dict_html` fn.
 
 - One action bar: a single Save / Copy / Highlight-in-book row acting on the
-  focused sense, instead of per-result button pairs.
+  entry, instead of per-result button pairs.
 
 - Anchor discipline: keep the existing rect-anchored placement + above/below
-  flip; add a small caret pointing at the word and ensure it never overlaps the
-  selection rect (nudge if it would).
+  flip; add a small caret pointing at the word and ensure it never overlaps
+  the selection rect (nudge if it would).
 
 - Theming: keep dark chrome on all paper themes. Reuse chip tokens (radius,
   blur, shadow, `--kalam-*`). Add a subtle border for contrast over light/sepia
   pages.
 
-**Acceptance:** the screenshot's fake `1 RESULT / No definition / Total dict
-entries` is gone; a real multi-source lookup shows tabs with dictionary names;
-phrase misses show tappable word chips; imported HTML renders formatted; popup
-stays dark on sepia.
+**Acceptance:** the fake `1 RESULT / No definition / Total dict entries` is
+gone; one clean entry per word with numbered senses; phrase misses show
+tappable word chips; imported HTML renders formatted; popup stays dark on
+sepia.
 
 #### Phase 5.5 — POS grouping + Lesk "likely sense" hint
 
@@ -1077,18 +1082,19 @@ Deps include `webkitgtk-6.0` for P2+.
 3. **Reader milestone 3 validation:** test phrase preservation,
    punctuation/inflection normalization, and multiple dictionary results
    together; record your sign-off or change requests.
-4. **Later dictionary work:** Phases 1–3 of the dictionary overhaul are
+4. **Later dictionary work:** Phases 1–4 of the dictionary overhaul are
    shipped — headword keys (`Run` / `run` / `rún` → `run` through
    `idx_dict_entries_key`, existing databases upgrade in place), real
    lemmatization from the bundled WordNet 3.0 exception lists
    (`went→go`, `mice→mouse`, `better→good`, `running→run`, suffix rules as
-   fallback), and phrase decomposition (`search_phrase`: full phrase →
-   contained phrase headword → per-token breakdown). When the dictionary
-   work resumes, continue with Phase 4: source-aware results & ranking
-   (dictionary names and priority on each hit, bundled WordNet first,
-   definition-substring matches sunk to the bottom). Keep the existing
-   offline import flow for all other packs and do not infer definitions
-   for arbitrary compositional phrases.
+   fallback), phrase decomposition (`search_phrase`: full phrase →
+   contained phrase headword → per-token breakdown), and the merged
+   dictionary store (one word = one entry from the highest-priority
+   dictionary, auto-rebuilt on import/remove/install). When the dictionary
+   work resumes, continue with Phase 5: the popup redesign (empty state,
+   numbered senses, single action bar). Keep the existing offline import
+   flow for all other packs and do not infer definitions for arbitrary
+   compositional phrases.
 5. After the reader feature work is complete, return to the deferred annotation
    design polish without changing saved-highlight anchoring or temporary
    emphasis.
@@ -1149,3 +1155,4 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-09-01 | Dictionary overhaul Phase 3 shipped: `search_phrase` in the catalog (full phrase → longest contained phrase headword via sliding window → per-token breakdown with lemmatization), `PhraseLookup` enum, and the reader's dict-lookup bridge routes multi-token queries through it. `odd mixture` now yields cards for `odd` and `mixture`; `run out of steam today` resolves to the `run out of steam` entry |
 | 2026-09-01 | Phase 3 follow-up: the sidebar Words search box still used the single-word path, so phrases typed there dead-ended with "No matches". All lookup paths now share one phrase-aware pipeline (`lookup_dict`) — sidebar search and selection popup behave identically |
 | 2026-09-01 | Two more bundled English packs, on by default: **English Synonyms (WordNet 3.0)** (110,365 words, synset companions) and **English Antonyms (WordNet 3.0)** (6,621 antonym pairs), both derived from the already-licensed Princeton WordNet 3.0 data (NOTICE + checksums beside the packs). New packs auto-install on next launch via their own first-run prefs, so existing installs gain them without re-import |
+| 2026-09-01 | Dictionary overhaul Phase 4 shipped (user-designed): merged dictionary store. One word = one entry, from the highest-priority dictionary that has it (WordNet 10, Idioms 20, Synonyms 30, Antonyms 40, imports 100) — priority wins even when another dictionary has more senses, and the losing dictionaries' copies are never shown. Schema v12: `dictionaries.priority` + `combined_words` (one row per headword key, senses as deduped JSON). Auto-rebuilt on import/remove/bundled install and once at migration. The old Phase 4/5 plan of per-dictionary tabs is obsolete and removed |

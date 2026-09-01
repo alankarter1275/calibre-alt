@@ -192,8 +192,15 @@ diacritic-insensitive — `Run`, `RUN` and `rún` all find `run` — because eve
 headword is indexed under a normalized key. Selecting a phrase looks for the
 phrase itself first (so `run out of steam` resolves to the idiom entry), then
 falls back to per-word results (`odd mixture` yields `odd` and `mixture`).
-When more than one dictionary entry matches, the popup shows up to five
-results. Each result has its own **Save word** and **Copy** buttons.
+
+All installed dictionaries are combined into one merged store: each word
+appears exactly once, provided by the highest-priority dictionary that has it
+(WordNet first, then the other bundled packs, then any dictionary you
+import), with all of that dictionary's senses listed. A word shared by two
+dictionaries is never shown twice, and the other dictionary's version stays
+hidden. The store rebuilds automatically whenever you import or remove a
+dictionary. The popup shows up to five matching words; each has **Save word**
+and **Copy** buttons.
 
 ### Reliable download sources
 

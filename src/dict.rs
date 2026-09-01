@@ -40,58 +40,89 @@ const BUNDLED_ANTONYMS_PREF: &str = "bundled_dictionary_english_antonyms_3_0";
 const BUNDLED_ANTONYMS_TSV_GZ: &[u8] =
     include_bytes!("../resources/dictionaries/english-antonyms-3.0.tsv.gz");
 
+// Merged-store priorities (lower = consulted first). WordNet speaks for
+// shared words by default; imported packs keep the schema default 100.
+const PRIORITY_WORDNET: i64 = 10;
+const PRIORITY_IDIOMS: i64 = 20;
+const PRIORITY_SYNONYMS: i64 = 30;
+const PRIORITY_ANTONYMS: i64 = 40;
+
 /// Install the small, redistributable English dictionaries shipped with Kalam.
 ///
 /// Each preference makes its pack a first-run action rather than a migration
 /// that re-adds a pack after the user removes it. The compressed sources are
 /// kept in the binary so the default dictionaries work without a download.
+/// The merged dictionary store is rebuilt only when at least one pack was
+/// actually installed this run.
 pub fn install_bundled_dictionaries(catalog: &Catalog) -> Result<()> {
-    install_bundled_tsv(
+    let mut installed = false;
+    if install_bundled_tsv(
         catalog,
         BUNDLED_WORDNET_NAME,
         BUNDLED_WORDNET_PREF,
         BUNDLED_WORDNET_TSV_GZ,
-    )?;
-    install_bundled_tsv(
+        PRIORITY_WORDNET,
+    )? {
+        installed = true;
+    }
+    if install_bundled_tsv(
         catalog,
         BUNDLED_IDIOMS_NAME,
         BUNDLED_IDIOMS_PREF,
         BUNDLED_IDIOMS_TSV_GZ,
-    )?;
-    install_bundled_tsv(
+        PRIORITY_IDIOMS,
+    )? {
+        installed = true;
+    }
+    if install_bundled_tsv(
         catalog,
         BUNDLED_SYNONYMS_NAME,
         BUNDLED_SYNONYMS_PREF,
         BUNDLED_SYNONYMS_TSV_GZ,
-    )?;
-    install_bundled_tsv(
+        PRIORITY_SYNONYMS,
+    )? {
+        installed = true;
+    }
+    if install_bundled_tsv(
         catalog,
         BUNDLED_ANTONYMS_NAME,
         BUNDLED_ANTONYMS_PREF,
         BUNDLED_ANTONYMS_TSV_GZ,
-    )?;
+        PRIORITY_ANTONYMS,
+    )? {
+        installed = true;
+    }
+    if installed {
+        catalog.rebuild_combined_dictionary()?;
+    }
     Ok(())
 }
 
+/// Install one bundled pack. Returns true when the pack was installed (or
+/// its priority refreshed) in this run.
 fn install_bundled_tsv(
     catalog: &Catalog,
     dictionary_name: &str,
     installed_pref: &str,
     compressed_tsv: &[u8],
-) -> Result<()> {
+    priority: i64,
+) -> Result<bool> {
     if catalog.get_pref(installed_pref).as_deref() == Some("installed") {
-        return Ok(());
+        return Ok(false);
     }
 
     // This also handles an upgrade from a build that seeded the row before it
-    // stored the first-run marker.
-    if catalog
+    // stored the first-run marker. The priority is (re)applied so packs
+    // installed by older builds still join the merged store in the right
+    // order.
+    if let Some(existing) = catalog
         .list_dictionaries()?
         .iter()
-        .any(|dict| dict.name == dictionary_name)
+        .find(|dict| dict.name == dictionary_name)
     {
+        catalog.set_dictionary_priority(existing.id, priority)?;
         catalog.set_pref(installed_pref, "installed");
-        return Ok(());
+        return Ok(false);
     }
 
     let decoder = flate2::read::GzDecoder::new(compressed_tsv);
@@ -115,12 +146,13 @@ fn install_bundled_tsv(
     }
 
     let dict_id = catalog.insert_dictionary(dictionary_name, Some("en"), entries.len() as i64)?;
+    catalog.set_dictionary_priority(dict_id, priority)?;
     catalog.clear_dict_entries(dict_id)?;
     for chunk in entries.chunks(2000) {
         catalog.batch_insert_dict_entries(dict_id, chunk)?;
     }
     catalog.set_pref(installed_pref, "installed");
-    Ok(())
+    Ok(true)
 }
 
 /// Import a dictionary pack into the catalog.
@@ -138,34 +170,33 @@ pub fn import_dictionary(catalog: &Catalog, path: &Path) -> Result<(String, i64)
         .to_ascii_lowercase();
 
     // Detect StarDict by .ifo/.idx/.dict extension or by sibling presence
-    if ext == "ifo" || ext == "idx" || ext == "dict" || ext == "dz" || ext == "dict" {
-        return import_stardict(catalog, path);
-    }
-
-    // Try SQLite detection: if file is SQLite (starts with "SQLite format 3\0")
-    if is_sqlite_file(path)? {
-        return import_sqlite_pack(catalog, path);
-    }
-
-    // Fallback: try stardict detection from base name (user selected .ifo)
-    if path
+    let outcome = if ext == "ifo" || ext == "idx" || ext == "dict" || ext == "dz" || ext == "dict"
+    {
+        import_stardict(catalog, path)
+    } else if is_sqlite_file(path)? {
+        // Try SQLite detection: file starts with "SQLite format 3\0"
+        import_sqlite_pack(catalog, path)
+    } else if path
         .file_name()
         .and_then(|n| n.to_str())
         .map(|n| n.to_ascii_lowercase().contains("stardict") || n.ends_with(".ifo"))
         .unwrap_or(false)
     {
-        return import_stardict(catalog, path);
-    }
+        // Fallback: try stardict detection from base name (user selected .ifo)
+        import_stardict(catalog, path)
+    } else if ext == "txt" || ext == "tab" || ext == "tsv" {
+        // Last try: plain text tab-separated dictionary (word<TAB>definition)
+        import_tsv(catalog, path)
+    } else {
+        return Err(anyhow!(
+            "unrecognized dictionary format for {} (.ifo/.idx/.dict, .db sqlite pack, or .txt tab-separated supported)",
+            path.display()
+        ));
+    }?;
 
-    // Last try: plain text tab-separated dictionary (word<TAB>definition per line)
-    if ext == "txt" || ext == "tab" || ext == "tsv" {
-        return import_tsv(catalog, path);
-    }
-
-    Err(anyhow!(
-        "unrecognized dictionary format for {} (.ifo/.idx/.dict, .db sqlite pack, or .txt tab-separated supported)",
-        path.display()
-    ))
+    // A new dictionary must join the merged store immediately.
+    catalog.rebuild_combined_dictionary()?;
+    Ok(outcome)
 }
 
 fn is_sqlite_file(path: &Path) -> Result<bool> {

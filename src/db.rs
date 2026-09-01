@@ -38,7 +38,8 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v7 = remembered metadata edits, keyed by file hash · v8 = reader bookmarks
 /// · v9 = cached author profiles and aliases · v10 = series cache (Open Library)
 /// · v11 = dictionary headword key (fold_key) + idx_dict_entries_key
-pub const SCHEMA_VERSION: i64 = 11;
+/// · v12 = dictionary priority + combined_words merged store
+pub const SCHEMA_VERSION: i64 = 12;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -541,6 +542,19 @@ impl Catalog {
             CREATE INDEX IF NOT EXISTS idx_dict_entries_word ON dict_entries(word COLLATE NOCASE);
             CREATE INDEX IF NOT EXISTS idx_dict_entries_dict ON dict_entries(dict_id);
 
+            -- v12: merged dictionary store. One row per headword key; the
+            -- dictionary that speaks for a word is the one with the lowest
+            -- priority (ties: lowest id). `senses` is a JSON array of that
+            -- dictionary's definitions for the word. The reader searches
+            -- only this table — never the raw entries — so a word always
+            -- appears once.
+            CREATE TABLE IF NOT EXISTS combined_words (
+                key     TEXT    PRIMARY KEY COLLATE NOCASE,
+                word    TEXT    NOT NULL,
+                dict_id INTEGER NOT NULL REFERENCES dictionaries(id) ON DELETE CASCADE,
+                senses  TEXT    NOT NULL
+            );
+
             -- P4 tables
             CREATE TABLE IF NOT EXISTS shelves (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -706,7 +720,26 @@ impl Catalog {
         // the connection.
         drop(conn);
         self.backfill_dict_entry_keys()?;
-        let conn = self.conn();
+        let mut conn = self.conn();
+
+        // v12: dictionary priority (lower = shown first; imports default 100)
+        // and the merged store. Databases that already have entries get the
+        // store built once here; later rebuilds happen whenever the
+        // dictionary set changes (import / remove / bundled install).
+        add_column_if_missing(
+            &conn,
+            "dictionaries",
+            "priority",
+            "INTEGER NOT NULL DEFAULT 100",
+        )?;
+        let has_entries: i64 = conn.query_row("SELECT COUNT(*) FROM dict_entries", [], |r| r.get(0))?;
+        let combined_empty: i64 =
+            conn.query_row("SELECT COUNT(*) FROM combined_words", [], |r| r.get(0))?;
+        if has_entries > 0 && combined_empty == 0 {
+            drop(conn);
+            self.rebuild_combined_dictionary()?;
+            conn = self.conn();
+        }
 
         let version: Option<i64> = conn
             .query_row("SELECT version FROM schema_version LIMIT 1", [], |r| {
