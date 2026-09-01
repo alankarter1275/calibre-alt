@@ -739,8 +739,8 @@ mod tests {
 
         assert!(same_file(&target, &target));
         assert!(same_file(&target, &link));
-        assert!(same_file(&target, scratch.join("./target.txt")));
-        assert!(!same_file(&target, scratch.join("other.txt")));
+        assert!(same_file(&target, &scratch.join("./target.txt")));
+        assert!(!same_file(&target, &scratch.join("other.txt")));
         assert!(!same_file(&target, &scratch.join("missing.txt")));
     }
 
