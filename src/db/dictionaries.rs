@@ -831,19 +831,31 @@ fn strip_sense_number(text: &str) -> Option<&str> {
 }
 
 /// If a definition ends with a quoted phrase ("..." or '...'), split it off
-/// as the example line.
+/// as the example line. The closing quote is the last character; the
+/// matching opening quote is its previous occurrence, so the example is the
+/// text between the pair (nested quotes of the other kind survive).
 fn split_example(def: &str) -> Option<(String, String)> {
     let def = def.trim();
     for q in ['"', '\''] {
         if !def.ends_with(q) {
             continue;
         }
-        let Some(idx) = def.rfind(q) else { continue };
-        if idx == 0 {
+        let Some(close) = def.rfind(q) else { continue };
+        if close == 0 {
             continue;
         }
-        let example = def[idx..].trim().trim_matches(q).trim().to_string();
-        let head = def[..idx]
+        let Some(open) = def[..close].rfind(q) else { continue };
+        // The opening quote must follow whitespace or opening punctuation —
+        // an apostrophe inside a word ("it's") is not an opening quote.
+        // Check the character immediately before the quote (untrimmed), so
+        // "word \"phrase\"" still splits.
+        if let Some(prev) = def[..open].chars().next_back() {
+            if !prev.is_whitespace() && !matches!(prev, '(' | '[' | ':' | ';' | ',') {
+                continue;
+            }
+        }
+        let example = def[open + q.len_utf8()..close].trim().to_string();
+        let head = def[..open]
             .trim()
             .trim_end_matches([';', ':', ','])
             .trim()
@@ -1484,6 +1496,29 @@ mod tests {
             senses[0].example.as_deref(),
             Some("he spoke with indirect discourse")
         );
+    }
+
+    #[test]
+    fn split_example_ignores_stray_apostrophes() {
+        // A trailing quote char that is not a real quote pair (the previous
+        // quote is an apostrophe inside a word) must not split the gloss.
+        assert_eq!(split_example("a thing it's '"), None);
+        assert_eq!(split_example("the boys'"), None);
+    }
+
+    #[test]
+    fn parse_pos_blob_keeps_mid_gloss_quotes_intact() {
+        // The one double-quoted row in the bundled pack quotes inside the
+        // gloss, not at the end — the definition must stay whole and must
+        // not gain an example line.
+        let blob = "noun:; 1. a report of a discourse in which deictic terms are \
+                    modified appropriately (e.g., \u{2018}he said \"I am a fool\"\u{2019} \
+                    would be modified to \u{2018}he said he is a fool\u{2019})";
+        let senses = parse_pos_blob(blob);
+        assert_eq!(senses.len(), 1);
+        assert_eq!(senses[0].example, None);
+        assert!(senses[0].def.contains("I am a fool"));
+        assert!(senses[0].def.starts_with("a report of a discourse"));
     }
 
     #[test]
