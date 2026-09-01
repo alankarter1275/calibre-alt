@@ -1071,7 +1071,10 @@ fn stem_token(token: &str) -> String {
         } else if out.ends_with("ying") && n >= 6 {
             out.truncate(n - 3);
             stripped = true;
-        } else if out.ends_with("es") && n >= 5 && out[..n - 2].len() >= 3 && !out[..n - 2].ends_with("us")
+        } else if out.ends_with("es")
+            && n >= 5
+            && out[..n - 2].len() >= 3
+            && !out[..n - 2].ends_with("us")
         {
             out.truncate(n - 2);
             stripped = true;
@@ -1789,7 +1792,11 @@ mod tests {
             test_sense("land alongside a river or lake", None),
         ];
         assert_eq!(
-            likely_sense_index("The quick brown fox jumps over the lazy dog.", "bank", &senses),
+            likely_sense_index(
+                "The quick brown fox jumps over the lazy dog.",
+                "bank",
+                &senses
+            ),
             None
         );
     }
