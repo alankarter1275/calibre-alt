@@ -647,12 +647,19 @@ impl Catalog {
              WHERE key LIKE ?1 ESCAPE '\\' COLLATE NOCASE
              ORDER BY LENGTH(key) ASC, key COLLATE NOCASE ASC LIMIT ?2",
         )?;
-        let mut out = Vec::new();
+        let mut out: Vec<String> = Vec::new();
         for r in stmt.query_map(params![like.as_str(), limit as i64], |r| {
             r.get::<_, String>(0)
         })? {
-            let w = r?;
-            if !out.iter().any(|x| x.eq_ignore_ascii_case(&w)) {
+            let w: String = r?;
+            let mut seen = false;
+            for entry in &out {
+                if entry.eq_ignore_ascii_case(w.as_str()) {
+                    seen = true;
+                    break;
+                }
+            }
+            if !seen {
                 out.push(w);
             }
         }
