@@ -388,9 +388,9 @@ surface — they become a second API you must keep stable forever.
   (comics) + MuPDF later (PDF). (✅ locked)
 - **Architecture:** Yazi-style service layer + task manager + preloaders +
   thin UI. (✅ accepted, not yet implemented)
-- **Custom text renderer:** 🔶 under discussion → **leaning Path A** (custom
-  renderer for source fiction; WebKit = EPUB engine only; no browse mode —
-  see §8).
+- **Custom text renderer:** 🔶 under discussion → **endgame: custom renderer
+  for ALL reflowable text** (cosmic-text; fiction first, EPUB after
+  normalization); WebKit = fallback only, may be cut (see §8).
 - **Plugin system:** 🔶 under discussion, user wants it, leaning Lua —
   confirmed as the **source-adapter engine** for fiction + manga (see §7).
 - **Scope:** confirmed as a **content platform** — fiction sources
@@ -496,17 +496,69 @@ for Epub, and then AO3, fanfiction, etc."
   **EPUB rendering** (EPUBs are HTML/CSS internally — the one place web
   content is unavoidable today).
 
-### Renderer decision, sharpened (two paths)
+### Renderer decision, sharpened (user pushed back — WebKit days numbered)
 
-- **Path A (recommended, now):** WebKit = EPUB engine only, created lazily
-  when an EPUB opens. Source-fetched fiction converts to clean content
-  rendered by the **custom renderer** (fast, native, dict popup beside
-  text). WebKit shrinks to a small, lazy component.
-- **Path B (crown, later):** full KOReader play — custom renderer handles
-  EPUBs too, via an **EPUB normalization engine** (convert messy EPUB
-  HTML/CSS → clean content). This is the 1–3 person-year part; crengine
-  (KOReader's engine, GPL-family) is a ready-made option to bind instead
-  of writing from scratch.
+**User (2026-09-02):** "WebKit stays as the EPUB engine only — isn't that
+the same as now? shouldn't we shift to something better? crengine (C++) or
+cosmic-text (Rust)?"
+
+**Conceded: yes, EPUB-on-WebKit is the same cost today.** Lazy creation +
+fiction moving off WebKit only helps startup/new-content; EPUB reading
+itself stays on WebKit until replaced.
+
+**Sharpened position (accepted):**
+
+- **Custom renderer is the endgame for ALL reflowable text** (fiction AND
+  EPUB) — not just fiction. WebKit is a temporary fallback, not a
+  foundation, and may be cut entirely later.
+- **cosmic-text is NOT an EPUB renderer** — it's a Rust text-layout
+  library (System76, MIT). We build parsing/normalization/pagination/
+  painting around it. **crengine** is a complete C++ EPUB engine (GPL) —
+  a ready-made meal via FFI, but less control over dict-popup/theme/
+  annotation integration, and C++ in the stack.
+- **Lean: cosmic-text.** The hard part either way is EPUB→clean-content
+  normalization (lol_html + rules); that work is ours regardless. Fight
+  our own code, not a foreign engine's API. crengine stays a legitimate
+  shortcut if we want EPUB rendering before the custom engine matures.
+- **WebKit's only honest role: fallback for exotic EPUBs** the normalizer
+  can't handle (compatibility mode). Optional — could be cut if we accept
+  imperfect rendering of rare weird EPUBs.
+
+**Sequencing (accepted):**
+
+1. Custom renderer v1 on cosmic-text for **fiction first** — content is
+   ours (clean plugin output), bounded, proves the engine.
+2. **EPUB normalization pipeline** (lol_html + rules) → same renderer.
+   WebKit drops to fallback.
+3. PDF = MuPDF (P10); comics = image pager (P8) — never in this question.
+
+### Manga architecture confirmed (Tachiyomi shape, Lua plugins, no Kotlin)
+
+**User (2026-09-02):** "We could have a similar architecture… plugins which
+we will write. Also, no need for a bridge with the Kotlin extensions —
+those are apk… too much work, maybe even impossible."
+
+**Agreed, fully:**
+
+- Manga reader uses the same `Source` adapter shape: `search / popular /
+  chapter list / pages`. Plugins are **Lua, written by us** — one per site.
+- **No Kotlin extension bridge — confirmed.** Tachiyomi extensions are
+  Android APKs calling Android APIs; running them needs an Android runtime
+  or JVM emulation — fundamentally wrong shape for a desktop app. We lose
+  nothing: MangaDex has an official API (zero scraping), Komga/Kavita/OPDS
+  are clean REST, and scraping logic ports from the Apache-2.0 extensions
+  (license-compatible).
+- **Fiction uses the same architecture** — one plugin system, text flavor
+  + image flavor.
+
+### Engine map (final)
+
+| Content | Engine | Notes |
+|---|---|---|
+| Source fiction | Custom renderer (cosmic-text) | Clean content we define — build first |
+| EPUB | Custom renderer + normalizer; WebKit fallback | Normalization is the hard part |
+| PDF | **MuPDF** (P10) | Fixed-layout; never WebKit; AGPL (or Poppler/GPL) |
+| Comics | Image decode (gdk-pixbuf) + GTK pager | No engine at all — decode and paint; already P8 |
 
 ### The complete Tachiyomi / Suwayomi picture
 
