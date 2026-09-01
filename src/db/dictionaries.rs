@@ -899,7 +899,9 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn seed_dict(cat: &Catalog, name: &str, priority: i64, entries: &[(&str, &str)]) -> i64 {
-        let id = cat.insert_dictionary(name, Some("en"), entries.len() as i64).unwrap();
+        let id = cat
+            .insert_dictionary(name, Some("en"), entries.len() as i64)
+            .unwrap();
         cat.set_dictionary_priority(id, priority).unwrap();
         cat.batch_insert_dict_entries(
             id,
@@ -919,7 +921,10 @@ mod tests {
             &cat,
             "WordNet",
             10,
-            &[("set", "to put something in place"), ("set", "a group of things")],
+            &[
+                ("set", "to put something in place"),
+                ("set", "a group of things"),
+            ],
         );
         seed_dict(
             &cat,
@@ -1005,8 +1010,12 @@ mod tests {
             "My Dictionary",
             100,
             &[
-                ("set", "one"), ("set", "two"), ("set", "three"),
-                ("set", "four"), ("set", "five"), ("set", "six"),
+                ("set", "one"),
+                ("set", "two"),
+                ("set", "three"),
+                ("set", "four"),
+                ("set", "five"),
+                ("set", "six"),
             ],
         );
         cat.rebuild_combined_dictionary().unwrap();

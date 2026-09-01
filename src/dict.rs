@@ -170,8 +170,7 @@ pub fn import_dictionary(catalog: &Catalog, path: &Path) -> Result<(String, i64)
         .to_ascii_lowercase();
 
     // Detect StarDict by .ifo/.idx/.dict extension or by sibling presence
-    let outcome = if ext == "ifo" || ext == "idx" || ext == "dict" || ext == "dz" || ext == "dict"
-    {
+    let outcome = if ext == "ifo" || ext == "idx" || ext == "dict" || ext == "dz" || ext == "dict" {
         import_stardict(catalog, path)
     } else if is_sqlite_file(path)? {
         // Try SQLite detection: file starts with "SQLite format 3\0"

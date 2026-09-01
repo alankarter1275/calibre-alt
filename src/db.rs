@@ -732,7 +732,8 @@ impl Catalog {
             "priority",
             "INTEGER NOT NULL DEFAULT 100",
         )?;
-        let has_entries: i64 = conn.query_row("SELECT COUNT(*) FROM dict_entries", [], |r| r.get(0))?;
+        let has_entries: i64 =
+            conn.query_row("SELECT COUNT(*) FROM dict_entries", [], |r| r.get(0))?;
         let combined_empty: i64 =
             conn.query_row("SELECT COUNT(*) FROM combined_words", [], |r| r.get(0))?;
         if has_entries > 0 && combined_empty == 0 {
