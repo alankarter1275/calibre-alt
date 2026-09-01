@@ -388,8 +388,9 @@ surface — they become a second API you must keep stable forever.
   (comics) + MuPDF later (PDF). (✅ locked)
 - **Architecture:** Yazi-style service layer + task manager + preloaders +
   thin UI. (✅ accepted, not yet implemented)
-- **Custom text renderer:** 🔶 under discussion → **leaning hybrid** (custom
-  text engine for reading + WebKit for browse/fallback) — see §7.
+- **Custom text renderer:** 🔶 under discussion → **leaning Path A** (custom
+  renderer for source fiction; WebKit = EPUB engine only; no browse mode —
+  see §8).
 - **Plugin system:** 🔶 under discussion, user wants it, leaning Lua —
   confirmed as the **source-adapter engine** for fiction + manga (see §7).
 - **Scope:** confirmed as a **content platform** — fiction sources
@@ -460,17 +461,15 @@ has to be a browser — it only ever sees clean content. Industry proof:
 Tachiyomi reads images, FanFicFare converts to EPUB, KOReader renders its
 own format.
 
-**Leaning — hybrid (direction accepted, final decision open):**
+**Leaning — hybrid, resolved by §8 (no browse mode):**
 - Custom renderer for **reading** fiction (clean format) and comics
   (image pager) — the fast, light, integrated reader.
-- WebKit stays for **browsing/discovery** (AO3's tag-search UI is a web
-  form; a browse-in-webview mode is a feature) and as a **fallback** for
-  exotic EPUBs we haven't normalized.
-- Decision question: "does Kalam ever need to display an arbitrary web
-  page?" — if no, WebKit's role shrinks to fallback; if yes, it stays as
-  the browse surface.
-- Sequencing: sources + architecture on WebKit first (the product), the
-  custom renderer as the A0 crown afterward.
+- WebKit stays as the **EPUB engine** (and fallback for exotic EPUBs we
+  haven't normalized) — created lazily when an EPUB opens.
+- ~~Browse mode~~ — rejected: Kalam never renders arbitrary websites;
+  sources return structured data via plugins.
+- Sequencing: sources + architecture first (the product), the custom
+  renderer as the A0 crown afterward.
 
 ### Honest caveats
 
@@ -481,6 +480,87 @@ own format.
   schedules (daily, not per-minute).
 - **A11y:** a custom text engine must expose text to screen readers
   (AT-SPI); WebKit gives this free. Budget for it.
+
+---
+
+## 8. Scope sharpened: no browse mode + the Tachiyomi/Suwayomi picture + borrow list
+
+**User (2026-09-02):** "I am not making a web browser right? I just want it
+for Epub, and then AO3, fanfiction, etc."
+
+### Accepted: no web-browse mode
+
+- Kalam never renders arbitrary websites. Sources return **structured data**
+  (title, author, tags, chapters) via plugins; the search UI is native.
+- This **resolves the renderer fork**: WebKit's only remaining job is
+  **EPUB rendering** (EPUBs are HTML/CSS internally — the one place web
+  content is unavoidable today).
+
+### Renderer decision, sharpened (two paths)
+
+- **Path A (recommended, now):** WebKit = EPUB engine only, created lazily
+  when an EPUB opens. Source-fetched fiction converts to clean content
+  rendered by the **custom renderer** (fast, native, dict popup beside
+  text). WebKit shrinks to a small, lazy component.
+- **Path B (crown, later):** full KOReader play — custom renderer handles
+  EPUBs too, via an **EPUB normalization engine** (convert messy EPUB
+  HTML/CSS → clean content). This is the 1–3 person-year part; crengine
+  (KOReader's engine, GPL-family) is a ready-made option to bind instead
+  of writing from scratch.
+
+### The complete Tachiyomi / Suwayomi picture
+
+- **Tachiyomi** = Android manga reader. App knows ONE `Source` interface
+  (search / popular / details / chapter list / page list). **Extensions**
+  = small Kotlin APKs, 200–500 lines each, that implement that interface
+  for one site (MangaDex = official JSON API; Komga = REST; random site =
+  HTML scrape with Jsoup). Hundreds of sites, one tiny adapter surface.
+- **Suwayomi** = Tachiyomi's engine extracted into a JVM **server**; loads
+  the same Kotlin extensions, exposes REST + GraphQL; clients are thin.
+- **The Kotlin obstacle:** Kotlin compiles to JVM bytecode; a Rust app
+  cannot execute it (no JVM inside). The *concepts* are trivial; only the
+  runtime is incompatible.
+- **Three workarounds:** (1) ship a JVM subprocess — heavy, rejected;
+  (2) bridge to a user's existing Suwayomi instance via its API — cheap
+  optional plugin later; (3) **reimplement the adapter pattern natively**
+  — recommended. The scraping logic is "fetch URL, parse HTML/JSON, return
+  fields" — hours per source in Lua, and MangaDex/Komga/Kavita/OPDS need
+  **no scraping at all** (official APIs).
+- **Fiction side** needs no server concept: same plugin shape, plus
+  FanFicFare (below).
+
+### ~~Rewrite the Suwayomi server in Rust~~ — rejected (confirmed)
+
+Nothing to rewrite: we want the adapter *concept*, not the server.
+Kalam already has (or will have) the DB, downloads (P6), task manager
+(A0), and readers.
+
+### PDF — NOT forgotten (P10)
+
+PDFs are fixed-layout; they were never a WebKit question. P10 uses
+**MuPDF** (purpose-built renderer, already on the custom side of the
+fence). License note: MuPDF is **AGPL-3.0**; combining with our GPL-3.0
+app pulls the app to AGPL (fine for personal open source — KOReader does
+it; Poppler/GPL is the alternative if we ever want to avoid AGPL).
+
+### Open-source borrow list (repo is GPL-3.0-or-later — compatible)
+
+| Project | License | What to take |
+|---|---|---|
+| **FanFicFare** | GPL-3, Python | **P7 already built**: site adapters for AO3, FFN, Royal Road, ScribbleHub, SpaceBattles, Wattpad… port adapter logic to Lua plugins, or shell out to its CLI as a "FanFicFare source" plugin |
+| **Tachiyomi extensions** | Apache-2.0 | The adapter pattern + per-site logic to port to Lua |
+| **MangaDex API** | public API | First P9 source — zero scraping |
+| **Komga / Kavita** | GPL | Self-hosted manga servers; Kalam as a client via their REST APIs |
+| **Suwayomi** | MPL-2.0 | Mirror its extension-API shape |
+| **KOReader** | AGPL-3.0 | Proof of no-browser reading + Lua plugin architecture to study |
+| **crengine** | GPL-family | Ready-made EPUB/HTML rendering engine (Path B) — bind via FFI |
+| **cosmic-text** | MIT | Rust text layout/shaping (Path B, if we build our own) |
+| **swash / fontdb / ab_glyph** | MIT/Apache | Rust font loading/shaping |
+| **vello / skia-safe** | Apache/MIT | 2D/GPU painting for custom engine |
+| **lol_html** | Apache/MIT (Cloudflare) | HTML parsing/sanitizing for scrapers + EPUB normalization |
+| **ammonia** | MIT | HTML sanitizer for plugin output |
+| **Yazi** | MIT | Task system + preloader architecture (already discussed) |
+| **Foliate** | GPL | GTK+WebKit reference; CSS pagination tricks |
 
 ---
 
