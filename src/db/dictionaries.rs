@@ -844,7 +844,9 @@ fn split_example(def: &str) -> Option<(String, String)> {
         if close == 0 {
             continue;
         }
-        let Some(open) = def[..close].rfind(q) else { continue };
+        let Some(open) = def[..close].rfind(q) else {
+            continue;
+        };
         // The opening quote must follow whitespace or opening punctuation —
         // an apostrophe inside a word ("it's") is not an opening quote.
         // Check the character immediately before the quote (untrimmed), so
