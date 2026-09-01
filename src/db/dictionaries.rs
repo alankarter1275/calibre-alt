@@ -69,6 +69,37 @@ pub fn fold_key(word: &str) -> String {
         .collect()
 }
 
+/// Bundled pack names — single source of truth for the auxiliary chip
+/// queries (synonyms / antonyms / idioms) used by the popup.
+pub const BUNDLED_WORDNET_NAME: &str = "English WordNet 2025";
+pub const BUNDLED_IDIOMS_NAME: &str = "English Idioms and Expressions";
+pub const BUNDLED_SYNONYMS_NAME: &str = "English Synonyms (WordNet 3.0)";
+pub const BUNDLED_ANTONYMS_NAME: &str = "English Antonyms (WordNet 3.0)";
+
+/// One sense in the redesigned popup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sense {
+    /// Display number (1-based, sequential across the whole entry).
+    pub number: usize,
+    pub pos: Option<String>,
+    pub def: String,
+    pub example: Option<String>,
+}
+
+/// Everything the popup shows for one lookup: the winning entry's senses,
+/// the word-level POS list, the auxiliary chips and idiom cards, and
+/// did-you-mean / phrase-breakdown suggestions when there is no headword.
+#[derive(Debug, Clone, Default)]
+pub struct EntryData {
+    pub word: String,
+    pub senses: Vec<Sense>,
+    pub pos: Vec<String>,
+    pub synonyms: Vec<String>,
+    pub antonyms: Vec<String>,
+    pub idioms: Vec<(String, String)>,
+    pub suggestions: Vec<String>,
+}
+
 /// Result of a phrase lookup: either the phrase (or a contained phrase
 /// headword) matched, or the phrase was broken down per token.
 #[derive(Debug, Clone)]
@@ -453,6 +484,195 @@ impl Catalog {
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM dict_entries", [], |r| r.get(0))?;
         Ok(n)
     }
+
+    /// The full popup entry for a lookup: senses from the merged store
+    /// (parsed into numbered senses with POS), the word-level POS list,
+    /// synonym/antonym chips and idiom cards from the auxiliary packs, and
+    /// suggestions when there is no headword (phrase breakdown tokens, or
+    /// did-you-mean prefix matches).
+    pub fn lookup_entry(&self, query: &str) -> Result<EntryData> {
+        let clean = query.trim();
+        let mut entry = EntryData {
+            word: clean.to_string(),
+            ..Default::default()
+        };
+        if clean.is_empty() {
+            return Ok(entry);
+        }
+
+        // (a) Exact headword via the query variants.
+        for variant in dictionary_query_variants(clean) {
+            if let Some(raw) = self.combined_raw(&fold_key(&variant))? {
+                entry.word = raw.0;
+                entry.senses = parse_senses(&raw.1);
+                entry.pos = distinct_pos(&entry.senses);
+                break;
+            }
+        }
+
+        // (b) Longest contained multi-word headword (phrase selection).
+        if entry.senses.is_empty() {
+            let tokens: Vec<&str> = clean.split_whitespace().collect();
+            if tokens.len() > 1 {
+                'outer: for window_len in (2..tokens.len()).rev() {
+                    for window in tokens.windows(window_len) {
+                        let candidate = window.join(" ");
+                        if let Some(raw) = self.combined_raw(&fold_key(&candidate))? {
+                            entry.word = raw.0;
+                            entry.senses = parse_senses(&raw.1);
+                            entry.pos = distinct_pos(&entry.senses);
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+        }
+
+        // (c) No headword: suggestions.
+        if entry.senses.is_empty() {
+            let tokens: Vec<&str> = clean.split_whitespace().collect();
+            entry.suggestions = if tokens.len() > 1 {
+                tokens.iter().map(|t| t.to_string()).collect()
+            } else {
+                self.did_you_mean(clean, 8)?
+            };
+            return Ok(entry);
+        }
+
+        // The auxiliary packs always enrich the winning entry.
+        entry.synonyms = self.pack_list(BUNDLED_SYNONYMS_NAME, &entry.word, "synonyms:")?;
+        entry.antonyms = self.pack_list(BUNDLED_ANTONYMS_NAME, &entry.word, "antonyms:")?;
+        entry.idioms = self.idioms_for(&entry.word)?;
+        Ok(entry)
+    }
+
+    /// Raw merged-store row for a key: (word, decoded senses).
+    fn combined_raw(&self, key: &str) -> Result<Option<(String, Vec<String>)>> {
+        if key.is_empty() {
+            return Ok(None);
+        }
+        let conn = self.conn();
+        let row = conn
+            .query_row(
+                "SELECT word, senses FROM combined_words
+                 WHERE key = ?1 COLLATE NOCASE",
+                params![key],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .optional()?;
+        let Some((word, json)) = row else {
+            return Ok(None);
+        };
+        let senses: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+        Ok(Some((word, senses)))
+    }
+
+    /// The parsed chip list from an auxiliary pack row ("synonyms: a, b, c").
+    fn pack_list(&self, pack_name: &str, word: &str, prefix: &str) -> Result<Vec<String>> {
+        let key = fold_key(word);
+        if key.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn();
+        let row = conn
+            .query_row(
+                "SELECT e.definition FROM dict_entries e
+                 JOIN dictionaries d ON d.id = e.dict_id
+                 WHERE d.name = ?1 AND e.key = ?2 COLLATE NOCASE
+                 LIMIT 1",
+                params![pack_name, key],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?;
+        let Some(def) = row else {
+            return Ok(Vec::new());
+        };
+        let Some(rest) = def.trim().strip_prefix(prefix) else {
+            return Ok(Vec::new());
+        };
+        Ok(rest
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect())
+    }
+
+    /// Idiom cards: phrases from the idioms pack that contain the word as a
+    /// token (or equal it), so "melancholy" surfaces "in a melancholy mood".
+    fn idioms_for(&self, word: &str) -> Result<Vec<(String, String)>> {
+        let key = fold_key(word);
+        if key.is_empty() {
+            return Ok(Vec::new());
+        }
+        let any = format!("% {} %", escape_like(word));
+        let start = format!("{} %", escape_like(word));
+        let end = format!("% {}", escape_like(word));
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT e.word, e.definition FROM dict_entries e
+             JOIN dictionaries d ON d.id = e.dict_id
+             WHERE d.name = ?1 AND (
+                   e.key = ?2 COLLATE NOCASE
+                OR e.word LIKE ?3 ESCAPE '\\' COLLATE NOCASE
+                OR e.word LIKE ?4 ESCAPE '\\' COLLATE NOCASE
+                OR e.word LIKE ?5 ESCAPE '\\' COLLATE NOCASE)
+             ORDER BY LENGTH(e.word) ASC LIMIT 8",
+        )?;
+        let mut out = Vec::new();
+        for r in stmt.query_map(
+            params![BUNDLED_IDIOMS_NAME, key, any.as_str(), start.as_str(), end.as_str()],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+        )? {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    /// Prefix matches from the merged store for "did you mean" chips.
+    fn did_you_mean(&self, word: &str, limit: usize) -> Result<Vec<String>> {
+        let key = fold_key(word);
+        if key.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn();
+        let like = format!("{}%", escape_like(&key));
+        let mut stmt = conn.prepare_cached(
+            "SELECT word FROM combined_words
+             WHERE key LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+             ORDER BY LENGTH(key) ASC, key COLLATE NOCASE ASC LIMIT ?2",
+        )?;
+        let mut out = Vec::new();
+        for r in stmt.query_map(params![like.as_str(), limit as i64], |r| r.get::<_, String>(0))? {
+            let w = r?;
+            if !out.iter().any(|x| x.eq_ignore_ascii_case(&w)) {
+                out.push(w);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Whether the word was already saved for this book (popup bookmark).
+    pub fn saved_word_exists(&self, word: &str, book_id: i64) -> Result<bool> {
+        let conn = self.conn();
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM saved_words
+             WHERE word = ?1 COLLATE NOCASE AND book_id = ?2",
+            params![word, book_id],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Forget every saved copy of a word for a book (popup bookmark toggle).
+    pub fn delete_saved_word_by_word(&self, word: &str, book_id: i64) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "DELETE FROM saved_words
+             WHERE word = ?1 COLLATE NOCASE AND book_id = ?2",
+            params![word, book_id],
+        )?;
+        Ok(())
+    }
 }
 
 /// A combined_words row -> the entry the reader shows: the word once, its
@@ -482,6 +702,154 @@ fn format_senses(senses_json: &str) -> String {
             .collect::<Vec<_>>()
             .join("\n"),
     }
+}
+
+/// Parse the stored sense strings into numbered senses with POS.
+///
+/// The bundled WordNet pack stores one row per word whose definition is a
+/// structured blob: "noun:; 1. def; 2. def; verb:; 1. def". Other packs
+/// store one plain definition per row. A plain row becomes a single sense
+/// without POS. Senses are renumbered sequentially across the whole entry
+/// (the blob's internal per-POS numbers are parse scaffolding only).
+fn parse_senses(raw_senses: &[String]) -> Vec<Sense> {
+    let mut out = Vec::new();
+    for blob in raw_senses {
+        let parsed = parse_pos_blob(blob);
+        if parsed.is_empty() {
+            out.push(Sense {
+                number: out.len() + 1,
+                pos: None,
+                def: blob.clone(),
+                example: None,
+            });
+        } else {
+            for mut sense in parsed {
+                sense.number = out.len() + 1;
+                out.push(sense);
+            }
+        }
+    }
+    out
+}
+
+/// Split a structured WordNet blob ("noun:; 1. ...; 2. ...; verb:; 1. ...")
+/// into senses. Splitting on "; " consumes the semicolon, so a POS marker
+/// arrives as its own "noun:" segment; detection requires the segment to be
+/// exactly the POS name plus ':', which keeps ordinary gloss words
+/// ("control:;", "vehicle:;") from being mistaken for groups. Segments after
+/// a numbered sense that do not start with a number are continuations of
+/// that sense (the glosses run on with "; "). A trailing quoted phrase is
+/// split off as the example line.
+fn parse_pos_blob(blob: &str) -> Vec<Sense> {
+    const POS_MARKERS: [&str; 4] = ["noun", "adjective", "verb", "adverb"];
+    let mut senses: Vec<Sense> = Vec::new();
+    let mut current_pos: Option<String> = None;
+
+    for segment in blob.split("; ") {
+        let segment = segment.trim();
+        if segment.is_empty() {
+            continue;
+        }
+        let mut pos = current_pos.clone();
+        let mut text = segment;
+        for marker in POS_MARKERS {
+            if let Some(rest) = segment.strip_prefix(marker) {
+                // Only an exact "noun:"-style segment is a group marker; a
+                // plain definition that merely starts with "noun" (for
+                // example "noun: a person, place or thing" from another
+                // pack) must stay ordinary text.
+                let rest = rest.trim_start();
+                if rest == ":" || rest.is_empty() {
+                    pos = Some(marker.to_string());
+                    text = rest.strip_prefix(':').unwrap_or("").trim();
+                    break;
+                }
+            }
+        }
+        current_pos = pos.clone();
+        if text.is_empty() {
+            continue;
+        }
+
+        if let Some(rest) = strip_sense_number(text) {
+            senses.push(Sense {
+                number: 0,
+                pos,
+                def: rest.to_string(),
+                example: None,
+            });
+        } else if let Some(last) = senses.last_mut() {
+            last.def.push_str("; ");
+            last.def.push_str(text);
+        } else if !text.is_empty() {
+            senses.push(Sense {
+                number: 0,
+                pos,
+                def: text.to_string(),
+                example: None,
+            });
+        }
+    }
+
+    for sense in &mut senses {
+        if let Some((def, example)) = split_example(&sense.def) {
+            sense.def = def;
+            sense.example = Some(example);
+        }
+    }
+    senses
+}
+
+/// Strip a leading "N." sense number. Returns the text after it.
+fn strip_sense_number(text: &str) -> Option<&str> {
+    let t = text.trim_start();
+    let digits = t
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .count();
+    if digits == 0 {
+        return None;
+    }
+    let rest = t[digits..].trim_start().strip_prefix('.')?.trim_start();
+    if rest.is_empty() {
+        None
+    } else {
+        Some(rest)
+    }
+}
+
+/// If a definition ends with a quoted phrase ("..." or '...'), split it off
+/// as the example line.
+fn split_example(def: &str) -> Option<(String, String)> {
+    let def = def.trim();
+    for q in ['"', '\''] {
+        if !def.ends_with(q) {
+            continue;
+        }
+        let Some(idx) = def.rfind(q) else { continue };
+        if idx == 0 {
+            continue;
+        }
+        let example = def[idx..].trim().trim_matches(q).trim().to_string();
+        let head = def[..idx].trim().trim_end_matches([';', ':', ',']).trim().to_string();
+        if !head.is_empty() && !example.is_empty() {
+            return Some((head, example));
+        }
+    }
+    None
+}
+
+/// Distinct POS values in first-seen order — the header pill ("noun · verb").
+fn distinct_pos(senses: &[Sense]) -> Vec<String> {
+    let mut out = Vec::new();
+    for s in senses {
+        if let Some(p) = &s.pos {
+            if !out.iter().any(|x| x == p) {
+                out.push(p.clone());
+            }
+        }
+    }
+    out
 }
 
 fn dictionary_query_variants(term: &str) -> Vec<String> {
@@ -1044,5 +1412,89 @@ mod tests {
     fn dictionary_variants_handle_possessives() {
         let variants = dictionary_query_variants("children’s");
         assert!(variants.iter().any(|variant| variant == "children"));
+    }
+
+    // ── Phase 5: POS-blob and sense parsing ──
+
+    #[test]
+    fn parse_pos_blob_splits_pos_groups_and_numbers_senses() {
+        let blob = "noun:; 1. a domestic animal kept as a companion; 2. a person; \
+                    verb:; 1. to hunt with dogs";
+        let senses = parse_pos_blob(blob);
+        assert_eq!(senses.len(), 3);
+        assert_eq!(senses[0].pos.as_deref(), Some("noun"));
+        assert_eq!(senses[0].def, "a domestic animal kept as a companion");
+        assert_eq!(senses[1].pos.as_deref(), Some("noun"));
+        assert_eq!(senses[1].def, "a person");
+        assert_eq!(senses[2].pos.as_deref(), Some("verb"));
+        assert_eq!(senses[2].def, "to hunt with dogs");
+        assert!(senses.iter().all(|s| s.example.is_none()));
+    }
+
+    #[test]
+    fn parse_pos_blob_handles_adjective_and_adverb_groups() {
+        let blob = "adjective:; 1. quick to notice; adverb:; 1. in a quick manner";
+        let senses = parse_pos_blob(blob);
+        assert_eq!(senses.len(), 2);
+        assert_eq!(senses[0].pos.as_deref(), Some("adjective"));
+        assert_eq!(senses[1].pos.as_deref(), Some("adverb"));
+    }
+
+    #[test]
+    fn parse_pos_blob_ignores_fake_markers_and_keeps_continuations() {
+        // "control:;" and "vehicle:;" end with ":;" but are not POS groups —
+        // only the four full POS names split groups. Segments without a
+        // sense number continue the previous definition.
+        let blob = "noun:; 1. authority over something; control:; the power to direct; \
+                    verb:; 1. to drive a vehicle:; a motorized conveyance";
+        let senses = parse_pos_blob(blob);
+        assert_eq!(senses.len(), 2);
+        assert_eq!(senses[0].pos.as_deref(), Some("noun"));
+        assert_eq!(
+            senses[0].def,
+            "authority over something; control:; the power to direct"
+        );
+        assert_eq!(senses[1].pos.as_deref(), Some("verb"));
+        assert_eq!(senses[1].def, "to drive a vehicle:; a motorized conveyance");
+    }
+
+    #[test]
+    fn parse_pos_blob_splits_trailing_quoted_example() {
+        let blob = "noun:; 1. a remark that is insincere \"he spoke with indirect discourse\"";
+        let senses = parse_pos_blob(blob);
+        assert_eq!(senses.len(), 1);
+        assert_eq!(senses[0].def, "a remark that is insincere");
+        assert_eq!(
+            senses[0].example.as_deref(),
+            Some("he spoke with indirect discourse")
+        );
+    }
+
+    #[test]
+    fn parse_senses_keeps_plain_rows_as_single_senses() {
+        let senses = parse_senses(&["a single plain definition".to_string()]);
+        assert_eq!(senses.len(), 1);
+        assert_eq!(senses[0].number, 1);
+        assert_eq!(senses[0].pos, None);
+        assert_eq!(senses[0].def, "a single plain definition");
+    }
+
+    #[test]
+    fn parse_senses_renumbers_across_rows_and_pos_groups() {
+        let senses = parse_senses(&[
+            "noun:; 1. first; 2. second".to_string(),
+            "plain row".to_string(),
+        ]);
+        let numbers: Vec<usize> = senses.iter().map(|s| s.number).collect();
+        assert_eq!(numbers, vec![1, 2, 3]);
+        assert_eq!(senses[1].def, "second");
+        assert_eq!(senses[2].def, "plain row");
+        assert_eq!(senses[2].pos, None);
+    }
+
+    #[test]
+    fn distinct_pos_preserves_first_seen_order() {
+        let senses = parse_senses(&["verb:; 1. v1; noun:; 1. n1; verb:; 2. v2".to_string()]);
+        assert_eq!(distinct_pos(&senses), vec!["verb", "noun"]);
     }
 }

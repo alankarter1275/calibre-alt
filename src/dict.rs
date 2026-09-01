@@ -8,7 +8,10 @@
 //! For simplicity P3 supports uncompressed .dict; .dict.dz is decompressed via flate2 if present.
 //! SQLite pack: a SQLite file with table entries(word TEXT, definition TEXT) or (word, definition) naming variations.
 
-use crate::db::Catalog;
+use crate::db::{
+    BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
+    Catalog,
+};
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::fs::File;
@@ -23,19 +26,15 @@ pub struct DictSearchResult {
     pub dict_name: String,
 }
 
-const BUNDLED_WORDNET_NAME: &str = "English WordNet 2025";
 const BUNDLED_WORDNET_PREF: &str = "bundled_dictionary_english_wordnet_2025";
 const BUNDLED_WORDNET_TSV_GZ: &[u8] =
     include_bytes!("../resources/dictionaries/english-wordnet-2025.tsv.gz");
-const BUNDLED_IDIOMS_NAME: &str = "English Idioms and Expressions";
 const BUNDLED_IDIOMS_PREF: &str = "bundled_dictionary_english_idioms_2024";
 const BUNDLED_IDIOMS_TSV_GZ: &[u8] =
     include_bytes!("../resources/dictionaries/english-idioms-2024.tsv.gz");
-const BUNDLED_SYNONYMS_NAME: &str = "English Synonyms (WordNet 3.0)";
 const BUNDLED_SYNONYMS_PREF: &str = "bundled_dictionary_english_synonyms_3_0";
 const BUNDLED_SYNONYMS_TSV_GZ: &[u8] =
     include_bytes!("../resources/dictionaries/english-synonyms-3.0.tsv.gz");
-const BUNDLED_ANTONYMS_NAME: &str = "English Antonyms (WordNet 3.0)";
 const BUNDLED_ANTONYMS_PREF: &str = "bundled_dictionary_english_antonyms_3_0";
 const BUNDLED_ANTONYMS_TSV_GZ: &[u8] =
     include_bytes!("../resources/dictionaries/english-antonyms-3.0.tsv.gz");

@@ -19,7 +19,10 @@ mod series;
 mod shelves;
 mod stats;
 
-pub use dictionaries::PhraseLookup;
+pub use dictionaries::{
+    BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
+    EntryData, PhraseLookup, Sense,
+};
 pub use series::{series_key, SeriesWork};
 
 #[derive(Debug, Error)]

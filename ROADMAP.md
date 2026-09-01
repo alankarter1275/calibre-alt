@@ -208,7 +208,7 @@ Daily-driver EPUB reading without annotations — **met for P2 scope**.
 - [x] My Library → **Saved words** (real data, search, delete, saved from dict lookup with context)
 - [x] Export quotes → Markdown with book title, chapter, color, timestamp, quote block
 - [x] Selection chip UI: semi-transparent dark pill above selection, color dots + ❝ Aa ⧉
-- [x] Dictionary popup inside WebView: shows up to five matching entries near the selection rect, with separate Save word / Copy actions for each result
+- [x] Dictionary popup inside WebView: single merged entry with numbered senses and POS, bookmark + copy in the sticky header, synonym/antonym chips and idiom cards, did-you-mean suggestions, "Show N more" for long entries
 - [x] Reader typography popover now includes dictionary search (prefix → substring fallback) + Save/Clear
 - [x] Highlight storage: SQLite `annotations` table, `saved_words`, `dictionaries`, `dict_entries`
 - [x] CSS: soft highlight tints (yellow 0.62, green, blue, pink 0.70, orange), chip & dict popup styling, badge colors for annotation list, P3 GTK rows
@@ -329,9 +329,10 @@ Related reader work already completed:
    Dictionary feature work is deferred for now. When it resumes, follow the
    planned dictionary overhaul below in phase order; the bundled phrase pack
    still does not make every compositional phrase meaningful automatically.
-   **Phases 1–4 of that overhaul are shipped (precomputed headword key
+   **Phases 1–5 of that overhaul are shipped (precomputed headword key
    index, WordNet exception-list lemmatization, phrase decomposition,
-   merged dictionary store). Phase 5 (popup redesign) is next.**
+   merged dictionary store, popup redesign). Pronunciation data and the
+   Settings reorder UI remain deferred.**
 
 4. **Only later consider architecture changes**
    - [ ] Multi-chapter buffering.

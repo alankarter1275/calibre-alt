@@ -1,7 +1,8 @@
 //! Immersive EPUB reader.
 
 use crate::db::{
-    Annotation, Catalog, DictEntry, HighlightColor, PhraseLookup, ReadingBookmark, SavedWord,
+    Annotation, Catalog, DictEntry, EntryData, HighlightColor, PhraseLookup, ReadingBookmark,
+    SavedWord,
 };
 use crate::epub_book::{reading_css, OpenBook, ReadingTheme};
 use crate::models::Book;
@@ -1350,15 +1351,23 @@ impl Component for ReaderModel {
                 refresh_words = true;
             }
             ReaderMsg::DictSearchSelect(word) => {
-                let results = self.catalog.search_dict(&word, 5).unwrap_or_default();
-                if let Some(entry) = results.first() {
-                    self.dict_lookup_word = Some(entry.word.clone());
-                    self.dict_lookup_def = Some(entry.definition.clone());
-                    self.show_dict_in_webview(&word, &results, None);
-                    self.right_tab = RightSidebarTab::Words;
-                    self.right_sidebar_open = true;
-                    refresh_tabs = true;
-                }
+                let data = self
+                    .catalog
+                    .lookup_entry(&word)
+                    .unwrap_or_else(|_| EntryData {
+                        word: word.clone(),
+                        ..Default::default()
+                    });
+                self.dict_lookup_word = Some(data.word.clone());
+                self.dict_lookup_def = data
+                    .senses
+                    .first()
+                    .map(|s| s.def.clone())
+                    .or_else(|| (!data.suggestions.is_empty()).then(|| data.word.clone()));
+                self.show_dict_in_webview(&word, None);
+                self.right_tab = RightSidebarTab::Words;
+                self.right_sidebar_open = true;
+                refresh_tabs = true;
             }
             ReaderMsg::SaveCurrentWord => {
                 if let (Some(word), Some(def)) = (&self.dict_lookup_word, &self.dict_lookup_def) {
@@ -1877,26 +1886,45 @@ impl ReaderModel {
         }
     }
 
-    fn show_dict_in_webview(&self, query: &str, results: &[DictEntry], rect_json: Option<String>) {
-        let query_json = serde_json::to_string(query).unwrap_or_else(|_| "\"\"".into());
-        let popup_results: Vec<_> = results
-            .iter()
-            .take(5)
-            .map(|entry| {
-                serde_json::json!({
-                    "word": entry.word,
-                    "definition": entry.definition.chars().take(2000).collect::<String>(),
-                })
-            })
-            .collect();
-        let results_json = serde_json::to_string(&popup_results).unwrap_or_else(|_| "[]".into());
+    /// Render the redesigned popup: one entry per word, with POS, numbered
+    /// senses, synonym/antonym chips, idiom cards, and did-you-mean chips.
+    fn show_dict_in_webview(&self, query: &str, rect_json: Option<String>) {
+        let data = self
+            .catalog
+            .lookup_entry(query)
+            .unwrap_or_else(|_| EntryData {
+                word: query.trim().to_string(),
+                ..Default::default()
+            });
+        let saved = self
+            .catalog
+            .saved_word_exists(&data.word, self.book_id)
+            .unwrap_or(false);
+        let payload = serde_json::json!({
+            "word": data.word,
+            "pos": data.pos,
+            "senses": data.senses.iter().map(|s| serde_json::json!({
+                "number": s.number,
+                "pos": s.pos,
+                "def": s.def.chars().take(2000).collect::<String>(),
+                "example": s.example,
+            })).collect::<Vec<_>>(),
+            "synonyms": data.synonyms,
+            "antonyms": data.antonyms,
+            "idioms": data.idioms.iter().map(|(phrase, def)| {
+                serde_json::json!({ "phrase": phrase, "def": def })
+            }).collect::<Vec<_>>(),
+            "suggestions": data.suggestions,
+            "saved": saved,
+        });
+        let payload_json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
         let rect_part = rect_json
             .as_deref()
             .map(|rect| serde_json::to_string(rect).unwrap_or_else(|_| "null".into()))
             .unwrap_or_else(|| "null".into());
         let script = format!(
-            "if (window.kalamShowDict) window.kalamShowDict({}, {}, {});",
-            query_json, results_json, rect_part
+            "if (window.kalamShowDict) window.kalamShowDict({}, {});",
+            payload_json, rect_part
         );
         eval_js(&self.webview, &script);
     }
@@ -1991,30 +2019,23 @@ impl ReaderModel {
                 }
                 self.dict_context = context.clone();
                 self.dict_lookup_rect_json = rect_json.clone();
-                // Phrases go through the shared lookup pipeline (whole phrase
-                // first, then a contained phrase headword, then per-token
-                // results); single words keep the plain path.
-                let results = self.lookup_dict(&word, 5);
-                if let Some(entry) = results.first() {
-                    self.dict_lookup_word = Some(entry.word.clone());
-                    self.dict_lookup_def = Some(entry.definition.clone());
-                    self.show_dict_in_webview(&word, &results, rect_json);
-                } else {
-                    let def = format!(
-                        "No definition found for '{}'. Total dict entries: {}",
-                        word,
-                        self.catalog.dict_entry_count().unwrap_or(0)
-                    );
-                    self.dict_lookup_word = Some(word.clone());
-                    self.dict_lookup_def = Some(def.clone());
-                    let fallback = DictEntry {
-                        id: 0,
-                        dict_id: 0,
+                // The popup gets the full merged entry: senses with POS,
+                // chips, idioms, or did-you-mean suggestions. The fake
+                // "No definition found / Total dict entries" result is gone.
+                let data = self
+                    .catalog
+                    .lookup_entry(&word)
+                    .unwrap_or_else(|_| EntryData {
                         word: word.clone(),
-                        definition: def,
-                    };
-                    self.show_dict_in_webview(&word, std::slice::from_ref(&fallback), rect_json);
-                }
+                        ..Default::default()
+                    });
+                self.dict_lookup_word = Some(data.word.clone());
+                self.dict_lookup_def = data
+                    .senses
+                    .first()
+                    .map(|s| s.def.clone())
+                    .or_else(|| (!data.suggestions.is_empty()).then(|| data.word.clone()));
+                self.show_dict_in_webview(&word, rect_json);
             }
             "save-word" => {
                 let word = payload.word.unwrap_or_default();
@@ -2035,6 +2056,20 @@ impl ReaderModel {
                             self.right_sidebar_open = true;
                         }
                         Err(e) => crate::notify::error("Could not save the word", &e.to_string()),
+                    }
+                }
+            }
+            "unsave-word" => {
+                // Popup bookmark toggle-off: forget the saved copies of this
+                // word for the current book.
+                let word = payload.word.unwrap_or_default();
+                if !word.trim().is_empty() {
+                    match self.catalog.delete_saved_word_by_word(&word, self.book_id) {
+                        Ok(_) => {
+                            crate::notify::compact("Word removed", &word);
+                            self.reload_saved_words();
+                        }
+                        Err(e) => crate::notify::error("Could not remove the word", &e.to_string()),
                     }
                 }
             }

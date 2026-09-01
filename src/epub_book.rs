@@ -1578,34 +1578,107 @@ if (!window.kalamReaderShellLoaded) {
     document.body.appendChild(p);
     return p;
   }
-  function showDictPopup(word, results, rect) {
+  function showDictPopup(payload, rect) {
     var p = ensureDictPopup();
+    // Successive lookups (chip clicks) swap the word: dim the header first,
+    // then fade it back in after the swap (mockup behaviour, 140 ms).
+    var wasVisible = p.style.display === 'block';
     function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-    var entries = [];
-    if (Array.isArray(results)) {
-      results.forEach(function(entry) {
-        if (entry && entry.word && entry.definition) {
-          entries.push({word:String(entry.word), definition:String(entry.definition)});
-        }
-      });
-    } else if (typeof results === 'string' && results.trim()) {
-      // Keep compatibility with older callers that supplied one definition.
-      entries.push({word:word, definition:results});
+    payload = payload || {};
+    var word = String(payload.word || '');
+    var senses = Array.isArray(payload.senses) ? payload.senses : [];
+    var synonyms = Array.isArray(payload.synonyms) ? payload.synonyms : [];
+    var antonyms = Array.isArray(payload.antonyms) ? payload.antonyms : [];
+    var idioms = Array.isArray(payload.idioms) ? payload.idioms : [];
+    var suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : [];
+    var pos = Array.isArray(payload.pos) ? payload.pos : [];
+    var saved = !!payload.saved;
+
+    function defItem(s, n) {
+      return '<div class="k-def-item"><span class="k-def-num">'+n+'.</span><div>'
+        + '<div class="k-def-text">'+esc(s.def)+'</div>'
+        + (s.example ? '<div class="k-def-example">'+esc(s.example)+'</div>' : '')
+        + '</div></div>';
     }
-    var countLabel = entries.length === 1 ? '1 result' : entries.length + ' results';
-    var resultHtml = '';
-    entries.forEach(function(entry, index) {
-      resultHtml += '<article class="kalam-dict-result">'
-        + '<div class="kalam-dict-result-head"><div class="kalam-dict-word">'+esc(entry.word)+'</div><div class="kalam-dict-sub">Result '+(index + 1)+'</div></div>'
-        + '<div class="kalam-dict-body">'+esc(entry.definition)+'</div>'
-        + '<div class="kalam-dict-actions"><button class="kalam-dict-save" data-result-index="'+index+'">Save word</button><button class="kalam-dict-copy" data-result-index="'+index+'">Copy</button></div>'
-        + '</article>';
-    });
-    p.innerHTML = '<div class="kalam-dict-head"><div><div class="kalam-dict-word">'+esc(word)+'</div><div class="kalam-dict-sub">Dictionary · '+countLabel+'</div></div><button class="kalam-dict-close" onclick="window.kalamHideDict()">Close</button></div>'
-      + '<div class="kalam-dict-results">'+resultHtml+'</div>';
+
+    var html = '<div class="k-header">'
+      + '<div class="k-header-left">'
+      + '<div class="k-word">'+esc(word)+'</div>'
+      // Pronunciation slot — kept empty until an offline source exists.
+      + '<div class="k-pronunciation" id="kalam-pronunciation"></div>'
+      + (pos.length ? '<span class="k-pos">'+esc(pos.join(' · '))+'</span>' : '')
+      + '</div>'
+      + '<div class="k-header-actions">'
+      + '<button class="k-save-btn'+(saved?' saved':'')+'" id="kalam-dict-save" title="'+(saved?'Saved':'Save word')+'">'+(saved?'\u2713':'\u2606')+'</button>'
+      + '<button class="k-save-btn" id="kalam-dict-copy" title="Copy">\u29c9</button>'
+      + '<button class="k-save-btn" id="kalam-dict-close" title="Close">\u2715</button>'
+      + '</div>'
+      + '</div>'
+      + '<div class="k-body">';
+
+    if (senses.length) {
+      html += '<div class="k-section-label">Definitions</div><div class="k-defs">';
+      var shown = senses.slice(0, 3);
+      var extra = senses.slice(3);
+      shown.forEach(function(s, i){ html += defItem(s, i + 1); });
+      if (extra.length) {
+        html += '<div class="k-extra-defs" id="kalam-extra-defs">';
+        extra.forEach(function(s, i){ html += defItem(s, shown.length + i + 1); });
+        html += '</div><span class="k-show-more" id="kalam-show-more">Show '+extra.length+' more</span>';
+      }
+      html += '</div>';
+    }
+    if (synonyms.length) {
+      html += '<div class="k-section-label">Synonyms</div><div class="k-chips">'
+        + synonyms.map(function(w){ return '<span class="k-chip k-chip-syn">'+esc(w)+'</span>'; }).join('')
+        + '</div>';
+    }
+    if (antonyms.length) {
+      html += '<div class="k-section-label">Antonyms</div><div class="k-chips">'
+        + antonyms.map(function(w){ return '<span class="k-chip k-chip-ant">'+esc(w)+'</span>'; }).join('')
+        + '</div>';
+    }
+    if (idioms.length) {
+      html += '<div class="k-section-label">Idioms</div><div class="k-idioms">'
+        + idioms.map(function(it){ return '<div class="k-idiom-item"><div class="k-idiom-phrase">'+esc(it.phrase)+'</div><div class="k-idiom-def">'+esc(it.def)+'</div></div>'; }).join('')
+        + '</div>';
+    }
+    if (!senses.length && suggestions.length) {
+      html += '<div class="k-section-label">'+(word.split(/\s+/).length > 1 ? 'Words in this phrase' : 'Did you mean')+'</div><div class="k-chips">'
+        + suggestions.map(function(w){ return '<span class="k-chip k-chip-syn">'+esc(w)+'</span>'; }).join('')
+        + '</div>';
+    }
+    if (!senses.length && !suggestions.length) {
+      html += '<div class="k-empty">No entry for \u2018'+esc(word)+'\u2019.</div>';
+    }
+    html += '</div><div class="k-fade-bottom" id="kalam-fade-bottom"></div>';
+    p.innerHTML = html;
     p.style.display = 'block';
-    var popupHeight = Math.min(p.offsetHeight || 220, Math.max(120, window.innerHeight - 16));
-    var popupWidth = Math.min(300, window.innerWidth * 0.84);
+
+    // Every lookup starts from the top of the scroll area.
+    var bodyEl = p.querySelector('.k-body');
+    if (bodyEl) bodyEl.scrollTop = 0;
+
+    // The bottom fade only makes sense when the body actually scrolls.
+    var fadeEl = document.getElementById('kalam-fade-bottom');
+    if (bodyEl && fadeEl && bodyEl.scrollHeight <= bodyEl.clientHeight) {
+      fadeEl.style.display = 'none';
+    }
+
+    // Header fade-in on lookup swaps (dimmed during the swap, then eased
+    // back to full opacity).
+    if (wasVisible) {
+      var newHeader = p.querySelector('.k-header');
+      if (newHeader) {
+        newHeader.style.opacity = '0.2';
+        void newHeader.offsetWidth; // commit the dimmed state
+        newHeader.style.transition = 'opacity 0.14s ease';
+        newHeader.style.opacity = '1';
+      }
+    }
+
+    var popupWidth = Math.min(380, window.innerWidth * 0.86);
+    var popupHeight = Math.min(p.offsetHeight || 240, Math.max(140, window.innerHeight - 16));
     var minLeft = window.scrollX + 8;
     var maxLeft = window.scrollX + window.innerWidth - popupWidth - 8;
     var top, left;
@@ -1624,34 +1697,52 @@ if (!window.kalamReaderShellLoaded) {
     }
     p.style.top = top + 'px';
     p.style.left = left + 'px';
-    var saves = p.querySelectorAll('.kalam-dict-save');
-    for (var i = 0; i < saves.length; i++) {
-      saves[i].addEventListener('click', function() {
-        var entry = entries[Number(this.getAttribute('data-result-index'))];
-        if (!entry) return;
-        kalamBridge({type:'save-word', word:entry.word, definition:entry.definition});
-        hideDict();
+
+    var saveBtn = document.getElementById('kalam-dict-save');
+    if (saveBtn) saveBtn.addEventListener('click', function() {
+      saved = !saved;
+      saveBtn.classList.toggle('saved', saved);
+      saveBtn.textContent = saved ? '\u2713' : '\u2606';
+      saveBtn.title = saved ? 'Saved' : 'Save word';
+      if (saved) {
+        var def = senses.length ? senses[0].def : '';
+        kalamBridge({type:'save-word', word:word, definition:def});
+      } else {
+        kalamBridge({type:'unsave-word', word:word});
+      }
+    });
+    var copyBtn = document.getElementById('kalam-dict-copy');
+    if (copyBtn) copyBtn.addEventListener('click', function() {
+      var text = word;
+      senses.forEach(function(s, i){ text += '\n' + (i + 1) + '. ' + s.def; });
+      try{ navigator.clipboard.writeText(text); }catch(e){}
+      hideDict();
+    });
+    var closeBtn = document.getElementById('kalam-dict-close');
+    if (closeBtn) closeBtn.addEventListener('click', function(){ hideDict(); });
+    var chips = p.querySelectorAll('.k-chip');
+    for (var i = 0; i < chips.length; i++) {
+      chips[i].addEventListener('click', function() {
+        var w = this.textContent.trim();
+        if (w) kalamBridge({type:'dict-lookup', word:w});
       });
     }
-    var copies = p.querySelectorAll('.kalam-dict-copy');
-    for (var j = 0; j < copies.length; j++) {
-      copies[j].addEventListener('click', function() {
-        var entry = entries[Number(this.getAttribute('data-result-index'))];
-        if (!entry) return;
-        try{ navigator.clipboard.writeText(entry.definition); }catch(e){}
-        hideDict();
-      });
-    }
+    var more = document.getElementById('kalam-show-more');
+    if (more) more.addEventListener('click', function() {
+      var extra = document.getElementById('kalam-extra-defs');
+      var vis = extra.classList.toggle('visible');
+      more.textContent = vis ? 'Show less' : 'Show ' + extra.children.length + ' more';
+    });
   }
   function hideDict() {
     var p = document.getElementById('kalam-dict-popup');
     if (p) p.style.display='none';
   }
   window.kalamHideDict = hideDict;
-  window.kalamShowDict = function(word, results, rectJson) {
+  window.kalamShowDict = function(payload, rectJson) {
     var rect = null;
     try { if (rectJson) rect = JSON.parse(rectJson); } catch(e){}
-    showDictPopup(word, results, rect);
+    showDictPopup(payload, rect);
   };
 
   // ---- Highlights injection from Rust ----
@@ -2479,94 +2570,245 @@ html.kalam-selection-active body * ::selection {{
   fill: var(--kalam-chip-accent) !important;
 }}
 
-/* ── dictionary popup inside WebView ── */
+/* ── dictionary popup inside WebView (Phase 5 redesign) ──
+   Every rule is id-scoped with !important because the reading skin forces
+   `color`/`-webkit-text-fill-color` on `html, body, body *` and clears
+   `background-color` on all divs with !important. */
 #kalam-dict-popup {{
+  --kalam-pop-bg: {app_surface};
+  --kalam-pop-surface: {app_surface_2};
+  --kalam-pop-border: {app_border};
+  --kalam-pop-text: {app_text};
+  --kalam-pop-dim: color-mix(in srgb, {app_text} 55%, transparent);
+  --kalam-pop-accent: {app_accent};
+  --kalam-pop-syn: color-mix(in srgb, {app_accent} 82%, {app_surface});
+  --kalam-pop-ant: color-mix(in srgb, #e06c75 85%, {app_surface});
   position: absolute !important;
   z-index: 999998 !important;
-  width: 300px !important;
-  max-width: 84vw !important;
-  background: rgba(22,24,30,0.97) !important;
-  color: #fafaf9 !important;
-  border: 1px solid rgba(255,255,255,0.10) !important;
-  border-radius: 16px !important;
-  box-shadow: 0 18px 48px rgba(0,0,0,0.45) !important;
+  width: 380px !important;
+  max-width: 86vw !important;
+  background: var(--kalam-pop-bg) !important;
+  color: var(--kalam-pop-text) !important;
+  border: 1px solid var(--kalam-pop-border) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 32px 72px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.3) !important;
   padding: 0 !important;
   overflow: hidden !important;
-  font-family: -apple-system, BlinkMacSystemFont, "Inter", sans-serif !important;
-  backdrop-filter: blur(22px) !important;
-  -webkit-backdrop-filter: blur(22px) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif !important;
 }}
-.kalam-dict-head {{
+#kalam-dict-popup .k-header {{
   display: flex !important;
   justify-content: space-between !important;
   align-items: flex-start !important;
-  padding: 12px 14px 8px 14px !important;
-  background: rgba(255,255,255,0.04) !important;
+  gap: 12px !important;
+  padding: 20px 20px 16px 20px !important;
+  border-bottom: 1px solid var(--kalam-pop-border) !important;
+  background: var(--kalam-pop-bg) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25) !important;
+  z-index: 2 !important;
 }}
-.kalam-dict-word {{
-  color: #fafaf9 !important;
-  font-size: 15px !important;
-  font-weight: 700 !important;
+#kalam-dict-popup .k-header-left {{
+  flex: 1 !important;
+  min-width: 0 !important;
+}}
+#kalam-dict-popup .k-word {{
+  font-family: Georgia, "Times New Roman", "DejaVu Serif", serif !important;
+  font-size: 26px !important;
+  font-weight: 600 !important;
+  line-height: 1.1 !important;
+  color: var(--kalam-pop-text) !important;
+  margin-bottom: 5px !important;
   overflow-wrap: anywhere !important;
 }}
-.kalam-dict-result-head {{
-  padding: 10px 14px 0 14px !important;
+/* Pronunciation slot: kept in the DOM but hidden until real offline
+   pronunciation data exists (no licensed source today). */
+#kalam-dict-popup .k-pronunciation {{
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace !important;
+  font-size: 11px !important;
+  color: var(--kalam-pop-dim) !important;
+  margin-bottom: 7px !important;
 }}
-.kalam-dict-results {{
+#kalam-dict-popup .k-pronunciation:empty {{
+  display: none !important;
+}}
+#kalam-dict-popup .k-pos {{
+  font-size: 10.5px !important;
+  font-style: italic !important;
+  color: var(--kalam-pop-accent) !important;
+  background: color-mix(in srgb, var(--kalam-pop-accent) 14%, transparent) !important;
+  border-radius: 999px !important;
+  padding: 2px 9px !important;
+  display: inline-block !important;
+}}
+#kalam-dict-popup .k-header-actions {{
+  display: flex !important;
+  gap: 6px !important;
+  flex-shrink: 0 !important;
+}}
+#kalam-dict-popup .k-save-btn {{
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 50% !important;
+  border: 1px solid var(--kalam-pop-border) !important;
+  background: var(--kalam-pop-surface) !important;
+  color: var(--kalam-pop-dim) !important;
+  font-size: 15px !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  transition: background 0.15s, color 0.15s, border-color 0.15s !important;
+}}
+#kalam-dict-popup .k-save-btn:hover {{
+  background: var(--kalam-pop-border) !important;
+  color: var(--kalam-pop-text) !important;
+}}
+#kalam-dict-popup .k-save-btn.saved {{
+  color: var(--kalam-pop-accent) !important;
+  border-color: var(--kalam-pop-accent) !important;
+  background: color-mix(in srgb, var(--kalam-pop-accent) 14%, transparent) !important;
+}}
+#kalam-dict-popup .k-body {{
   max-height: 420px !important;
   overflow-y: auto !important;
+  scrollbar-width: none !important;
+  padding: 4px 20px 48px 20px !important;
 }}
-.kalam-dict-result + .kalam-dict-result {{
-  border-top: 1px solid rgba(255,255,255,0.10) !important;
+#kalam-dict-popup .k-body::-webkit-scrollbar {{
+  display: none !important;
 }}
-.kalam-dict-sub {{
-  color: rgba(255,255,255,0.45) !important;
-  font-size: 10px !important;
-  text-transform: uppercase !important;
+#kalam-dict-popup .k-fade-bottom {{
+  position: absolute !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 40px !important;
+  pointer-events: none !important;
+  background: linear-gradient(to bottom, transparent, var(--kalam-pop-bg)) !important;
+  border-radius: 0 0 18px 18px !important;
+  z-index: 1 !important;
+}}
+#kalam-dict-popup .k-section-label {{
+  margin: 18px 0 8px 0 !important;
+  font-size: 9.5px !important;
+  font-weight: 700 !important;
   letter-spacing: 0.08em !important;
-  margin-top: 2px !important;
+  text-transform: uppercase !important;
+  color: var(--kalam-pop-dim) !important;
 }}
-.kalam-dict-close {{
-  background: transparent !important;
-  border: none !important;
-  color: rgba(250,250,249,0.62) !important;
-  cursor: pointer !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  border-radius: 999px !important;
-  padding: 4px 8px !important;
-}}
-.kalam-dict-close:hover {{
-  background: rgba(255,255,255,0.08) !important;
-  color: #ffffff !important;
-}}
-.kalam-dict-body {{
-  padding: 12px 14px !important;
-  font-size: 13px !important;
-  line-height: 1.55 !important;
-  color: rgba(231,229,228,0.92) !important;
-  max-height: 190px !important;
-  overflow-y: auto !important;
-  white-space: pre-wrap !important;
-}}
-.kalam-dict-actions {{
+#kalam-dict-popup .k-defs {{
   display: flex !important;
-  gap: 8px !important;
-  padding: 8px 14px 14px 14px !important;
-  border-top: 1px solid rgba(255,255,255,0.08) !important;
+  flex-direction: column !important;
+  gap: 10px !important;
 }}
-.kalam-dict-save, .kalam-dict-copy {{
-  border: none !important;
-  border-radius: 999px !important;
-  padding: 7px 12px !important;
+#kalam-dict-popup .k-def-item {{
+  display: flex !important;
+  gap: 10px !important;
+  align-items: flex-start !important;
+}}
+#kalam-dict-popup .k-def-num {{
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace !important;
+  font-size: 10.5px !important;
+  color: var(--kalam-pop-accent) !important;
+  flex-shrink: 0 !important;
+  margin-top: 4px !important;
+  min-width: 18px !important;
+}}
+#kalam-dict-popup .k-def-text {{
+  font-size: 13.5px !important;
+  line-height: 1.6 !important;
+  color: var(--kalam-pop-text) !important;
+}}
+#kalam-dict-popup .k-def-example {{
+  font-family: Georgia, "Times New Roman", "DejaVu Serif", serif !important;
+  font-style: italic !important;
+  font-size: 12.5px !important;
+  color: var(--kalam-pop-dim) !important;
+  margin-top: 3px !important;
+}}
+#kalam-dict-popup .k-extra-defs {{
+  display: none !important;
+}}
+#kalam-dict-popup .k-extra-defs.visible {{
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+}}
+#kalam-dict-popup .k-show-more {{
+  margin-top: 8px !important;
+  align-self: flex-start !important;
   font-size: 12px !important;
-  font-weight: 600 !important;
+  color: var(--kalam-pop-accent) !important;
   cursor: pointer !important;
-  background: rgba(255,255,255,0.12) !important;
-  color: #fafaf9 !important;
+  display: inline-block !important;
 }}
-.kalam-dict-save:hover, .kalam-dict-copy:hover {{
-  background: rgba(255,255,255,0.20) !important;
+#kalam-dict-popup .k-show-more:hover {{
+  text-decoration: underline !important;
+}}
+#kalam-dict-popup .k-chips {{
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+}}
+#kalam-dict-popup .k-chip {{
+  display: inline-flex !important;
+  align-items: center !important;
+  border-radius: 999px !important;
+  padding: 4px 12px !important;
+  font-size: 12px !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  border: 1px solid !important;
+  transition: background 0.15s, border-color 0.15s !important;
+}}
+#kalam-dict-popup .k-chip-syn {{
+  color: var(--kalam-pop-syn) !important;
+  background: color-mix(in srgb, var(--kalam-pop-accent) 14%, transparent) !important;
+  border-color: color-mix(in srgb, var(--kalam-pop-accent) 30%, transparent) !important;
+}}
+#kalam-dict-popup .k-chip-syn:hover {{
+  background: color-mix(in srgb, var(--kalam-pop-accent) 25%, transparent) !important;
+  border-color: var(--kalam-pop-accent) !important;
+}}
+#kalam-dict-popup .k-chip-ant {{
+  color: var(--kalam-pop-ant) !important;
+  background: color-mix(in srgb, #e06c75 13%, transparent) !important;
+  border-color: color-mix(in srgb, #e06c75 28%, transparent) !important;
+}}
+#kalam-dict-popup .k-chip-ant:hover {{
+  background: color-mix(in srgb, #e06c75 25%, transparent) !important;
+  border-color: #e06c75 !important;
+}}
+#kalam-dict-popup .k-idioms {{
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+}}
+#kalam-dict-popup .k-idiom-item {{
+  background: var(--kalam-pop-surface) !important;
+  border: 1px solid var(--kalam-pop-border) !important;
+  border-radius: 10px !important;
+  padding: 10px 12px !important;
+}}
+#kalam-dict-popup .k-idiom-phrase {{
+  font-family: Georgia, "Times New Roman", "DejaVu Serif", serif !important;
+  font-style: italic !important;
+  font-size: 13px !important;
+  color: var(--kalam-pop-text) !important;
+  margin-bottom: 4px !important;
+}}
+#kalam-dict-popup .k-idiom-def {{
+  font-size: 12.5px !important;
+  line-height: 1.55 !important;
+  color: var(--kalam-pop-text) !important;
+}}
+#kalam-dict-popup .k-empty {{
+  padding: 22px 4px !important;
+  font-size: 13.5px !important;
+  color: var(--kalam-pop-dim) !important;
 }}
 
 /* Final override — use the same system-theme tokens as the GTK reader chrome */
@@ -2596,13 +2838,17 @@ html.kalam-selection-active body * ::selection {{
 #kalam-chip .kalam-chip-action-accent .kalam-chip-icon-letters text {{
   fill: var(--kalam-chip-accent) !important;
 }}
+/* Popup theme — the reading skin above forces every element's color with
+   !important, so the popup re-asserts its token colors with the same weight
+   and a higher-specificity selector (id + universal). Per-element colors
+   then win through id-scoped rules in the popup block. */
 #kalam-dict-popup, #kalam-dict-popup * {{
-  color: #f5f5f4 !important;
-  -webkit-text-fill-color: #f5f5f4 !important;
+  color: var(--kalam-pop-text) !important;
+  -webkit-text-fill-color: var(--kalam-pop-text) !important;
 }}
 #kalam-dict-popup {{
-  background: #1c1917 !important;
-  background-color: #1c1917 !important;
+  background: var(--kalam-pop-bg) !important;
+  background-color: var(--kalam-pop-bg) !important;
 }}
 
 /* ── theme-specific image handling (appended last so it wins) ── */
