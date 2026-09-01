@@ -32,7 +32,8 @@ instructions; you install into `.github/workflows/ci.yml`. See `docs/ci/README.m
 
 - Z-Library / unauthorized shadow libraries  
 - Calibre multi-app suite, content server, fetch news  
-- Plugin API  
+- ~~Plugin API~~ — **reversed 2026-09-02**: plugins are wanted; see
+  "Architecture & performance track" below and `docs/conversation.md` §5
 - Windows / macOS  
 
 ---
@@ -95,10 +96,19 @@ P8  Comics local ────── CBZ/CBR + Moku-style comics reader
 P9  Comics sources ──── browse/download (legal / self-hosted first)
 P10 PDF ─────────────── MuPDF in text-reader family + basic marks
 P11 Tools ───────────── convert (external), polish, Calibre import
+A0  Architecture track ─ Yazi-style service layer + task manager +
+                        preloaders + thin UI (perf); may interleave P6–P11
+P12 Plugins ──────────── scripting/adapter surface (Lua TBD; after A0)
 ```
 
 **Order lock:** P0→P5 stay sequential. P6–P11 may reorder after P3 if priorities shift.
 Comics UI design is frozen in this doc now; **implementation is P8**.
+
+**Architecture track (A0)** is the performance/async work discussed in
+`docs/conversation.md` — service layer, task manager, cover/chapter
+preloaders, grid virtualization. It is a track, not a phase: it may
+interleave with P6–P11 (and the custom-renderer question, still under
+discussion, belongs to it).
 
 > **Track phases are separate from P0–P11.** The dictionary overhaul uses its
 > own numbering (Phases 1–10, in the "Dictionary overhaul" section below) —
@@ -1246,7 +1256,7 @@ Only sources you’re allowed to use. No unauthorized scraper assistance.
 
 ## Schema (current + planned)
 
-Current `SCHEMA_VERSION` = **7** (`src/db.rs`). Migrations run on open and are
+Current `SCHEMA_VERSION` = **14** (`src/db.rs`). Migrations run on open and are
 additive; there is no downgrade path, so take a copy of
 `~/.local/share/kalam/catalog.db` before testing a build that bumps it.
 
@@ -1353,6 +1363,10 @@ lives at `docs/ci/github-actions-ci.yml`; install it by copying over
 
 ## Immediate next steps
 
+0. **Architecture track A0 — design discussed, not yet implemented.** Yazi-style
+   service layer (`LibraryService` behind `Catalog`), task manager, cover
+   preloader + thumbnail persistence, chapter preloading, grid virtualization,
+   perf-budget CI test. Plan and rationale: `docs/conversation.md` §§1–3.
 1. **Dictionary track Phases 8–10 — shipped.** Phase 8 — POS grouping
    dividers (`be11c07`); Phase 9 — Settings dictionary priority reorder UI
    with "speaks first" chip (`d12c905`); Phase 10 — lookup history:
@@ -1451,3 +1465,4 @@ lives at `docs/ci/github-actions-ci.yml`; install it by copying over
 | 2026-09-01 | Dictionary track Phase 8 shipped: POS grouping dividers in the dictionary popup (`be11c07`) — senses grouped under noun/verb/adjective/adverb dividers (remaining POS first-appearance order; unlabelled senses last with no divider). Rendering-only over the flat senses array: `Sense.number`, the Lesk hint index and the ↑/↓ keyboard walk keep indexing the flat list; a group straddling the "Show N more" fold keeps one divider at its true start; the header POS chip is dropped when 2+ groups exist. CI green |
 | 2026-09-01 | Dictionary track Phase 9 shipped: Settings dictionary priority reorder UI (`d12c905`) — the v12 `priority` column was write-only; `Dictionary` now carries it, `list_dictionaries()` selects it and orders `priority ASC, name ASC`, and Dictionaries rows get ↑/↓ buttons that renumber all packs compactly (0, 1, 2, …), trigger `rebuild_combined_dictionary()`, and refresh; the top row shows a quiet "speaks first" chip; ↑/↓ disabled at the ends; re-imports keep user-set priority (upsert doesn't touch the column). CI green |
 | 2026-09-01 | Dictionary track Phase 10 shipped: lookup history — schema v14 `dict_lookups` (FK to books `ON DELETE SET NULL`, NOCASE word index), logging in the `lookup_dict` funnel (both the popup selection/tap path and sidebar lookups; per-keystroke search prefixes not logged), misses logged with `found = 0`, same-hour same-book collapse, pref `dict_history_enabled` (default 1) with a reader Settings toggle, Lookup History page (day-grouped, searchable, miss chip, Clear), `repeat_lookup_words()` feeding "Suggest from history" chips on Saved Words plus a "Last 3 lookups" dashboard card on Library. Three CI iterations fixed a relm4 5-arg `update_with_view` + `#[watch]` label lifetime (`68373fa`), a FK violation in the new test (seed real books, `6b4e528`), and the repeat-set expectation (miss word logged across two books, `0b188a3`). 156 unit tests green |
+| 2026-09-02 | Design conversation recorded in `docs/conversation.md`: (1) performance — stay Rust, architecture is the bottleneck (no language rewrite); (2) second AI's analysis reviewed and verified (grid rebuild, sync decode, in-memory cover cache, 3,638-line CSS — all real; fix order adjusted: thumbnails → async decode → virtualize if numbers say so); (3) Yazi philosophy adopted — service layer + task manager + preloaders + thin UI (relm4 + async-channel already give half the skeleton); (4) roadmap scope reviewed — P6–P11 stand; custom text-renderer question deferred to a dedicated discussion; (5) **Plugin API non-goal reversed** — plugins wanted, leaning Lua, design TBD after the architecture track. Roadmap: schema version corrected to 14, phase map gains A0 (architecture track) + P12 (plugins), non-goals updated, next-steps gains the A0 entry |
