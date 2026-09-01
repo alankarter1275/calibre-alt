@@ -723,7 +723,10 @@ mod tests {
     fn quote_ident_escapes_embedded_quotes() {
         assert_eq!(quote_ident("entries"), "\"entries\"");
         assert_eq!(quote_ident("my dict"), "\"my dict\"");
-        assert_eq!(quote_ident("word\"; DROP TABLE x; --"), "\"word\"\"\"; DROP TABLE x; --\"");
+        assert_eq!(
+            quote_ident("word\"; DROP TABLE x; --"),
+            "\"word\"\"\"; DROP TABLE x; --\""
+        );
     }
 
     #[test]
@@ -813,10 +816,7 @@ mod tests {
         let (name, count) = import_dictionary(&cat, &tsv).unwrap();
         assert_eq!(name, "words");
         assert_eq!(count, 2);
-        assert_eq!(
-            cat.lookup_entry("apple").unwrap().senses[0].def,
-            "A fruit."
-        );
+        assert_eq!(cat.lookup_entry("apple").unwrap().senses[0].def, "A fruit.");
         assert_eq!(
             cat.lookup_entry("bee").unwrap().senses[0].def,
             "A flying insect."
