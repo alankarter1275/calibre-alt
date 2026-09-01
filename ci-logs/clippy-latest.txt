@@ -1,11 +1,4 @@
-src/pages/saved_words.rs:336:34: [1m[91merror[E0425][0m: cannot find type `SavedWordsWidgets` in this scope
-src/pages/saved_words.rs:502:20: [1m[91merror[E0433][0m: cannot find module or crate `dirs` in this scope: use of unresolved module or unlinked crate `dirs`
-src/pages/saved_words.rs:516:20: [1m[91merror[E0433][0m: cannot find module or crate `dirs` in this scope: use of unresolved module or unlinked crate `dirs`
-src/pages/saved_words.rs:91:36: [1m[91merror[E0308][0m: mismatched types: expected `&str`, found `Option<&str>`
-src/pages/saved_words.rs:96:36: [1m[91merror[E0308][0m: mismatched types: expected `&str`, found `Option<&str>`
-src/pages/saved_words.rs:101:36: [1m[91merror[E0308][0m: mismatched types: expected `&str`, found `Option<&str>`
-src/pages/saved_words.rs:109:32: [1m[91merror[E0308][0m: mismatched types: expected `&str`, found `Option<&str>`
-src/pages/saved_words.rs:115:32: [1m[91merror[E0308][0m: mismatched types: expected `&str`, found `Option<&str>`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 8 previous errors; 2 warnings emitted
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 8 previous errors; 2 warnings emitted
---- run 33484835571 ---
+src/dict.rs:742:36: [1m[91merror[E0308][0m: mismatched types: expected `&Path`, found `PathBuf`
+src/dict.rs:743:37: [1m[91merror[E0308][0m: mismatched types: expected `&Path`, found `PathBuf`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors; 2 warnings emitted
+--- run 33507356307 ---
