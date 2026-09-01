@@ -26,12 +26,13 @@ You already enabled CI once (Option C). Good — leave it.
 
 ```bash
 cd /path/to/calibre-alt
-git checkout arena/019f9529-calibre-alt
+git fetch origin
+git checkout arena/01a05974-calibre-alt
 git pull
 cp docs/ci/github-actions-ci.yml .github/workflows/ci.yml
 git add .github/workflows/ci.yml
 git commit -m "ci: update workflow"
-git push origin arena/019f9529-calibre-alt
+git push origin arena/01a05974-calibre-alt
 ```
 
 Or GitHub UI: edit `.github/workflows/ci.yml` and paste the contents of
@@ -42,9 +43,13 @@ Or GitHub UI: edit `.github/workflows/ci.yml` and paste the contents of
 On every push / PR:
 
 1. Install `libgtk-4-dev` + `libadwaita-1-dev` on `ubuntu-latest`
-2. `cargo fmt --check`
-3. `cargo clippy -D warnings`
-4. `cargo build` and `cargo build --release`
+2. `cargo fmt --check` (auto-fix + push when it differs)
+3. `cargo clippy --all-targets` (warnings do not fail; errors publish the
+   diagnostics to `ci-logs/clippy-latest.txt` and fail the run)
+4. `cargo test --all-targets` — compiles **and runs** the unit tests
+   (in-memory SQLite, headless). Failures publish the diagnostics to
+   `ci-logs/test-latest.txt` and fail the run.
+5. `cargo build` and `cargo build --release`
 
 No display / no GUI smoke tests — those stay on your Arch box at phase end.
 

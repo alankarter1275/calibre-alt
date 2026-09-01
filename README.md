@@ -3,15 +3,20 @@
 **Kalam** is a lightweight, personal, all-in-one ebook manager and reader for Linux.
 Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest hardware.
 
-> Phase 5 — metadata editing, cover replacement and Open Library lookup.
+> Reader-improvements track complete — merged dictionary store, popup redesign,
+> POS + likely-sense hint, offline IPA pronunciation, tap-to-look-up, find in
+> chapter, vocabulary review + CSV/Anki export.
 
 ## Working agreement
 
-- **CI (GitHub Actions)** compiles every push — you don’t need to build between commits.
+- **CI (GitHub Actions)** compiles, clippys and now **runs the unit tests** on
+  every push — you don’t need to build between commits. (The `cargo test` step
+  is staged at `docs/ci/github-actions-ci.yml`; the App cannot push workflow
+  files, so it is installed manually — see `docs/ci/README.md`.)
 - **Your Arch machine** is only needed at **phase boundaries** (smoke-test + design feedback).
 - Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md)
 
-## What works now (P5)
+## What works now
 
 - Slim sidebar shell + cover-card library grid
 - **SQLite catalog** at `~/.local/share/kalam/catalog.db`
@@ -48,7 +53,9 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 | P2 | EPUB reader ✅ |
 | P3 | Highlights, quotes, offline dictionary ✅ |
 | P4 | Shelves engine, lists, history, tags, analytics ✅ |
-| **P5** | **Metadata edit, cover replace, Open Library fetch** ← current ✅ |
+| **P5** | **Metadata edit, cover replace, Open Library fetch** ✅ |
+| Reader track | Dictionary overhaul (merged store, popup redesign, likely-sense hint, IPA pronunciation, tap-to-look-up, find in chapter) + vocabulary review (known flag, CSV/Anki export) ✅ |
+| Backend review | Full sweep of `db.rs` + `db/*`: importers hardened, reading-list column bug fixed, 9 new tests ✅ |
 | P6–P11 | Downloads, AO3/FF, comics, PDF, tools — see ROADMAP |
 
 ## Requirements (Arch Linux)

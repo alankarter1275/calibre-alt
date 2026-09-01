@@ -90,6 +90,39 @@ jobs:
         if: steps.clippy.outcome == 'failure'
         run: exit 1
 
+      # cargo test: compiles and RUNS the unit tests (in-memory SQLite —
+      # headless, no display needed). Failures publish the diagnostics to
+      # ci-logs/test-latest.txt, same pattern as clippy above.
+      - name: test
+        id: test
+        run: |
+          set -o pipefail
+          cargo test --all-targets --message-format=short 2>&1 \
+            | tee /tmp/test.txt
+        continue-on-error: true
+
+      - name: publish test log on failure
+        if: steps.test.outcome == 'failure'
+        run: |
+          mkdir -p ci-logs
+          grep -E "error|FAILED|panicked|test result" /tmp/test.txt \
+            | head -100 > ci-logs/test-latest.txt || true
+          if [ ! -s ci-logs/test-latest.txt ]; then
+            echo "(no lines matched; last 100 lines of output)" > ci-logs/test-latest.txt
+            tail -100 /tmp/test.txt >> ci-logs/test-latest.txt || true
+          fi
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/test-latest.txt
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -f ci-logs/test-latest.txt
+          git commit -m "ci: publish test failures [skip ci]" || true
+          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+          git push origin "HEAD:$GITHUB_REF_NAME" || true
+
+      - name: fail if tests failed
+        if: steps.test.outcome == 'failure'
+        run: exit 1
+
       - name: build (debug)
         run: cargo build --verbose
 

@@ -331,9 +331,10 @@ Related reader work already completed:
    still does not make every compositional phrase meaningful automatically.
    **Phases 1–5.5 of that overhaul are shipped (precomputed headword key
    index, WordNet exception-list lemmatization, phrase decomposition,
-   merged dictionary store, popup redesign, POS grouping + likely-sense
-   hint). Offline pronunciation (CMU Pronouncing Dictionary → IPA, Phase
-   5.6) is shipped too. The Settings reorder UI remains deferred.**
+   merged dictionary store, popup redesign, likely-sense hint; the POS
+   pill shipped but POS grouping dividers remain deferred). Offline
+   pronunciation (CMU Pronouncing Dictionary → IPA, Phase 5.6) is
+   shipped too. The Settings reorder UI remains deferred.**
 
 4. **Only later consider architecture changes**
    - [ ] Multi-chapter buffering.
@@ -355,10 +356,11 @@ Related reader work already completed:
 
 **Status: Phases 1–6 shipped (headword key index, WordNet exception
 lemmatization, phrase decomposition, merged dictionary store, popup
-redesign, POS grouping + likely-sense hint, offline pronunciation,
-tap-to-look-up + popup keyboard + find in chapter) and Phase 7
-(vocabulary review + CSV/Anki export) is shipped too — the dictionary
-overhaul is complete. The Settings reorder UI remains deferred.** The
+redesign, likely-sense hint — POS grouping dividers deferred — offline
+pronunciation, tap-to-look-up + popup keyboard + find in chapter) and
+Phase 7 (vocabulary review + CSV/Anki export) is shipped too — the
+dictionary overhaul is complete. The Settings reorder UI and POS
+grouping dividers remain deferred.** The
 phases are recorded here as the implementation brief for future isolated
 reader-improvement steps.
 
@@ -367,7 +369,7 @@ reader-improvement steps.
 #### Context for the implementing AI
 
 Kalam is a Rust + GTK4 + Relm4 + WebKitGTK ebook reader. Work on branch
-`arena/01a0487b-calibre-alt`. The dictionary spans three areas:
+`arena/01a05974-calibre-alt`. The dictionary spans three areas:
 
 - `src/db.rs` — schema/migrations. `migrate()` uses `CREATE TABLE IF NOT EXISTS`
   plus guarded `ALTER TABLE ... ADD COLUMN` plus a `SCHEMA_VERSION` constant /
@@ -536,7 +538,7 @@ WordNet entry only; `set` with 15 senses in one dictionary and 15 in another
 shows 15, not 30; removing a dictionary drops its words (or falls back to the
 next in priority); identical duplicate definitions collapse to one sense.
 
-#### Phase 5 — Popup redesign (app chrome, dark)
+#### Phase 5 — Popup redesign (app chrome, dark)  ✅ complete
 
 **Goal:** fix the fake result, structure the entry, label sources. All in
 `epub_book.rs` (`showDictPopup` + CSS) and the `reader.rs` handler that feeds it.
@@ -576,7 +578,7 @@ gone; one clean entry per word with numbered senses; phrase misses show
 tappable word chips; imported HTML renders formatted; popup stays dark on
 sepia.
 
-#### Phase 5.5 — POS grouping + Lesk "likely sense" hint
+#### Phase 5.5 — POS grouping + Lesk "likely sense" hint  ✅ complete
 
 **Goal:** make senses easier to scan by grouping on part of speech, and
 optionally mark the sense most likely to fit the reader's sentence — without
@@ -1176,37 +1178,38 @@ Deps include `webkitgtk-6.0` for P2+.
 
 ## Immediate next steps
 
-1. **Reader milestone 1 validation:** ✅ completed on Arch; the current
-   annotation workflow was tested and works as expected.
-2. **Reader milestone 2 validation:** test hybrid anchoring with an EPUB whose
-   chapter HTML has changed, then record your sign-off or change requests.
-3. **Reader milestone 3 validation:** test phrase preservation,
-   punctuation/inflection normalization, and multiple dictionary results
-   together; record your sign-off or change requests.
-4. **Later dictionary work:** Phases 1–4 of the dictionary overhaul are
-   shipped — headword keys (`Run` / `run` / `rún` → `run` through
-   `idx_dict_entries_key`, existing databases upgrade in place), real
-   lemmatization from the bundled WordNet 3.0 exception lists
-   (`went→go`, `mice→mouse`, `better→good`, `running→run`, suffix rules as
-   fallback), phrase decomposition (`search_phrase`: full phrase →
-   contained phrase headword → per-token breakdown), and the merged
-   dictionary store (one word = one entry from the highest-priority
-   dictionary, auto-rebuilt on import/remove/install). When the dictionary
-   work resumes, continue with Phase 5: the popup redesign (empty state,
-   numbered senses, single action bar). Keep the existing offline import
-   flow for all other packs and do not infer definitions for arbitrary
-   compositional phrases.
-5. After the reader feature work is complete, return to the deferred annotation
+1. **CI: apply the workflow update (you).** The canonical workflow with the
+   `cargo test` step lives at `docs/ci/github-actions-ci.yml` — copy it into
+   `.github/workflows/ci.yml` and push with your account (the Arena App cannot
+   push workflow files). That is the **first real `cargo test` run** in CI:
+   154 unit tests, none of which have ever executed on a CI runner before
+   (they were validated only by compilation + Python replicas). Watch
+   `ci-logs/test-latest.txt` if anything fails.
+2. **Backend review — done (focused + full sweep).** The whole backend was
+   reviewed line-by-line: migrations/schema, `dictionaries.rs` (merged store,
+   search/lookup chain, sense parsing), `dict.rs` importers, the reader ↔ JS
+   bridge, shelves, history, metadata overrides, stats, authors, series,
+   annotations, prefs, pronunciation, `shelf_rules.rs`. One latent bug found
+   and fixed (`list_reading_list` read `progress/rating/publisher` as
+   `position/note/added_at` — wrong column offset against the 16-column
+   `BOOK_COLUMNS`); the dict importers were hardened (read-only SQLite packs,
+   identifier quoting, half-import rollback, catalog.db self-import guard);
+   9 new unit tests. No other defects.
+3. **Reader milestones 1–3:** all shipped and CI-green — annotation workflow,
+   hybrid anchoring, phrase preservation, punctuation/inflection
+   normalization, multi-result dictionary popup. Arch re-validation is
+   welcome whenever convenient but is not blocking anything.
+4. After the reader feature work is complete, return to the deferred annotation
    design polish without changing saved-highlight anchoring or temporary
    emphasis.
-6. Only after those reader milestones, consider multi-chapter buffering,
+5. Only after those reader milestones, consider multi-chapter buffering,
    continuous book-wide scrolling, chapter auto-advance redesign, or advanced
    CFI.
-7. **UI overhaul:** after the reader track is signed off, continue the
+6. **UI overhaul:** after the reader track is signed off, continue the
    mockup-first screen work. `library_look.png` shows a two-column dashboard;
    the app is currently a single vertical stack.
-8. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
-9. **P8** when you want comics for real (UI target already specified above).
+7. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
+8. **P8** when you want comics for real (UI target already specified above).
 
 ---
 
@@ -1257,3 +1260,9 @@ Deps include `webkitgtk-6.0` for P2+.
 | 2026-09-01 | Phase 3 follow-up: the sidebar Words search box still used the single-word path, so phrases typed there dead-ended with "No matches". All lookup paths now share one phrase-aware pipeline (`lookup_dict`) — sidebar search and selection popup behave identically |
 | 2026-09-01 | Two more bundled English packs, on by default: **English Synonyms (WordNet 3.0)** (110,365 words, synset companions) and **English Antonyms (WordNet 3.0)** (6,621 antonym pairs), both derived from the already-licensed Princeton WordNet 3.0 data (NOTICE + checksums beside the packs). New packs auto-install on next launch via their own first-run prefs, so existing installs gain them without re-import |
 | 2026-09-01 | Dictionary overhaul Phase 4 shipped (user-designed): merged dictionary store. One word = one entry, from the highest-priority dictionary that has it (WordNet 10, Idioms 20, Synonyms 30, Antonyms 40, imports 100) — priority wins even when another dictionary has more senses, and the losing dictionaries' copies are never shown. Schema v12: `dictionaries.priority` + `combined_words` (one row per headword key, senses as deduped JSON). Auto-rebuilt on import/remove/bundled install and once at migration. The old Phase 4/5 plan of per-dictionary tabs is obsolete and removed |
+| 2026-09-01 | Dictionary overhaul Phase 5 shipped: popup redesign — the fake "1 RESULT / No definition / Total dict entries" state is gone, one clean entry per word with numbered senses, phrase misses render clickable breakdown chips, imported HTML definitions render formatted instead of flattened, a single action bar (Save/Copy/Search-in-book) replaces per-result button pairs, and the popup stays dark on every paper theme | 
+| 2026-09-01 | Dictionary overhaul Phase 5.5 shipped (partial): Lesk "likely here" hint — `likely_sense_index` (pure fn, unit-tested: stopword-filtered overlap, headword excluded, tiny stemmer) marks the best-matching sense with an accent pill, the bridge now sends the full sentence context, a `dict_sense_hint` pref toggles the hint only, and senses are never hidden. The header POS pill shipped earlier; **POS grouping dividers remain deferred** |
+| 2026-09-01 | Dictionary overhaul Phase 6 shipped: tap-to-look-up (240 ms tap delay, caret-word resolution, sentence context) + popup keyboard (↑/↓ focus ring with wrap, Enter saves the focused sense; ←/→ deliberately unbound) + **Find in chapter** (`kalamSearchInBook`, temporary accent hits, count toast, Esc clears). jsdom harness at `docs/files/test_kalam_dict_preview.js` grew to 55 checks |
+| 2026-09-01 | Dictionary overhaul Phase 7 shipped: vocabulary review — schema v13 `saved_words.known`, Saved Words page gains All/To review/Known filter + mark-known check buttons, and exports **CSV** (`~/SavedWords.csv`, RFC-4180) and **Anki TSV** (`~/SavedWords-Anki.txt`, `#separator:tab`). The dictionary overhaul is complete |
+| 2026-09-01 | Backend review pass (focused + full sweep) shipped: dict importers hardened — SQLite packs are opened read-only (never modify the pack, no `-wal`/`-journal` sidecars), pack table/column identifiers are double-quoted against crafted names, failed imports roll back the dictionary row instead of leaving a half-import, and importing Kalam's own `catalog.db` as a pack is rejected via canonical path comparison. Fixed a latent bug: `list_reading_list` read `progress/rating/publisher` as `position/note/added_at` (column offset vs the 16-column `BOOK_COLUMNS`). 9 new unit tests; the rest of the sweep (shelves, history, metadata, stats, authors, series, annotations, prefs, pronunciation, `shelf_rules.rs`, schema/FKs) found no defects |
+| 2026-09-01 | CI workflow gains a `cargo test` step: compiles and runs all unit tests headless (in-memory SQLite), publishes failures to `ci-logs/test-latest.txt` and fails the run. The 154 unit tests have never executed on a CI runner before. The full workflow is staged at `docs/ci/github-actions-ci.yml` — the Arena App cannot push `.github/workflows/` changes, so the user installs it manually with their own account |
