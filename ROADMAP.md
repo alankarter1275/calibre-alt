@@ -98,7 +98,8 @@ P10 PDF ─────────────── MuPDF in text-reader famil
 P11 Tools ───────────── convert (external), polish, Calibre import
 A0  Architecture track ─ Yazi-style service layer + task manager +
                         preloaders + thin UI (perf); may interleave P6–P11
-P12 Plugins ──────────── scripting/adapter surface (Lua TBD; after A0)
+P12 Plugins ──────────── source-adapter plugins: fiction + manga (Lua;
+                        after A0)
 ```
 
 **Order lock:** P0→P5 stay sequential. P6–P11 may reorder after P3 if priorities shift.
@@ -107,8 +108,10 @@ Comics UI design is frozen in this doc now; **implementation is P8**.
 **Architecture track (A0)** is the performance/async work discussed in
 `docs/conversation.md` — service layer, task manager, cover/chapter
 preloaders, grid virtualization. It is a track, not a phase: it may
-interleave with P6–P11 (and the custom-renderer question, still under
-discussion, belongs to it).
+interleave with P6–P11. The **renderer decision** (WebKit vs custom text
+engine) belongs to it — currently leaning **hybrid**: custom renderer for
+reading clean-format fiction + comics, WebKit for browse/fallback (see
+`docs/conversation.md` §7).
 
 > **Track phases are separate from P0–P11.** The dictionary overhaul uses its
 > own numbering (Phases 1–10, in the "Dictionary overhaul" section below) —
@@ -1165,17 +1168,27 @@ runs — the constant that keeps appearing is the answer.
 
 ---
 
-## P7 — Fiction sources (AO3 first)
+## P7 — Fiction platform (AO3 first, then more)
 
-**Goal:** Search/read/track fanfiction inside Kalam.
+**Goal:** A FanFiction.net-app-class fiction platform inside Kalam: search
+across sources with tag filters, download fics, read offline, and
+**auto-update** downloaded fics as new chapters release.
 
 ### Scope
 
-- `FictionSource` trait  
-- AO3: search, detail, download EPUB into library, `source` + `remote_id`  
-- Manual “Check updates”  
-- Rate limits / clear errors  
-- Open downloads in **text reader**  
+- `FictionSource` trait → implemented by **source plugins (P12, Lua)**
+- Sources: AO3 first, then FFN, Royal Road, Webnovel, Scribble Hub, … each
+  exposes search / detail / chapter list / chapter content (sanitized)
+- **Structured search UI** (native): fandom, tags, characters, ships,
+  rating, status — fed by plugin-parsed results (AO3 has no public API;
+  plugins parse the site, Tachiyomi-style)
+- Download into library with `source` + `remote_id`; offline reading
+- **Follow + automatic updater:** background scheduler (A0 task manager +
+  glib timers) polls followed fics, downloads new chapters, notifies
+  (replaces "Manual Check updates")
+- Rate limits / clear errors / polite polling (respect sites)
+- Caveat (existing risk): annotations anchor to spine — re-downloaded fics
+  may lose anchors; best-effort
 
 ### Out
 
@@ -1211,16 +1224,24 @@ Open large CBZ, scrub pages, zoom, RTL, quit/restore page; RAM stays reasonable.
 
 ---
 
-## P9 — Comics sources
+## P9 — Manga platform (Suwayomi-class)
 
-**Goal:** Browse/download into library → open in P8 viewer.
+**Goal:** Browse/download manga into library → open in the P8 comics viewer.
 
 ### Scope
 
-- Source framework  
-- Prefer **self-hosted / legitimate** backends first (OPDS, Komga, Kavita, own archive)  
-- Downloads hub integration  
-- Suwayomi-*like* module depth only as needed — not a full extension store on day one  
+- `MangaSource` trait → **source plugins (P12, Lua)**; same adapter shape as
+  Tachiyomi/Suwayomi extensions: search, popular, chapter list, page fetch  
+- **No Suwayomi server rewrite:** Suwayomi's value is its Kotlin extension
+  ecosystem, which can't run in Rust; we reimplement the *adapter concept*
+  natively (porting an extension's scraping logic is hours — they are simple
+  scrapers). Optional later: a "Suwayomi server" adapter so Kalam can talk
+  to a user's existing Suwayomi instance via its API — the cheapest bridge
+  to the whole ecosystem  
+- Sources: MangaDex, Komga, Kavita, own archive, OPDS, … (legal /
+  self-hosted first)  
+- Downloads hub integration; per-source rate limits  
+- Reader is an **image pager** (P8) — no WebKit involved  
 
 ### Policy
 
@@ -1466,3 +1487,4 @@ lives at `docs/ci/github-actions-ci.yml`; install it by copying over
 | 2026-09-01 | Dictionary track Phase 9 shipped: Settings dictionary priority reorder UI (`d12c905`) — the v12 `priority` column was write-only; `Dictionary` now carries it, `list_dictionaries()` selects it and orders `priority ASC, name ASC`, and Dictionaries rows get ↑/↓ buttons that renumber all packs compactly (0, 1, 2, …), trigger `rebuild_combined_dictionary()`, and refresh; the top row shows a quiet "speaks first" chip; ↑/↓ disabled at the ends; re-imports keep user-set priority (upsert doesn't touch the column). CI green |
 | 2026-09-01 | Dictionary track Phase 10 shipped: lookup history — schema v14 `dict_lookups` (FK to books `ON DELETE SET NULL`, NOCASE word index), logging in the `lookup_dict` funnel (both the popup selection/tap path and sidebar lookups; per-keystroke search prefixes not logged), misses logged with `found = 0`, same-hour same-book collapse, pref `dict_history_enabled` (default 1) with a reader Settings toggle, Lookup History page (day-grouped, searchable, miss chip, Clear), `repeat_lookup_words()` feeding "Suggest from history" chips on Saved Words plus a "Last 3 lookups" dashboard card on Library. Three CI iterations fixed a relm4 5-arg `update_with_view` + `#[watch]` label lifetime (`68373fa`), a FK violation in the new test (seed real books, `6b4e528`), and the repeat-set expectation (miss word logged across two books, `0b188a3`). 156 unit tests green |
 | 2026-09-02 | Design conversation recorded in `docs/conversation.md`: (1) performance — stay Rust, architecture is the bottleneck (no language rewrite); (2) second AI's analysis reviewed and verified (grid rebuild, sync decode, in-memory cover cache, 3,638-line CSS — all real; fix order adjusted: thumbnails → async decode → virtualize if numbers say so); (3) Yazi philosophy adopted — service layer + task manager + preloaders + thin UI (relm4 + async-channel already give half the skeleton); (4) roadmap scope reviewed — P6–P11 stand; custom text-renderer question deferred to a dedicated discussion; (5) **Plugin API non-goal reversed** — plugins wanted, leaning Lua, design TBD after the architecture track. Roadmap: schema version corrected to 14, phase map gains A0 (architecture track) + P12 (plugins), non-goals updated, next-steps gains the A0 entry |
+| 2026-09-02 | Scope confirmed as a **content platform** (user): fiction sources (AO3/FFN/Webnovel/Royal Road…) with tag search, downloads, offline reading, follow + **auto-updater** (FFN-app-class) and manga sources (Suwayomi-class browse/read). Roadmap: P7 expanded (fiction platform, auto-updater replaces manual check), P9 expanded (manga platform; **no Suwayomi server rewrite** — adapter concept natively, optional Suwayomi-server client adapter later), P12 = source-adapter plugins (Lua). Renderer question framed in `docs/conversation.md` §7: WebKit = full browser engine (power vs weight); custom renderer = we draw text (1–3 person-years, but sources feed it clean content so it never needs to be a browser); **leaning hybrid** — custom for reading, WebKit for browse/fallback; sequencing: product (sources) first on WebKit, renderer as A0 crown after |

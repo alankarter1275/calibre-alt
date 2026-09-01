@@ -388,13 +388,99 @@ surface — they become a second API you must keep stable forever.
   (comics) + MuPDF later (PDF). (✅ locked)
 - **Architecture:** Yazi-style service layer + task manager + preloaders +
   thin UI. (✅ accepted, not yet implemented)
-- **Custom text renderer:** 🔶 under discussion (user wants the detailed
-  conversation).
-- **Plugin system:** 🔶 under discussion, user wants it, leaning Lua.
+- **Custom text renderer:** 🔶 under discussion → **leaning hybrid** (custom
+  text engine for reading + WebKit for browse/fallback) — see §7.
+- **Plugin system:** 🔶 under discussion, user wants it, leaning Lua —
+  confirmed as the **source-adapter engine** for fiction + manga (see §7).
+- **Scope:** confirmed as a **content platform** — fiction sources
+  (AO3/FFN/webnovel, tag search, downloads, auto-updates) + manga sources
+  (Suwayomi-class) + plugins + fast architecture (see §7).
 - **Perf work order:** measure → thumbnails/async decode → virtualize if
   numbers say so → reader. (✅ accepted)
 - **Docs discipline:** keep README.md and ROADMAP.md updated as work
   progresses; this file is the design-conversation record. (✅ standing)
+
+---
+
+## 7. The content-platform scope + renderer decision
+
+**User (2026-09-02):** "Do you understand the scope now?" — restated:
+Kalam is not just a local reader; it is a **content platform**: fiction
+sources (AO3, FanFiction.net, Webnovel, Royal Road, …) with rich tag
+search, download, offline reading, and **automatic updates** as new
+chapters release — FanFiction.net-app-class features — plus **manga
+sources** with a Suwayomi-class browse/read experience. Plugins power the
+sources.
+
+### Accepted: the scope
+
+- **Fiction:** search (tags, fandom, characters, ships, rating, status) →
+  results → read or download → follow → auto-update + notify. Sources
+  mostly have no public APIs (AO3 especially) — source plugins parse the
+  site and return structured data (Tachiyomi pattern).
+- **Manga:** same shape, but content is images — the reader is an image
+  pager (P8), not a text engine.
+- **Plugins** are confirmed as the source-adapter engine (P12, Lua
+  leaning, built on the A0 service layer).
+
+### ~~Rewrite the Suwayomi server in Rust~~ — rejected
+
+Suwayomi = Tachiyomi's engine as a server. Its value is the **Kotlin
+extension ecosystem**, which cannot run in Rust. We do not need the
+server — Kalam already has (or will have) the DB, download queue (P6),
+task manager (A0), and readers. What we need is the **adapter concept**:
+a `Source` plugin API (search / popular / chapter list / fetch content).
+Porting an existing extension's *logic* is hours (they are simple
+scrapers); running its Kotlin is impossible. Optional later: a "Suwayomi
+server" adapter that talks to a user's running instance via its API — the
+cheapest bridge to the whole ecosystem.
+
+### WebKit vs custom renderer — the framework (under discussion)
+
+**What WebKit is:** a full web-browser engine (Safari's). Reading a
+chapter today = running a web page: HTML parsing, CSS layout, JS, fonts,
+accessibility tree. Power: displays ANY web content perfectly. Cost:
+300–600 ms cold start, 100–200 MB RAM, bridge tax (Rust ↔ JS ↔ DOM) for
+every feature (dict popup, highlights), and black-box internals we can
+only poke with CSS/JS.
+
+**What a custom renderer is:** we draw the text ourselves (like a PDF
+reader / KOReader / e-ink reader). We define a clean content format
+(paragraphs, headings, images), lay it out with a Rust text engine
+(cosmic-text / skia), paginate, and paint. Cost: 1–3 person-years for a
+good engine (line breaking, hyphenation, justification, RTL, CJK, font
+fallback, selection, **accessibility**). Gain: page turns in ~1 ms, tens
+of MB, and every feature (dict lookup, themes, annotations) is native GTK
+beside the text — no bridge.
+
+**The unlock:** we control what reaches the renderer. Sources fetch →
+**sanitize → convert to clean chapters** (FanFicFare's whole job; AO3
+even ships official EPUBs). Manga is images only. So the renderer never
+has to be a browser — it only ever sees clean content. Industry proof:
+Tachiyomi reads images, FanFicFare converts to EPUB, KOReader renders its
+own format.
+
+**Leaning — hybrid (direction accepted, final decision open):**
+- Custom renderer for **reading** fiction (clean format) and comics
+  (image pager) — the fast, light, integrated reader.
+- WebKit stays for **browsing/discovery** (AO3's tag-search UI is a web
+  form; a browse-in-webview mode is a feature) and as a **fallback** for
+  exotic EPUBs we haven't normalized.
+- Decision question: "does Kalam ever need to display an arbitrary web
+  page?" — if no, WebKit's role shrinks to fallback; if yes, it stays as
+  the browse surface.
+- Sequencing: sources + architecture on WebKit first (the product), the
+  custom renderer as the A0 crown afterward.
+
+### Honest caveats
+
+- **Auto-updates vs annotations:** re-downloading a fic can shift its
+  spine; existing annotation anchors may reset (already in the risk
+  register). Best-effort.
+- **Polling etiquette:** per-source rate limits and user-controlled
+  schedules (daily, not per-minute).
+- **A11y:** a custom text engine must expose text to screen readers
+  (AT-SPI); WebKit gives this free. Budget for it.
 
 ---
 
