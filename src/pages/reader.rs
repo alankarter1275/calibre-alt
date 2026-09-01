@@ -1919,8 +1919,7 @@ impl ReaderModel {
             .catalog
             .saved_word_exists(&data.word, self.book_id)
             .unwrap_or(false);
-        let pronunciation =
-            crate::db::pronunciation_for(&data.word).map(|p| format!("/{p}"));
+        let pronunciation = crate::db::pronunciation_for(&data.word).map(|p| format!("/{p}"));
         let payload = serde_json::json!({
             "word": data.word,
             "pos": data.pos,

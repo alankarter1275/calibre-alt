@@ -22,9 +22,7 @@ const CMUDICT_GZ: &[u8] = include_bytes!("../../resources/dictionaries/cmudict-0
 fn arpabet_phoneme(phoneme: &str) -> Option<(bool, &'static str, Option<u8>)> {
     let bytes = phoneme.as_bytes();
     let (core, stress) = match bytes.split_last() {
-        Some((last, rest)) if last.is_ascii_digit() => {
-            (&phoneme[..rest.len()], Some(*last))
-        }
+        Some((last, rest)) if last.is_ascii_digit() => (&phoneme[..rest.len()], Some(*last)),
         _ => (phoneme, None),
     };
     let (vowel, glyph) = match core {
