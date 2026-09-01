@@ -329,10 +329,11 @@ Related reader work already completed:
    Dictionary feature work is deferred for now. When it resumes, follow the
    planned dictionary overhaul below in phase order; the bundled phrase pack
    still does not make every compositional phrase meaningful automatically.
-   **Phases 1–5 of that overhaul are shipped (precomputed headword key
+   **Phases 1–5.5 of that overhaul are shipped (precomputed headword key
    index, WordNet exception-list lemmatization, phrase decomposition,
-   merged dictionary store, popup redesign). Pronunciation data and the
-   Settings reorder UI remain deferred.**
+   merged dictionary store, popup redesign, POS grouping + likely-sense
+   hint). Offline pronunciation (CMU Pronouncing Dictionary → IPA, Phase
+   5.6) is shipped too. The Settings reorder UI remains deferred.**
 
 4. **Only later consider architecture changes**
    - [ ] Multi-chapter buffering.
@@ -352,10 +353,12 @@ Related reader work already completed:
 
 ## Dictionary overhaul — planned reader-improvement track
 
-**Status: Phases 1–4 shipped (headword key index, WordNet exception
-lemmatization, phrase decomposition, merged dictionary store); Phases 5–7
-still planned.** The remaining phases are recorded here as the
-implementation brief for future isolated reader-improvement steps.
+**Status: Phases 1–5.5 shipped (headword key index, WordNet exception
+lemmatization, phrase decomposition, merged dictionary store, popup
+redesign, POS grouping + likely-sense hint); Phase 5.6 (offline
+pronunciation) shipped; Phases 6–7 still planned.** The remaining phases
+are recorded here as the implementation brief for future isolated
+reader-improvement steps.
 
 ### Implementation brief: Kalam dictionary overhaul
 
@@ -678,6 +681,37 @@ answer.
 - **Scope guard** — the hint is only computed for WordNet entries (senses
   carry POS) and only when a context sentence exists (sidebar searches get
   none).
+
+#### Phase 5.6 — Offline pronunciation  ✅ done
+
+**Goal:** the popup shows how a word is pronounced, fully offline, with no
+new runtime dependency.
+
+- [x] **Data** — CMU Pronouncing Dictionary 0.7a (BSD-style redistribution
+      licence) packed as `resources/dictionaries/cmudict-0.7a.tsv.gz`:
+      133,737 `word\tARPABET` rows (123,455 unique words), variants in
+      counter order, compiled into the binary via `include_bytes!`.
+      Provenance, licence text and the SHA-256 checksum live in
+      `resources/dictionaries/cmudict-0.7a.NOTICE.txt`.
+- [x] **`src/db/pronunciation.rs`** — lazy `OnceLock` parse (same pattern as
+      the WordNet `.exc` lists) into a `fold_key`-keyed map; ARPABET →
+      compact IPA (`B AE1 NG K` → `ˈbæŋk`, stress marks included); lookups
+      fall back through `dictionary_query_variants` so inflected forms
+      resolve. Unit tests cover the mapping, stress marks, case/
+      diacritic-insensitive lookup and the packed table's coverage.
+- [x] **Popup** — the `#kalam-pronunciation` slot (monospace, dim, hidden
+      while `:empty`) is now filled by the reader payload, e.g. `bank` →
+      `/ˈbæŋk/`; words absent from cmudict simply show no transcription and
+      the popup layout is unchanged.
+- [x] **Docs** — README feature list + this roadmap entry updated; popup
+      preview regenerated with a pronunciation line.
+
+**Acceptance:** fully offline (no network, no new crate); `bank` →
+`/ˈbæŋk/`, `run` → `/ˈrʌn/`; unknown words render without a pronunciation
+line; `cargo build` and `cargo test` pass.
+
+**Deferred:** multi-pronunciation variants (first variant is shown), the
+Settings reorder UI, and anything involving network pronunciation services.
 
 #### Phase 6 — Interaction
 

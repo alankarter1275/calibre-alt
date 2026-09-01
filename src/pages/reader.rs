@@ -1900,6 +1900,8 @@ impl ReaderModel {
     /// `hint_index` (P5.5) is the sense the Lesk ranking marked as most
     /// likely for the surrounding sentence — `None` when the pref is off,
     /// the entry is not WordNet, or the context gives no evidence.
+    /// `pronunciation` (Phase 5.6) is the word's IPA transcription from the
+    /// bundled CMU Pronouncing Dictionary, or `None` when it has no entry.
     fn show_dict_in_webview(
         &self,
         query: &str,
@@ -1917,6 +1919,8 @@ impl ReaderModel {
             .catalog
             .saved_word_exists(&data.word, self.book_id)
             .unwrap_or(false);
+        let pronunciation =
+            crate::db::pronunciation_for(&data.word).map(|p| format!("/{p}"));
         let payload = serde_json::json!({
             "word": data.word,
             "pos": data.pos,
@@ -1934,6 +1938,7 @@ impl ReaderModel {
             "suggestions": data.suggestions,
             "saved": saved,
             "hint": hint_index,
+            "pronunciation": pronunciation,
         });
         let payload_json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
         let rect_part = rect_json

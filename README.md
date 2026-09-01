@@ -18,7 +18,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **Import EPUB** (My Library → All books → “+ Import EPUB”)
 - **EPUB reader** (WebKitGTK): chapter-wise scroll, TOC, themes, font size, progress restore
 - **Highlights & quotes**: select text → floating chip (yellow/green/blue/pink/orange), save quote (❝), copy
-- **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip or `D` shortcut, a popup with numbered senses + POS, synonym/antonym chips, idiom cards, bookmark & copy
+- **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip or `D` shortcut, a popup with numbered senses + POS, synonym/antonym chips, idiom cards, bookmark & copy, and offline IPA pronunciation (`bank` → `/ˈbæŋk/`) from the bundled CMU Pronouncing Dictionary
 - **Annotations list**: reader bottom pill ✎ shows highlights/quotes for current book, jump & delete
 - **Library hub**: My Library → Saved quotes (real data) → export to Markdown (`~/Quotes.md`), Saved words (real data)
 - **Settings**: dictionary packs import (+ Import dictionary), list & remove, data paths
@@ -201,6 +201,15 @@ dictionaries is never shown twice, and the other dictionary's version stays
 hidden. The store rebuilds automatically whenever you import or remove a
 dictionary. The popup shows up to five matching words; each has **Save word**
 and **Copy** buttons.
+
+The popup also shows the word's pronunciation as a compact IPA
+transcription — `bank` → `/ˈbæŋk/`, `run` → `/ˈrʌn/` — from the bundled CMU
+Pronouncing Dictionary 0.7a (BSD-style licence; provenance and checksums in
+`resources/dictionaries/cmudict-0.7a.NOTICE.txt`). It is fully offline: the
+packed dictionary is compiled into the binary, ARPABET phonemes are
+converted to IPA with stress marks, and lookups resolve through the same
+lemmatization as definitions, so `running` finds `run`. Words absent from
+the dictionary (and multi-word phrases) simply show no transcription.
 
 ### Reliable download sources
 

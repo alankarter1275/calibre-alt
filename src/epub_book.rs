@@ -1640,7 +1640,8 @@ if (!window.kalamReaderShellLoaded) {
     var html = '<div class="k-header">'
       + '<div class="k-header-left">'
       + '<div class="k-word">'+esc(word)+'</div>'
-      // Pronunciation slot — kept empty until an offline source exists.
+      // Pronunciation slot — filled from the CMU dictionary via the
+      // payload ("/ˈbæŋk/"); the :empty rule hides it when absent.
       + '<div class="k-pronunciation" id="kalam-pronunciation"></div>'
       + (pos.length ? '<span class="k-pos">'+esc(pos.join(' · '))+'</span>' : '')
       + '</div>'
@@ -1688,6 +1689,10 @@ if (!window.kalamReaderShellLoaded) {
     }
     html += '</div><div class="k-fade-bottom" id="kalam-fade-bottom"></div>';
     p.innerHTML = html;
+    // Pronunciation slot: filled from the CMU dictionary via the payload
+    // ("/ˈbæŋk/"); the :empty rule hides it when there is no entry.
+    var pronEl = document.getElementById('kalam-pronunciation');
+    if (pronEl && payload.pronunciation) pronEl.textContent = String(payload.pronunciation);
     p.style.display = 'block';
 
     // Every lookup starts from the top of the scroll area.
@@ -2695,8 +2700,9 @@ html.kalam-selection-active body * ::selection {{
   margin-bottom: 4px !important;
   overflow-wrap: anywhere !important;
 }}
-/* Pronunciation slot: kept in the DOM but hidden until real offline
-   pronunciation data exists (no licensed source today). */
+/* Pronunciation slot: filled with an IPA transcription from the packed
+   CMU Pronouncing Dictionary (see db/pronunciation.rs); the :empty rule
+   hides it when the word has no entry. */
 #kalam-dict-popup .k-pronunciation {{
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace !important;
   font-size: 10px !important;

@@ -1,0 +1,53 @@
+CMU Pronouncing Dictionary (cmudict 0.7a) — packed as word→ARPABET TSV
+==========================================================================
+
+Source: nltk_data corpora/cmudict.zip (sha 48f1d64a431c474142969a793dfcffe3a2fc877b)
+  https://github.com/nltk/nltk_data/blob/gh-pages/packages/corpora/cmudict.zip
+
+Upstream:
+  The Carnegie Mellon Pronouncing Dictionary [cmudict.0.7a]
+  ftp://ftp.cs.cmu.edu/project/speech/dict/
+  Copyright (C) 1993-2008 Carnegie Mellon University. All rights reserved.
+
+The dictionary contains 127,069 entries; 119,400 words have a unique
+pronunciation, 6,830 words have two, and 839 words have three or more.
+This packed file has 133737 rows (one per pronunciation variant,
+counter order preserved) covering 123455 unique words.
+
+Packed format (one row per variant, gzipped):
+  word\tPHONEMES        e.g. bank\tB AE1 NG K
+
+License (BSD-style, from the upstream README):
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+   The contents of this file are deemed to be source code.
+
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in
+   the documentation and/or other materials provided with the
+   distribution.
+
+This work was supported in part by funding from the Defense Advanced
+Research Projects Agency, the Office of Naval Research and the National
+Science Foundation of the United States of America, and by member
+companies of the Carnegie Mellon Sphinx Speech Consortium. We acknowledge
+the contributions of many volunteers to the expansion and improvement of
+this dictionary.
+
+THIS SOFTWARE IS PROVIDED BY CARNEGIE MELLON UNIVERSITY ``AS IS'' AND
+ANY EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL CARNEGIE MELLON UNIVERSITY
+NOR ITS EMPLOYEES BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Packed file sha256: 73d79336abdea293e411979e80fae9208c3bbbd5d8a12f9c6e740bdd85879031

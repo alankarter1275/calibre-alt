@@ -882,7 +882,7 @@ fn distinct_pos(senses: &[Sense]) -> Vec<String> {
     out
 }
 
-fn dictionary_query_variants(term: &str) -> Vec<String> {
+pub(crate) fn dictionary_query_variants(term: &str) -> Vec<String> {
     let trimmed = term.trim();
     let normalized = normalize_dictionary_term(trimmed);
     let primary = if normalized.is_empty() {

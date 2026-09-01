@@ -58,8 +58,9 @@ body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; }
   margin-bottom: 4px !important;
   overflow-wrap: anywhere !important;
 }
-/* Pronunciation slot: kept in the DOM but hidden until real offline
-   pronunciation data exists (no licensed source today). */
+/* Pronunciation slot: filled with an IPA transcription from the packed
+   CMU Pronouncing Dictionary (see db/pronunciation.rs); the :empty rule
+   hides it when the word has no entry. */
 #kalam-dict-popup .k-pronunciation {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace !important;
   font-size: 10px !important;
@@ -355,7 +356,8 @@ stems both sides, and the gloss evidence ("deposit") marks the financial sense a
     var html = '<div class="k-header">'
       + '<div class="k-header-left">'
       + '<div class="k-word">'+esc(word)+'</div>'
-      // Pronunciation slot — kept empty until an offline source exists.
+      // Pronunciation slot — filled from the CMU dictionary via the
+      // payload ("/ˈbæŋk/"); the :empty rule hides it when absent.
       + '<div class="k-pronunciation" id="kalam-pronunciation"></div>'
       + (pos.length ? '<span class="k-pos">'+esc(pos.join(' · '))+'</span>' : '')
       + '</div>'
@@ -403,6 +405,10 @@ stems both sides, and the gloss evidence ("deposit") marks the financial sense a
     }
     html += '</div><div class="k-fade-bottom" id="kalam-fade-bottom"></div>';
     p.innerHTML = html;
+    // Pronunciation slot: filled from the CMU dictionary via the payload
+    // ("/ˈbæŋk/"); the :empty rule hides it when there is no entry.
+    var pronEl = document.getElementById('kalam-pronunciation');
+    if (pronEl && payload.pronunciation) pronEl.textContent = String(payload.pronunciation);
     p.style.display = 'block';
 
     // Every lookup starts from the top of the scroll area.
@@ -599,7 +605,7 @@ window.kalamHandleDict = function() {
   }
 function openPopup() {
   var r = {x: 0, y: 40, w: 40, h: 24};
-  window.kalamShowDict({"word": "bank", "pos": ["noun", "verb"], "senses": [{"number": 1, "pos": "noun", "def": "sloping land (especially the slope beside a body of water)", "example": null}, {"number": 2, "pos": "noun", "def": "a financial institution that accepts deposits and channels the money into lending activities", "example": null}, {"number": 3, "pos": "noun", "def": "a long ridge or pile", "example": null}, {"number": 4, "pos": "noun", "def": "an arrangement of similar objects in a row or in tiers", "example": null}, {"number": 5, "pos": "noun", "def": "a supply or stock held in reserve for future use (especially in emergencies)", "example": null}, {"number": 6, "pos": "noun", "def": "the funds held by a gambling house or the dealer in some gambling games", "example": null}, {"number": 7, "pos": "noun", "def": "a slope in the turn of a road or track; the outside is higher than the inside in order to reduce the effects of centrifugal force", "example": null}, {"number": 8, "pos": "noun", "def": "a container (usually with a slot in the top) for keeping money at home", "example": null}, {"number": 9, "pos": "noun", "def": "a building in which the business of banking is transacted", "example": null}, {"number": 10, "pos": "noun", "def": "a flight maneuver; aircraft tips laterally about its longitudinal axis (especially in turning)", "example": null}, {"number": 11, "pos": "verb", "def": "tip laterally", "example": null}, {"number": 12, "pos": "verb", "def": "enclose with a bank", "example": null}, {"number": 13, "pos": "verb", "def": "do business with a bank or keep an account at a bank", "example": null}, {"number": 14, "pos": "verb", "def": "act as the banker in a game or in gambling", "example": null}, {"number": 15, "pos": "verb", "def": "be in the banking business", "example": null}, {"number": 16, "pos": "verb", "def": "put into a bank account", "example": null}, {"number": 17, "pos": "verb", "def": "cover with ashes so to control the rate of burning", "example": null}, {"number": 18, "pos": "verb", "def": "have faith or confidence in", "example": null}], "synonyms": ["bank building", "savings bank", "coin bank", "money box", "depository financial institution", "banking concern", "banking company", "cant", "camber", "trust", "swear", "rely"], "antonyms": [], "idioms": [{"phrase": "Piece of cake", "def": "Easy."}], "suggestions": [], "saved": true, "hint": 1}, JSON.stringify(r));
+  window.kalamShowDict({"word": "bank", "pos": ["noun", "verb"], "senses": [{"number": 1, "pos": "noun", "def": "sloping land (especially the slope beside a body of water)", "example": null}, {"number": 2, "pos": "noun", "def": "a financial institution that accepts deposits and channels the money into lending activities", "example": null}, {"number": 3, "pos": "noun", "def": "a long ridge or pile", "example": null}, {"number": 4, "pos": "noun", "def": "an arrangement of similar objects in a row or in tiers", "example": null}, {"number": 5, "pos": "noun", "def": "a supply or stock held in reserve for future use (especially in emergencies)", "example": null}, {"number": 6, "pos": "noun", "def": "the funds held by a gambling house or the dealer in some gambling games", "example": null}, {"number": 7, "pos": "noun", "def": "a slope in the turn of a road or track; the outside is higher than the inside in order to reduce the effects of centrifugal force", "example": null}, {"number": 8, "pos": "noun", "def": "a container (usually with a slot in the top) for keeping money at home", "example": null}, {"number": 9, "pos": "noun", "def": "a building in which the business of banking is transacted", "example": null}, {"number": 10, "pos": "noun", "def": "a flight maneuver; aircraft tips laterally about its longitudinal axis (especially in turning)", "example": null}, {"number": 11, "pos": "verb", "def": "tip laterally", "example": null}, {"number": 12, "pos": "verb", "def": "enclose with a bank", "example": null}, {"number": 13, "pos": "verb", "def": "do business with a bank or keep an account at a bank", "example": null}, {"number": 14, "pos": "verb", "def": "act as the banker in a game or in gambling", "example": null}, {"number": 15, "pos": "verb", "def": "be in the banking business", "example": null}, {"number": 16, "pos": "verb", "def": "put into a bank account", "example": null}, {"number": 17, "pos": "verb", "def": "cover with ashes so to control the rate of burning", "example": null}, {"number": 18, "pos": "verb", "def": "have faith or confidence in", "example": null}], "synonyms": ["bank building", "savings bank", "coin bank", "money box", "depository financial institution", "banking concern", "banking company", "cant", "camber", "trust", "swear", "rely"], "antonyms": [], "idioms": [{"phrase": "Piece of cake", "def": "Easy."}], "suggestions": [], "saved": true, "hint": 1, "pronunciation": "/\u02c8b\u00e6\u014bk/"}, JSON.stringify(r));
 }
 document.getElementById('here').addEventListener('click', openPopup);
 window.addEventListener('keydown', function(e){ if (e.key === 'Escape') window.kalamHideDict(); });

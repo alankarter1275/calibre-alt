@@ -15,6 +15,7 @@ mod dictionaries;
 mod history;
 mod metadata;
 mod prefs;
+mod pronunciation;
 mod series;
 mod shelves;
 mod stats;
@@ -23,6 +24,7 @@ pub use dictionaries::{
     likely_sense_index, EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME,
     BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
 };
+pub use pronunciation::pronunciation_for;
 pub use series::{series_key, SeriesWork};
 
 #[derive(Debug, Error)]
