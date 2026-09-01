@@ -653,3 +653,54 @@ much time do you reckon it will take you?"
 ---
 
 *Last updated: 2026-09-02.*
+
+---
+
+## 10. When to build the renderer + the crengine deep-dive (2026-09-02)
+
+**User asked:** when should we do the renderer? and can we just use crengine?
+
+### When: not now, not at the end — start right after sources, grow alongside
+
+- **Not now:** the renderer is a *consumer* — nothing to render until
+  sources (P7/P9) and architecture (A0) exist. Building now = building in a
+  vacuum.
+- **Not at the end:** the renderer is the *riskiest, most uncertain* piece
+  (1–3 person-year unknown). Leaving the highest-risk, highest-value work
+  to last bets the whole timeline on it landing on schedule.
+- **Right after sources (recommended):** sources give it real content, the
+  architecture gives it a home, and the fiction-first slice is a bounded
+  on-ramp that proves the whole plan is buildable.
+- **Order:** A0 architecture → P7 fiction sources → renderer vertical slice
+  (alongside) → EPUB normalization → PDF (P10) / comics (P8).
+
+### crengine deep-dive — why "just use it" doesn't work
+
+1. **License mismatch (hard blocker).** crengine is **GPL-2.0**; KOReader's
+   fork is **AGPL-3.0**. Our repo is **GPL-3.0-or-later**. GPL-2 and GPL-3
+   aren't cleanly compatible; you can't just drop crengine into a GPL-3
+   project without relicensing ours or keeping crengine as a separate,
+   dynamically-linked component.
+2. **C++ codebase, no Rust bindings.** 5,500+ commits, 2 decades old, full
+   DOM/XML/CSS engine. Writing + maintaining a C FFI wrapper is a big
+   ongoing task. Built for e-ink/embedded (Qt/wxWidgets/XCB) — no GTK
+   frontend; KOReader integration is deeply Lua-based.
+3. **Partial CSS — exactly the risk we worried about.** crengine's CSS is a
+   *subset of CSS 2.1, not CSS 3*. `float`, `clear`, `border`,
+   `border-width`, `font-variant`, `text-transform`, `border-collapse` are
+   missing/partial — precisely what real publisher EPUBs use. KOReader
+   compensates with a huge curated `epub.css` + style-tweaks; its own devs
+   admit it "adds strange things when playing with publishers' CSS."
+4. **Dict/annotation integration = same fight.** Exposing "word at this
+   pixel" / "anchor at this position" through FFI is the same integration
+   work as building our own layout — against an API we don't control.
+5. **Verdict:** crengine = "EPUB reading this year" shortcut, ONLY as a
+   separate dynamically-linked fallback component with a clean interface,
+   swappable when our custom engine matures. **Recommendation stands:
+   cosmic-text + our own normalizer.** The hard part (messy HTML/CSS →
+   clean content) is ours either way; fight our own code, not a foreign
+   engine's API with license baggage.
+
+---
+
+*Last updated: 2026-09-02.*
