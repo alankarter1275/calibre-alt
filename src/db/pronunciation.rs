@@ -8,7 +8,6 @@
 //! so a lookup never touches the network.
 
 use super::dictionaries::fold_key;
-use super::*;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
