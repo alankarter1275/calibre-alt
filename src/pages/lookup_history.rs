@@ -100,7 +100,9 @@ impl Component for LookupHistoryModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let lookups = catalog.list_dict_lookups("", PAGE_LIMIT).unwrap_or_default();
+        let lookups = catalog
+            .list_dict_lookups("", PAGE_LIMIT)
+            .unwrap_or_default();
         let model = LookupHistoryModel {
             catalog,
             lookups,
@@ -150,7 +152,9 @@ impl Component for LookupHistoryModel {
 
 fn status_line(count: usize) -> String {
     match count {
-        0 => "No lookups recorded yet. Look up a word in the reader with the D key or a tap.".into(),
+        0 => {
+            "No lookups recorded yet. Look up a word in the reader with the D key or a tap.".into()
+        }
         1 => "1 lookup recorded".into(),
         n => format!("{n} lookups recorded"),
     }

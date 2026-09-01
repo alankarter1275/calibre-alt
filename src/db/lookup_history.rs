@@ -156,11 +156,14 @@ mod tests {
         cat.log_dict_lookup("serendipity", Some(1), Some(2), Some("again"), true)
             .unwrap();
         // Same word, different book → separate row.
-        cat.log_dict_lookup("serendipity", Some(7), None, None, true).unwrap();
+        cat.log_dict_lookup("serendipity", Some(7), None, None, true)
+            .unwrap();
         // A miss is logged with found = 0.
-        cat.log_dict_lookup("zzzqqq", Some(1), None, None, false).unwrap();
+        cat.log_dict_lookup("zzzqqq", Some(1), None, None, false)
+            .unwrap();
         // Sidebar lookups without a book collapse among themselves.
-        cat.log_dict_lookup("zzzqqq", None, None, None, false).unwrap();
+        cat.log_dict_lookup("zzzqqq", None, None, None, false)
+            .unwrap();
 
         let rows = cat.list_dict_lookups("", 100).unwrap();
         assert_eq!(rows.len(), 4);
@@ -178,7 +181,8 @@ mod tests {
 
         // Disabling the pref stops all writes.
         cat.set_pref("dict_history_enabled", "0");
-        cat.log_dict_lookup("fresh", None, None, None, true).unwrap();
+        cat.log_dict_lookup("fresh", None, None, None, true)
+            .unwrap();
         assert_eq!(cat.list_dict_lookups("", 100).unwrap().len(), 4);
 
         // Clear empties the table.

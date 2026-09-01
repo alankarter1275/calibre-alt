@@ -2990,10 +2990,9 @@ fn build_reader_settings_panel(
     history_label.set_halign(gtk::Align::Start);
     history_row.append(&history_label);
     let history_tx = sender.input_sender().clone();
-    let history_switch =
-        crate::pages::settings::toggle_switch(dict_history_enabled, move |on| {
-            let _ = history_tx.send(ReaderMsg::SetDictHistory(on));
-        });
+    let history_switch = crate::pages::settings::toggle_switch(dict_history_enabled, move |on| {
+        let _ = history_tx.send(ReaderMsg::SetDictHistory(on));
+    });
     history_row.append(&history_switch);
     dict_section.append(&history_row);
     reading_page.append(&dict_section);
