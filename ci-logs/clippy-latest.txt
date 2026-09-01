@@ -1,4 +1,5 @@
-src/db/dictionaries.rs:655:33: [1m[91merror[E0282][0m: type annotations needed for `&_`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error; 1 warning emitted
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error; 1 warning emitted
---- run 33466838896 ---
+src/db/dictionaries.rs:990:52: [1m[91merror[E0609][0m: no field `definition` on type `&db::dictionaries::Sense`: unknown field
+src/pages/reader.rs:2921:23: [1m[91merror[E0521][0m: borrowed data escapes outside of function: `sender` escapes the function body here, argument requires that `'1` must outlive `'static`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
+--- run 33474388062 ---
