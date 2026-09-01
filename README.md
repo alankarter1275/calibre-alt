@@ -15,10 +15,13 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
   importers hardened (read-only SQLite packs, identifier quoting, rollback,
   catalog.db self-import guard), one latent bug fixed (reading-list column
   offsets), 9 new unit tests. No other defects.
-- **The `cargo test` CI step is staged at `docs/ci/github-actions-ci.yml`**
-  (the App cannot push workflow files). To activate: copy
-  `docs/ci/github-actions-ci.yml` → `.github/workflows/ci.yml` and push from
-  your own account — see `docs/ci/README.md`.
+- **CI now runs the 154 unit tests on every push** (the `cargo test` step is
+  live in `.github/workflows/ci.yml`). The first real run caught one failing
+  test (a bad escape in the `quote_ident` test literal) — fixed, all green.
+  On failure the diagnostics are published to `ci-logs/test-latest.txt`.
+- Workflow changes are made by you with your own account (the App cannot push
+  `.github/workflows/`); the canonical copy lives at
+  `docs/ci/github-actions-ci.yml` — see `docs/ci/README.md`.
 - **Your Arch machine** is only needed at **phase boundaries** (smoke-test + design feedback).
 - Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md)
 

@@ -1172,7 +1172,7 @@ re-imported. Its cover lives in `covers/<file_hash>.<ext>`, not in
 |-------|------|--------|
 | `cargo fmt --check` (auto-fix + push fix commit when it differs) | every push | active |
 | `cargo clippy -D warnings` | every push | active |
-| `cargo test --all-targets` — compiles **and runs** the unit tests (in-memory SQLite, headless); failures publish to `ci-logs/test-latest.txt` | every push | **staged at `docs/ci/github-actions-ci.yml` — awaiting manual install into `.github/workflows/ci.yml` (user, own account)** |
+| `cargo test --all-targets` — compiles **and runs** the unit tests (in-memory SQLite, headless); failures publish to `ci-logs/test-latest.txt` | every push | **active — installed by the user (`bc6473f`), first run green (`1aae8f1`)** |
 | `cargo build` / `release` | every push | active |
 | GUI smoke | **your Arch machine** at phase end | user |
 
@@ -1240,13 +1240,11 @@ lives at `docs/ci/github-actions-ci.yml`; install it by copying over
 
 ## Immediate next steps
 
-1. **CI: apply the workflow update (you).** The canonical workflow with the
-   `cargo test` step lives at `docs/ci/github-actions-ci.yml` — copy it into
-   `.github/workflows/ci.yml` and push with your account (the Arena App cannot
-   push workflow files). That is the **first real `cargo test` run** in CI:
-   154 unit tests, none of which have ever executed on a CI runner before
-   (they were validated only by compilation + Python replicas). Watch
-   `ci-logs/test-latest.txt` if anything fails.
+1. **CI: workflow with the `cargo test` step — installed and green.** You
+   applied it with your own account (`bc6473f`). The first real test run
+   caught one failure — a bad escape in the `quote_ident` test literal —
+   which was fixed (`1aae8f1`); all 154 unit tests now pass on the CI runner
+   on every push, and failures publish to `ci-logs/test-latest.txt`.
 2. **Backend review — done (focused + full sweep).** The whole backend was
    reviewed line-by-line: migrations/schema, `dictionaries.rs` (merged store,
    search/lookup chain, sense parsing), `dict.rs` importers, the reader ↔ JS
@@ -1327,4 +1325,5 @@ lives at `docs/ci/github-actions-ci.yml`; install it by copying over
 | 2026-09-01 | Dictionary overhaul Phase 6 shipped: tap-to-look-up (240 ms tap delay, caret-word resolution, sentence context) + popup keyboard (↑/↓ focus ring with wrap, Enter saves the focused sense; ←/→ deliberately unbound) + **Find in chapter** (`kalamSearchInBook`, temporary accent hits, count toast, Esc clears). jsdom harness at `docs/files/test_kalam_dict_preview.js` grew to 55 checks |
 | 2026-09-01 | Dictionary overhaul Phase 7 shipped: vocabulary review — schema v13 `saved_words.known`, Saved Words page gains All/To review/Known filter + mark-known check buttons, and exports **CSV** (`~/SavedWords.csv`, RFC-4180) and **Anki TSV** (`~/SavedWords-Anki.txt`, `#separator:tab`). The dictionary overhaul is complete |
 | 2026-09-01 | Backend review pass (focused + full sweep) shipped: dict importers hardened — SQLite packs are opened read-only (never modify the pack, no `-wal`/`-journal` sidecars), pack table/column identifiers are double-quoted against crafted names, failed imports roll back the dictionary row instead of leaving a half-import, and importing Kalam's own `catalog.db` as a pack is rejected via canonical path comparison. Fixed a latent bug: `list_reading_list` read `progress/rating/publisher` as `position/note/added_at` (column offset vs the 16-column `BOOK_COLUMNS`). 9 new unit tests; the rest of the sweep (shelves, history, metadata, stats, authors, series, annotations, prefs, pronunciation, `shelf_rules.rs`, schema/FKs) found no defects |
-| 2026-09-01 | CI workflow gains a `cargo test` step: compiles and runs all unit tests headless (in-memory SQLite), publishes failures to `ci-logs/test-latest.txt` and fails the run. The 154 unit tests have never executed on a CI runner before. The full workflow is staged at `docs/ci/github-actions-ci.yml` — the Arena App cannot push `.github/workflows/` changes, so the user installs it manually with their own account |
+| 2026-09-01 | CI workflow gains a `cargo test` step: compiles and runs all unit tests headless (in-memory SQLite), publishes failures to `ci-logs/test-latest.txt` and fails the run. The full workflow is staged at `docs/ci/github-actions-ci.yml` — the Arena App cannot push `.github/workflows/` changes, so the user installs it manually with their own account |
+| 2026-09-01 | The first real `cargo test` run on CI (user installed the workflow, `bc6473f`) caught exactly one failure: `quote_ident_escapes_embedded_quotes` — my test's expected string had one extra escaped quote (three quotes after the word instead of the correct two that SQLite identifier quoting produces). Function correct, test literal wrong; fixed (`1aae8f1`). All 154 unit tests now pass on every push |
