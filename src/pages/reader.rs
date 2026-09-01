@@ -2918,10 +2918,9 @@ fn build_reader_settings_panel(
     hint_label.set_hexpand(true);
     hint_label.set_halign(gtk::Align::Start);
     hint_row.append(&hint_label);
-    let hint_switch =
-        crate::pages::settings::toggle_switch(dict_sense_hint, move |on| {
-            let _ = sender.input_sender().send(ReaderMsg::SetDictSenseHint(on));
-        });
+    let hint_switch = crate::pages::settings::toggle_switch(dict_sense_hint, move |on| {
+        let _ = sender.input_sender().send(ReaderMsg::SetDictSenseHint(on));
+    });
     hint_row.append(&hint_switch);
     dict_section.append(&hint_row);
     reading_page.append(&dict_section);

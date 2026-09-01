@@ -945,17 +945,15 @@ fn dictionary_possessive_base(term: &str) -> Option<&str> {
 /// English words plus a few very frequent verbs. Never include sense/gloss
 /// content words — only function words.
 const STOPWORDS: &[&str] = &[
-    "a", "an", "the", "and", "or", "but", "nor", "if", "so", "yet", "for",
-    "of", "to", "in", "on", "at", "by", "with", "from", "up", "down", "into",
-    "out", "over", "under", "as", "than", "that", "this", "these", "those",
-    "which", "who", "whom", "whose", "what", "when", "where", "why", "how",
-    "is", "are", "was", "were", "be", "been", "being", "am", "do", "does",
-    "did", "have", "has", "had", "will", "would", "can", "could", "shall",
-    "should", "may", "might", "must", "not", "no", "yes", "i", "you", "he",
-    "she", "it", "we", "they", "me", "him", "her", "us", "them", "my", "your",
-    "his", "its", "our", "their", "there", "here", "then", "now", "just",
-    "very", "too", "also", "only", "such", "same", "some", "any", "all",
-    "both", "each", "few", "more", "most", "other", "another", "one", "two",
+    "a", "an", "the", "and", "or", "but", "nor", "if", "so", "yet", "for", "of", "to", "in", "on",
+    "at", "by", "with", "from", "up", "down", "into", "out", "over", "under", "as", "than", "that",
+    "this", "these", "those", "which", "who", "whom", "whose", "what", "when", "where", "why",
+    "how", "is", "are", "was", "were", "be", "been", "being", "am", "do", "does", "did", "have",
+    "has", "had", "will", "would", "can", "could", "shall", "should", "may", "might", "must",
+    "not", "no", "yes", "i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "us",
+    "them", "my", "your", "his", "its", "our", "their", "there", "here", "then", "now", "just",
+    "very", "too", "also", "only", "such", "same", "some", "any", "all", "both", "each", "few",
+    "more", "most", "other", "another", "one", "two",
 ];
 
 /// Score a context sentence against a sense's gloss, using Lesk-style set
@@ -1665,7 +1663,10 @@ mod tests {
     #[test]
     fn likely_sense_uses_example_overlap_too() {
         let senses = vec![
-            test_sense("a financial institution", Some("she keeps her savings in the bank")),
+            test_sense(
+                "a financial institution",
+                Some("she keeps her savings in the bank"),
+            ),
             test_sense("rising ground bordering a waterway", None),
         ];
         assert_eq!(
