@@ -987,7 +987,7 @@ pub fn likely_sense_index(context_sentence: &str, senses: &[Sense]) -> Option<us
     let mut best_index: Option<usize> = None;
     let mut tied = false;
     for (i, sense) in senses.iter().enumerate() {
-        let gloss_tokens = tokenize_context(&sense.definition);
+        let gloss_tokens = tokenize_context(&sense.def);
         let mut score = gloss_overlap(&context_tokens, &gloss_tokens);
         if let Some(example) = &sense.example {
             let example_tokens = tokenize_context(example);
