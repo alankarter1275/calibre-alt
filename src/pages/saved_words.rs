@@ -1,6 +1,7 @@
 use crate::db::{Catalog, SavedWord};
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -13,6 +14,12 @@ pub enum SavedWordsOut {
 pub enum SavedWordsMsg {
     SearchChanged(String),
     Delete(i64),
+    ToggleKnown(i64),
+    FilterAll,
+    FilterToReview,
+    FilterKnown,
+    ExportCsv,
+    ExportAnki,
     Refresh,
 }
 
@@ -21,6 +28,9 @@ pub struct SavedWordsModel {
     query: String,
     words: Vec<SavedWord>,
     status: String,
+    /// Phase 7 review scope: None = all, Some(false) = to review,
+    /// Some(true) = known.
+    filter: Option<bool>,
 }
 
 #[relm4::component(pub)]
@@ -68,6 +78,46 @@ impl Component for SavedWordsModel {
                     },
                 },
             },
+            // Phase 7: review scope + exports.
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 6,
+                #[name = "filter_box"]
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_spacing: 6,
+                    #[name = "filter_all"]
+                    gtk::ToggleButton {
+                        set_label: Some("All"),
+                        add_css_class: "kalam-secondary-btn",
+                    },
+                    #[name = "filter_review"]
+                    gtk::ToggleButton {
+                        set_label: Some("To review"),
+                        add_css_class: "kalam-secondary-btn",
+                    },
+                    #[name = "filter_known"]
+                    gtk::ToggleButton {
+                        set_label: Some("Known"),
+                        add_css_class: "kalam-secondary-btn",
+                    },
+                },
+                gtk::Box {
+                    set_hexpand: true,
+                },
+                gtk::Button {
+                    set_label: Some("Export CSV"),
+                    add_css_class: "kalam-btn-outlined",
+                    set_halign: gtk::Align::Center,
+                    connect_clicked => SavedWordsMsg::ExportCsv,
+                },
+                gtk::Button {
+                    set_label: Some("Export Anki"),
+                    add_css_class: "kalam-btn-outlined",
+                    set_halign: gtk::Align::Center,
+                    connect_clicked => SavedWordsMsg::ExportAnki,
+                },
+            },
             #[name = "status_label"]
             gtk::Label {
                 add_css_class: "kalam-muted",
@@ -98,8 +148,29 @@ impl Component for SavedWordsModel {
             query: String::new(),
             words: Vec::new(),
             status: String::new(),
+            filter: None,
         };
         let widgets = view_output!();
+        group_toggles(&widgets.filter_box);
+        widgets.filter_all.set_active(true);
+        let s = sender.clone();
+        widgets.filter_all.connect_toggled(move |b| {
+            if b.is_active() {
+                s.input(SavedWordsMsg::FilterAll);
+            }
+        });
+        let s = sender.clone();
+        widgets.filter_review.connect_toggled(move |b| {
+            if b.is_active() {
+                s.input(SavedWordsMsg::FilterToReview);
+            }
+        });
+        let s = sender.clone();
+        widgets.filter_known.connect_toggled(move |b| {
+            if b.is_active() {
+                s.input(SavedWordsMsg::FilterKnown);
+            }
+        });
         let mut model = model;
         model.reload();
         rebuild(&widgets.list_box, &model.words, &sender);
@@ -138,6 +209,66 @@ impl Component for SavedWordsModel {
                 rebuild(&widgets.list_box, &self.words, &sender);
                 widgets.status_label.set_label(&self.status);
             }
+            SavedWordsMsg::ToggleKnown(id) => {
+                let word = self
+                    .words
+                    .iter()
+                    .find(|w| w.id == id)
+                    .map(|w| (w.word.clone(), !w.known))
+                    .unwrap_or((String::new(), true));
+                crate::notify::outcome_info(
+                    self.catalog.set_saved_word_known(id, word.1),
+                    if word.1 { "Marked as known" } else { "Back to review" },
+                    &word.0,
+                    "Could not update the word",
+                );
+                self.reload();
+                rebuild(&widgets.list_box, &self.words, &sender);
+                widgets.status_label.set_label(&self.status);
+            }
+            SavedWordsMsg::FilterAll => {
+                self.filter = None;
+                sync_filter_buttons(widgets, None);
+                self.reload();
+                rebuild(&widgets.list_box, &self.words, &sender);
+                widgets.status_label.set_label(&self.status);
+            }
+            SavedWordsMsg::FilterToReview => {
+                self.filter = Some(false);
+                sync_filter_buttons(widgets, Some(false));
+                self.reload();
+                rebuild(&widgets.list_box, &self.words, &sender);
+                widgets.status_label.set_label(&self.status);
+            }
+            SavedWordsMsg::FilterKnown => {
+                self.filter = Some(true);
+                sync_filter_buttons(widgets, Some(true));
+                self.reload();
+                rebuild(&widgets.list_box, &self.words, &sender);
+                widgets.status_label.set_label(&self.status);
+            }
+            SavedWordsMsg::ExportCsv => {
+                match export_saved_words_csv(&self.catalog) {
+                    Ok((n, path)) => {
+                        crate::notify::compact(
+                            &format!("{n} word{} exported", if n == 1 { "" } else { "s" }),
+                            &path.display().to_string(),
+                        );
+                    }
+                    Err(e) => crate::notify::error("Could not export words", &e),
+                }
+            }
+            SavedWordsMsg::ExportAnki => {
+                match export_saved_words_anki(&self.catalog) {
+                    Ok((n, path)) => {
+                        crate::notify::compact(
+                            &format!("{n} word{} exported for Anki", if n == 1 { "" } else { "s" }),
+                            &path.display().to_string(),
+                        );
+                    }
+                    Err(e) => crate::notify::error("Could not export words", &e),
+                }
+            }
             SavedWordsMsg::Refresh => {
                 self.reload();
                 rebuild(&widgets.list_box, &self.words, &sender);
@@ -150,29 +281,71 @@ impl Component for SavedWordsModel {
 
 impl SavedWordsModel {
     fn reload(&mut self) {
-        match self.catalog.list_saved_words(&self.query) {
+        match self.catalog.list_saved_words(&self.query, self.filter) {
             Ok(words) => {
                 let n = words.len();
+                let total = self
+                    .catalog
+                    .list_saved_words("", None)
+                    .map(|all| all.len())
+                    .unwrap_or(n);
+                let known = self
+                    .catalog
+                    .list_saved_words("", Some(true))
+                    .map(|all| all.len())
+                    .unwrap_or(0);
                 self.words = words;
-                if self.query.trim().is_empty() {
-                    self.status = if n == 0 {
+                let scope = match self.filter {
+                    None => format!("{n} of {total} word{}", if total == 1 { "" } else { "s" }),
+                    Some(false) => format!(
+                        "{n} to review · {total} word{} saved",
+                        if total == 1 { "" } else { "s" }
+                    ),
+                    Some(true) => format!("{n} known · {total} word{} saved", if total == 1 { "" } else { "s" }),
+                };
+                self.status = if self.query.trim().is_empty() {
+                    if total == 0 {
                         "No saved words yet — lookup a word in the reader (D or chip Aa) and save it.".into()
                     } else {
-                        format!("{n} word{} saved", if n == 1 { "" } else { "s" })
-                    };
+                        format!("{scope} · {known} known")
+                    }
                 } else {
-                    self.status = format!(
+                    format!(
                         "{n} result{} for \"{}\"",
                         if n == 1 { "" } else { "s" },
                         self.query
-                    );
-                }
+                    )
+                };
             }
             Err(e) => {
                 self.words.clear();
                 self.status = format!("DB error: {e}");
             }
         }
+    }
+}
+
+/// Keep the All / To review / Known toggle group consistent after a filter
+/// message (the sender of a programmatic toggle would otherwise re-fire).
+fn sync_filter_buttons(widgets: &SavedWordsWidgets, filter: Option<bool>) {
+    widgets.filter_all.set_active(filter.is_none());
+    widgets.filter_review.set_active(filter == Some(false));
+    widgets.filter_known.set_active(filter == Some(true));
+}
+
+/// Radio-group the filter toggles (same pattern as the History page).
+fn group_toggles(box_: &gtk::Box) {
+    let mut leader: Option<gtk::ToggleButton> = None;
+    let mut child = box_.first_child();
+    while let Some(w) = child {
+        let next = w.next_sibling();
+        if let Ok(btn) = w.downcast::<gtk::ToggleButton>() {
+            match &leader {
+                Some(l) => btn.set_group(Some(l)),
+                None => leader = Some(btn),
+            }
+        }
+        child = next;
     }
 }
 
@@ -190,6 +363,9 @@ fn rebuild(list: &gtk::Box, words: &[SavedWord], sender: &ComponentSender<SavedW
         let row = gtk::Box::new(gtk::Orientation::Vertical, 6);
         row.add_css_class("kalam-word-row");
         row.set_margin_bottom(8);
+        if w.known {
+            row.add_css_class("kalam-word-row-known");
+        }
 
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let word_l = gtk::Label::new(Some(&w.word));
@@ -203,6 +379,25 @@ fn rebuild(list: &gtk::Box, words: &[SavedWord], sender: &ComponentSender<SavedW
             badge.add_css_class("kalam-chip");
             header.append(&badge);
         }
+
+        // Phase 7: mark known / back to review.
+        let known_btn = gtk::Button::new();
+        known_btn.set_child(Some(&crate::icons::symbolic_with_classes(
+            "object-select-symbolic",
+            16,
+            &["kalam-inline-icon"],
+        )));
+        known_btn.add_css_class("kalam-secondary-btn");
+        if w.known {
+            known_btn.add_css_class("kalam-known-btn-active");
+            known_btn.set_tooltip_text(Some("Mark as to review"));
+        } else {
+            known_btn.set_tooltip_text(Some("Mark as known"));
+        }
+        let id = w.id;
+        let s = sender.clone();
+        known_btn.connect_clicked(move |_| s.input(SavedWordsMsg::ToggleKnown(id)));
+        header.append(&known_btn);
 
         let del = gtk::Button::new();
         del.set_child(Some(&crate::icons::symbolic_with_classes(
@@ -239,5 +434,136 @@ fn rebuild(list: &gtk::Box, words: &[SavedWord], sender: &ComponentSender<SavedW
         row.append(&sep);
 
         list.append(&row);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7 exports — mirror the ~/Quotes.md pattern (fixed home path, toast
+// with the resulting path). Pure string builders are unit-tested.
+// ---------------------------------------------------------------------------
+
+fn csv_field(value: &str) -> String {
+    let needs_quoting = value.contains(',') || value.contains('"') || value.contains('\n');
+    if !needs_quoting {
+        return value.to_string();
+    }
+    format!("\"{}\"", value.replace('"', "\"\""))
+}
+
+fn saved_words_csv(words: &[SavedWord]) -> String {
+    let mut out = String::new();
+    out.push_str("word,definition,context,dictionary,known,created_at\n");
+    for w in words {
+        let context = w.context_text.as_deref().unwrap_or("").replace('\n', " ");
+        out.push_str(&format!(
+            "{},{},{},{},{},{}\n",
+            csv_field(&w.word),
+            csv_field(&w.definition.replace('\n', " ")),
+            csv_field(&context),
+            csv_field(w.dict_name.as_deref().unwrap_or("")),
+            if w.known { "known" } else { "to review" },
+            w.created_at,
+        ));
+    }
+    out
+}
+
+fn saved_words_anki_tsv(words: &[SavedWord]) -> String {
+    // Anki's default import splits on tabs: front = word, back = definition,
+    // extra = context. Newlines are kept so the back field can wrap.
+    let mut out = String::new();
+    out.push_str("#separator:tab\n#html:false\n");
+    out.push_str("#columns:word\tdefinition\tcontext\n");
+    for w in words {
+        let context = w.context_text.as_deref().unwrap_or("");
+        out.push_str(&format!(
+            "{}\t{}\t{}\n",
+            w.word.replace(['\t', '\n'], " "),
+            w.definition.replace('\t', " "),
+            context.replace('\t', " "),
+        ));
+    }
+    out
+}
+
+/// Export every saved word to `~/SavedWords.csv`. Shared shape with the
+/// ~/Quotes.md export: fixed home path, count + path returned for a toast.
+pub fn export_saved_words_csv(catalog: &Arc<Catalog>) -> Result<(usize, PathBuf), String> {
+    let words = catalog.list_saved_words("", None).map_err(|e| format!("{e}"))?;
+    let csv = saved_words_csv(&words);
+    let out_path = dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("SavedWords.csv");
+    std::fs::write(&out_path, csv).map_err(|e| format!("{e}"))?;
+    Ok((words.len(), out_path))
+}
+
+/// Export every saved word to `~/SavedWords-Anki.txt` (tab-separated,
+/// Anki-importable: word / definition / context).
+pub fn export_saved_words_anki(catalog: &Arc<Catalog>) -> Result<(usize, PathBuf), String> {
+    let words = catalog.list_saved_words("", None).map_err(|e| format!("{e}"))?;
+    let tsv = saved_words_anki_tsv(&words);
+    let out_path = dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("SavedWords-Anki.txt");
+    std::fs::write(&out_path, tsv).map_err(|e| format!("{e}"))?;
+    Ok((words.len(), out_path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn word(id: i64, w: &str, def: &str, ctx: Option<&str>, known: bool) -> SavedWord {
+        SavedWord {
+            id,
+            word: w.to_string(),
+            definition: def.to_string(),
+            dict_name: Some("WordNet".to_string()),
+            book_id: None,
+            chapter_index: None,
+            context_text: ctx.map(str::to_string),
+            created_at: "2026-09-01T00:00:00Z".to_string(),
+            known,
+        }
+    }
+
+    #[test]
+    fn csv_escapes_commas_quotes_and_newlines() {
+        let words = vec![
+            word(1, "serendipity", "a happy accident", Some("luck, chance"), false),
+            word(
+                2,
+                "quoted\"word",
+                "line one\nline two",
+                Some("plain"),
+                true,
+            ),
+        ];
+        let csv = saved_words_csv(&words);
+        assert!(csv.starts_with("word,definition,context,dictionary,known,created_at\n"));
+        assert!(csv.contains("\"luck, chance\""));
+        assert!(csv.contains("\"quoted\"\"word\""));
+        // Definition newlines collapse to spaces so each row is one line.
+        assert!(csv.contains(",line one line two,"));
+        assert!(csv.contains(",known,"));
+        assert!(csv.contains(",to review,"));
+    }
+
+    #[test]
+    fn anki_tsv_is_tab_separated_with_header() {
+        let words = vec![
+            word(1, "serendipity", "a happy accident", Some("luck, chance"), false),
+            word(2, "wander", "to walk aimlessly", None, true),
+        ];
+        let tsv = saved_words_anki_tsv(&words);
+        assert!(tsv.starts_with("#separator:tab\n#html:false\n"));
+        assert!(tsv.contains("#columns:word\tdefinition\tcontext\n"));
+        assert!(tsv.contains("serendipity\ta happy accident\tluck, chance\n"));
+        assert!(tsv.contains("wander\tto walk aimlessly\t\n"));
+        // Tabs/newlines are stripped from every field so Anki sees 3 columns.
+        for line in tsv.lines().skip(3) {
+            assert_eq!(line.split('\t').count(), 3, "line: {line}");
+        }
     }
 }

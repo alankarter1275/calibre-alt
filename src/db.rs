@@ -44,7 +44,8 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v9 = cached author profiles and aliases · v10 = series cache (Open Library)
 /// · v11 = dictionary headword key (fold_key) + idx_dict_entries_key
 /// · v12 = dictionary priority + combined_words merged store
-pub const SCHEMA_VERSION: i64 = 12;
+/// · v13 = saved_words.known (review status for vocabulary tools)
+pub const SCHEMA_VERSION: i64 = 13;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -97,6 +98,8 @@ pub struct SavedWord {
     pub chapter_index: Option<i64>,
     pub context_text: Option<String>,
     pub created_at: String,
+    /// Phase 7: review status — true once the word is marked as known.
+    pub known: bool,
 }
 
 /// Book identity attached to a saved quote — the library dashboard renders
@@ -747,6 +750,10 @@ impl Catalog {
             conn = self.conn();
         }
 
+        // v13: saved_words.known — Phase 7 review status. Existing rows
+        // default to 0 (unknown), so nothing needs a backfill.
+        add_column_if_missing(&conn, "saved_words", "known", "INTEGER NOT NULL DEFAULT 0")?;
+
         let version: Option<i64> = conn
             .query_row("SELECT version FROM schema_version LIMIT 1", [], |r| {
                 r.get(0)
@@ -1219,6 +1226,7 @@ fn row_to_saved_word(row: &rusqlite::Row<'_>) -> rusqlite::Result<SavedWord> {
         chapter_index: row.get(5)?,
         context_text: row.get(6)?,
         created_at: row.get(7)?,
+        known: row.get::<_, i64>(8)? != 0,
     })
 }
 
@@ -1337,6 +1345,46 @@ mod tests {
             })
             .unwrap();
         assert_eq!(v, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn saved_words_known_flag_round_trips_and_filters() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = cat
+            .insert_saved_word("serendipity", "a happy accident", Some("WordNet"), None, None, Some("luck, chance"))
+            .unwrap();
+        let b = cat
+            .insert_saved_word("wander", "to walk aimlessly", Some("WordNet"), None, None, None)
+            .unwrap();
+
+        // Fresh rows are unknown (to review).
+        let all = cat.list_saved_words("", None).unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(all.iter().all(|w| !w.known));
+        assert_eq!(cat.list_saved_words("", Some(false)).unwrap().len(), 2);
+        assert!(cat.list_saved_words("", Some(true)).unwrap().is_empty());
+
+        // Mark one known; the flag round-trips and the filters split.
+        cat.set_saved_word_known(a, true).unwrap();
+        let known = cat.list_saved_words("", Some(true)).unwrap();
+        assert_eq!(known.len(), 1);
+        assert_eq!(known[0].id, a);
+        assert!(known[0].known);
+        let review = cat.list_saved_words("", Some(false)).unwrap();
+        assert_eq!(review.len(), 1);
+        assert_eq!(review[0].id, b);
+
+        // Toggling back works too.
+        cat.set_saved_word_known(a, false).unwrap();
+        assert_eq!(cat.list_saved_words("", Some(true)).unwrap().len(), 0);
+        assert_eq!(cat.list_saved_words("", Some(false)).unwrap().len(), 2);
+
+        // Search still combines with the filter.
+        cat.set_saved_word_known(b, true).unwrap();
+        let hits = cat.list_saved_words("wan", Some(true)).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].word, "wander");
+        assert!(cat.list_saved_words("serendipity", Some(true)).unwrap().is_empty());
     }
 
     #[test]

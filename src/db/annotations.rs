@@ -215,29 +215,63 @@ impl Catalog {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn list_saved_words(&self, query: &str) -> Result<Vec<SavedWord>> {
+    /// Saved words, newest first. `query` filters by word/definition;
+    /// `known` (Phase 7) restricts to `Some(true)` known / `Some(false)`
+    /// to-review words, or `None` for all.
+    pub fn list_saved_words(&self, query: &str, known: Option<bool>) -> Result<Vec<SavedWord>> {
         let conn = self.conn();
         let q = query.trim();
         if q.is_empty() {
-            let mut stmt = conn.prepare_cached(
-                "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at
-                 FROM saved_words ORDER BY created_at DESC LIMIT 500",
-            )?;
-            let rows = stmt.query_map([], row_to_saved_word)?;
+            let mut stmt = match known {
+                None => conn.prepare_cached(
+                    "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at, known
+                     FROM saved_words ORDER BY created_at DESC LIMIT 500",
+                )?,
+                Some(k) => conn.prepare_cached(
+                    "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at, known
+                     FROM saved_words WHERE known = ?1 ORDER BY created_at DESC LIMIT 500",
+                )?,
+            };
+            let rows = match known {
+                None => stmt.query_map([], row_to_saved_word)?,
+                Some(k) => stmt.query_map(params![k as i64], row_to_saved_word)?,
+            };
             rows.collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(Into::into)
         } else {
             let like = format!("%{}%", escape_like(q));
-            let mut stmt = conn.prepare_cached(
-                "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at
-                 FROM saved_words
-                 WHERE word LIKE ?1 ESCAPE '\\' OR definition LIKE ?1 ESCAPE '\\'
-                 ORDER BY created_at DESC LIMIT 500",
-            )?;
-            let rows = stmt.query_map(params![like], row_to_saved_word)?;
+            let mut stmt = match known {
+                None => conn.prepare_cached(
+                    "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at, known
+                     FROM saved_words
+                     WHERE word LIKE ?1 ESCAPE '\\' OR definition LIKE ?1 ESCAPE '\\'
+                     ORDER BY created_at DESC LIMIT 500",
+                )?,
+                Some(k) => conn.prepare_cached(
+                    "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at, known
+                     FROM saved_words
+                     WHERE (word LIKE ?1 ESCAPE '\\' OR definition LIKE ?1 ESCAPE '\\')
+                       AND known = ?2
+                     ORDER BY created_at DESC LIMIT 500",
+                )?,
+            };
+            let rows = match known {
+                None => stmt.query_map(params![like], row_to_saved_word)?,
+                Some(k) => stmt.query_map(params![like, k as i64], row_to_saved_word)?,
+            };
             rows.collect::<std::result::Result<Vec<_>, _>>()
                 .map_err(Into::into)
         }
+    }
+
+    /// Phase 7: mark a saved word as known (or back to to-review).
+    pub fn set_saved_word_known(&self, id: i64, known: bool) -> Result<()> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE saved_words SET known = ?1 WHERE id = ?2",
+            params![known as i64, id],
+        )?;
+        Ok(())
     }
 
     pub fn delete_saved_word(&self, id: i64) -> Result<()> {

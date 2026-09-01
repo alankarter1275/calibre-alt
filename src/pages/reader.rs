@@ -628,7 +628,7 @@ impl Component for ReaderModel {
             .get_annotations_for_book(book_id)
             .unwrap_or_default();
         let bookmarks = catalog.list_reading_bookmarks(book_id).unwrap_or_default();
-        let saved_words = catalog.list_saved_words("").unwrap_or_default();
+        let saved_words = catalog.list_saved_words("", None).unwrap_or_default();
 
         let catalog_theme = catalog
             .get_pref("reader.theme")
@@ -1670,7 +1670,7 @@ impl ReaderModel {
     }
 
     fn reload_saved_words(&mut self) {
-        self.saved_words = self.catalog.list_saved_words("").unwrap_or_default();
+        self.saved_words = self.catalog.list_saved_words("", None).unwrap_or_default();
     }
 
     fn toc_display_position(&self) -> Option<(usize, usize)> {

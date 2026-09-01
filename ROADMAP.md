@@ -353,12 +353,13 @@ Related reader work already completed:
 
 ## Dictionary overhaul — planned reader-improvement track
 
-**Status: Phases 1–5.5 shipped (headword key index, WordNet exception
+**Status: Phases 1–6 shipped (headword key index, WordNet exception
 lemmatization, phrase decomposition, merged dictionary store, popup
-redesign, POS grouping + likely-sense hint); Phase 5.6 (offline
-pronunciation) and Phase 6 (tap-to-look-up, popup keyboard, find in
-chapter) shipped; Phase 7 still planned.** The remaining phases are
-recorded here as the implementation brief for future isolated
+redesign, POS grouping + likely-sense hint, offline pronunciation,
+tap-to-look-up + popup keyboard + find in chapter) and Phase 7
+(vocabulary review + CSV/Anki export) is shipped too — the dictionary
+overhaul is complete. The Settings reorder UI remains deferred.** The
+phases are recorded here as the implementation brief for future isolated
 reader-improvement steps.
 
 ### Implementation brief: Kalam dictionary overhaul
@@ -757,22 +758,36 @@ Settings reorder UI, and anything involving network pronunciation services.
 context; Esc closes it; ↑/↓ + Enter work; Find in chapter highlights all
 occurrences and reports the count.
 
-#### Phase 7 — Vocabulary tools (lower priority)
+#### Phase 7 — Vocabulary tools  ✅ done
 
-**Goal:** make Saved Words more than a list. Only after 1–6.
+**Goal:** make Saved Words more than a list.
 
-**Do:**
+- [x] **Schema v13** — `saved_words.known INTEGER NOT NULL DEFAULT 0` via the
+      guarded `add_column_if_missing` ALTER (existing rows default to
+      to-review; no backfill needed). `SCHEMA_VERSION` bumped to 13.
+- [x] **Review view** — the Saved Words page
+      (`src/pages/saved_words.rs`) gains a review scope: **All / To review /
+      Known** radio toggles (same `group_toggles` pattern as History),
+      each word row gets a **mark known** check button (accent-filled when
+      known; click again to move back to review), and known rows recede
+      visually (dimmed title/definition). The status line reports counts
+      ("3 to review · 12 words saved · 9 known"). The reader-sidebar
+      vocabulary list is unchanged.
+- [x] **DB layer** — `list_saved_words(query, known: Option<bool>)` filters
+      by review status (combined with search); `set_saved_word_known(id,
+      known)` toggles the flag. Unit test covers the flag round-trip, both
+      filter directions, toggling back, and search+filter combination.
+- [x] **Exports** — **Export CSV** writes `~/SavedWords.csv`
+      (`word,definition,context,dictionary,known,created_at`, RFC-4180
+      quoting, definition newlines collapsed) and **Export Anki** writes
+      `~/SavedWords-Anki.txt` (tab-separated `word / definition / context`
+      with `#separator:tab` header — Anki's default import format), both
+      mirroring the `~/Quotes.md` pattern (fixed home path + toast with
+      count and path). The pure string builders are unit-tested for
+      escaping and column counts.
 
-- Saved Words already stores `word`, `definition`, `book_id`, `chapter_index`,
-  `context_text`. Add a Saved Words review view (in `src/pages/saved_words.rs`)
-  with "mark as known" (guarded `ALTER TABLE saved_words ADD COLUMN known INTEGER
-  DEFAULT 0`).
-
-- Add export: CSV (`word,definition,context`) and optionally Anki-importable
-  format, writing to a user-chosen path (mirror the existing `~/Quotes.md`
-  export pattern).
-
-**Acceptance:** saved words can be marked known and exported to CSV.
+**Acceptance:** saved words can be marked known (and back), filtered by
+review status, and exported to CSV and to Anki's TSV format.
 
 
 ## P4 — Library depth  ✅ done

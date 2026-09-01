@@ -232,7 +232,7 @@ fn build_dashboard(
 
     // ── vocabulary ──────────────────────────────────────────────────────
     let words = catalog
-        .list_saved_words("")
+        .list_saved_words("", None)
         .unwrap_or_default()
         .into_iter()
         .take(4)

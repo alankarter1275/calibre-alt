@@ -20,7 +20,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **Highlights & quotes**: select text → floating chip (yellow/green/blue/pink/orange), save quote (❝), copy
 - **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip, tap, or `D` shortcut, a popup with numbered senses + POS, synonym/antonym chips, idiom cards, bookmark & copy, offline IPA pronunciation (`bank` → `/ˈbæŋk/`) from the bundled CMU Pronouncing Dictionary, keyboard support (↑/↓ focus a sense, Enter saves it), and **Find in chapter**
 - **Annotations list**: reader bottom pill ✎ shows highlights/quotes for current book, jump & delete
-- **Library hub**: My Library → Saved quotes (real data) → export to Markdown (`~/Quotes.md`), Saved words (real data)
+- **Library hub**: My Library → Saved quotes (real data) → export to Markdown (`~/Quotes.md`), Saved words (real data) → vocabulary review (mark known / to review, All/To review/Known filter) → export CSV (`~/SavedWords.csv`) or Anki TSV (`~/SavedWords-Anki.txt`)
 - **Settings**: dictionary packs import (+ Import dictionary), list & remove, data paths
 - **Shelves**: manual collections + **smart shelves** with a rule builder
   (tag / author / series / format / progress / title / added · is · is not ·
