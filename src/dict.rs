@@ -725,7 +725,7 @@ mod tests {
         assert_eq!(quote_ident("my dict"), "\"my dict\"");
         assert_eq!(
             quote_ident("word\"; DROP TABLE x; --"),
-            "\"word\"\"\"; DROP TABLE x; --\""
+            "\"word\"\"; DROP TABLE x; --\""
         );
     }
 
