@@ -13,6 +13,7 @@ mod annotations;
 mod authors;
 mod dictionaries;
 mod history;
+mod lookup_history;
 mod metadata;
 mod prefs;
 mod pronunciation;
@@ -24,6 +25,7 @@ pub use dictionaries::{
     likely_sense_index, EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME,
     BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
 };
+pub use lookup_history::DictLookup;
 pub use pronunciation::pronunciation_for;
 pub use series::{series_key, SeriesWork};
 
@@ -45,7 +47,8 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v11 = dictionary headword key (fold_key) + idx_dict_entries_key
 /// · v12 = dictionary priority + combined_words merged store
 /// · v13 = saved_words.known (review status for vocabulary tools)
-pub const SCHEMA_VERSION: i64 = 13;
+/// · v14 = dict_lookups (append-only lookup history, Phase 10)
+pub const SCHEMA_VERSION: i64 = 14;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -607,6 +610,22 @@ impl Catalog {
             CREATE INDEX IF NOT EXISTS idx_reading_events_book ON reading_events(book_id);
             CREATE INDEX IF NOT EXISTS idx_reading_events_at ON reading_events(at DESC);
             CREATE INDEX IF NOT EXISTS idx_reading_events_kind ON reading_events(kind);
+
+            -- v14: append-only dictionary lookup history (Phase 10).
+            -- book_id/chapter_index are nullable: the sidebar search logs
+            -- lookups that are not tied to a book. `found` = the lookup
+            -- resolved to senses (misses are the signal for pack gaps).
+            CREATE TABLE IF NOT EXISTS dict_lookups (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                word          TEXT    NOT NULL,
+                book_id       INTEGER REFERENCES books(id) ON DELETE SET NULL,
+                chapter_index INTEGER,
+                context_text  TEXT    NOT NULL DEFAULT '',
+                found         INTEGER NOT NULL DEFAULT 1,
+                at            TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_dict_lookups_word ON dict_lookups(word COLLATE NOCASE);
+            CREATE INDEX IF NOT EXISTS idx_dict_lookups_at ON dict_lookups(at DESC);
 
             -- One row per reader visit; closed out when the reader shuts down.
             CREATE TABLE IF NOT EXISTS reading_sessions (

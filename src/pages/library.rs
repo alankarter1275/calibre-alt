@@ -278,6 +278,49 @@ fn build_dashboard(
             flow.upcast::<gtk::Widget>(),
         ));
     }
+
+    // ── lookup history (Phase 10) ────────────────────────────────────────
+    let lookups = catalog.list_dict_lookups("", 3).unwrap_or_default();
+    if !lookups.is_empty() {
+        let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        for lookup in &lookups {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            row.add_css_class("kalam-list-row");
+            let word = gtk::Label::new(Some(&lookup.word));
+            word.add_css_class("kalam-card-title");
+            word.set_halign(gtk::Align::Start);
+            word.set_xalign(0.0);
+            word.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            row.append(&word);
+            if !lookup.found {
+                let miss = gtk::Label::new(Some("no definition"));
+                miss.add_css_class("kalam-chip");
+                miss.add_css_class("kalam-chip-neutral");
+                miss.set_valign(gtk::Align::Center);
+                row.append(&miss);
+            }
+            let time = gtk::Label::new(Some(lookup.at.get(11..16).unwrap_or("")));
+            time.add_css_class("kalam-muted");
+            time.set_valign(gtk::Align::Center);
+            row.append(&time);
+            let s = sender.clone();
+            let click = gtk::GestureClick::new();
+            click.set_button(1);
+            click.connect_released(move |_, _, _, _| {
+                s.output(LibraryOut::Section(LibrarySection::LookupHistory))
+                    .ok();
+            });
+            row.add_controller(click);
+            row.set_cursor_from_name(Some("pointer"));
+            list.append(&row);
+        }
+        body.append(&section(
+            "LOOKUP HISTORY",
+            LibrarySection::LookupHistory,
+            sender,
+            list.upcast::<gtk::Widget>(),
+        ));
+    }
 }
 
 // ---------------------------------------------------------------------------

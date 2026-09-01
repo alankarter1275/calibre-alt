@@ -18,6 +18,10 @@ pub enum SavedWordsMsg {
     FilterAll,
     FilterToReview,
     FilterKnown,
+    /// Phase 10: propose repeat-looked-up words as a study set.
+    SuggestFromHistory,
+    /// Phase 10: a suggested word chip was clicked — search for it.
+    SearchWord(String),
     ExportCsv,
     ExportAnki,
     Refresh,
@@ -106,6 +110,12 @@ impl Component for SavedWordsModel {
                     set_hexpand: true,
                 },
                 gtk::Button {
+                    set_label: "Suggest from history",
+                    add_css_class: "kalam-btn-outlined",
+                    set_halign: gtk::Align::Center,
+                    connect_clicked => SavedWordsMsg::SuggestFromHistory,
+                },
+                gtk::Button {
                     set_label: "Export CSV",
                     add_css_class: "kalam-btn-outlined",
                     set_halign: gtk::Align::Center,
@@ -117,6 +127,14 @@ impl Component for SavedWordsModel {
                     set_halign: gtk::Align::Center,
                     connect_clicked => SavedWordsMsg::ExportAnki,
                 },
+            },
+            // Phase 10: repeat-lookup study set, filled by
+            // SavedWordsMsg::SuggestFromHistory.
+            #[name = "suggest_box"]
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 6,
+                set_visible: false,
             },
             #[name = "status_label"]
             gtk::Label {
@@ -253,6 +271,23 @@ impl Component for SavedWordsModel {
                 widgets.filter_all.set_active(false);
                 widgets.filter_review.set_active(false);
                 widgets.filter_known.set_active(true);
+                self.reload();
+                rebuild(&widgets.list_box, &self.words, &sender);
+                widgets.status_label.set_label(&self.status);
+            }
+            SavedWordsMsg::SuggestFromHistory => {
+                let repeats = self.catalog.repeat_lookup_words(20).unwrap_or_default();
+                if repeats.is_empty() {
+                    crate::notify::info(
+                        "No repeat lookups yet",
+                        "Words you look up more than once in the reader will show up here.",
+                    );
+                }
+                populate_suggestions(&widgets.suggest_box, &repeats, &sender);
+            }
+            SavedWordsMsg::SearchWord(word) => {
+                self.query = word.clone();
+                widgets.search_entry.set_text(&word);
                 self.reload();
                 rebuild(&widgets.list_box, &self.words, &sender);
                 widgets.status_label.set_label(&self.status);
@@ -525,6 +560,40 @@ pub fn export_saved_words_anki(catalog: &Arc<Catalog>) -> Result<(usize, PathBuf
         .join("SavedWords-Anki.txt");
     std::fs::write(&out_path, tsv).map_err(|e| format!("{e}"))?;
     Ok((words.len(), out_path))
+}
+
+/// Fill the repeat-lookup study-set chip row. Each chip is `word ×N`;
+/// clicking one searches the saved-words list for that word.
+fn populate_suggestions(
+    suggest_box: &gtk::Box,
+    repeats: &[(String, i64)],
+    sender: &ComponentSender<SavedWordsModel>,
+) {
+    while let Some(child) = suggest_box.first_child() {
+        suggest_box.remove(&child);
+    }
+    if repeats.is_empty() {
+        suggest_box.set_visible(false);
+        return;
+    }
+    let intro = gtk::Label::new(Some("Repeat lookups:"));
+    intro.add_css_class("kalam-muted");
+    intro.set_valign(gtk::Align::Center);
+    suggest_box.append(&intro);
+    for (word, n) in repeats {
+        let chip = gtk::Button::with_label(&format!("{word} ×{n}"));
+        chip.add_css_class("kalam-btn-outlined");
+        chip.add_css_class("kalam-btn-sm");
+        chip.set_valign(gtk::Align::Center);
+        chip.set_tooltip_text(Some(&format!(
+            "Looked up {n} times — click to find it in your saved words"
+        )));
+        let w = word.clone();
+        let s = sender.clone();
+        chip.connect_clicked(move |_| s.input(SavedWordsMsg::SearchWord(w.clone())));
+        suggest_box.append(&chip);
+    }
+    suggest_box.set_visible(true);
 }
 
 #[cfg(test)]

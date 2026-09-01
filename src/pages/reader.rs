@@ -172,6 +172,8 @@ pub enum ReaderMsg {
     SetUiSetting(ReaderUiSetting, i32),
     AdjustUiSetting(ReaderUiSetting, i32),
     SetDictSenseHint(bool),
+    /// Phase 10: `dict_history_enabled` — records every dictionary lookup.
+    SetDictHistory(bool),
     JsRaw(String),
     Progress(f64),
     AnnotationsReload,
@@ -680,6 +682,7 @@ impl Component for ReaderModel {
             catalog_column,
             ui_prefs,
             catalog.get_pref_i64("dict_sense_hint", 1) != 0,
+            catalog.get_pref_i64("dict_history_enabled", 1) != 0,
         );
         let settings_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -1186,6 +1189,13 @@ impl Component for ReaderModel {
                 // marker; POS grouping (the pill) stays always on.
                 self.catalog
                     .set_pref("dict_sense_hint", if on { "1" } else { "0" });
+            }
+            ReaderMsg::SetDictHistory(on) => {
+                // Phase 10: lookup history is opt-out, but the toggle ships
+                // with the feature — a silent log of unknown words needs a
+                // visible off switch.
+                self.catalog
+                    .set_pref("dict_history_enabled", if on { "1" } else { "0" });
             }
             ReaderMsg::JsRaw(raw) => {
                 let cleaned = raw.trim();
@@ -1878,7 +1888,7 @@ impl ReaderModel {
     /// Every lookup path — the selection popup and the sidebar Words search —
     /// goes through here so phrases never dead-end.
     fn lookup_dict(&self, query: &str, limit: usize) -> Vec<DictEntry> {
-        if query.split_whitespace().count() > 1 {
+        let results = if query.split_whitespace().count() > 1 {
             match self
                 .catalog
                 .search_phrase(query, limit)
@@ -1894,7 +1904,18 @@ impl ReaderModel {
             }
         } else {
             self.catalog.search_dict(query, limit).unwrap_or_default()
-        }
+        };
+        // Phase 10: every lookup lands in the append-only history (gated by
+        // the `dict_history_enabled` pref and hour-collapsed inside). The
+        // popup path logs separately in the "dict-lookup" handler.
+        let _ = self.catalog.log_dict_lookup(
+            query,
+            Some(self.book_id),
+            Some(self.chapter as i64),
+            self.dict_context.as_deref(),
+            !results.is_empty(),
+        );
+        results
     }
 
     /// Render the redesigned popup: one entry per word, with POS, numbered
@@ -2073,6 +2094,16 @@ impl ReaderModel {
                     }
                     crate::db::likely_sense_index(sentence, &data.word, &data.senses)
                 });
+                // Phase 10: log the popup lookup itself (the sidebar funnel
+                // logs in `lookup_dict`; the same word re-logged within the
+                // hour collapses to one row).
+                let _ = self.catalog.log_dict_lookup(
+                    &word,
+                    Some(self.book_id),
+                    Some(self.chapter as i64),
+                    context.as_deref(),
+                    !data.senses.is_empty(),
+                );
                 self.show_dict_in_webview(&word, rect_json, hint_index);
             }
             "save-word" => {
@@ -2843,6 +2874,7 @@ fn build_reader_settings_panel(
     column_px: u32,
     ui_prefs: ReaderUiPrefs,
     dict_sense_hint: bool,
+    dict_history_enabled: bool,
 ) -> ReaderSettingsControls {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -2947,6 +2979,23 @@ fn build_reader_settings_panel(
     });
     hint_row.append(&hint_switch);
     dict_section.append(&hint_row);
+
+    // Phase 10: lookup history toggle. Off stops all writes; the history
+    // page also has Clear. Shipping the off switch with the feature.
+    let history_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    history_row.add_css_class("kalam-reader-setting-row");
+    let history_label = gtk::Label::new(Some("Lookup history"));
+    history_label.add_css_class("kalam-reader-setting-name");
+    history_label.set_hexpand(true);
+    history_label.set_halign(gtk::Align::Start);
+    history_row.append(&history_label);
+    let history_tx = sender.input_sender().clone();
+    let history_switch =
+        crate::pages::settings::toggle_switch(dict_history_enabled, move |on| {
+            let _ = history_tx.send(ReaderMsg::SetDictHistory(on));
+        });
+    history_row.append(&history_switch);
+    dict_section.append(&history_row);
     reading_page.append(&dict_section);
     stack.add_named(
         &reading_page,
