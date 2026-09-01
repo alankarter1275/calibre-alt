@@ -213,10 +213,7 @@ mod tests {
         let repeats = cat.repeat_lookup_words(10).unwrap();
         assert_eq!(
             repeats,
-            vec![
-                ("serendipity".to_string(), 2),
-                ("zzzqqq".to_string(), 2)
-            ]
+            vec![("serendipity".to_string(), 2), ("zzzqqq".to_string(), 2)]
         );
 
         // Disabling the pref stops all writes.
