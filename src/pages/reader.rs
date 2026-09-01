@@ -2127,13 +2127,11 @@ impl ReaderModel {
                     eval_js(&self.webview, &script);
                 }
             }
-            "search-in-book-done" => {
-                match payload.count.unwrap_or(0) {
-                    0 => crate::notify::compact("No matches in this chapter", ""),
-                    1 => crate::notify::compact("1 match in this chapter", ""),
-                    n => crate::notify::compact(&format!("{n} matches in this chapter"), ""),
-                }
-            }
+            "search-in-book-done" => match payload.count.unwrap_or(0) {
+                0 => crate::notify::compact("No matches in this chapter", ""),
+                1 => crate::notify::compact("1 match in this chapter", ""),
+                n => crate::notify::compact(&format!("{n} matches in this chapter"), ""),
+            },
             "reader-ui-hide" => {
                 self.show_back_button = false;
                 self.show_bottom_pill = false;
