@@ -88,17 +88,17 @@ impl Component for SavedWordsModel {
                     set_spacing: 6,
                     #[name = "filter_all"]
                     gtk::ToggleButton {
-                        set_label: Some("All"),
+                        set_label: "All",
                         add_css_class: "kalam-secondary-btn",
                     },
                     #[name = "filter_review"]
                     gtk::ToggleButton {
-                        set_label: Some("To review"),
+                        set_label: "To review",
                         add_css_class: "kalam-secondary-btn",
                     },
                     #[name = "filter_known"]
                     gtk::ToggleButton {
-                        set_label: Some("Known"),
+                        set_label: "Known",
                         add_css_class: "kalam-secondary-btn",
                     },
                 },
@@ -106,13 +106,13 @@ impl Component for SavedWordsModel {
                     set_hexpand: true,
                 },
                 gtk::Button {
-                    set_label: Some("Export CSV"),
+                    set_label: "Export CSV",
                     add_css_class: "kalam-btn-outlined",
                     set_halign: gtk::Align::Center,
                     connect_clicked => SavedWordsMsg::ExportCsv,
                 },
                 gtk::Button {
-                    set_label: Some("Export Anki"),
+                    set_label: "Export Anki",
                     add_css_class: "kalam-btn-outlined",
                     set_halign: gtk::Align::Center,
                     connect_clicked => SavedWordsMsg::ExportAnki,
@@ -232,21 +232,27 @@ impl Component for SavedWordsModel {
             }
             SavedWordsMsg::FilterAll => {
                 self.filter = None;
-                sync_filter_buttons(widgets, None);
+                widgets.filter_all.set_active(true);
+                widgets.filter_review.set_active(false);
+                widgets.filter_known.set_active(false);
                 self.reload();
                 rebuild(&widgets.list_box, &self.words, &sender);
                 widgets.status_label.set_label(&self.status);
             }
             SavedWordsMsg::FilterToReview => {
                 self.filter = Some(false);
-                sync_filter_buttons(widgets, Some(false));
+                widgets.filter_all.set_active(false);
+                widgets.filter_review.set_active(true);
+                widgets.filter_known.set_active(false);
                 self.reload();
                 rebuild(&widgets.list_box, &self.words, &sender);
                 widgets.status_label.set_label(&self.status);
             }
             SavedWordsMsg::FilterKnown => {
                 self.filter = Some(true);
-                sync_filter_buttons(widgets, Some(true));
+                widgets.filter_all.set_active(false);
+                widgets.filter_review.set_active(false);
+                widgets.filter_known.set_active(true);
                 self.reload();
                 rebuild(&widgets.list_box, &self.words, &sender);
                 widgets.status_label.set_label(&self.status);
@@ -329,14 +335,6 @@ impl SavedWordsModel {
             }
         }
     }
-}
-
-/// Keep the All / To review / Known toggle group consistent after a filter
-/// message (the sender of a programmatic toggle would otherwise re-fire).
-fn sync_filter_buttons(widgets: &SavedWordsWidgets, filter: Option<bool>) {
-    widgets.filter_all.set_active(filter.is_none());
-    widgets.filter_review.set_active(filter == Some(false));
-    widgets.filter_known.set_active(filter == Some(true));
 }
 
 /// Radio-group the filter toggles (same pattern as the History page).
@@ -490,6 +488,15 @@ fn saved_words_anki_tsv(words: &[SavedWord]) -> String {
         ));
     }
     out
+}
+
+/// Tiny home-directory helper (same private shim as saved_quotes.rs — the
+/// `dirs` crate is not a dependency of this project).
+mod dirs {
+    use std::path::PathBuf;
+    pub fn home_dir() -> Option<PathBuf> {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
 }
 
 /// Export every saved word to `~/SavedWords.csv`. Shared shape with the
