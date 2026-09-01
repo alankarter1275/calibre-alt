@@ -9,10 +9,16 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 
 ## Working agreement
 
-- **CI (GitHub Actions)** compiles, clippys and now **runs the unit tests** on
-  every push — you don’t need to build between commits. (The `cargo test` step
-  is staged at `docs/ci/github-actions-ci.yml`; the App cannot push workflow
-  files, so it is installed manually — see `docs/ci/README.md`.)
+- **CI (GitHub Actions)** compiles, clippys, runs the unit tests and builds
+  debug+release on every push — you don’t need to build between commits.
+- **Backend review pass done** — full line-by-line sweep of the data layer:
+  importers hardened (read-only SQLite packs, identifier quoting, rollback,
+  catalog.db self-import guard), one latent bug fixed (reading-list column
+  offsets), 9 new unit tests. No other defects.
+- **The `cargo test` CI step is staged at `docs/ci/github-actions-ci.yml`**
+  (the App cannot push workflow files). To activate: copy
+  `docs/ci/github-actions-ci.yml` → `.github/workflows/ci.yml` and push from
+  your own account — see `docs/ci/README.md`.
 - **Your Arch machine** is only needed at **phase boundaries** (smoke-test + design feedback).
 - Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md)
 
@@ -50,13 +56,14 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 |-------|---------|
 | P0 | Shell + nav ✅ |
 | P1 | SQLite library, EPUB import, covers ✅ |
-| P2 | EPUB reader ✅ |
+| P2 | EPUB reader (incl. P2.1 chrome restyle) ✅ |
 | P3 | Highlights, quotes, offline dictionary ✅ |
 | P4 | Shelves engine, lists, history, tags, analytics ✅ |
 | **P5** | **Metadata edit, cover replace, Open Library fetch** ✅ |
-| Reader track | Dictionary overhaul (merged store, popup redesign, likely-sense hint, IPA pronunciation, tap-to-look-up, find in chapter) + vocabulary review (known flag, CSV/Anki export) ✅ |
+| Reader track | Annotation workflow + hybrid anchoring; dictionary overhaul (merged store, popup redesign, likely-sense hint, IPA pronunciation, tap-to-look-up, find in chapter) + vocabulary review (known flag, CSV/Anki export) ✅ |
 | Backend review | Full sweep of `db.rs` + `db/*`: importers hardened, reading-list column bug fixed, 9 new tests ✅ |
 | P6–P11 | Downloads, AO3/FF, comics, PDF, tools — see ROADMAP |
+| UI overhaul (P5.5) | Colour system, 13 themes, Settings v2, book page, series float — **in progress** (Home/Library/Reader chrome next) |
 
 ## Requirements (Arch Linux)
 
@@ -153,8 +160,27 @@ src/
   pages/           Home, Library, Shelves (+ editor/detail), ReadingList,
                    History, Tags, Analytics, Book, Reader, SavedQuotes,
                    SavedWords, Settings
+  db/              db.rs split: annotations, authors, dictionaries, history,
+                   metadata, prefs, pronunciation, series, shelves, stats
   widgets/         book row, shelf card
 ```
+
+### Backend layout (post split)
+
+The 3,400-line `db.rs` was split so each area is navigable. All methods live
+on the same `Catalog`:
+
+| File | Covers |
+|------|--------|
+| `db.rs` | schema/migrations, book CRUD, progress, row mappers, helpers (`escape_like`, `chrono_like_now`, streaks) |
+| `db/dictionaries.rs` | merged store, search/lookup chain, sense parsing |
+| `db/annotations.rs` | highlights, quotes, saved words, reading bookmarks |
+| `db/history.rs` | event log, reading sessions |
+| `db/metadata.rs` | metadata edits, overrides/restore, covers, ratings, goals |
+| `db/shelves.rs` | shelves, reading list |
+| `db/stats.rs` | analytics, backup |
+| `db/authors.rs` / `db/series.rs` | author profiles, series cache |
+| `db/prefs.rs` / `db/pronunciation.rs` | app prefs, IPA pronunciation |
 
 ## Data
 
@@ -164,8 +190,12 @@ src/
   library/<uuid>/
   dictionaries/        (imported packs meta only; entries in catalog.db)
   cache/reader/<uuid>/
+  override-covers/     (stashed covers for metadata restore)
+  series-covers/       (cached series float covers)
 ~/.config/kalam/       (future)
-~/Quotes.md            (export target)
+~/Quotes.md            (export target — saved quotes, Markdown)
+~/SavedWords.csv       (export target — vocabulary, RFC-4180)
+~/SavedWords-Anki.txt  (export target — vocabulary, Anki TSV)
 ```
 
 ## Offline dictionaries

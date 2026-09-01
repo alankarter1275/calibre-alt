@@ -186,6 +186,38 @@ Daily-driver EPUB reading without annotations — **met for P2 scope**.
 
 ---
 
+## Reader chrome restyle (P2.1)  ✅ done
+
+**Decision (2026-07-26):** the reader is a tablet-book, not a browser: no heavy
+top toolbar. Restyled while P2 was still open.
+
+- [x] Top-left close + crumb (book → chapter); no reader top bar
+- [x] Bottom floating pill: `‹ ☰ ch Aa ›` (prev / TOC / chapter label / font+theme)
+- [x] Immersive mode: app sidebar + topbar hidden while reading
+- [x] Reading CSS: body/links forced to ink color (never browser-blue), no
+      underlines on body text; selection tint reserved for P3
+- [x] Chapter reload on theme/font change (accepted; instant CSS-var swap deferred)
+
+**Look target:** immersive "tablet book" — cream/sepia page, floating chrome.
+
+---
+
+## Reader chrome restyle (P2.1)  ✅ done
+
+**Decision (2026-07-26):** the reader is a tablet-book, not a browser: no heavy
+top toolbar. Restyled while P2 was still open.
+
+- [x] Top-left close + crumb (book → chapter); no reader top bar
+- [x] Bottom floating pill: `‹ ☰ ch Aa ›` (prev / TOC / chapter label / font+theme)
+- [x] Immersive mode: app sidebar + topbar hidden while reading
+- [x] Reading CSS: body/links forced to ink color (never browser-blue), no
+      underlines on body text; selection tint reserved for P3
+- [x] Chapter reload on theme/font change (accepted; instant CSS-var swap deferred)
+
+**Look target:** immersive "tablet book" — cream/sepia page, floating chrome.
+
+---
+
 ## P3 — Annotations & dictionary  ✅ done
 
 **Goal:** “Editor in the viewer” on the text-reader surface.
@@ -247,6 +279,29 @@ Annotations trustworthy enough you stop using another app for EPUB markup — **
 - `set_data`/`data` require unsafe blocks in gtk-rs 0.9; handled via `unsafe {}` 
 - CI now auto-formats and pushes fix commits (`cargo fmt --all` + push) to avoid fmt blockers in sandbox without rustfmt binary
 - Clippy -D warnings enforced; dead_code allowed for some P3 structs/methods still evolving
+
+---
+
+## Deferred features from the reference designs  (tracked, not scheduled)
+
+Pulled from the collected design references so nothing is lost. These are
+**deferred** — they do not block any phase, and are recorded here so the plan
+stays honest about what the reference imagery showed that Kalam does not yet
+have.
+
+| Feature | From | Status |
+|---------|------|--------|
+| Reading goal progress ring/bar on Home | Home/dashboard reference | deferred — goal pref + count exist (`finished_this_year`); no ring UI yet |
+| "Up next" / Continue shelf on Home | Home reference | partially shipped (Continue row); shelf-style "Up next" peek deferred |
+| Half-star rating in book grid rows | Library reference | deferred — half-stars shipped on book page only |
+| Similar-from-your-shelf on book page | Book page reference | deferred to its own UI round (P5.5 next list) |
+| Annotation design polish (cards, colors) | Annotation reference | deferred until reader feature work is complete (milestone order) |
+| Series card on book page | Book page mockup | deliberately **not** a card — series lives in the hero + float (decision) |
+| Social features (sharing, activity feed) | Analytics reference | explicitly out of scope (decision 2026-07-27) |
+
+**Rule:** a reference image is direction, not specification. When a reference
+feature is requested, the mockup-first workflow applies (see P5.5 working
+method) before any Rust.
 
 ---
 
@@ -1113,14 +1168,21 @@ re-imported. Its cover lives in `covers/<file_hash>.<ext>`, not in
 
 ## CI plan
 
-| Check | When |
-|-------|------|
-| `cargo fmt --check` | every push |
-| `cargo clippy -D warnings` | every push |
-| `cargo build` / `release` | every push |
-| GUI smoke | **your Arch machine** at phase end |
+| Check | When | Status |
+|-------|------|--------|
+| `cargo fmt --check` (auto-fix + push fix commit when it differs) | every push | active |
+| `cargo clippy -D warnings` | every push | active |
+| `cargo test --all-targets` — compiles **and runs** the unit tests (in-memory SQLite, headless); failures publish to `ci-logs/test-latest.txt` | every push | **staged at `docs/ci/github-actions-ci.yml` — awaiting manual install into `.github/workflows/ci.yml` (user, own account)** |
+| `cargo build` / `release` | every push | active |
+| GUI smoke | **your Arch machine** at phase end | user |
 
 Deps include `webkitgtk-6.0` for P2+.
+
+**Workflow files:** the App cannot push `.github/workflows/` (GitHub App lacks
+`workflows` permission). The canonical workflow with the `cargo test` step
+lives at `docs/ci/github-actions-ci.yml`; install it by copying over
+`.github/workflows/ci.yml` and pushing from your own account. See
+`docs/ci/README.md` for the exact commands.
 
 ---
 

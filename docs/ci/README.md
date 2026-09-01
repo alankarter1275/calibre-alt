@@ -38,6 +38,9 @@ git push origin arena/01a05974-calibre-alt
 Or GitHub UI: edit `.github/workflows/ci.yml` and paste the contents of
 `docs/ci/github-actions-ci.yml`.
 
+> Note: if the branch name is not `arena/01a05974-calibre-alt`, run
+> `git branch --show-current` and substitute it.
+
 ## What CI does
 
 On every push / PR:
