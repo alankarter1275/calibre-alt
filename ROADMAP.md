@@ -8,6 +8,40 @@ This file is updated whenever product/UX decisions change.
 
 ---
 
+## ⚠️ Read this first — every chat, every agent
+
+If you are an AI agent starting work on this repo, read ALL of this before
+touching code:
+
+1. **`README.md`** — what the app is, current status table.
+2. **`ROADMAP.md` (this file)** — the plan, the order, the gates, the locked
+   decisions. The **"Current trajectory"** section below is the single summary
+   of where we are and what comes next.
+3. **`docs/conversation.md`** — the living design-conversation log. Every
+   accepted / rejected idea, with reasons. **Do not re-litigate settled
+   decisions** — if you think one is wrong, raise it in chat first.
+
+**Hard rules for every change you make:**
+
+- **Keep the docs current — always, in the same commit as the code.** When you
+  finish a phase / feature / decision, update: README (status table),
+  ROADMAP (phase status, changelog table, next steps), and
+  `docs/conversation.md` (if the work changes a decision). A change that
+  leaves the roadmap stale is **not done**.
+- **Never skip the changelog.** ROADMAP ends with a "Changelog of plan
+  decisions" table — append a dated row for every phase shipped or decision
+  locked. This is how a new chat catches up in one glance.
+- **CI is the gate.** No local Rust toolchain in the sandbox: push and watch
+  GitHub Actions (`gh run list`). Never force-push. The App token cannot push
+  `.github/workflows/` — workflow changes go to `docs/ci/github-actions-ci.yml`
+  and the user installs them.
+- **You cannot see the screen.** The user is the QA loop for anything visual:
+  ask for error text (not screenshots — you can't view them), and have the
+  user run the app on Arch at phase boundaries.
+- **Branch:** work only on `arena/01a05974-calibre-alt`; push only to it.
+
+---
+
 ## Working agreement
 
 | Who | Does |
@@ -28,6 +62,20 @@ instructions; you install into `.github/workflows/ci.yml`. See `docs/ci/README.m
 3. README / ARCH / **this ROADMAP** updated if behaviour or UX targets changed  
 4. You ran it on Arch (or explicitly deferred) and listed change requests  
 
+### Documentation discipline (non-negotiable)
+
+- **Every phase ships with its docs.** README status table, ROADMAP phase
+  status + changelog row + next-steps update, and (if a decision changed)
+  `docs/conversation.md` — in the **same commit** as the code, never "later".
+- **The changelog table is the memory.** A new chat must be able to catch up
+  by reading: README status, ROADMAP "Current trajectory" + changelog tail,
+  and `docs/conversation.md` §6 (standing decisions).
+- **A fresh chat must be able to continue without asking the user what the
+  plan is.** If that is not true after your change, the change is not done.
+- **Decisions change only through conversation.** Mark reversals in
+  `docs/conversation.md` with the old position struck through and the new one
+  recorded with the date.
+
 ### Non-goals (whole project)
 
 - Z-Library / unauthorized shadow libraries  
@@ -45,7 +93,66 @@ instructions; you install into `.github/workflows/ci.yml`. See `docs/ci/README.m
 > comics) later — no bloat.
 
 **Stack:** Rust · GTK4 · Relm4 · custom CSS · SQLite · WebKitGTK (EPUB) · image
-pipeline (comics) · MuPDF later (PDF)
+pipeline (comics) · MuPDF later (PDF) · cosmic-text (custom renderer, A0)
+
+---
+
+## Current trajectory (locked 2026-09-02)
+
+**Where we are:** P0–P5 shipped and CI-green; dictionary track Phases 1–10
+shipped and CI-green (156 unit tests). The product is now a **content
+platform**: fiction (AO3 / FFN / webnovels) and manga sources with native tag
+search, downloads, offline reading, auto-updates — on a fast, Yazi-style
+architecture.
+
+**The agreed order — do not reorder without asking:**
+
+1. **A0 — Architecture & performance track** (◀ NEXT, detailed below):
+   measure → `LibraryService` behind `Catalog` → thumbnails at import +
+   async cover decode → task manager → preloaders → grid virtualization
+   *only if the numbers say so* → perf-budget CI test → **plugin-host seam
+   design** (the `Source` adapter API that P7/P9 depend on).
+2. **P6 — Downloads hub** (queue + folder watch; prerequisite for P7).
+3. **P7 — Fiction platform** (AO3 first, then FFN / Royal Road / ScribbleHub /
+   Webnovel) via **Lua source plugins**; native tag search (fandom, tags,
+   characters, ships, rating, status); download + offline reading; follow +
+   **auto-updater** (background scheduler; FFN-app-class).
+4. **Renderer vertical slice** — starts *alongside* P7, not after: custom
+   renderer on **cosmic-text** for fiction content (clean plugin output).
+   This is the **calibration milestone**: 2–4 weeks of sessions; if it takes
+   longer, stop and reassess before sinking months in.
+5. **P8 — Comics local** (image pager — decode + paint, no engine) and
+   **P9 — Manga platform** (Lua source plugins; MangaDex official API first,
+   then Komga/Kavita/OPDS clients, scraped sites later).
+6. **EPUB normalization** (lol_html + rules) → custom renderer takes EPUBs;
+   WebKit demoted to fallback for exotic EPUBs (may be cut later).
+7. **P10 — PDF** (MuPDF) · **P11 — Tools** · **P12 — Lua plugin system**
+   matures into a user-facing plugin surface.
+
+**Locked decisions (full reasoning in `docs/conversation.md`):**
+
+- **Stay Rust.** No language rewrite — performance is architecture, not
+  language (§1–2).
+- **No browse mode.** Kalam never renders arbitrary websites; sources return
+  structured data via plugins; search UI is native (§8).
+- **Custom renderer is the endgame for ALL reflowable text** (cosmic-text
+  based). WebKit = EPUB fallback only, may be cut. crengine rejected as the
+  base: GPL-2/AGPL license mismatch with our GPL-3.0, C++ FFI burden, partial
+  CSS 2.1; at most a separate dynamically-linked fallback bridge (§8, §10).
+- **Manga = Tachiyomi-shaped `Source` adapter API, Lua plugins we write.**
+  No Kotlin extension bridge (Android APKs — wrong shape); no Suwayomi server
+  rewrite; optional Suwayomi-server *client* adapter later (§7–8).
+- **PDF = MuPDF** (fixed-layout, AGPL — acceptable; Poppler/GPL the
+  alternative). **Comics = image decode + GTK pager** — no engine (§8).
+- **Perf order:** measure → thumbnails/async decode → virtualize if numbers
+  say so (§2).
+- **Renderer effort estimate:** 2–4 wk vertical slice; 6–12 months total for
+  "no WebKit for text". **The user is the QA loop** — the agent has no
+  display (§9).
+- **Borrow list** (license-compatible with GPL-3.0): FanFicFare (fiction
+  adapters), Tachiyomi extensions (pattern), MangaDex API, Komga/Kavita,
+  KOReader + crengine (reference), cosmic-text/swash/fontdb/vello (Rust text
+  stack), lol_html/ammonia (sanitizing), Yazi, Foliate (§8).
 
 ---
 
@@ -79,6 +186,12 @@ Kalam has **two distinct viewing modes**. Same library; `Read` routes by format.
 - Fit width / fit height / RTL; optional continuous strip mode  
 - Memory-safe: only nearby pages decoded (4 GB RAM)  
 
+**Renderer trajectory (2026-09, supersedes the engine column above):** the
+custom renderer (cosmic-text) is the endgame for ALL reflowable text — source
+fiction first, EPUB after a normalization pipeline. WebKit becomes the EPUB
+fallback only (exotic EPUBs), then may be cut. The table above remains the
+*current* engine map; see "Current trajectory" and `docs/conversation.md` §8.
+
 ---
 
 ## Phase map (overview)
@@ -91,29 +204,31 @@ P3  Annotations ─────── highlights, quotes, offline dictionary    
 P4  Library depth ───── shelves engine, lists, tags, analytics    ✅ done
 P5  Metadata ────────── edit metadata, cover pick, Open Library      ✅ done
 P6  Downloads hub ───── unified queue + folder watch
-P7  Fiction sources ─── AO3 first, then other fanfic adapters
-P8  Comics local ────── CBZ/CBR + Moku-style comics reader
-P9  Comics sources ──── browse/download (legal / self-hosted first)
+P7  Fiction platform ── AO3 first → FFN/RoyalRoad/etc.; Lua source
+                        plugins; tag search; downloads; auto-updater
+P8  Comics local ────── CBZ/CBR + Moku-style comics reader (image pager)
+P9  Manga platform ──── Suwayomi-class sources via Lua plugins
+                        (MangaDex API first; legal/self-hosted)
 P10 PDF ─────────────── MuPDF in text-reader family + basic marks
 P11 Tools ───────────── convert (external), polish, Calibre import
-A0  Architecture track ─ Yazi-style service layer + task manager +
-                        preloaders + thin UI (perf); may interleave P6–P11
-P12 Plugins ──────────── source-adapter plugins: fiction + manga (Lua;
-                        after A0)
+A0  Architecture track ─ service layer + task manager + preloaders +
+                        thumbnails + virtualization + plugin-host seam
+P12 Plugins ──────────── Lua plugin system (source adapters first;
+                        matures after A0)
 ```
 
 **Order lock:** P0→P5 stay sequential. P6–P11 may reorder after P3 if priorities shift.
 Comics UI design is frozen in this doc now; **implementation is P8**.
 
 **Architecture track (A0)** is the performance/async work discussed in
-`docs/conversation.md` — service layer, task manager, cover/chapter
-preloaders, grid virtualization. It is a track, not a phase: it may
-interleave with P6–P11. The **renderer decision** (WebKit vs custom text
-engine) belongs to it — resolved direction: **no browse mode**; **custom
-renderer is the endgame for ALL reflowable text** (cosmic-text based;
-fiction first, EPUB after a normalization pipeline); WebKit = fallback
-only (exotic EPUBs), may be cut later; PDF = MuPDF; comics = image pager
-(see `docs/conversation.md` §8).
+`docs/conversation.md` §§1–3 — the **next big work item** (detailed in the
+"A0 — Architecture & performance track" section below). It is a track, not
+a phase: it may interleave with P6–P11. The **renderer decision** (WebKit
+vs custom text engine) belongs to it — resolved direction: **no browse
+mode**; **custom renderer is the endgame for ALL reflowable text**
+(cosmic-text based; fiction first, EPUB after a normalization pipeline);
+WebKit = fallback only (exotic EPUBs), may be cut later; PDF = MuPDF;
+comics = image pager (see `docs/conversation.md` §8).
 
 > **Track phases are separate from P0–P11.** The dictionary overhaul uses its
 > own numbering (Phases 1–10, in the "Dictionary overhaul" section below) —
@@ -1157,6 +1272,55 @@ runs — the constant that keeps appearing is the answer.
 
 ---
 
+## A0 — Architecture & performance track  ◀ NEXT
+
+**Status:** decided 2026-09-02 (design in `docs/conversation.md` §§1–3);
+**not started.** A track, not a phase — interleaves with P6–P11.
+
+**Goal:** make Kalam feel instant (Yazi philosophy: *"don't make the UI
+fast — make it never wait"*) and lay the seams the source platform needs.
+
+### Scope (in order)
+
+1. **Measure first.** `perf` + sysprof + GTK inspector on: cold start, book
+   open, chapter turn, dictionary lookup, library scroll. Record the numbers
+   — they decide what gets fixed (asserted bottlenecks get measured before
+   being trusted).
+2. **`LibraryService` behind `Catalog`.** Pages stop calling the DB directly
+   and *ask* the service. Moving queries off the UI thread then becomes a
+   change in one place. (`Catalog.conn` is already `Mutex`-wrapped — feasible
+   without a rewrite.)
+3. **Thumbnails at import + async cover decode.** ~200px thumbnails into
+   `cache/thumbs/<uuid>.png` at import time; the grid decodes tiny files that
+   survive restarts; cards show a placeholder and swap in the texture when a
+   worker finishes decoding. (The in-memory `COVER_CACHE` dies every launch.)
+4. **Task manager (`src/tasks.rs`).** Import, dictionary rebuild, metadata
+   fetch, downloads → background tasks with progress + cancellation
+   (`thread::spawn` + `async-channel` + `glib::idle_add` — **no tokio**;
+   relm4 is already the actor framework).
+5. **Preloaders.** Cover preloader (rows 1–30 visible → decode 31–60 in the
+   background); chapter preloader in the reader (preload the next chapter
+   while reading the current one).
+6. **Grid virtualization** — *only if the numbers earn it*: `GtkGridView` +
+   `GListModel` replacing the 400-widget `build_book_grid` and the
+   teardown-and-rebuild `rebuild_list`.
+7. **Perf-budget CI test.** Seed 2,000 books; assert grid build under N ms.
+   Catches regressions like a new `for book in books` loop.
+8. **Plugin-host seam design** (the dependency for P7/P9): define the
+   `Source` adapter API shape (search / details / chapters / content — text
+   and image flavors) and the Lua plugin host interface, even if the first
+   real plugins ship in P7.
+
+**Acceptance:** library grid stays smooth with 2,000+ books; book open and
+page turns feel instant; all slow work is off the UI thread; pages are thin
+(no DB calls, no decoding); a fresh chat can add a source plugin from the
+documented API alone.
+
+**DoD:** CI green; README / ROADMAP / `docs/conversation.md` updated; user
+runs it on Arch.
+
+---
+
 ## P6 — Downloads hub
 
 **Goal:** One place for inbound files/jobs.
@@ -1277,6 +1441,39 @@ Only sources you’re allowed to use. No unauthorized scraper assistance.
 
 ---
 
+## P12 — Lua plugin system
+
+**Status:** wanted (reversed 2026-09-02 from "no plugin API"); design TBD.
+**Dependency:** the A0 plugin-host seam (the `Source` adapter API + Lua host
+interface) must exist first.
+
+**Goal:** a user-facing plugin surface. First-class consumers: **fiction
+source plugins** (P7) and **manga source plugins** (P9) — one Lua plugin per
+site, written by us (and later by users).
+
+### Scope (design points, refine in conversation)
+
+- **Language: Lua** via `mlua` — tiny, embeddable, battle-tested (Yazi,
+  Neovim, AwesomeWM). (WebAssembly and compiled-in Rust traits were
+  considered and set aside: wasm = heavy tooling, compiled-in = no
+  user-authored scripts.)
+- Plugin API surface: `search(query, filters) → results`, `details(url)`,
+  `chapters(url) → list`, `content(chapter) → clean text` (fiction) or
+  `pages(chapter) → image URLs` (manga).
+- **No Kotlin-extension bridge** (Tachiyomi extensions are Android APKs —
+  wrong shape for desktop). **No Suwayomi server rewrite** — optional later:
+  a "Suwayomi server" *client* adapter plugin that talks to a user's existing
+  instance via its API.
+- Sandboxing / rate limits / polite polling: per-source schedules
+  (user-controlled, default daily).
+- **Borrow:** FanFicFare adapter logic (AO3/FFN/RoyalRoad/…) ports to Lua;
+  MangaDex official API needs no scraping.
+
+### Out
+
+Running Tachiyomi/Suwayomi Kotlin extensions. A plugin marketplace (later,
+if ever).
+
 ## Schema (current + planned)
 
 Current `SCHEMA_VERSION` = **14** (`src/db.rs`). Migrations run on open and are
@@ -1386,47 +1583,32 @@ lives at `docs/ci/github-actions-ci.yml`; install it by copying over
 
 ## Immediate next steps
 
-0. **Architecture track A0 — design discussed, not yet implemented.** Yazi-style
-   service layer (`LibraryService` behind `Catalog`), task manager, cover
-   preloader + thumbnail persistence, chapter preloading, grid virtualization,
-   perf-budget CI test. Plan and rationale: `docs/conversation.md` §§1–3.
-1. **Dictionary track Phases 8–10 — shipped.** Phase 8 — POS grouping
-   dividers (`be11c07`); Phase 9 — Settings dictionary priority reorder UI
-   with "speaks first" chip (`d12c905`); Phase 10 — lookup history:
-   schema v14 `dict_lookups`, reader Settings toggle, Lookup History page
-   with Clear, repeat-lookup study set + "Suggest from history" on Saved
-   Words and a Library dashboard card (`7ce8bfb` + follow-up fixes
-   `68373fa`/`6b4e528`/`0b188a3`). All three phases CI-green.
-3. **CI: workflow with the `cargo test` step — installed and green.** You
-   applied it with your own account (`bc6473f`). The first real test run
-   caught one failure — a bad escape in the `quote_ident` test literal —
-   which was fixed (`1aae8f1`); all 156 unit tests now pass on the CI runner
-   on every push, and failures publish to `ci-logs/test-latest.txt`.
-4. **Backend review — done (focused + full sweep).** The whole backend was
-   reviewed line-by-line: migrations/schema, `dictionaries.rs` (merged store,
-   search/lookup chain, sense parsing), `dict.rs` importers, the reader ↔ JS
-   bridge, shelves, history, metadata overrides, stats, authors, series,
-   annotations, prefs, pronunciation, `shelf_rules.rs`. One latent bug found
-   and fixed (`list_reading_list` read `progress/rating/publisher` as
-   `position/note/added_at` — wrong column offset against the 16-column
-   `BOOK_COLUMNS`); the dict importers were hardened (read-only SQLite packs,
-   identifier quoting, half-import rollback, catalog.db self-import guard);
-   9 new unit tests. No other defects.
-5. **Reader milestones 1–3:** all shipped and CI-green — annotation workflow,
-   hybrid anchoring, phrase preservation, punctuation/inflection
-   normalization, multi-result dictionary popup. Arch re-validation is
-   welcome whenever convenient but is not blocking anything.
-6. After the reader feature work is complete, return to the deferred annotation
-   design polish without changing saved-highlight anchoring or temporary
-   emphasis.
-7. Only after those reader milestones, consider multi-chapter buffering,
-   continuous book-wide scrolling, chapter auto-advance redesign, or advanced
-   CFI.
-8. **UI overhaul:** after the reader track is signed off, continue the
-   mockup-first screen work. `library_look.png` shows a two-column dashboard;
-   the app is currently a single vertical stack.
-9. **P6 — Downloads hub** (unified queue + folder watch; prerequisite for P7).
-10. **P8** when you want comics for real (UI target already specified above).
+**Next, in order (locked 2026-09-02):**
+
+1. **A0 — Architecture & performance track** (the section above). Start with
+   measurement, then `LibraryService` + thumbnails/async decode; design the
+   plugin-host seam. This is the foundation for everything after.
+2. **P6 — Downloads hub** (unified queue + folder watch).
+3. **P7 — Fiction platform** (AO3 first) via Lua source plugins; native tag
+   search; download; follow + auto-updater.
+4. **Renderer vertical slice** (alongside P7) — cosmic-text fiction renderer;
+   the 2–4 week calibration milestone.
+5. **P8 — Comics local** → **P9 — Manga platform** → **P10 — PDF (MuPDF)** →
+   **P11 — Tools** → **P12 — Lua plugin system matures.**
+
+**Recently completed (do not redo):** dictionary track Phases 8–10 (shipped,
+CI-green: POS dividers `be11c07`, priority reorder `d12c905`, lookup history
+`7ce8bfb`+fixes); CI workflow with the `cargo test` step installed and green
+(156 unit tests, failures publish to `ci-logs/test-latest.txt`); backend
+review done (one latent bug fixed, dict importers hardened, 9 new tests);
+reader milestones 1–3 shipped (annotation workflow, hybrid anchoring, dict
+multi-result popup).
+
+**Deferred (revisit only after the above is underway):** annotation design
+polish (without changing saved-highlight anchoring); multi-chapter
+buffering; continuous book-wide scrolling; chapter auto-advance redesign;
+advanced CFI; UI-overhaul screen work (`library_look.png` two-column
+dashboard — the app is currently a single vertical stack).
 
 ---
 
@@ -1493,3 +1675,4 @@ lives at `docs/ci/github-actions-ci.yml`; install it by copying over
 | 2026-09-02 | Scope sharpened: **no browse mode** — Kalam never renders arbitrary websites; sources return structured data via plugins. Renderer decision resolved direction: WebKit = EPUB engine only (lazy), custom renderer for source fiction + comics; EPUB normalization (crengine-style) is Path B crown. Tachiyomi/Suwayomi fully explained: extension = 200–500-line Kotlin adapter for one site; Kotlin/JVM can't run in Rust; we reimplement the adapter pattern natively (MangaDex/Komga/OPDS need no scraping); Suwayomi-server bridge is a cheap optional plugin. PDF not forgotten — P10 MuPDF, fixed-layout, never WebKit (AGPL license note). Borrow list recorded in `docs/conversation.md` §8: FanFicFare (fiction adapters), Tachiyomi extensions (pattern), MangaDex API, Komga/Kavita, KOReader + crengine (renderer), cosmic-text/swash/vello (Rust text stack), lol_html/ammonia (sanitizing), Yazi, Foliate — all license-compatible with GPL-3.0-or-later |
 | 2026-09-02 | Renderer direction sharpened (user push-back): custom renderer is the **endgame for all reflowable text** — cosmic-text based (Rust text layout, NOT an EPUB engine; we build normalization/pagination/painting), fiction first (clean content), EPUB via a lol_html normalization pipeline after; WebKit demoted to fallback for exotic EPUBs (may be cut). crengine (C++ EPUB engine) kept as a legitimate shortcut if EPUB-before-custom-engine is wanted, at the cost of C++ in the stack + less dict/theme/annotation control. Manga architecture confirmed: Tachiyomi-shaped `Source` adapter API with **Lua plugins we write**; **no Kotlin-extension bridge** (they are Android APKs — wrong shape for desktop; pattern + scraping logic port instead; MangaDex/Komga/OPDS need no scraping). PDF stays MuPDF (P10); comics = image decode + GTK pager (no engine). Engine map recorded in `docs/conversation.md` §8 |
 | 2026-09-02 | Renderer timing decided: **not now, not at the end — start right after sources, grow alongside.** Order: A0 architecture → P7 fiction sources → renderer vertical slice (alongside) → EPUB normalization → PDF/comics. crengine deep-dive: GPL-2.0 (KOReader fork AGPL-3.0) vs our GPL-3.0-or-later — license mismatch; C++ codebase with no Rust bindings (FFI wrapper burden); partial CSS 2.1 (no float/border/etc. — what real EPUBs use); dict/annotation integration is the same fight against a foreign engine. Verdict: crengine only as a separate dynamically-linked fallback bridge; **cosmic-text + our own normalizer remains the recommendation** (hard part is ours either way) — recorded in `docs/conversation.md` §10 |
+| 2026-09-02 | Roadmap restructured as the single handoff document for future chats: new "⚠️ Read this first" block (agent instructions: read README/ROADMAP/conversation.md, keep docs current in the same commit, never skip the changelog, CI is the gate, user is the QA loop); new "Documentation discipline" rules in the Working agreement; new **"Current trajectory (locked)"** section — agreed order A0 → P6 → P7 → renderer vertical slice (alongside P7) → P8/P9 → EPUB normalization → P10/P11/P12, plus all locked decisions in one place; detailed **A0 section** (measure → LibraryService → thumbnails/async decode → task manager → preloaders → virtualization-if-numbers-earn-it → perf-budget CI test → plugin-host seam); detailed **P12 section** (Lua via mlua, source-adapter API, no Kotlin bridge, no Suwayomi rewrite); phase map + next steps rewritten to match |

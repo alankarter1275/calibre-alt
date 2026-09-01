@@ -5,7 +5,14 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 
 > Reader-improvements track complete — merged dictionary store, popup redesign,
 > POS + likely-sense hint, offline IPA pronunciation, tap-to-look-up, find in
-> chapter, vocabulary review + CSV/Anki export.
+> chapter, vocabulary review + CSV/Anki export. Dictionary track Phases 8–10
+> shipped (POS dividers, priority reorder, lookup history).
+
+> **For AI agents / new chats — read this first.** Plan and status:
+> [`ROADMAP.md`](./ROADMAP.md) (its **"Read this first"** block and **"Current
+> trajectory"** section). Design decisions: [`docs/conversation.md`](./docs/conversation.md).
+> **Keep all three updated in the same commit as your code** — a change that
+> leaves the roadmap stale is not done.
 
 ## Working agreement
 
@@ -15,7 +22,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
   importers hardened (read-only SQLite packs, identifier quoting, rollback,
   catalog.db self-import guard), one latent bug fixed (reading-list column
   offsets), 9 new unit tests. No other defects.
-- **CI now runs the 154 unit tests on every push** (the `cargo test` step is
+- **CI now runs the 156 unit tests on every push** (the `cargo test` step is
   live in `.github/workflows/ci.yml`). The first real run caught one failing
   test (a bad escape in the `quote_ident` test literal) — fixed, all green.
   On failure the diagnostics are published to `ci-logs/test-latest.txt`.
@@ -23,7 +30,8 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
   `.github/workflows/`); the canonical copy lives at
   `docs/ci/github-actions-ci.yml` — see `docs/ci/README.md`.
 - **Your Arch machine** is only needed at **phase boundaries** (smoke-test + design feedback).
-- Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md)
+- Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md) ·
+  design decisions: [`docs/conversation.md`](./docs/conversation.md)
 
 ## What works now
 
