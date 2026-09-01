@@ -1677,18 +1677,18 @@ if (!window.kalamReaderShellLoaded) {
       }
     }
 
-    var popupWidth = Math.min(380, window.innerWidth * 0.86);
-    var popupHeight = Math.min(p.offsetHeight || 240, Math.max(140, window.innerHeight - 16));
-    var minLeft = window.scrollX + 8;
-    var maxLeft = window.scrollX + window.innerWidth - popupWidth - 8;
+    var popupWidth = Math.min(320, window.innerWidth * 0.8);
+    var popupHeight = Math.min(p.offsetHeight || 220, Math.max(120, window.innerHeight - 16));
     if (rect) {
-      // Anchor to the selection: below it when there is room, above it
-      // otherwise, and never over it — if neither side fits, use the
-      // larger side and shrink the body so the popup still fits.
-      var selTop = window.scrollY + rect.y;
+      // Anchor to the selection in viewport coordinates (the popup is
+      // position:fixed, so it stays put when the book scrolls): below the
+      // selection when there is room, above it otherwise, and never over
+      // it — if neither side fits, use the larger side and shrink the
+      // body so the popup still fits.
+      var selTop = rect.y;
       var selBottom = selTop + (rect.h || 0);
-      var viewTop = window.scrollY + 8;
-      var viewBottom = window.scrollY + window.innerHeight - 8;
+      var viewTop = 8;
+      var viewBottom = window.innerHeight - 8;
       var spaceBelow = viewBottom - (selBottom + 10);
       var spaceAbove = (selTop - 10) - viewTop;
       var h = popupHeight;
@@ -1705,19 +1705,19 @@ if (!window.kalamReaderShellLoaded) {
         } else {
           top = selBottom + 10;
         }
-        var headerH = (p.querySelector('.k-header') || {}).offsetHeight || 80;
-        if (bodyEl) bodyEl.style.maxHeight = Math.max(80, h - headerH - 4) + 'px';
+        var headerH = (p.querySelector('.k-header') || {}).offsetHeight || 70;
+        if (bodyEl) bodyEl.style.maxHeight = Math.max(60, h - headerH - 4) + 'px';
       }
       top = Math.max(viewTop, Math.min(top, viewBottom - h));
-      var left = window.scrollX + rect.x;
-      if (left < minLeft) left = minLeft;
-      if (left > maxLeft) left = Math.max(minLeft, maxLeft);
+      var left = rect.x;
+      if (left < 8) left = 8;
+      if (left > window.innerWidth - popupWidth - 8) left = Math.max(8, window.innerWidth - popupWidth - 8);
       p.style.top = top + 'px';
       p.style.left = left + 'px';
     } else if (!wasVisible) {
       // No anchor (sidebar lookup): default position, only when opening.
-      p.style.top = (window.scrollY + 180) + 'px';
-      p.style.left = (minLeft + 32) + 'px';
+      p.style.top = '180px';
+      p.style.left = '32px';
     }
     // Rect-less lookups on an already-open popup (synonym/antonym chips)
     // keep the current position — the box must not jump around.
@@ -2620,10 +2620,12 @@ html.kalam-selection-active body * ::selection {{
   --kalam-pop-accent: {app_accent};
   --kalam-pop-syn: color-mix(in srgb, {app_accent} 82%, {app_surface});
   --kalam-pop-ant: color-mix(in srgb, #e06c75 85%, {app_surface});
-  position: absolute !important;
+  /* Fixed = viewport-anchored: scrolling the book leaves the popup in
+     place (the rect from getBoundingClientRect is viewport-relative). */
+  position: fixed !important;
   z-index: 999998 !important;
-  width: 380px !important;
-  max-width: 86vw !important;
+  width: 320px !important;
+  max-width: 80vw !important;
   background: var(--kalam-pop-bg) !important;
   color: var(--kalam-pop-text) !important;
   border: 1px solid var(--kalam-pop-border) !important;
@@ -2639,7 +2641,7 @@ html.kalam-selection-active body * ::selection {{
   justify-content: space-between !important;
   align-items: flex-start !important;
   gap: 12px !important;
-  padding: 20px 20px 16px 20px !important;
+  padding: 14px 16px 10px 16px !important;
   border-bottom: 1px solid var(--kalam-pop-border) !important;
   background: var(--kalam-pop-bg) !important;
   box-shadow: 0 4px 12px rgba(0,0,0,0.25) !important;
@@ -2651,31 +2653,31 @@ html.kalam-selection-active body * ::selection {{
 }}
 #kalam-dict-popup .k-word {{
   font-family: Georgia, "Times New Roman", "DejaVu Serif", serif !important;
-  font-size: 26px !important;
+  font-size: 22px !important;
   font-weight: 600 !important;
   line-height: 1.1 !important;
   color: var(--kalam-pop-text) !important;
-  margin-bottom: 5px !important;
+  margin-bottom: 4px !important;
   overflow-wrap: anywhere !important;
 }}
 /* Pronunciation slot: kept in the DOM but hidden until real offline
    pronunciation data exists (no licensed source today). */
 #kalam-dict-popup .k-pronunciation {{
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace !important;
-  font-size: 11px !important;
+  font-size: 10px !important;
   color: var(--kalam-pop-dim) !important;
-  margin-bottom: 7px !important;
+  margin-bottom: 5px !important;
 }}
 #kalam-dict-popup .k-pronunciation:empty {{
   display: none !important;
 }}
 #kalam-dict-popup .k-pos {{
-  font-size: 10.5px !important;
+  font-size: 10px !important;
   font-style: italic !important;
   color: var(--kalam-pop-accent) !important;
   background: color-mix(in srgb, var(--kalam-pop-accent) 14%, transparent) !important;
   border-radius: 999px !important;
-  padding: 2px 9px !important;
+  padding: 2px 8px !important;
   display: inline-block !important;
 }}
 #kalam-dict-popup .k-header-actions {{
@@ -2684,13 +2686,13 @@ html.kalam-selection-active body * ::selection {{
   flex-shrink: 0 !important;
 }}
 #kalam-dict-popup .k-save-btn {{
-  width: 30px !important;
-  height: 30px !important;
+  width: 26px !important;
+  height: 26px !important;
   border-radius: 50% !important;
   border: 1px solid var(--kalam-pop-border) !important;
   background: var(--kalam-pop-surface) !important;
   color: var(--kalam-pop-dim) !important;
-  font-size: 15px !important;
+  font-size: 13px !important;
   line-height: 1 !important;
   cursor: pointer !important;
   display: inline-flex !important;
@@ -2709,10 +2711,10 @@ html.kalam-selection-active body * ::selection {{
   background: color-mix(in srgb, var(--kalam-pop-accent) 14%, transparent) !important;
 }}
 #kalam-dict-popup .k-body {{
-  max-height: 420px !important;
+  max-height: 300px !important;
   overflow-y: auto !important;
   scrollbar-width: none !important;
-  padding: 4px 20px 48px 20px !important;
+  padding: 4px 16px 40px 16px !important;
 }}
 #kalam-dict-popup .k-body::-webkit-scrollbar {{
   display: none !important;
@@ -2729,8 +2731,8 @@ html.kalam-selection-active body * ::selection {{
   z-index: 1 !important;
 }}
 #kalam-dict-popup .k-section-label {{
-  margin: 18px 0 8px 0 !important;
-  font-size: 9.5px !important;
+  margin: 14px 0 6px 0 !important;
+  font-size: 9px !important;
   font-weight: 700 !important;
   letter-spacing: 0.08em !important;
   text-transform: uppercase !important;
@@ -2748,23 +2750,23 @@ html.kalam-selection-active body * ::selection {{
 }}
 #kalam-dict-popup .k-def-num {{
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace !important;
-  font-size: 10.5px !important;
+  font-size: 10px !important;
   color: var(--kalam-pop-accent) !important;
   flex-shrink: 0 !important;
-  margin-top: 4px !important;
-  min-width: 18px !important;
+  margin-top: 3px !important;
+  min-width: 16px !important;
 }}
 #kalam-dict-popup .k-def-text {{
-  font-size: 13.5px !important;
-  line-height: 1.6 !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
   color: var(--kalam-pop-text) !important;
 }}
 #kalam-dict-popup .k-def-example {{
   font-family: Georgia, "Times New Roman", "DejaVu Serif", serif !important;
   font-style: italic !important;
-  font-size: 12.5px !important;
+  font-size: 12px !important;
   color: var(--kalam-pop-dim) !important;
-  margin-top: 3px !important;
+  margin-top: 2px !important;
 }}
 #kalam-dict-popup .k-extra-defs {{
   display: none !important;
@@ -2775,9 +2777,9 @@ html.kalam-selection-active body * ::selection {{
   gap: 10px !important;
 }}
 #kalam-dict-popup .k-show-more {{
-  margin-top: 8px !important;
+  margin-top: 6px !important;
   align-self: flex-start !important;
-  font-size: 12px !important;
+  font-size: 11.5px !important;
   color: var(--kalam-pop-accent) !important;
   cursor: pointer !important;
   display: inline-block !important;
@@ -2794,8 +2796,8 @@ html.kalam-selection-active body * ::selection {{
   display: inline-flex !important;
   align-items: center !important;
   border-radius: 999px !important;
-  padding: 4px 12px !important;
-  font-size: 12px !important;
+  padding: 3px 11px !important;
+  font-size: 11.5px !important;
   cursor: pointer !important;
   user-select: none !important;
   border: 1px solid !important;
@@ -2827,24 +2829,24 @@ html.kalam-selection-active body * ::selection {{
 #kalam-dict-popup .k-idiom-item {{
   background: var(--kalam-pop-surface) !important;
   border: 1px solid var(--kalam-pop-border) !important;
-  border-radius: 10px !important;
-  padding: 10px 12px !important;
+  border-radius: 9px !important;
+  padding: 8px 11px !important;
 }}
 #kalam-dict-popup .k-idiom-phrase {{
   font-family: Georgia, "Times New Roman", "DejaVu Serif", serif !important;
   font-style: italic !important;
-  font-size: 13px !important;
+  font-size: 12.5px !important;
   color: var(--kalam-pop-text) !important;
-  margin-bottom: 4px !important;
+  margin-bottom: 3px !important;
 }}
 #kalam-dict-popup .k-idiom-def {{
-  font-size: 12.5px !important;
-  line-height: 1.55 !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
   color: var(--kalam-pop-text) !important;
 }}
 #kalam-dict-popup .k-empty {{
-  padding: 22px 4px !important;
-  font-size: 13.5px !important;
+  padding: 18px 4px !important;
+  font-size: 13px !important;
   color: var(--kalam-pop-dim) !important;
 }}
 
