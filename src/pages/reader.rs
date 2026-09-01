@@ -2065,7 +2065,7 @@ impl ReaderModel {
                     if !data.senses.iter().any(|s| s.pos.is_some()) {
                         return None;
                     }
-                    crate::db::likely_sense_index(sentence, &data.senses)
+                    crate::db::likely_sense_index(sentence, &data.word, &data.senses)
                 });
                 self.show_dict_in_webview(&word, rect_json, hint_index);
             }

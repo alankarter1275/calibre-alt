@@ -973,13 +973,34 @@ fn gloss_overlap(context_tokens: &[String], gloss_tokens: &[String]) -> usize {
 /// and examples; score by overlap, ignoring stopwords; return the top-scoring
 /// sense index — or `None` when every sense scores zero (no evidence, no
 /// hint) or when two or more senses tie for the top score (no hint rather
-/// than an arbitrary one). The hint must never hide or misrepresent the
-/// entry, so a wrong guess costs at most a misplaced highlight.
-pub fn likely_sense_index(context_sentence: &str, senses: &[Sense]) -> Option<usize> {
+/// than an arbitrary one).
+///
+/// Two refinements keep the hint honest on real WordNet data:
+///
+/// - `headword` (the canonical looked-up word) is excluded from the context
+///   bag. It is in the sentence by definition and appears in many of the
+///   word's own glosses ("put into a bank account"), so counting it would
+///   manufacture ties and drown out real evidence such as "deposit".
+/// - Tokens are lightly stemmed on both sides so inflected sentence words
+///   match the gloss's base forms ("deposits" ≈ "deposit", "running" ≈
+///   "run"). Both sides go through the same stemmer, so it can be lossy.
+///
+/// The hint never hides or misrepresents the entry: a wrong guess costs at
+/// most a misplaced highlight.
+pub fn likely_sense_index(
+    context_sentence: &str,
+    headword: &str,
+    senses: &[Sense],
+) -> Option<usize> {
     if context_sentence.trim().is_empty() {
         return None;
     }
     let context_tokens = tokenize_context(context_sentence);
+    let headword_stem = stem_token(&headword.to_ascii_lowercase());
+    let context_tokens: Vec<String> = context_tokens
+        .into_iter()
+        .filter(|t| *t != headword_stem)
+        .collect();
     if context_tokens.is_empty() {
         return None;
     }
@@ -1008,16 +1029,100 @@ pub fn likely_sense_index(context_sentence: &str, senses: &[Sense]) -> Option<us
     }
 }
 
-/// Lowercase a sentence, split on non-alphanumeric runs, and drop stopwords
-/// and one-character tokens. Returns owned tokens so case is normalized on
-/// both sides of the overlap check.
+/// Lowercase a sentence, split on non-alphanumeric runs, drop stopwords and
+/// one-character tokens, and stem each surviving token. Returns owned tokens
+/// so case is normalized on both sides of the overlap check.
 fn tokenize_context(sentence: &str) -> Vec<String> {
     sentence
         .split(|ch: char| !ch.is_alphanumeric())
         .map(|t| t.to_ascii_lowercase())
         .filter(|t| t.len() > 1)
         .filter(|t| !STOPWORDS.contains(&t.as_str()))
+        .map(|t| stem_token(&t))
         .collect()
+}
+
+/// Tiny rule-based stemmer for the Lesk overlap: strips common English
+/// suffixes so inflected words match base forms. Deliberately lossy — both
+/// sides of the comparison go through it, so consistent "wrong" stems still
+/// match each other. Suffixes are only stripped when a meaningful stem
+/// remains (3+ letters), and the "ing"/"ed"/"ly" rules require a vowel in
+/// the remainder so roots like "bring" and "need" survive untouched.
+fn stem_token(token: &str) -> String {
+    let mut t = token;
+    for suffix in ["'s", "’s"] {
+        if let Some(base) = t.strip_suffix(suffix) {
+            t = base;
+            break;
+        }
+    }
+    let mut out = t.to_string();
+    let mut stripped = false;
+    let n = out.len();
+    if n >= 4 {
+        if out.ends_with("ies") {
+            out.truncate(n - 3);
+            out.push('y');
+            stripped = true;
+        } else if out.ends_with("ied") {
+            out.truncate(n - 3);
+            out.push('y');
+            stripped = true;
+        } else if out.ends_with("ying") && n >= 6 {
+            out.truncate(n - 3);
+            stripped = true;
+        } else if out.ends_with("es") && n >= 5 && out[..n - 2].len() >= 3 && !out[..n - 2].ends_with("us")
+        {
+            out.truncate(n - 2);
+            stripped = true;
+        } else if out.ends_with('s')
+            && n >= 4
+            && out[..n - 1].len() >= 3
+            && !out.ends_with("ss")
+            && !out.ends_with("us")
+            && !out.ends_with("is")
+        {
+            out.truncate(n - 1);
+            stripped = true;
+        } else if out.ends_with("ing")
+            && n >= 5
+            && out[..n - 3].len() >= 3
+            && has_vowel(&out[..n - 3])
+        {
+            out.truncate(n - 3);
+            stripped = true;
+        } else if out.ends_with("ed")
+            && n >= 4
+            && out[..n - 2].len() >= 3
+            && has_vowel(&out[..n - 2])
+        {
+            out.truncate(n - 2);
+            stripped = true;
+        } else if out.ends_with("ly")
+            && n >= 5
+            && out[..n - 2].len() >= 3
+            && has_vowel(&out[..n - 2])
+        {
+            out.truncate(n - 2);
+            stripped = true;
+        } else if out.ends_with('e') && n >= 4 && out[..n - 1].len() >= 3 && !out.ends_with("ee") {
+            out.truncate(n - 1);
+            stripped = true;
+        }
+    }
+    // Suffix stripping can leave a doubled consonant ("running" -> "runn").
+    if stripped && out.len() >= 3 && !out.ends_with("ss") {
+        let len = out.len();
+        let bytes = out.as_bytes();
+        if bytes[len - 1] == bytes[len - 2] {
+            out.truncate(len - 1);
+        }
+    }
+    out
+}
+
+fn has_vowel(s: &str) -> bool {
+    s.chars().any(|c| matches!(c, 'a' | 'e' | 'i' | 'o' | 'u'))
 }
 
 fn simple_inflection_variants(term: &str) -> Vec<String> {
@@ -1655,23 +1760,25 @@ mod tests {
             test_sense("land alongside a river or lake", None),
         ];
         assert_eq!(
-            likely_sense_index("We walked along the river bank at sunset.", &senses),
+            likely_sense_index("We walked along the river bank at sunset.", "bank", &senses),
             Some(1)
         );
     }
 
     #[test]
     fn likely_sense_uses_example_overlap_too() {
+        // The context shares no word with either gloss, but the first
+        // sense's example contains "savings", so the example overlap wins.
         let senses = vec![
             test_sense(
                 "a financial institution",
-                Some("she keeps her savings in the bank"),
+                Some("she keeps her savings at the bank"),
             ),
             test_sense("rising ground bordering a waterway", None),
         ];
         assert_eq!(
-            likely_sense_index("The children played on the bank of the stream.", &senses),
-            Some(1)
+            likely_sense_index("She opened a savings account at the bank.", "bank", &senses),
+            Some(0)
         );
     }
 
@@ -1682,7 +1789,7 @@ mod tests {
             test_sense("land alongside a river or lake", None),
         ];
         assert_eq!(
-            likely_sense_index("The quick brown fox jumps over the lazy dog.", &senses),
+            likely_sense_index("The quick brown fox jumps over the lazy dog.", "bank", &senses),
             None
         );
     }
@@ -1690,9 +1797,9 @@ mod tests {
     #[test]
     fn likely_sense_empty_context_returns_none() {
         let senses = vec![test_sense("a financial institution", None)];
-        assert_eq!(likely_sense_index("", &senses), None);
-        assert_eq!(likely_sense_index("   ", &senses), None);
-        assert_eq!(likely_sense_index("the and of or", &senses), None);
+        assert_eq!(likely_sense_index("", "bank", &senses), None);
+        assert_eq!(likely_sense_index("   ", "bank", &senses), None);
+        assert_eq!(likely_sense_index("the and of or", "bank", &senses), None);
     }
 
     #[test]
@@ -1701,7 +1808,7 @@ mod tests {
             test_sense("financial institution", None),
             test_sense("financial matters", None),
         ];
-        assert_eq!(likely_sense_index("financial", &senses), None);
+        assert_eq!(likely_sense_index("financial", "bank", &senses), None);
     }
 
     #[test]
@@ -1710,7 +1817,36 @@ mod tests {
             test_sense("a financial institution", None),
             test_sense("land alongside a river", None),
         ];
-        assert_eq!(likely_sense_index("RIVER BANK", &senses), Some(1));
+        assert_eq!(likely_sense_index("RIVER BANK", "bank", &senses), Some(1));
+    }
+
+    #[test]
+    fn likely_sense_ignores_the_looked_up_word_itself() {
+        // Every gloss contains the headword, and the sentence contains it
+        // too — without exclusion that would be a tie; with exclusion there
+        // is no evidence, so no arbitrary hint.
+        let senses = vec![
+            test_sense("a bank that accepts deposits", None),
+            test_sense("a bank beside a river", None),
+        ];
+        assert_eq!(
+            likely_sense_index("The bank was crowded this morning.", "bank", &senses),
+            None
+        );
+    }
+
+    #[test]
+    fn likely_sense_stems_inflected_context_words() {
+        // "deposits" in the gloss and "deposit" in the sentence both stem
+        // to "deposit"; the other sense shares no word with the sentence.
+        let senses = vec![
+            test_sense("an institution that accepts deposits", None),
+            test_sense("land alongside a river", None),
+        ];
+        assert_eq!(
+            likely_sense_index("I will deposit the cheque tomorrow.", "bank", &senses),
+            Some(0)
+        );
     }
 
     #[test]
@@ -1722,5 +1858,33 @@ mod tests {
         assert!(!tokens.contains(&"the".to_string()));
         assert!(!tokens.contains(&"by".to_string()));
         assert!(!tokens.contains(&"was".to_string()));
+    }
+
+    #[test]
+    fn stem_token_strips_common_inflections() {
+        assert_eq!(stem_token("running"), "run");
+        assert_eq!(stem_token("played"), "play");
+        assert_eq!(stem_token("scored"), "scor");
+        assert_eq!(stem_token("score"), "scor");
+        assert_eq!(stem_token("studies"), "study");
+        assert_eq!(stem_token("tried"), "try");
+        assert_eq!(stem_token("boxes"), "box");
+        assert_eq!(stem_token("deposits"), "deposit");
+        assert_eq!(stem_token("bank's"), "bank");
+    }
+
+    #[test]
+    fn stem_token_leaves_roots_alone() {
+        // Guards: a root that merely ends in a suffix must survive.
+        assert_eq!(stem_token("need"), "need");
+        assert_eq!(stem_token("sing"), "sing");
+        assert_eq!(stem_token("bring"), "bring");
+        assert_eq!(stem_token("gas"), "gas");
+        assert_eq!(stem_token("kiss"), "kiss");
+        assert_eq!(stem_token("class"), "class");
+        assert_eq!(stem_token("bus"), "bus");
+        assert_eq!(stem_token("this"), "this");
+        assert_eq!(stem_token("use"), "use");
+        assert_eq!(stem_token("bank"), "bank");
     }
 }

@@ -659,7 +659,12 @@ answer.
   (pure fn, unit-tested): stopword-filtered content-token overlap between the
   context sentence and each sense's gloss + example. Returns `None` on zero
   overlap and on ties, so a neutral sentence shows no marker and a wrong
-  guess costs at most a misplaced highlight.
+  guess costs at most a misplaced highlight. Two refinements keep real-world
+  hints honest: the looked-up headword itself is excluded from the context
+  bag (it appears in many of its own glosses and would manufacture ties —
+  "deposit" is what decides the financial sense of "bank"), and both sides
+  are lightly stemmed by a tiny rule-based stemmer so inflected words match
+  gloss base forms ("deposits" ≈ "deposit", "running" ≈ "run").
 - **Full sentence context** — the bridge already carried `context`; the popup
   now sends the whole sentence around the selection
   (`getContextSentence` in `epub_book.rs`), not just the selected word, to
