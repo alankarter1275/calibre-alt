@@ -146,20 +146,52 @@ mod tests {
 
     #[test]
     fn lookup_history_logs_hits_misses_and_collapses_repeats() {
+        use crate::models::BookFormat;
         let cat = Catalog::open_in_memory().unwrap();
+        // Real book ids: dict_lookups.book_id has a foreign key, and the
+        // catalog runs with PRAGMA foreign_keys = ON.
+        let b1 = cat
+            .insert_book(
+                "uuid-b1",
+                "Book One",
+                "Author",
+                None,
+                "",
+                BookFormat::Epub,
+                "b1.epub",
+                "hash-b1",
+                None,
+                &[],
+            )
+            .unwrap();
+        let b2 = cat
+            .insert_book(
+                "uuid-b2",
+                "Book Two",
+                "Author",
+                None,
+                "",
+                BookFormat::Epub,
+                "b2.epub",
+                "hash-b2",
+                None,
+                &[],
+            )
+            .unwrap();
+
         // Pref defaults to on.
         assert_eq!(cat.get_pref_i64("dict_history_enabled", 1), 1);
 
-        cat.log_dict_lookup("serendipity", Some(1), Some(2), Some("a sentence"), true)
+        cat.log_dict_lookup("serendipity", Some(b1), Some(2), Some("a sentence"), true)
             .unwrap();
         // Same word, same book, same hour → collapsed.
-        cat.log_dict_lookup("serendipity", Some(1), Some(2), Some("again"), true)
+        cat.log_dict_lookup("serendipity", Some(b1), Some(2), Some("again"), true)
             .unwrap();
         // Same word, different book → separate row.
-        cat.log_dict_lookup("serendipity", Some(7), None, None, true)
+        cat.log_dict_lookup("serendipity", Some(b2), None, None, true)
             .unwrap();
         // A miss is logged with found = 0.
-        cat.log_dict_lookup("zzzqqq", Some(1), None, None, false)
+        cat.log_dict_lookup("zzzqqq", Some(b1), None, None, false)
             .unwrap();
         // Sidebar lookups without a book collapse among themselves.
         cat.log_dict_lookup("zzzqqq", None, None, None, false)
