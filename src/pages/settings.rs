@@ -550,7 +550,7 @@ fn setting_row(body: &gtk::Box, label: &str, desc: &str, right: &impl IsA<gtk::W
 
 /// The app's pill switch. `on_toggle` fires only for user changes: the
 /// initial state is set before the handler is attached.
-fn toggle_switch(initial: bool, on_toggle: impl Fn(bool) + 'static) -> gtk::Switch {
+pub(crate) fn toggle_switch(initial: bool, on_toggle: impl Fn(bool) + 'static) -> gtk::Switch {
     let sw = gtk::Switch::new();
     sw.set_active(initial);
     sw.set_valign(gtk::Align::Center);

@@ -936,6 +936,92 @@ fn dictionary_possessive_base(term: &str) -> Option<&str> {
         .or_else(|| term.strip_suffix('’'))
 }
 
+// ---------------------------------------------------------------------------
+// P5.5: Lesk-style likely-sense ranking
+// ---------------------------------------------------------------------------
+
+/// Stopwords ignored when scoring gloss overlap against the context sentence.
+/// Small fixed list (the brief: "ship a tiny stopword list"); closed-class
+/// English words plus a few very frequent verbs. Never include sense/gloss
+/// content words — only function words.
+const STOPWORDS: &[&str] = &[
+    "a", "an", "the", "and", "or", "but", "nor", "if", "so", "yet", "for",
+    "of", "to", "in", "on", "at", "by", "with", "from", "up", "down", "into",
+    "out", "over", "under", "as", "than", "that", "this", "these", "those",
+    "which", "who", "whom", "whose", "what", "when", "where", "why", "how",
+    "is", "are", "was", "were", "be", "been", "being", "am", "do", "does",
+    "did", "have", "has", "had", "will", "would", "can", "could", "shall",
+    "should", "may", "might", "must", "not", "no", "yes", "i", "you", "he",
+    "she", "it", "we", "they", "me", "him", "her", "us", "them", "my", "your",
+    "his", "its", "our", "their", "there", "here", "then", "now", "just",
+    "very", "too", "also", "only", "such", "same", "some", "any", "all",
+    "both", "each", "few", "more", "most", "other", "another", "one", "two",
+];
+
+/// Score a context sentence against a sense's gloss, using Lesk-style set
+/// overlap on content words. Returns the number of shared content tokens;
+/// a token counts once no matter how often it appears on either side.
+fn gloss_overlap(context_tokens: &[String], gloss_tokens: &[String]) -> usize {
+    context_tokens
+        .iter()
+        .filter(|t| gloss_tokens.contains(t))
+        .count()
+}
+
+/// Which sense index is most likely given the sentence around the lookup.
+///
+/// Simplified Lesk (the brief's algorithm): lowercase + tokenize the context
+/// sentence into a set; for each sense, build a bag of words from its gloss
+/// and examples; score by overlap, ignoring stopwords; return the top-scoring
+/// sense index — or `None` when every sense scores zero (no evidence, no
+/// hint) or when two or more senses tie for the top score (no hint rather
+/// than an arbitrary one). The hint must never hide or misrepresent the
+/// entry, so a wrong guess costs at most a misplaced highlight.
+pub fn likely_sense_index(context_sentence: &str, senses: &[Sense]) -> Option<usize> {
+    if context_sentence.trim().is_empty() {
+        return None;
+    }
+    let context_tokens = tokenize_context(context_sentence);
+    if context_tokens.is_empty() {
+        return None;
+    }
+    let mut best_score = 0usize;
+    let mut best_index: Option<usize> = None;
+    let mut tied = false;
+    for (i, sense) in senses.iter().enumerate() {
+        let gloss_tokens = tokenize_context(&sense.definition);
+        let mut score = gloss_overlap(&context_tokens, &gloss_tokens);
+        if let Some(example) = &sense.example {
+            let example_tokens = tokenize_context(example);
+            score += gloss_overlap(&context_tokens, &example_tokens);
+        }
+        if score > best_score {
+            best_score = score;
+            best_index = Some(i);
+            tied = false;
+        } else if score == best_score && score > 0 {
+            tied = true;
+        }
+    }
+    if tied {
+        None
+    } else {
+        best_index
+    }
+}
+
+/// Lowercase a sentence, split on non-alphanumeric runs, and drop stopwords
+/// and one-character tokens. Returns owned tokens so case is normalized on
+/// both sides of the overlap check.
+fn tokenize_context(sentence: &str) -> Vec<String> {
+    sentence
+        .split(|ch: char| !ch.is_alphanumeric())
+        .map(|t| t.to_ascii_lowercase())
+        .filter(|t| t.len() > 1)
+        .filter(|t| !STOPWORDS.contains(&t.as_str()))
+        .collect()
+}
+
 fn simple_inflection_variants(term: &str) -> Vec<String> {
     let mut variants = Vec::new();
     if let Some(stem) = term.strip_suffix("ies") {
@@ -1549,5 +1635,91 @@ mod tests {
     fn distinct_pos_preserves_first_seen_order() {
         let senses = parse_senses(&["verb:; 1. v1; noun:; 1. n1; verb:; 2. v2".to_string()]);
         assert_eq!(distinct_pos(&senses), vec!["verb", "noun"]);
+    }
+
+    // -----------------------------------------------------------------------
+    // P5.5: Lesk-style likely-sense ranking
+    // -----------------------------------------------------------------------
+
+    fn test_sense(def: &str, example: Option<&str>) -> Sense {
+        Sense {
+            number: 1,
+            pos: None,
+            def: def.to_string(),
+            example: example.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn likely_sense_prefers_the_gloss_matching_the_sentence() {
+        let senses = vec![
+            test_sense("a financial institution that accepts deposits", None),
+            test_sense("land alongside a river or lake", None),
+        ];
+        assert_eq!(
+            likely_sense_index("We walked along the river bank at sunset.", &senses),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn likely_sense_uses_example_overlap_too() {
+        let senses = vec![
+            test_sense("a financial institution", Some("she keeps her savings in the bank")),
+            test_sense("rising ground bordering a waterway", None),
+        ];
+        assert_eq!(
+            likely_sense_index("The children played on the bank of the stream.", &senses),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn likely_sense_neutral_context_returns_none() {
+        let senses = vec![
+            test_sense("a financial institution that accepts deposits", None),
+            test_sense("land alongside a river or lake", None),
+        ];
+        assert_eq!(
+            likely_sense_index("The quick brown fox jumps over the lazy dog.", &senses),
+            None
+        );
+    }
+
+    #[test]
+    fn likely_sense_empty_context_returns_none() {
+        let senses = vec![test_sense("a financial institution", None)];
+        assert_eq!(likely_sense_index("", &senses), None);
+        assert_eq!(likely_sense_index("   ", &senses), None);
+        assert_eq!(likely_sense_index("the and of or", &senses), None);
+    }
+
+    #[test]
+    fn likely_sense_tie_returns_none_not_an_arbitrary_guess() {
+        let senses = vec![
+            test_sense("financial institution", None),
+            test_sense("financial matters", None),
+        ];
+        assert_eq!(likely_sense_index("financial", &senses), None);
+    }
+
+    #[test]
+    fn likely_sense_matching_is_case_insensitive() {
+        let senses = vec![
+            test_sense("a financial institution", None),
+            test_sense("land alongside a river", None),
+        ];
+        assert_eq!(likely_sense_index("RIVER BANK", &senses), Some(1));
+    }
+
+    #[test]
+    fn tokenize_context_keeps_content_words_only() {
+        let tokens = tokenize_context("The bank by the river was muddy.");
+        assert!(tokens.contains(&"bank".to_string()));
+        assert!(tokens.contains(&"river".to_string()));
+        assert!(tokens.contains(&"muddy".to_string()));
+        assert!(!tokens.contains(&"the".to_string()));
+        assert!(!tokens.contains(&"by".to_string()));
+        assert!(!tokens.contains(&"was".to_string()));
     }
 }

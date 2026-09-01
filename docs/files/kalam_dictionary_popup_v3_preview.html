@@ -159,6 +159,20 @@ body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; }
   line-height: 1.55 !important;
   color: var(--kalam-pop-text) !important;
 }
+#kalam-dict-popup .k-hint-badge {
+  display: inline-block !important;
+  margin-right: 6px !important;
+  font-size: 9px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  color: var(--kalam-pop-accent) !important;
+  background: color-mix(in srgb, var(--kalam-pop-accent) 14%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--kalam-pop-accent) 32%, transparent) !important;
+  border-radius: 999px !important;
+  padding: 1px 7px !important;
+  vertical-align: 1px !important;
+}
 #kalam-dict-popup .k-def-example {
   font-family: Georgia, "Times New Roman", "DejaVu Serif", serif !important;
   font-style: italic !important;
@@ -325,10 +339,13 @@ CSS and JS from <code>src/epub_book.rs</code> with the mockup palette substitute
     var suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : [];
     var pos = Array.isArray(payload.pos) ? payload.pos : [];
     var saved = !!payload.saved;
+    // P5.5: index of the Lesk "likely here" sense; -1 = no hint (the
+    // backend only sends it when the pref is on and there is evidence).
+    var hintIdx = (typeof payload.hint === 'number' && payload.hint >= 0) ? payload.hint : -1;
 
-    function defItem(s, n) {
-      return '<div class="k-def-item"><span class="k-def-num">'+n+'.</span><div>'
-        + '<div class="k-def-text">'+esc(s.def)+'</div>'
+    function defItem(s, n, isHint) {
+      return '<div class="k-def-item'+(isHint ? ' k-hint' : '')+'"><span class="k-def-num">'+n+'.</span><div>'
+        + '<div class="k-def-text">'+(isHint ? '<span class="k-hint-badge">likely here</span>' : '')+esc(s.def)+'</div>'
         + (s.example ? '<div class="k-def-example">'+esc(s.example)+'</div>' : '')
         + '</div></div>';
     }
@@ -351,10 +368,10 @@ CSS and JS from <code>src/epub_book.rs</code> with the mockup palette substitute
       html += '<div class="k-section-label">Definitions</div><div class="k-defs">';
       var shown = senses.slice(0, 3);
       var extra = senses.slice(3);
-      shown.forEach(function(s, i){ html += defItem(s, i + 1); });
+      shown.forEach(function(s, i){ html += defItem(s, i + 1, i === hintIdx); });
       if (extra.length) {
         html += '<div class="k-extra-defs" id="kalam-extra-defs">';
-        extra.forEach(function(s, i){ html += defItem(s, shown.length + i + 1); });
+        extra.forEach(function(s, i){ html += defItem(s, shown.length + i + 1, shown.length + i === hintIdx); });
         html += '</div><span class="k-show-more" id="kalam-show-more">Show '+extra.length+' more</span>';
       }
       html += '</div>';
@@ -512,9 +529,75 @@ CSS and JS from <code>src/epub_book.rs</code> with the mockup palette substitute
     try { if (rectJson) rect = JSON.parse(rectJson); } catch(e){}
     showDictPopup(payload, rect);
   };
+// Preview-only stubs for the reader helpers the real webview provides.
+function getSelectionData() {
+  return {
+    text: window.__selText || 'bank',
+    rect: {x: 0, y: 40, w: 40, h: 24}
+  };
+}
+function hideChip() {}
+function hideSelectionHandles() {}
+
+function getContextSentence() {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return '';
+    var text = sel.toString().replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    var node = sel.getRangeAt(0).commonAncestorContainer;
+    if (node.nodeType !== 1) node = node.parentElement;
+    var el = node;
+    var guard = 0;
+    while (el && el !== document.body && guard++ < 20) {
+      var display = window.getComputedStyle(el).display;
+      if (display === 'block' || display === 'list-item') break;
+      el = el.parentElement;
+    }
+    var full = (el && el.textContent ? el.textContent : text)
+      .replace(/\s+/g, ' ').trim();
+    if (!full) return text;
+    // Split into sentences, keeping the ending punctuation on each one.
+    var sentences = full.match(/[^.!?…]+[.!?…]+(?:\s+|$)|[^.!?…]+$/g) || [full];
+    for (var i = 0; i < sentences.length; i++) {
+      if (sentences[i].indexOf(text) !== -1) {
+        var s = sentences[i].trim();
+        return s.length > 600 ? s.slice(0, 600) : s;
+      }
+    }
+    return text.length > 600 ? text.slice(0, 600) : text;
+  }
+window.kalamGetContextSentence = getContextSentence;
+window.kalamHandleDict = function() {
+    var data = getSelectionData();
+    var word = '';
+    var ctx = '';
+    var rect = null;
+    if (data) {
+      // Keep a short phrase intact. The dictionary can contain multi-word
+      // entries, and reducing the selection to its first word made phrase
+      // lookup depend on an arbitrary selection boundary.
+      word = data.text.replace(/\s+/g, ' ').trim();
+      ctx = getContextSentence() || data.text;
+      rect = data.rect;
+    } else {
+      var sel = window.getSelection();
+      if (sel && sel.toString()) {
+        var selectedText = sel.toString();
+        word = selectedText.replace(/\s+/g, ' ').trim();
+        ctx = getContextSentence() || selectedText;
+        try { var r = sel.getRangeAt(0).getBoundingClientRect(); rect = {x:r.left, y:r.top, w:r.width, h:r.height, bottom:r.bottom}; } catch(e){}
+      }
+    }
+    if (!word) return;
+    hideChip();
+    hideSelectionHandles();
+    // Keep the selection bands visible: the popup is placed clear of the
+    // selection, so the lookup target stays highlighted underneath.
+    kalamBridge({type:'dict-lookup', word:word, context:ctx, rect:rect});
+  }
 function openPopup() {
   var r = {x: 0, y: 40, w: 40, h: 24};
-  window.kalamShowDict({"word": "set", "pos": ["noun", "verb", "adjective"], "senses": [{"number": 1, "pos": "noun", "def": "a group of things of the same kind that belong together and are so used", "example": null}, {"number": 2, "pos": "noun", "def": "(mathematics) an abstract collection of numbers or symbols", "example": null}, {"number": 3, "pos": "noun", "def": "several exercises intended to be done in series", "example": null}, {"number": 4, "pos": "noun", "def": "representation consisting of the scenery and other properties used to identify the location of a dramatic production", "example": null}, {"number": 5, "pos": "noun", "def": "an unofficial association of people or groups", "example": null}, {"number": 6, "pos": "noun", "def": "a relatively permanent inclination to react in a particular way", "example": null}, {"number": 7, "pos": "noun", "def": "the act of putting something in position", "example": null}, {"number": 8, "pos": "noun", "def": "a unit of play in tennis or squash", "example": null}, {"number": 9, "pos": "noun", "def": "the process of becoming hard or solid by cooling or drying or crystallization", "example": null}, {"number": 10, "pos": "noun", "def": "the descent of a heavenly body below the horizon", "example": null}, {"number": 11, "pos": "noun", "def": "(psychology) being temporarily ready to respond in a particular way", "example": null}, {"number": 12, "pos": "noun", "def": "any electronic equipment that receives or transmits radio or tv signals", "example": null}, {"number": 13, "pos": "verb", "def": "put into a certain place or abstract location", "example": null}, {"number": 14, "pos": "verb", "def": "fix conclusively or authoritatively", "example": null}, {"number": 15, "pos": "verb", "def": "decide upon or fix definitely", "example": null}, {"number": 16, "pos": "verb", "def": "establish as the highest level or best performance", "example": null}, {"number": 17, "pos": "verb", "def": "put into a certain state; cause to be in a certain state", "example": null}, {"number": 18, "pos": "verb", "def": "fix in a border", "example": null}, {"number": 19, "pos": "verb", "def": "make ready or suitable or equip in advance for a particular purpose or for some use, event, etc", "example": null}, {"number": 20, "pos": "verb", "def": "set to a certain position or cause to operate correctly", "example": null}, {"number": 21, "pos": "verb", "def": "locate", "example": null}, {"number": 22, "pos": "verb", "def": "disappear beyond the horizon", "example": null}, {"number": 23, "pos": "verb", "def": "adapt for performance in a different way", "example": null}, {"number": 24, "pos": "verb", "def": "put or set (seeds, seedlings, or plants) into the ground", "example": null}, {"number": 25, "pos": "verb", "def": "apply or start", "example": null}, {"number": 26, "pos": "verb", "def": "become gelatinous", "example": null}, {"number": 27, "pos": "verb", "def": "set in type", "example": null}, {"number": 28, "pos": "verb", "def": "put into a position that will restore a normal state", "example": null}, {"number": 29, "pos": "verb", "def": "insert (a nail or screw below the surface, as into a countersink)", "example": null}, {"number": 30, "pos": "verb", "def": "give a fine, sharp edge to a knife or razor", "example": null}, {"number": 31, "pos": "verb", "def": "urge to attack someone", "example": null}, {"number": 32, "pos": "verb", "def": "estimate", "example": null}, {"number": 33, "pos": "verb", "def": "equip with sails or masts", "example": null}, {"number": 34, "pos": "verb", "def": "get ready for a particular purpose or event", "example": null}, {"number": 35, "pos": "verb", "def": "alter or regulate so as to achieve accuracy or conform to a standard", "example": null}, {"number": 36, "pos": "verb", "def": "produce fruit", "example": null}, {"number": 37, "pos": "verb", "def": "arrange attractively", "example": null}, {"number": 38, "pos": "adjective", "def": "(usually followed by \u2018to\u2019 or \u2018for\u2019) on the point of or strongly disposed", "example": null}, {"number": 39, "pos": "adjective", "def": "fixed and unmoving", "example": null}, {"number": 40, "pos": "adjective", "def": "situated in a particular spot or position", "example": null}, {"number": 41, "pos": "adjective", "def": "set down according to a plan", "example": null}, {"number": 42, "pos": "adjective", "def": "being below the horizon", "example": null}, {"number": 43, "pos": "adjective", "def": "determined or decided upon as by an authority", "example": null}, {"number": 44, "pos": "adjective", "def": "converted to solid form (as concrete)", "example": null}], "synonyms": ["exercise set", "stage set", "readiness", "bent", "circle", "band", "lot", "hardening", "solidifying", "solidification", "curing", "dress"], "antonyms": ["rise"], "idioms": [{"phrase": "Piece of cake", "def": "Easy."}], "suggestions": [], "saved": true}, JSON.stringify(r));
+  window.kalamShowDict({"word": "set", "pos": ["noun", "verb", "adjective"], "senses": [{"number": 1, "pos": "noun", "def": "a group of things of the same kind that belong together and are so used", "example": null}, {"number": 2, "pos": "noun", "def": "(mathematics) an abstract collection of numbers or symbols", "example": null}, {"number": 3, "pos": "noun", "def": "several exercises intended to be done in series", "example": null}, {"number": 4, "pos": "noun", "def": "representation consisting of the scenery and other properties used to identify the location of a dramatic production", "example": null}, {"number": 5, "pos": "noun", "def": "an unofficial association of people or groups", "example": null}, {"number": 6, "pos": "noun", "def": "a relatively permanent inclination to react in a particular way", "example": null}, {"number": 7, "pos": "noun", "def": "the act of putting something in position", "example": null}, {"number": 8, "pos": "noun", "def": "a unit of play in tennis or squash", "example": null}, {"number": 9, "pos": "noun", "def": "the process of becoming hard or solid by cooling or drying or crystallization", "example": null}, {"number": 10, "pos": "noun", "def": "the descent of a heavenly body below the horizon", "example": null}, {"number": 11, "pos": "noun", "def": "(psychology) being temporarily ready to respond in a particular way", "example": null}, {"number": 12, "pos": "noun", "def": "any electronic equipment that receives or transmits radio or tv signals", "example": null}, {"number": 13, "pos": "verb", "def": "put into a certain place or abstract location", "example": null}, {"number": 14, "pos": "verb", "def": "fix conclusively or authoritatively", "example": null}, {"number": 15, "pos": "verb", "def": "decide upon or fix definitely", "example": null}, {"number": 16, "pos": "verb", "def": "establish as the highest level or best performance", "example": null}, {"number": 17, "pos": "verb", "def": "put into a certain state; cause to be in a certain state", "example": null}, {"number": 18, "pos": "verb", "def": "fix in a border", "example": null}, {"number": 19, "pos": "verb", "def": "make ready or suitable or equip in advance for a particular purpose or for some use, event, etc", "example": null}, {"number": 20, "pos": "verb", "def": "set to a certain position or cause to operate correctly", "example": null}, {"number": 21, "pos": "verb", "def": "locate", "example": null}, {"number": 22, "pos": "verb", "def": "disappear beyond the horizon", "example": null}, {"number": 23, "pos": "verb", "def": "adapt for performance in a different way", "example": null}, {"number": 24, "pos": "verb", "def": "put or set (seeds, seedlings, or plants) into the ground", "example": null}, {"number": 25, "pos": "verb", "def": "apply or start", "example": null}, {"number": 26, "pos": "verb", "def": "become gelatinous", "example": null}, {"number": 27, "pos": "verb", "def": "set in type", "example": null}, {"number": 28, "pos": "verb", "def": "put into a position that will restore a normal state", "example": null}, {"number": 29, "pos": "verb", "def": "insert (a nail or screw below the surface, as into a countersink)", "example": null}, {"number": 30, "pos": "verb", "def": "give a fine, sharp edge to a knife or razor", "example": null}, {"number": 31, "pos": "verb", "def": "urge to attack someone", "example": null}, {"number": 32, "pos": "verb", "def": "estimate", "example": null}, {"number": 33, "pos": "verb", "def": "equip with sails or masts", "example": null}, {"number": 34, "pos": "verb", "def": "get ready for a particular purpose or event", "example": null}, {"number": 35, "pos": "verb", "def": "alter or regulate so as to achieve accuracy or conform to a standard", "example": null}, {"number": 36, "pos": "verb", "def": "produce fruit", "example": null}, {"number": 37, "pos": "verb", "def": "arrange attractively", "example": null}, {"number": 38, "pos": "adjective", "def": "(usually followed by \u2018to\u2019 or \u2018for\u2019) on the point of or strongly disposed", "example": null}, {"number": 39, "pos": "adjective", "def": "fixed and unmoving", "example": null}, {"number": 40, "pos": "adjective", "def": "situated in a particular spot or position", "example": null}, {"number": 41, "pos": "adjective", "def": "set down according to a plan", "example": null}, {"number": 42, "pos": "adjective", "def": "being below the horizon", "example": null}, {"number": 43, "pos": "adjective", "def": "determined or decided upon as by an authority", "example": null}, {"number": 44, "pos": "adjective", "def": "converted to solid form (as concrete)", "example": null}], "synonyms": ["exercise set", "stage set", "readiness", "bent", "circle", "band", "lot", "hardening", "solidifying", "solidification", "curing", "dress"], "antonyms": ["rise"], "idioms": [{"phrase": "Piece of cake", "def": "Easy."}], "suggestions": [], "saved": true, "hint": 9}, JSON.stringify(r));
 }
 document.getElementById('here').addEventListener('click', openPopup);
 window.addEventListener('keydown', function(e){ if (e.key === 'Escape') window.kalamHideDict(); });

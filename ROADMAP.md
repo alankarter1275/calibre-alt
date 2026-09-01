@@ -650,6 +650,30 @@ answer.
 **Out of scope for this phase:** embedding/transformer WSD, knowledge-graph
 (UKB) methods, and anything that picks a single sense and hides the rest.
 
+### Done
+
+- **POS pill (primary item, shipped earlier)** — the header shows the
+  entry's parts of speech from the WordNet pack groups; senses are never
+  collapsed.
+- **Lesk "likely here" hint** — `likely_sense_index` in `db/dictionaries.rs`
+  (pure fn, unit-tested): stopword-filtered content-token overlap between the
+  context sentence and each sense's gloss + example. Returns `None` on zero
+  overlap and on ties, so a neutral sentence shows no marker and a wrong
+  guess costs at most a misplaced highlight.
+- **Full sentence context** — the bridge already carried `context`; the popup
+  now sends the whole sentence around the selection
+  (`getContextSentence` in `epub_book.rs`), not just the selected word, to
+  the ranking step.
+- **Badge** — the hinted sense gets a small accent "likely here" pill
+  (app-chrome `--kalam-*` tokens, dark on all paper themes), stays inside its
+  list position, and no other sense is restyled.
+- **Toggle** — reader settings → Dictionary → "Sense hint" switch persists
+  `dict_sense_hint` in `app_prefs` (default on). Off removes the highlight;
+  POS grouping stays always on.
+- **Scope guard** — the hint is only computed for WordNet entries (senses
+  carry POS) and only when a context sentence exists (sidebar searches get
+  none).
+
 #### Phase 6 — Interaction
 
 **Goal:** tap-to-look-up and keyboard parity.

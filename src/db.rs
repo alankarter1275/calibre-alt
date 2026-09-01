@@ -20,8 +20,8 @@ mod shelves;
 mod stats;
 
 pub use dictionaries::{
-    EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME,
-    BUNDLED_WORDNET_NAME,
+    likely_sense_index, EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME,
+    BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
 };
 pub use series::{series_key, SeriesWork};
 

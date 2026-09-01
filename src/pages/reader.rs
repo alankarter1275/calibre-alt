@@ -169,6 +169,7 @@ pub enum ReaderMsg {
     SwitchSettingsPane(ReaderSettingsPane),
     SetUiSetting(ReaderUiSetting, i32),
     AdjustUiSetting(ReaderUiSetting, i32),
+    SetDictSenseHint(bool),
     JsRaw(String),
     Progress(f64),
     AnnotationsReload,
@@ -676,6 +677,7 @@ impl Component for ReaderModel {
             catalog_line_height,
             catalog_column,
             ui_prefs,
+            catalog.get_pref_i64("dict_sense_hint", 1) != 0,
         );
         let settings_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -1177,6 +1179,12 @@ impl Component for ReaderModel {
                     refresh_controls = true;
                 }
             }
+            ReaderMsg::SetDictSenseHint(on) => {
+                // P5.5: `dict_sense_hint` toggles the Lesk "likely here"
+                // marker; POS grouping (the pill) stays always on.
+                self.catalog
+                    .set_pref("dict_sense_hint", if on { "1" } else { "0" });
+            }
             ReaderMsg::JsRaw(raw) => {
                 let cleaned = raw.trim();
                 let json_part = if cleaned.starts_with("kalam://") {
@@ -1364,7 +1372,8 @@ impl Component for ReaderModel {
                     .first()
                     .map(|s| s.def.clone())
                     .or_else(|| (!data.suggestions.is_empty()).then(|| data.word.clone()));
-                self.show_dict_in_webview(&word, None);
+                // Sidebar searches have no surrounding sentence: no hint.
+                self.show_dict_in_webview(&word, None, None);
                 self.right_tab = RightSidebarTab::Words;
                 self.right_sidebar_open = true;
                 refresh_tabs = true;
@@ -1888,7 +1897,15 @@ impl ReaderModel {
 
     /// Render the redesigned popup: one entry per word, with POS, numbered
     /// senses, synonym/antonym chips, idiom cards, and did-you-mean chips.
-    fn show_dict_in_webview(&self, query: &str, rect_json: Option<String>) {
+    /// `hint_index` (P5.5) is the sense the Lesk ranking marked as most
+    /// likely for the surrounding sentence — `None` when the pref is off,
+    /// the entry is not WordNet, or the context gives no evidence.
+    fn show_dict_in_webview(
+        &self,
+        query: &str,
+        rect_json: Option<String>,
+        hint_index: Option<usize>,
+    ) {
         let data = self
             .catalog
             .lookup_entry(query)
@@ -1916,6 +1933,7 @@ impl ReaderModel {
             }).collect::<Vec<_>>(),
             "suggestions": data.suggestions,
             "saved": saved,
+            "hint": hint_index,
         });
         let payload_json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
         let rect_part = rect_json
@@ -2035,7 +2053,21 @@ impl ReaderModel {
                     .first()
                     .map(|s| s.def.clone())
                     .or_else(|| (!data.suggestions.is_empty()).then(|| data.word.clone()));
-                self.show_dict_in_webview(&word, rect_json);
+                // P5.5 Lesk hint: only for WordNet entries (senses carry
+                // POS), only when the pref is on, and only from the
+                // surrounding sentence. `likely_sense_index` returns None
+                // when there is no evidence, so a neutral context produces
+                // no marker and no sense is ever hidden.
+                let hint_index = context.as_deref().and_then(|sentence| {
+                    if self.catalog.get_pref_i64("dict_sense_hint", 1) == 0 {
+                        return None;
+                    }
+                    if !data.senses.iter().any(|s| s.pos.is_some()) {
+                        return None;
+                    }
+                    crate::db::likely_sense_index(sentence, &data.senses)
+                });
+                self.show_dict_in_webview(&word, rect_json, hint_index);
             }
             "save-word" => {
                 let word = payload.word.unwrap_or_default();
@@ -2787,6 +2819,7 @@ fn build_reader_settings_panel(
     line_height: f32,
     column_px: u32,
     ui_prefs: ReaderUiPrefs,
+    dict_sense_hint: bool,
 ) -> ReaderSettingsControls {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -2873,6 +2906,25 @@ fn build_reader_settings_panel(
         ReaderMsg::ColumnWidthDelta(20),
     ));
     reading_page.append(&width_section);
+    reading_page.append(&reader_panel_divider());
+
+    // P5.5: the Lesk "likely here" hint is a reader preference. POS
+    // grouping itself (the header pill) is always on and has no toggle.
+    let dict_section = reader_settings_section("Dictionary");
+    let hint_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    hint_row.add_css_class("kalam-reader-setting-row");
+    let hint_label = gtk::Label::new(Some("Sense hint"));
+    hint_label.add_css_class("kalam-reader-setting-name");
+    hint_label.set_hexpand(true);
+    hint_label.set_halign(gtk::Align::Start);
+    hint_row.append(&hint_label);
+    let hint_switch =
+        crate::pages::settings::toggle_switch(dict_sense_hint, move |on| {
+            let _ = sender.input_sender().send(ReaderMsg::SetDictSenseHint(on));
+        });
+    hint_row.append(&hint_switch);
+    dict_section.append(&hint_row);
+    reading_page.append(&dict_section);
     stack.add_named(
         &reading_page,
         Some(reader_settings_pane_name(ReaderSettingsPane::Reading)),

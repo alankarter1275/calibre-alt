@@ -1540,6 +1540,38 @@ if (!window.kalamReaderShellLoaded) {
     hideSelectionHandles();
     kalamBridge({type:'quote', text:data.text, startPath:data.startPath, startOffset:data.startOffset, endPath:data.endPath, endOffset:data.endOffset});
   };
+  // P5.5: the full sentence around the selection, for Lesk sense ranking.
+  // The selection itself is just the word — the reader scores senses
+  // against the sentence it sits in.
+  function getContextSentence() {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return '';
+    var text = sel.toString().replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    var node = sel.getRangeAt(0).commonAncestorContainer;
+    if (node.nodeType !== 1) node = node.parentElement;
+    var el = node;
+    var guard = 0;
+    while (el && el !== document.body && guard++ < 20) {
+      var display = window.getComputedStyle(el).display;
+      if (display === 'block' || display === 'list-item') break;
+      el = el.parentElement;
+    }
+    var full = (el && el.textContent ? el.textContent : text)
+      .replace(/\s+/g, ' ').trim();
+    if (!full) return text;
+    // Split into sentences, keeping the ending punctuation on each one.
+    var sentences = full.match(/[^.!?…]+[.!?…]+(?:\s+|$)|[^.!?…]+$/g) || [full];
+    for (var i = 0; i < sentences.length; i++) {
+      if (sentences[i].indexOf(text) !== -1) {
+        var s = sentences[i].trim();
+        return s.length > 600 ? s.slice(0, 600) : s;
+      }
+    }
+    return text.length > 600 ? text.slice(0, 600) : text;
+  }
+  window.kalamGetContextSentence = getContextSentence;
+
   window.kalamHandleDict = function() {
     var data = getSelectionData();
     var word = '';
@@ -1550,14 +1582,14 @@ if (!window.kalamReaderShellLoaded) {
       // entries, and reducing the selection to its first word made phrase
       // lookup depend on an arbitrary selection boundary.
       word = data.text.replace(/\s+/g, ' ').trim();
-      ctx = data.text;
+      ctx = getContextSentence() || data.text;
       rect = data.rect;
     } else {
       var sel = window.getSelection();
       if (sel && sel.toString()) {
         var selectedText = sel.toString();
         word = selectedText.replace(/\s+/g, ' ').trim();
-        ctx = selectedText;
+        ctx = getContextSentence() || selectedText;
         try { var r = sel.getRangeAt(0).getBoundingClientRect(); rect = {x:r.left, y:r.top, w:r.width, h:r.height, bottom:r.bottom}; } catch(e){}
       }
     }
@@ -1594,10 +1626,13 @@ if (!window.kalamReaderShellLoaded) {
     var suggestions = Array.isArray(payload.suggestions) ? payload.suggestions : [];
     var pos = Array.isArray(payload.pos) ? payload.pos : [];
     var saved = !!payload.saved;
+    // P5.5: index of the Lesk "likely here" sense; -1 = no hint (the
+    // backend only sends it when the pref is on and there is evidence).
+    var hintIdx = (typeof payload.hint === 'number' && payload.hint >= 0) ? payload.hint : -1;
 
-    function defItem(s, n) {
-      return '<div class="k-def-item"><span class="k-def-num">'+n+'.</span><div>'
-        + '<div class="k-def-text">'+esc(s.def)+'</div>'
+    function defItem(s, n, isHint) {
+      return '<div class="k-def-item'+(isHint ? ' k-hint' : '')+'"><span class="k-def-num">'+n+'.</span><div>'
+        + '<div class="k-def-text">'+(isHint ? '<span class="k-hint-badge">likely here</span>' : '')+esc(s.def)+'</div>'
         + (s.example ? '<div class="k-def-example">'+esc(s.example)+'</div>' : '')
         + '</div></div>';
     }
@@ -1620,10 +1655,10 @@ if (!window.kalamReaderShellLoaded) {
       html += '<div class="k-section-label">Definitions</div><div class="k-defs">';
       var shown = senses.slice(0, 3);
       var extra = senses.slice(3);
-      shown.forEach(function(s, i){ html += defItem(s, i + 1); });
+      shown.forEach(function(s, i){ html += defItem(s, i + 1, i === hintIdx); });
       if (extra.length) {
         html += '<div class="k-extra-defs" id="kalam-extra-defs">';
-        extra.forEach(function(s, i){ html += defItem(s, shown.length + i + 1); });
+        extra.forEach(function(s, i){ html += defItem(s, shown.length + i + 1, shown.length + i === hintIdx); });
         html += '</div><span class="k-show-more" id="kalam-show-more">Show '+extra.length+' more</span>';
       }
       html += '</div>';
@@ -2760,6 +2795,20 @@ html.kalam-selection-active body * ::selection {{
   font-size: 13px !important;
   line-height: 1.55 !important;
   color: var(--kalam-pop-text) !important;
+}}
+#kalam-dict-popup .k-hint-badge {{
+  display: inline-block !important;
+  margin-right: 6px !important;
+  font-size: 9px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  color: var(--kalam-pop-accent) !important;
+  background: color-mix(in srgb, var(--kalam-pop-accent) 14%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--kalam-pop-accent) 32%, transparent) !important;
+  border-radius: 999px !important;
+  padding: 1px 7px !important;
+  vertical-align: 1px !important;
 }}
 #kalam-dict-popup .k-def-example {{
   font-family: Georgia, "Times New Roman", "DejaVu Serif", serif !important;
