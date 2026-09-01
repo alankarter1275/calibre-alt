@@ -400,7 +400,9 @@ impl AppModel {
                 PageSlot::SavedWords(ctrl)
             }
             Route::LibrarySection(LibrarySection::LookupHistory) => {
-                let ctrl = LookupHistoryModel::builder().launch(catalog.clone()).detach();
+                let ctrl = LookupHistoryModel::builder()
+                    .launch(catalog.clone())
+                    .detach();
                 PageSlot::LookupHistory(ctrl)
             }
             Route::LibrarySection(LibrarySection::ReadingList) => {
