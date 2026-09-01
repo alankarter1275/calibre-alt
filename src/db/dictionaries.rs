@@ -122,7 +122,8 @@ impl Catalog {
     pub fn list_dictionaries(&self) -> Result<Vec<Dictionary>> {
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
-            "SELECT id, name, lang, entry_count, added_at FROM dictionaries ORDER BY name ASC",
+            "SELECT id, name, lang, entry_count, added_at, priority
+             FROM dictionaries ORDER BY priority ASC, name ASC",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(Dictionary {
@@ -131,6 +132,7 @@ impl Catalog {
                 lang: r.get(2)?,
                 entry_count: r.get(3)?,
                 added_at: r.get(4)?,
+                priority: r.get(5)?,
             })
         })?;
         let mut out = Vec::new();
@@ -182,6 +184,31 @@ impl Catalog {
             params![priority, id],
         )?;
         Ok(())
+    }
+
+    /// Move a dictionary one step up (`delta = -1`) or down (`+1`) in the
+    /// effective order, then renumber all priorities compactly (0, 1, 2, …)
+    /// and rebuild the merged store so the change speaks immediately.
+    ///
+    /// Order is the only thing that matters to `rebuild_combined_dictionary`
+    /// — the compact renumbering overwrites the bundled packs' semantic
+    /// 10/20/30/40 values, which is fine because nothing re-derives meaning
+    /// from the numbers themselves. Re-importing a pack keeps its (possibly
+    /// user-set) priority: `insert_dictionary`'s upsert does not touch it.
+    pub fn move_dictionary_priority(&self, id: i64, delta: i64) -> Result<()> {
+        let mut dicts = self.list_dictionaries()?;
+        let Some(idx) = dicts.iter().position(|d| d.id == id) else {
+            return Ok(());
+        };
+        let target = idx as i64 + delta;
+        if target < 0 || target as usize >= dicts.len() {
+            return Ok(());
+        }
+        dicts.swap(idx, target as usize);
+        for (pos, d) in dicts.iter().enumerate() {
+            self.set_dictionary_priority(d.id, pos as i64)?;
+        }
+        self.rebuild_combined_dictionary()
     }
 
     /// Rebuild the merged dictionary store from the raw entries.
@@ -1895,3 +1922,57 @@ mod tests {
         assert_eq!(stem_token("bank"), "bank");
     }
 }
+
+    #[test]
+    fn dictionary_priority_order_and_reorder_change_the_merged_winner() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let wordnet = cat.insert_dictionary("WordNet", Some("en"), 1).unwrap();
+        let idioms = cat.insert_dictionary("Idioms", Some("en"), 1).unwrap();
+        let imported = cat.insert_dictionary("Imported", Some("en"), 1).unwrap();
+        cat.set_dictionary_priority(wordnet, 10).unwrap();
+        cat.set_dictionary_priority(idioms, 20).unwrap();
+        // imported keeps the insert default (100).
+
+        // All three define the same headword differently.
+        for (dict_id, def) in [
+            (wordnet, "WordNet's sense"),
+            (idioms, "Idioms' sense"),
+            (imported, "Imported's sense"),
+        ] {
+            cat.batch_insert_dict_entries(dict_id, &[("bank".to_string(), def.to_string())])
+                .unwrap();
+        }
+        cat.rebuild_combined_dictionary().unwrap();
+
+        // list order is effective order (priority ASC).
+        let order: Vec<String> = cat
+            .list_dictionaries()
+            .unwrap()
+            .iter()
+            .map(|d| d.name.clone())
+            .collect();
+        assert_eq!(order, vec!["WordNet", "Idioms", "Imported"]);
+        assert_eq!(cat.list_dictionaries().unwrap()[0].priority, 10);
+
+        // The lowest priority speaks for shared words.
+        let entry = cat.lookup_entry("bank").unwrap();
+        assert_eq!(entry.senses[0].def, "WordNet's sense");
+
+        // Move Imported up twice → it speaks first; priorities are compact.
+        cat.move_dictionary_priority(imported, -1).unwrap();
+        cat.move_dictionary_priority(imported, -1).unwrap();
+        let dicts = cat.list_dictionaries().unwrap();
+        assert_eq!(dicts[0].name, "Imported");
+        assert_eq!(dicts[0].priority, 0);
+        assert_eq!(dicts[1].name, "WordNet");
+        assert_eq!(dicts[1].priority, 1);
+        assert_eq!(dicts[2].name, "Idioms");
+        assert_eq!(dicts[2].priority, 2);
+        let entry = cat.lookup_entry("bank").unwrap();
+        assert_eq!(entry.senses[0].def, "Imported's sense");
+
+        // Moving past the edges is a no-op, and unknown ids are ignored.
+        cat.move_dictionary_priority(imported, -1).unwrap();
+        cat.move_dictionary_priority(999, -1).unwrap();
+        assert_eq!(cat.list_dictionaries().unwrap()[0].name, "Imported");
+    }

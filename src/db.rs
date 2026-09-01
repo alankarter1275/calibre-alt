@@ -173,6 +173,8 @@ pub struct Dictionary {
     pub lang: Option<String>,
     pub entry_count: i64,
     pub added_at: String,
+    /// Merged-store priority (schema v12): lower numbers speak first.
+    pub priority: i64,
 }
 
 #[derive(Debug, Clone)]

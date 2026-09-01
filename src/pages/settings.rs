@@ -132,6 +132,8 @@ pub enum SettingsMsg {
     ClearNotifications,
     ImportDict,
     DeleteDict(i64),
+    /// Reorder the merged-store priority (Phase 9): id, delta (−1 up / +1 down).
+    MoveDict(i64, i64),
     Refresh,
 }
 
@@ -431,6 +433,13 @@ impl Component for SettingsPageModel {
                     &name,
                     "Could not remove the dictionary",
                 );
+                self.refresh();
+                rebuild_dicts(&widgets.dict_list, &self.dicts, &sender);
+            }
+            SettingsMsg::MoveDict(id, delta) => {
+                if let Err(err) = self.catalog.move_dictionary_priority(id, delta) {
+                    crate::notify::error("Could not reorder dictionaries", &err.to_string());
+                }
                 self.refresh();
                 rebuild_dicts(&widgets.dict_list, &self.dicts, &sender);
             }
@@ -1109,7 +1118,8 @@ fn rebuild_dicts(
         empty.set_xalign(0.0);
         body.append(&empty);
     } else {
-        for d in dicts {
+        let last = dicts.len() - 1;
+        for (index, d) in dicts.iter().enumerate() {
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
             row.add_css_class("kalam-setting-row");
 
@@ -1127,12 +1137,19 @@ fn rebuild_dicts(
 
             let info = gtk::Box::new(gtk::Orientation::Vertical, 2);
             info.set_hexpand(true);
+            let name_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
             let name_label = gtk::Label::new(Some(&d.name));
             name_label.add_css_class("kalam-setting-label");
             name_label.set_halign(gtk::Align::Start);
             name_label.set_xalign(0.0);
             name_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            info.append(&name_label);
+            name_row.append(&name_label);
+            // Phase 9: the top of the list is what the merged store consults
+            // first — say so, or the ordering is unexplained.
+            if index == 0 {
+                name_row.append(&chip_label("speaks first", "kalam-chip-info"));
+            }
+            info.append(&name_row);
             let meta = match &d.lang {
                 Some(lang) => format!("{lang} · {} entries", d.entry_count),
                 None => format!("{} entries", d.entry_count),
@@ -1144,11 +1161,43 @@ fn rebuild_dicts(
             info.append(&meta_label);
             row.append(&info);
 
+            let id = d.id;
+            let up = gtk::Button::new();
+            up.set_child(Some(&crate::icons::symbolic_with_classes(
+                "go-up-symbolic",
+                16,
+                &["kalam-inline-icon"],
+            )));
+            up.add_css_class("kalam-mini-btn");
+            up.set_valign(gtk::Align::Center);
+            up.set_sensitive(index > 0);
+            up.set_tooltip_text(Some("Speak before the dictionaries above"));
+            {
+                let s = sender.clone();
+                up.connect_clicked(move |_| s.input(SettingsMsg::MoveDict(id, -1)));
+            }
+            row.append(&up);
+
+            let down = gtk::Button::new();
+            down.set_child(Some(&crate::icons::symbolic_with_classes(
+                "go-down-symbolic",
+                16,
+                &["kalam-inline-icon"],
+            )));
+            down.add_css_class("kalam-mini-btn");
+            down.set_valign(gtk::Align::Center);
+            down.set_sensitive(index < last);
+            down.set_tooltip_text(Some("Speak after the dictionaries below"));
+            {
+                let s = sender.clone();
+                down.connect_clicked(move |_| s.input(SettingsMsg::MoveDict(id, 1)));
+            }
+            row.append(&down);
+
             let remove = gtk::Button::with_label("Remove");
             remove.add_css_class("kalam-btn-danger");
             remove.add_css_class("kalam-btn-sm");
             remove.set_valign(gtk::Align::Center);
-            let id = d.id;
             let s = sender.clone();
             remove.connect_clicked(move |_| s.input(SettingsMsg::DeleteDict(id)));
             row.append(&remove);
