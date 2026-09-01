@@ -53,6 +53,8 @@ struct JsPayload {
     rect: Option<serde_json::Value>,
     #[serde(default)]
     definition: Option<String>,
+    #[serde(default)]
+    count: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2112,6 +2114,25 @@ impl ReaderModel {
             "dict-shortcut" => {
                 self.right_tab = RightSidebarTab::Words;
                 self.right_sidebar_open = true;
+            }
+            // Phase 6 find-in-chapter: the popup's magnifier asks the
+            // webview to highlight every occurrence of the headword in the
+            // current chapter (no in-book search exists yet, so this is the
+            // scoped version the roadmap allows).
+            "search-in-book" => {
+                let word = payload.word.unwrap_or_default();
+                if !word.trim().is_empty() {
+                    let word_json = serde_json::to_string(&word).unwrap_or_else(|_| "\"\"".into());
+                    let script = format!("window.kalamSearchInBook({word_json});");
+                    eval_js(&self.webview, &script);
+                }
+            }
+            "search-in-book-done" => {
+                match payload.count.unwrap_or(0) {
+                    0 => crate::notify::compact("No matches in this chapter", ""),
+                    1 => crate::notify::compact("1 match in this chapter", ""),
+                    n => crate::notify::compact(&format!("{n} matches in this chapter"), ""),
+                }
             }
             "reader-ui-hide" => {
                 self.show_back_button = false;

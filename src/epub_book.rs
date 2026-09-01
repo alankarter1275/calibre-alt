@@ -1540,38 +1540,6 @@ if (!window.kalamReaderShellLoaded) {
     hideSelectionHandles();
     kalamBridge({type:'quote', text:data.text, startPath:data.startPath, startOffset:data.startOffset, endPath:data.endPath, endOffset:data.endOffset});
   };
-  // P5.5: the full sentence around the selection, for Lesk sense ranking.
-  // The selection itself is just the word — the reader scores senses
-  // against the sentence it sits in.
-  function getContextSentence() {
-    var sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return '';
-    var text = sel.toString().replace(/\s+/g, ' ').trim();
-    if (!text) return '';
-    var node = sel.getRangeAt(0).commonAncestorContainer;
-    if (node.nodeType !== 1) node = node.parentElement;
-    var el = node;
-    var guard = 0;
-    while (el && el !== document.body && guard++ < 20) {
-      var display = window.getComputedStyle(el).display;
-      if (display === 'block' || display === 'list-item') break;
-      el = el.parentElement;
-    }
-    var full = (el && el.textContent ? el.textContent : text)
-      .replace(/\s+/g, ' ').trim();
-    if (!full) return text;
-    // Split into sentences, keeping the ending punctuation on each one.
-    var sentences = full.match(/[^.!?…]+[.!?…]+(?:\s+|$)|[^.!?…]+$/g) || [full];
-    for (var i = 0; i < sentences.length; i++) {
-      if (sentences[i].indexOf(text) !== -1) {
-        var s = sentences[i].trim();
-        return s.length > 600 ? s.slice(0, 600) : s;
-      }
-    }
-    return text.length > 600 ? text.slice(0, 600) : text;
-  }
-  window.kalamGetContextSentence = getContextSentence;
-
   window.kalamHandleDict = function() {
     var data = getSelectionData();
     var word = '';
@@ -1596,6 +1564,7 @@ if (!window.kalamReaderShellLoaded) {
     if (!word) return;
     hideChip();
     hideSelectionHandles();
+    clearSearchHits();
     // Keep the selection bands visible: the popup is placed clear of the
     // selection, so the lookup target stays highlighted underneath.
     kalamBridge({type:'dict-lookup', word:word, context:ctx, rect:rect});
@@ -1629,6 +1598,11 @@ if (!window.kalamReaderShellLoaded) {
     // P5.5: index of the Lesk "likely here" sense; -1 = no hint (the
     // backend only sends it when the pref is on and there is evidence).
     var hintIdx = (typeof payload.hint === 'number' && payload.hint >= 0) ? payload.hint : -1;
+    // Phase 6: popup keyboard state — the senses of the current entry and
+    // the definition the Save button will store (the focused sense's def,
+    // or the first sense when nothing is focused).
+    dictCurrentSenses = senses;
+    dictSaveDefinition = senses.length ? (senses[0].def || '') : '';
 
     function defItem(s, n, isHint) {
       return '<div class="k-def-item'+(isHint ? ' k-hint' : '')+'"><span class="k-def-num">'+n+'.</span><div>'
@@ -1647,6 +1621,9 @@ if (!window.kalamReaderShellLoaded) {
       + '</div>'
       + '<div class="k-header-actions">'
       + '<button class="k-save-btn'+(saved?' saved':'')+'" id="kalam-dict-save" title="'+(saved?'Saved':'Save word')+'">'+(saved?'\u2713':'\u2606')+'</button>'
+      + '<button class="k-save-btn" id="kalam-dict-find" title="Find in chapter" aria-label="Find in chapter">'
+      + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><line x1="20.5" y1="20.5" x2="16.2" y2="16.2"></line></svg>'
+      + '</button>'
       + '<button class="k-save-btn" id="kalam-dict-copy" title="Copy">\u29c9</button>'
       + '</div>'
       + '</div>'
@@ -1769,11 +1746,17 @@ if (!window.kalamReaderShellLoaded) {
       saveBtn.textContent = saved ? '\u2713' : '\u2606';
       saveBtn.title = saved ? 'Saved' : 'Save word';
       if (saved) {
-        var def = senses.length ? senses[0].def : '';
+        // Phase 6: the stored definition follows the keyboard-focused
+        // sense (Enter saves the focused sense); default is the first.
+        var def = dictSaveDefinition || (senses.length ? senses[0].def : '');
         kalamBridge({type:'save-word', word:word, definition:def});
       } else {
         kalamBridge({type:'unsave-word', word:word});
       }
+    });
+    var findBtn = document.getElementById('kalam-dict-find');
+    if (findBtn) findBtn.addEventListener('click', function() {
+      kalamBridge({type:'search-in-book', word: word});
     });
     var copyBtn = document.getElementById('kalam-dict-copy');
     if (copyBtn) copyBtn.addEventListener('click', function() {
@@ -1802,6 +1785,8 @@ if (!window.kalamReaderShellLoaded) {
       var vis = extra.classList.toggle('visible');
       more.textContent = vis ? 'Show less' : 'Show ' + extra.children.length + ' more';
     });
+    // Phase 6: a fresh entry starts with no keyboard-focused sense.
+    setDictSenseFocus(-1);
   }
   function hideDict() {
     var p = document.getElementById('kalam-dict-popup');
@@ -1810,17 +1795,272 @@ if (!window.kalamReaderShellLoaded) {
   window.kalamHideDict = hideDict;
   // No close button — the popup closes when clicking anywhere outside it
   // (clicks inside keep it open; Escape also closes it).
+  //
+  // Phase 6 tap-to-look-up: a plain click on book content (no drag-select,
+  // no link/image/UI) resolves the word under the caret and fires
+  // `dict-lookup` with the surrounding sentence, after a short delay so a
+  // double-click still wins for selection. Tapping a word while the popup
+  // is open swaps the entry instead of closing it; tapping empty space
+  // closes it.
   document.addEventListener('click', function(e){
+    if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; tapPending = null; }
     var pop = document.getElementById('kalam-dict-popup');
-    if (!pop || pop.style.display !== 'block') return;
+    var popupOpen = pop && pop.style.display === 'block';
     if (e.target && e.target.closest && e.target.closest('#kalam-dict-popup')) return;
-    hideDict();
+    if (!e.target || !e.target.closest) {
+      if (popupOpen) hideDict();
+      return;
+    }
+    if (e.target.closest('#kalam-chip, #kalam-selection-bands, .kalam-selection-handle, a, button, input, select, textarea, img, iframe, svg, [contenteditable]')) {
+      if (popupOpen) hideDict();
+      return;
+    }
+    var selText = '';
+    try { selText = window.getSelection ? window.getSelection().toString() : ''; } catch(e){}
+    var x = e.clientX || 0, y = e.clientY || 0;
+    var w = null;
+    if (!selText.trim()) {
+      // No selection means the pointer gesture was a plain click, not a
+      // drag-select (the drag code clears the selection on release).
+      var caret = window.kalamCaretFromPoint(x, y);
+      w = caret ? wordFromCaret(caret) : null;
+    }
+    if (!w) {
+      if (popupOpen) hideDict();
+      return;
+    }
+    lastTapPoint = {x: x, y: y};
+    tapPending = {x: x, y: y, word: w.word, node: w.node, rect: w.rect};
+    tapTimer = setTimeout(function(){
+      tapTimer = null;
+      var p = tapPending;
+      tapPending = null;
+      if (!p) return;
+      var ctx = sentenceAroundText(p.word, p.node && p.node.parentElement ? p.node.parentElement : p.node) || p.word;
+      clearSearchHits();
+      kalamBridge({type:'dict-lookup', word: p.word, context: ctx, rect: p.rect});
+    }, tapDelay);
   });
   window.kalamShowDict = function(payload, rectJson) {
     var rect = null;
     try { if (rectJson) rect = JSON.parse(rectJson); } catch(e){}
     showDictPopup(payload, rect);
   };
+
+  // [preview:phase6]
+  // ---- Phase 6: tap-to-look-up, popup keyboard, find in chapter ----
+  var tapDelay = 240;
+  var tapTimer = null;
+  var tapPending = null;
+  var lastTapPoint = null;
+  var dictSenseFocus = -1;
+  var dictCurrentSenses = [];
+  var dictSaveDefinition = '';
+
+  // P5.5: the full sentence around a word, for Lesk sense ranking. The
+  // selection itself is just the word — the reader scores senses against
+  // the sentence it sits in. Used by both selection lookups and Phase 6
+  // tap lookups (which have no selection, so they pass the text node).
+  function sentenceAroundText(text, node) {
+    var el = node && node.nodeType === 1 ? node : node && node.parentElement;
+    var guard = 0;
+    while (el && el !== document.body && guard++ < 20) {
+      var display = window.getComputedStyle(el).display;
+      if (display === 'block' || display === 'list-item') break;
+      el = el.parentElement;
+    }
+    var full = (el && el.textContent ? el.textContent : text)
+      .replace(/\s+/g, ' ').trim();
+    if (!full) return text;
+    var lowerText = text.toLowerCase();
+    // Split into sentences, keeping the ending punctuation on each one.
+    var sentences = full.match(/[^.!?…]+[.!?…]+(?:\s+|$)|[^.!?…]+$/g) || [full];
+    for (var i = 0; i < sentences.length; i++) {
+      // Case-insensitive: the tapped/selected word may be capitalised in
+      // the sentence ("The BANK was closed.").
+      if (sentences[i].toLowerCase().indexOf(lowerText) !== -1) {
+        var s = sentences[i].trim();
+        return s.length > 600 ? s.slice(0, 600) : s;
+      }
+    }
+    return text.length > 600 ? text.slice(0, 600) : text;
+  }
+  function getContextSentence() {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return '';
+    var text = sel.toString().replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    var node = sel.getRangeAt(0).commonAncestorContainer;
+    if (node.nodeType !== 1) node = node.parentElement;
+    return sentenceAroundText(text, node);
+  }
+  window.kalamGetContextSentence = getContextSentence;
+  window.kalamSentenceAroundText = sentenceAroundText;
+
+  // Expand a caret position to the word around it (letters, digits,
+  // apostrophes and hyphens), like a tap-to-look-up reader.
+  function wordFromCaret(caret) {
+    if (!caret) return null;
+    var node = caret.node;
+    if (!node || node.nodeType !== 3) return null;
+    var text = node.data || '';
+    if (!text) return null;
+    var offset = Math.max(0, Math.min(caret.offset || 0, text.length));
+    function isWordChar(ch) {
+      if (!ch) return false;
+      if (ch === '\'' || ch === '\u2019' || ch === '-') return true;
+      return /[\p{L}\p{N}]/u.test(ch);
+    }
+    var start = offset, end = offset;
+    while (start > 0 && isWordChar(text.charAt(start - 1))) start--;
+    while (end < text.length && isWordChar(text.charAt(end))) end++;
+    var w = text.slice(start, end);
+    // A lone hyphen/apostrophe is not a word.
+    if (!/[\p{L}\p{N}]/u.test(w)) return null;
+    var rect = null;
+    try {
+      var range = document.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, end);
+      var r = range.getBoundingClientRect();
+      if (r) rect = {x: r.left, y: r.top, w: r.width, h: r.height, bottom: r.bottom};
+    } catch(e) {}
+    return {word: w, node: node, start: start, end: end, rect: rect};
+  }
+  window.kalamWordFromCaret = wordFromCaret;
+  // Exposed for the popup keyboard preview/tests; the real webview's
+  // caretFromPoint (defined above) resolves the point to a caret.
+  window.kalamCaretFromPoint = caretFromPoint;
+
+  function fireTapLookup(x, y) {
+    var caret = window.kalamCaretFromPoint(x, y);
+    var w = caret ? wordFromCaret(caret) : null;
+    if (!w) return;
+    var ctx = sentenceAroundText(w.word, w.node && w.node.parentElement ? w.node.parentElement : w.node) || w.word;
+    clearSearchHits();
+    kalamBridge({type:'dict-lookup', word: w.word, context: ctx, rect: w.rect});
+  }
+
+  // A second pointer press (double-click selects a word) supersedes a
+  // pending tap.
+  document.addEventListener('dblclick', function(){
+    if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; tapPending = null; }
+  });
+
+  // Popup keyboard: ↑/↓ move the sense focus ring, Enter saves the
+  // focused sense (Esc is handled by the global handler). ←/→ stay
+  // free — the Phase 4 merged store removed dictionary tabs.
+  function setDictSenseFocus(idx) {
+    var pop = document.getElementById('kalam-dict-popup');
+    dictSenseFocus = idx;
+    if (!pop) return;
+    var items = pop.querySelectorAll('.k-def-item');
+    for (var i = 0; i < items.length; i++) items[i].classList.toggle('k-def-focus', i === idx);
+    if (idx >= 0 && idx < items.length) {
+      try { items[idx].scrollIntoView({block: 'nearest'}); } catch(e) {}
+    }
+  }
+  function moveDictSenseFocus(delta) {
+    var pop = document.getElementById('kalam-dict-popup');
+    if (!pop) return;
+    var items = pop.querySelectorAll('.k-def-item');
+    if (!items.length) return;
+    var next = dictSenseFocus + delta;
+    if (next < 0) next = items.length - 1;
+    if (next >= items.length) next = 0;
+    // Focus landing on a hidden "Show N more" sense reveals the list.
+    var extra = document.getElementById('kalam-extra-defs');
+    if (extra && !extra.classList.contains('visible') && items[next] && extra.contains(items[next])) {
+      extra.classList.add('visible');
+      var more = document.getElementById('kalam-show-more');
+      if (more) more.textContent = 'Show less';
+    }
+    setDictSenseFocus(next);
+  }
+  function saveFocusedSense() {
+    var pop = document.getElementById('kalam-dict-popup');
+    if (!pop || dictSenseFocus < 0 || dictSenseFocus >= dictCurrentSenses.length) return;
+    var sense = dictCurrentSenses[dictSenseFocus] || {};
+    dictSaveDefinition = sense.def || '';
+    var saveBtn = document.getElementById('kalam-dict-save');
+    if (saveBtn) saveBtn.click();
+  }
+  function handleDictPopupKey(e) {
+    var pop = document.getElementById('kalam-dict-popup');
+    if (!pop || pop.style.display !== 'block') return false;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveDictSenseFocus(e.key === 'ArrowDown' ? 1 : -1);
+      return true;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveFocusedSense();
+      return true;
+    }
+    return false;
+  }
+
+  // Find in chapter: wrap every occurrence of the query in the current
+  // chapter with a temporary accent highlight and scroll to the first.
+  // Occurrences inside annotations, links, the popup and other UI are
+  // left alone; Esc or the next lookup clears the hits.
+  function clearSearchHits() {
+    var hits = document.querySelectorAll('.kalam-search-hit');
+    for (var i = hits.length - 1; i >= 0; i--) {
+      var span = hits[i];
+      var parent = span.parentNode;
+      if (!parent) continue;
+      while (span.firstChild) parent.insertBefore(span.firstChild, span);
+      parent.removeChild(span);
+    }
+  }
+  window.kalamClearSearchHits = clearSearchHits;
+  window.kalamSearchInBook = function(query) {
+    clearSearchHits();
+    var q = String(query || '').trim();
+    if (!q) return;
+    var lower = q.toLowerCase();
+    var walker = document.createTreeWalker(document.body, window.NodeFilter.SHOW_TEXT, {
+      acceptNode: function(n) {
+        if (!n.data || n.data.toLowerCase().indexOf(lower) === -1) return window.NodeFilter.FILTER_REJECT;
+        var el = n.parentElement;
+        if (el && el.closest('#kalam-chip, #kalam-dict-popup, #kalam-selection-bands, .kalam-selection-handle, .kalam-hl, .kalam-search-hit, a, button, input, select, textarea, script, style')) return window.NodeFilter.FILTER_REJECT;
+        return window.NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    var nodes = [];
+    var n;
+    while ((n = walker.nextNode())) nodes.push(n);
+    var count = 0;
+    var first = null;
+    for (var i = 0; i < nodes.length; i++) {
+      var textNode = nodes[i];
+      var text = textNode.data;
+      var pos = 0;
+      while (true) {
+        var idx = text.toLowerCase().indexOf(lower, pos);
+        if (idx === -1) break;
+        var span = document.createElement('span');
+        span.className = 'kalam-search-hit';
+        var after = textNode.splitText(idx + q.length);
+        var mid = textNode.splitText(idx);
+        mid.parentNode.insertBefore(span, mid);
+        span.appendChild(mid);
+        textNode = after;
+        text = after.data;
+        pos = 0;
+        count++;
+        if (!first) first = span;
+      }
+    }
+    if (first) {
+      try { first.scrollIntoView({block: 'center'}); } catch(e) {}
+    }
+    kalamBridge({type:'search-in-book-done', count: count});
+  };
+  window.kalamSetTapDelay = function(ms) { tapDelay = ms; };
+  // [preview:/phase6]
 
   // ---- Highlights injection from Rust ----
   window.kalamInjectHighlights = function(jsonStr) {
@@ -2011,6 +2251,9 @@ if (!window.kalamReaderShellLoaded) {
     if (nativeSelectionDragActive || selectionHandleDrag || !event || event.isPrimary === false) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     if (isSelectionUiNode(event.target)) return;
+    // Phase 6: a new pointer press supersedes any pending tap lookup
+    // (double-click selects a word instead of looking it up).
+    if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; tapPending = null; }
     nativeSelectionDragActive = true;
     nativeSelectionDragStart = selectionSnapshot();
     nativeSelectionDragChanged = false;
@@ -2096,14 +2339,21 @@ if (!window.kalamReaderShellLoaded) {
   }, {passive:true});
 
   document.addEventListener('keydown', function(e){
+    // Phase 6: with the popup open, ↑/↓ move the sense focus and Enter
+    // saves the focused sense.
+    if (handleDictPopupKey(e)) return;
     if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey && !e.altKey) {
       // only if selection exists or chip visible
       var data = getSelectionData();
       if (data || document.getElementById('kalam-chip')?.style.display==='flex') {
         e.preventDefault();
         window.kalamHandleDict();
+      } else if (lastTapPoint) {
+        // Phase 6: no selection — re-look-up the word under the last tap.
+        e.preventDefault();
+        fireTapLookup(lastTapPoint.x, lastTapPoint.y);
       } else {
-        // try word under caret? fallback to dictionary shortcut via bridge
+        // fallback to dictionary shortcut via bridge
         kalamBridge({type:'dict-shortcut'});
       }
     }
@@ -2113,6 +2363,7 @@ if (!window.kalamReaderShellLoaded) {
       hideSelectionBands();
       hideSelectionHandles();
       hideDict();
+      clearSearchHits();
     }
   });
   window.addEventListener('blur', function(){
@@ -2524,6 +2775,17 @@ html.kalam-selection-active body * ::selection {{
   filter: brightness(0.98) !important;
 }}
 
+/* ── Phase 6: find-in-chapter search hits (temporary) ── */
+.kalam-search-hit {{
+  background: color-mix(in srgb, {app_accent} 32%, transparent) !important;
+  background-color: color-mix(in srgb, {app_accent} 32%, transparent) !important;
+  border-radius: 3px !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, {app_accent} 55%, transparent) !important;
+  padding: 0 1px !important;
+  box-decoration-break: clone !important;
+  -webkit-box-decoration-break: clone !important;
+}}
+
 /* ── selection toolbar (inside WebView) ── */
 #kalam-chip {{
   position: absolute !important;
@@ -2788,6 +3050,15 @@ html.kalam-selection-active body * ::selection {{
   display: flex !important;
   gap: 10px !important;
   align-items: flex-start !important;
+}}
+/* Phase 6: keyboard sense focus (↑/↓) — an accent ring on the focused
+   sense; Enter saves the word with that sense's definition. */
+#kalam-dict-popup .k-def-item.k-def-focus {{
+  background: color-mix(in srgb, var(--kalam-pop-accent) 13%, transparent) !important;
+  border-radius: 8px !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kalam-pop-accent) 60%, transparent) !important;
+  padding: 2px 8px !important;
+  margin: -2px -8px !important;
 }}
 #kalam-dict-popup .k-def-num {{
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace !important;

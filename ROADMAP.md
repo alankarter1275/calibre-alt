@@ -356,8 +356,9 @@ Related reader work already completed:
 **Status: Phases 1–5.5 shipped (headword key index, WordNet exception
 lemmatization, phrase decomposition, merged dictionary store, popup
 redesign, POS grouping + likely-sense hint); Phase 5.6 (offline
-pronunciation) shipped; Phases 6–7 still planned.** The remaining phases
-are recorded here as the implementation brief for future isolated
+pronunciation) and Phase 6 (tap-to-look-up, popup keyboard, find in
+chapter) shipped; Phase 7 still planned.** The remaining phases are
+recorded here as the implementation brief for future isolated
 reader-improvement steps.
 
 ### Implementation brief: Kalam dictionary overhaul
@@ -713,27 +714,48 @@ line; `cargo build` and `cargo test` pass.
 **Deferred:** multi-pronunciation variants (first variant is shown), the
 Settings reorder UI, and anything involving network pronunciation services.
 
-#### Phase 6 — Interaction
+#### Phase 6 — Interaction  ✅ done
 
 **Goal:** tap-to-look-up and keyboard parity.
 
-**Do:**
+- [x] **Tap-a-word** — a plain click on book content (no drag-select, no
+      link/image/UI node) resolves the word under the caret via
+      `caretFromPoint` + `wordFromCaret` (letters, digits, apostrophes,
+      hyphens; expanded to word boundaries) and fires `dict-lookup` with
+      that word, its surrounding sentence (`sentenceAroundText`, shared
+      with selection lookups) and a rect for anchoring. A short tap delay
+      (240 ms) keeps double-click-to-select working (the pending tap is
+      cancelled on the second pointer press and on `dblclick`). Tapping a
+      word while the popup is open swaps the entry instead of closing it;
+      tapping empty space closes it. Drag-select → phrase is unchanged.
+      The `D` key with no selection re-looks-up the last tapped word,
+      falling back to the sidebar dict-shortcut when there was no tap.
+- [x] **Keyboard** — Esc closes the popup (existing); ↑/↓ move a sense
+      focus ring (`k-def-focus` accent card, wraps around, reveals hidden
+      "Show N more" senses when focus lands there); Enter saves the word
+      with the *focused* sense's definition (header Save still uses the
+      first sense). **Deviations from the brief:** ←/→ are deliberately
+      not bound — the Phase 4 merged store removed dictionary tabs, and
+      GTK reserves ←/→ for chapter navigation.
+- [x] **Find in chapter** — the popup header gains a magnifier button
+      (between Save and Copy). The reader has no in-book search yet, so
+      per the brief this is scoped to highlighting every occurrence of the
+      headword in the current chapter: `kalamSearchInBook` wraps each
+      match in a temporary accent `kalam-search-hit` span (case-
+      insensitive, skipping annotations/links/UI), scrolls to the first,
+      and reports the count back for a toast ("N matches in this
+      chapter"). Esc or the next lookup clears the hits.
+- [x] **Tests** — the popup preview harness
+      (`docs/files/test_kalam_dict_preview.js`, jsdom) grew to 55 checks:
+      word-from-caret expansion, case-insensitive sentence context, the
+      tap→bridge flow (word + sentence + rect), popup keyboard (focus
+      movement, wrap, reveal-hidden, Enter-save with the focused sense),
+      and find-in-chapter (wrapping, count, no double-wrap, annotation
+      skip, clearing).
 
-- Tap-a-word: in `epub_book.rs`, on a plain click with no selection, resolve the
-  word under the caret (use `caretRangeFromPoint`/`caretPositionFromPoint`, expand
-  to word boundaries) and fire `dict-lookup` with that word + surrounding sentence
-  as context. Keep drag-select → phrase. (There's already a dict-shortcut bridge
-  path to model this on.)
-
-- Keyboard: Esc closes the popup; ←/→ switch dictionary tabs; ↑/↓ move senses;
-  Enter saves the focused sense. Wire in the popup JS.
-
-- Search-in-book action: from the popup, trigger the reader's existing in-book
-  search for the headword (reuse whatever find/search path `reader.rs` has; if
-  none, scope this to "highlight all occurrences in current chapter").
-
-**Acceptance:** single tap on a word opens the popup; Esc/arrows/Enter work;
-search-in-book jumps to occurrences.
+**Acceptance:** single tap on a word opens the popup with its sentence
+context; Esc closes it; ↑/↓ + Enter work; Find in chapter highlights all
+occurrences and reports the count.
 
 #### Phase 7 — Vocabulary tools (lower priority)
 

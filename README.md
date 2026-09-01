@@ -18,7 +18,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **Import EPUB** (My Library → All books → “+ Import EPUB”)
 - **EPUB reader** (WebKitGTK): chapter-wise scroll, TOC, themes, font size, progress restore
 - **Highlights & quotes**: select text → floating chip (yellow/green/blue/pink/orange), save quote (❝), copy
-- **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip or `D` shortcut, a popup with numbered senses + POS, synonym/antonym chips, idiom cards, bookmark & copy, and offline IPA pronunciation (`bank` → `/ˈbæŋk/`) from the bundled CMU Pronouncing Dictionary
+- **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip, tap, or `D` shortcut, a popup with numbered senses + POS, synonym/antonym chips, idiom cards, bookmark & copy, offline IPA pronunciation (`bank` → `/ˈbæŋk/`) from the bundled CMU Pronouncing Dictionary, keyboard support (↑/↓ focus a sense, Enter saves it), and **Find in chapter**
 - **Annotations list**: reader bottom pill ✎ shows highlights/quotes for current book, jump & delete
 - **Library hub**: My Library → Saved quotes (real data) → export to Markdown (`~/Quotes.md`), Saved words (real data)
 - **Settings**: dictionary packs import (+ Import dictionary), list & remove, data paths
@@ -210,6 +210,15 @@ packed dictionary is compiled into the binary, ARPABET phonemes are
 converted to IPA with stress marks, and lookups resolve through the same
 lemmatization as definitions, so `running` finds `run`. Words absent from
 the dictionary (and multi-word phrases) simply show no transcription.
+
+You can also tap any word in the book to look it up — no selection needed.
+A plain click resolves the word under the caret and opens the popup for it
+(with the surrounding sentence as context); a double-click still selects a
+word for highlighting. With the popup open, ↑/↓ move a focus ring across
+the senses and Enter saves the word with the focused sense's definition.
+The magnifier button in the popup header highlights every occurrence of
+the headword in the current chapter (Esc clears the highlights) — a
+chapter-scoped stand-in until an in-book search exists.
 
 ### Reliable download sources
 
