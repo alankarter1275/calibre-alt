@@ -63,7 +63,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 | P3 | Highlights, quotes, offline dictionary ✅ |
 | P4 | Shelves engine, lists, history, tags, analytics ✅ |
 | **P5** | **Metadata edit, cover replace, Open Library fetch** ✅ |
-| Reader track | Annotation workflow + hybrid anchoring; dictionary overhaul (merged store, popup redesign, likely-sense hint, IPA pronunciation, tap-to-look-up, find in chapter) + vocabulary review (known flag, CSV/Anki export) ✅ · Phases 8–10 planned: POS grouping dividers, dictionary priority reorder UI, lookup history |
+| Reader track | Annotation workflow + hybrid anchoring; dictionary overhaul (merged store, popup redesign, likely-sense hint, IPA pronunciation, tap-to-look-up, find in chapter) + vocabulary review (known flag, CSV/Anki export) ✅ · Phases 8–10 shipped: POS grouping dividers, dictionary priority reorder UI, lookup history |
 | Backend review | Full sweep of `db.rs` + `db/*`: importers hardened, reading-list column bug fixed, 9 new tests ✅ |
 | P6–P11 | Downloads, AO3/FF, comics, PDF, tools — see ROADMAP |
 | UI overhaul (P5.5) | Colour system, 13 themes, Settings v2, book page, series float — **in progress** (Home/Library/Reader chrome next) |
