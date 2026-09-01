@@ -310,6 +310,62 @@ setTimeout(() => {
   })());
   check('Esc-equivalent clear works via kalamClearSearchHits', pFind.querySelectorAll('.kalam-search-hit').length === 0);
 
+  // ---- Phase 8: POS grouping dividers ----
+  // Multi-POS entry: noun x2, verb x2, adjective x1, then an unlabelled
+  // sense. Order must be noun, verb, adjective, then unlabelled last.
+  window.kalamShowDict({word:'run', pos:['noun','verb','adjective'],
+    senses:[
+      {number:1, pos:'noun', def:'an act of running', example:null},
+      {number:2, pos:'noun', def:'a continuous period', example:null},
+      {number:3, pos:'verb', def:'to move swiftly', example:null},
+      {number:4, pos:'verb', def:'to operate', example:null},
+      {number:5, pos:'adjective', def:'melted (runny)', example:null},
+      {number:6, pos:null, def:'a scored point (cricket)', example:null}
+    ], synonyms:[], antonyms:[], idioms:[], suggestions:[], saved:false, hint:3}, null);
+  const pDivs = () => popup.querySelectorAll('.k-pos-divider');
+  const pItems = () => popup.querySelectorAll('.k-def-item');
+  check('phase8: 3 dividers for noun/verb/adjective', pDivs().length === 3);
+  check('phase8: divider order noun, verb, adjective',
+    pDivs()[0].textContent.trim() === 'noun' &&
+    pDivs()[1].textContent.trim() === 'verb' &&
+    pDivs()[2].textContent.trim() === 'adjective');
+  // Flat numbering must survive grouping (numbers stay 1..6 in flat order).
+  const numText = Array.from(pItems()).map(el => el.querySelector('.k-def-num').textContent).join(',');
+  check('phase8: flat numbering preserved 1..6', numText === '1.,2.,3.,4.,5.,6.');
+  // The hint (flat index 3 -> 4th sense, the second verb) stays put.
+  check('phase8: hint badge still on flat index 3', pItems()[3].querySelector('.k-hint-badge') !== null);
+  check('phase8: no badge elsewhere', pItems().length === 6 && Array.from(pItems()).filter(el => el.querySelector('.k-hint-badge')).length === 1);
+  // Unlabelled senses: no divider, last position.
+  const lastItem = pItems()[5];
+  check('phase8: unlabelled sense has no divider before it', !(lastItem.previousElementSibling && lastItem.previousElementSibling.classList.contains('k-pos-divider')) || false);
+  // Header chip dropped with 2+ groups, kept with a single group.
+  check('phase8: header chip dropped with 3 groups', popup.querySelector('.k-pos') === null);
+  window.kalamShowDict({word:'run', pos:['noun'], senses:[
+    {number:1, pos:'noun', def:'an act of running', example:null},
+    {number:2, pos:'noun', def:'a continuous period', example:null}
+  ], synonyms:[], antonyms:[], idioms:[], suggestions:[], saved:false, hint:-1}, null);
+  check('phase8: single group keeps header chip', popup.querySelector('.k-pos') !== null);
+  check('phase8: single group renders one divider', pDivs().length === 1);
+  check('phase8: single group divider says noun', pDivs()[0].textContent.trim() === 'noun');
+  // Divider CSS: uppercase, hairline, app-chrome tokens.
+  const divCs = window.getComputedStyle(pDivs()[0]);
+  check('phase8: divider uppercase', divCs.textTransform === 'uppercase');
+  check('phase8: divider has a border-top (hairline)', divCs.borderTopWidth !== '0px');
+  // Keyboard nav with dividers present: ↑/↓ walk only the senses.
+  const itemsK = pItems();
+  window.dispatchEvent(new window.KeyboardEvent('keydown', {key:'ArrowDown', bubbles:true, cancelable:true}));
+  check('phase8: ArrowDown focuses first sense with divider present', itemsK[0].classList.contains('k-def-focus'));
+  // Fold boundary: 5 noun senses straddle the 3-shown fold; expanding must
+  // not add a second noun divider (group started inside the shown part).
+  window.kalamShowDict({word:'deep', pos:['noun'], senses:Array.from({length:5}, (_, i) => ({number:i+1, pos:'noun', def:'sense '+(i+1), example:null})), synonyms:[], antonyms:[], idioms:[], suggestions:[], saved:false}, null);
+  check('phase8: straddling group has 1 divider before fold', pDivs().length === 1);
+  const extraWrap = document.getElementById('kalam-extra-defs');
+  const moreSpan = document.getElementById('kalam-show-more');
+  check('phase8: 2 senses behind the fold', extraWrap !== null && extraWrap.querySelectorAll('.k-def-item').length === 2);
+  check('phase8: no divider inside the fold for a straddling group', extraWrap !== null && extraWrap.querySelectorAll('.k-pos-divider').length === 0);
+  moreSpan.click();
+  check('phase8: expand keeps single divider total', pDivs().length === 1);
+
   console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECKS FAILED`);
   process.exit(failures === 0 ? 0 : 1);
 }, 30);

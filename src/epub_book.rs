@@ -1604,6 +1604,37 @@ if (!window.kalamReaderShellLoaded) {
     dictCurrentSenses = senses;
     dictSaveDefinition = senses.length ? (senses[0].def || '') : '';
 
+    // Phase 8: POS grouping. Groups are built over the FLAT senses array
+    // and only change rendering — the divider's group label and which
+    // senses sit under it. Numbering (Sense.number), the hint index and
+    // the ↑/↓ keyboard walk all keep indexing the flat array.
+    var POS_GROUP_ORDER = ['noun', 'verb', 'adjective', 'adverb'];
+    function posGroupKey(s) { return String(s.pos || '').trim().toLowerCase(); }
+    function buildPosGroups(list) {
+      var buckets = {}, firstSeen = [], key;
+      list.forEach(function(s, i) {
+        key = posGroupKey(s);
+        if (!buckets[key]) { buckets[key] = []; firstSeen.push(key); }
+        buckets[key].push(i);
+      });
+      // Known POS in fixed order, then the rest in first-appearance order;
+      // the unlabelled ('' key) group naturally lands last.
+      var keys = POS_GROUP_ORDER.filter(function(k){ return buckets[k]; });
+      firstSeen.forEach(function(k){ if (keys.indexOf(k) === -1) keys.push(k); });
+      return keys.map(function(k){ return { key: k, indices: buckets[k] }; });
+    }
+    function posDividerFor(idx) {
+      for (var g = 0; g < posGroups.length; g++) {
+        // The final unlabelled group gets no divider row: senses with
+        // pos == null simply continue under the last labelled group.
+        if (posGroups[g].key && posGroups[g].indices[0] === idx) {
+          return '<div class="k-pos-divider">'+esc(posGroups[g].key)+'</div>';
+        }
+      }
+      return '';
+    }
+    var posGroups = senses.length ? buildPosGroups(senses) : [];
+
     function defItem(s, n, isHint) {
       return '<div class="k-def-item'+(isHint ? ' k-hint' : '')+'"><span class="k-def-num">'+n+'.</span><div>'
         + '<div class="k-def-text">'+(isHint ? '<span class="k-hint-badge">likely here</span>' : '')+esc(s.def)+'</div>'
@@ -1617,7 +1648,9 @@ if (!window.kalamReaderShellLoaded) {
       // Pronunciation slot — filled from the CMU dictionary via the
       // payload ("/ˈbæŋk/"); the :empty rule hides it when absent.
       + '<div class="k-pronunciation" id="kalam-pronunciation"></div>'
-      + (pos.length ? '<span class="k-pos">'+esc(pos.join(' · '))+'</span>' : '')
+      // Phase 8: the header POS chip is redundant once dividers exist —
+      // keep it only for single-group entries.
+      + (pos.length && posGroups.length < 2 ? '<span class="k-pos">'+esc(pos.join(' · '))+'</span>' : '')
       + '</div>'
       + '<div class="k-header-actions">'
       + '<button class="k-save-btn'+(saved?' saved':'')+'" id="kalam-dict-save" title="'+(saved?'Saved':'Save word')+'">'+(saved?'\u2713':'\u2606')+'</button>'
@@ -1631,12 +1664,16 @@ if (!window.kalamReaderShellLoaded) {
 
     if (senses.length) {
       html += '<div class="k-section-label">Definitions</div><div class="k-defs">';
+      // Phase 8: a divider precedes the first sense of each POS group
+      // (posDividerFor checks a sense's flat index against each group's
+      // first index, so a group straddling the "Show N more" fold keeps a
+      // single divider at its true start).
       var shown = senses.slice(0, 3);
       var extra = senses.slice(3);
-      shown.forEach(function(s, i){ html += defItem(s, i + 1, i === hintIdx); });
+      shown.forEach(function(s, i){ html += posDividerFor(i) + defItem(s, i + 1, i === hintIdx); });
       if (extra.length) {
         html += '<div class="k-extra-defs" id="kalam-extra-defs">';
-        extra.forEach(function(s, i){ html += defItem(s, shown.length + i + 1, shown.length + i === hintIdx); });
+        extra.forEach(function(s, i){ html += posDividerFor(shown.length + i) + defItem(s, shown.length + i + 1, shown.length + i === hintIdx); });
         html += '</div><span class="k-show-more" id="kalam-show-more">Show '+extra.length+' more</span>';
       }
       html += '</div>';
@@ -2982,6 +3019,22 @@ html.kalam-selection-active body * ::selection {{
   border-radius: 999px !important;
   padding: 2px 8px !important;
   display: inline-block !important;
+}}
+#kalam-dict-popup .k-pos-divider {{
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: var(--kalam-pop-dim) !important;
+  border-top: 1px solid var(--kalam-pop-border) !important;
+  padding-top: 6px !important;
+  margin: 8px 0 4px !important;
+}}
+#kalam-dict-popup .k-defs > .k-pos-divider:first-child,
+#kalam-dict-popup .k-extra-defs > .k-pos-divider:first-child {{
+  border-top: none !important;
+  margin-top: 0 !important;
+  padding-top: 0 !important;
 }}
 #kalam-dict-popup .k-header-actions {{
   display: flex !important;
