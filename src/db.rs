@@ -1522,6 +1522,34 @@ mod tests {
     }
 
     #[test]
+    fn reading_list_note_and_meta_are_not_book_fields() {
+        // Regression: list_reading_list once read position/note/added_at from
+        // indices 12..14, which are actually progress/rating/publisher. Give
+        // the book non-default values so the wrong reads would be visible.
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = seed(&cat, "A", "x", &[]);
+        cat.conn()
+            .execute(
+                "UPDATE books SET progress = 42, rating = 4, publisher = 'TestPub' WHERE id = ?1",
+                params![a],
+            )
+            .unwrap();
+        cat.add_to_reading_list(a).unwrap();
+        cat.set_reading_list_note(a, "my note").unwrap();
+
+        let entries = cat.list_reading_list().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].position, 0);
+        assert_eq!(entries[0].note, "my note");
+        assert!(!entries[0].added_at.is_empty());
+        assert_ne!(entries[0].added_at, "TestPub");
+        // The book row itself still hydrates its real values.
+        assert_eq!(entries[0].book.progress, 42);
+        assert_eq!(entries[0].book.rating, 4);
+        assert_eq!(entries[0].book.publisher, "TestPub");
+    }
+
+    #[test]
     fn finishing_a_book_clears_it_from_the_reading_list() {
         let cat = Catalog::open_in_memory().unwrap();
         let a = seed(&cat, "A", "x", &[]);
