@@ -620,7 +620,13 @@ impl Catalog {
         )?;
         let mut out = Vec::new();
         for r in stmt.query_map(
-            params![BUNDLED_IDIOMS_NAME, key, any.as_str(), start.as_str(), end.as_str()],
+            params![
+                BUNDLED_IDIOMS_NAME,
+                key,
+                any.as_str(),
+                start.as_str(),
+                end.as_str()
+            ],
             |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
         )? {
             out.push(r?);
@@ -642,7 +648,9 @@ impl Catalog {
              ORDER BY LENGTH(key) ASC, key COLLATE NOCASE ASC LIMIT ?2",
         )?;
         let mut out = Vec::new();
-        for r in stmt.query_map(params![like.as_str(), limit as i64], |r| r.get::<_, String>(0))? {
+        for r in stmt.query_map(params![like.as_str(), limit as i64], |r| {
+            r.get::<_, String>(0)
+        })? {
             let w = r?;
             if !out.iter().any(|x| x.eq_ignore_ascii_case(&w)) {
                 out.push(w);
@@ -803,10 +811,7 @@ fn parse_pos_blob(blob: &str) -> Vec<Sense> {
 /// Strip a leading "N." sense number. Returns the text after it.
 fn strip_sense_number(text: &str) -> Option<&str> {
     let t = text.trim_start();
-    let digits = t
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .count();
+    let digits = t.chars().take_while(|c| c.is_ascii_digit()).count();
     if digits == 0 {
         return None;
     }
@@ -831,7 +836,11 @@ fn split_example(def: &str) -> Option<(String, String)> {
             continue;
         }
         let example = def[idx..].trim().trim_matches(q).trim().to_string();
-        let head = def[..idx].trim().trim_end_matches([';', ':', ',']).trim().to_string();
+        let head = def[..idx]
+            .trim()
+            .trim_end_matches([';', ':', ','])
+            .trim()
+            .to_string();
         if !head.is_empty() && !example.is_empty() {
             return Some((head, example));
         }

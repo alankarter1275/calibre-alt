@@ -9,8 +9,8 @@
 //! SQLite pack: a SQLite file with table entries(word TEXT, definition TEXT) or (word, definition) naming variations.
 
 use crate::db::{
-    BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
-    Catalog,
+    Catalog, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME,
+    BUNDLED_WORDNET_NAME,
 };
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
