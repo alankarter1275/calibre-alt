@@ -1,4 +1,7 @@
-src/dict.rs:742:36: [1m[91merror[E0308][0m: mismatched types: expected `&Path`, found `PathBuf`
-src/dict.rs:743:37: [1m[91merror[E0308][0m: mismatched types: expected `&Path`, found `PathBuf`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors; 2 warnings emitted
---- run 33507356307 ---
+src/pages/lookup_history.rs:117:9: [1m[91merror[E0050][0m: method `update_with_view` has 4 parameters but the declaration in trait `relm4::Component::update_with_view` has 5: expected 5 parameters, found 4
+src/app.rs:405:57: [1m[91merror[E0308][0m: mismatched types: expected `AppMsg`, found `()`
+src/pages/lookup_history.rs:235:9: [1m[91merror[E0308][0m: mismatched types: expected `&str`, found `String`
+src/pages/lookup_history.rs:237:9: [1m[91merror[E0308][0m: mismatched types: expected `&str`, found `String`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors; 2 warnings emitted
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors; 2 warnings emitted
+--- run 33537907920 ---
