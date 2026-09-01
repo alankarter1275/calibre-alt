@@ -617,3 +617,39 @@ it; Poppler/GPL is the alternative if we ever want to avoid AGPL).
 ---
 
 *Last updated: 2026-09-02.*
+
+---
+
+## 9. Renderer effort estimate (2026-09-02)
+
+**User asked:** "for the custom renderer, you have to do all the work. how
+much time do you reckon it will take you?"
+
+**Honest answer:**
+
+- Writing code is the fast part; the constraint is that the agent has **no
+  display** — the renderer is visual, so the **user is the QA loop** (Arch
+  machine GUI smoke tests). The user's testing cadence sets the schedule.
+- Layout/pagination/hit-testing are pure functions → unit-testable headless
+  (agent-strength); visual polish needs user eyes (agent-weak).
+
+| Milestone | Scope | Estimate (sessions) |
+|---|---|---|
+| 1. Vertical slice | one clean fiction chapter: content format → cosmic-text → pagination → painted GTK pages → page turn → themes → dict popup hook → position save/restore | **2–4 weeks** |
+| 2. Fiction reader complete | all plugin-produced formats, images, footnotes, 100k+ word chapters, selection/copy, perf at scale | +1–2 months |
+| 3. EPUB normalization | EPUB HTML/CSS → clean format (lol_html + rules); WebKit fallback when normalization fails; position mapping | +2–4 months |
+| 4. Hardening | RTL, CJK, hyphenation, justification, a11y (AT-SPI), incremental layout, edge cases | +2–4 months, ongoing |
+| **Total** | "WebKit gone for reflowable text" | **6–12 months** |
+
+- Benchmark: a strong human dev solo ≈ same (6–14 months) — renderer is a
+  1–3 person-year thing for anyone.
+- **Faster:** user tests in small batches (15 min per slice). **Slower:**
+  big-bang testing → visual bugs in bulk, blind debugging.
+- **Key risk:** custom engine choking on one weird EPUB feels like a
+  regression → WebKit stays as fallback until milestone 3 earns trust.
+- **Milestone 1 is the calibration test:** if the slice takes > ~4 weeks,
+  we learn the renderer is harder than estimated before sinking months in.
+
+---
+
+*Last updated: 2026-09-02.*
