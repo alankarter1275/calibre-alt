@@ -22,6 +22,23 @@ So we do this forever:
 
 You already enabled CI once (Option C). Good — leave it.
 
+> **Why the CLI path needs a special token:** GitHub refuses pushes that touch
+> `.github/workflows/*` unless the Personal Access Token has the **`workflow`**
+> scope (fine-grained tokens need **Workflows: Read and write**). Without it
+> you get:
+> `! [remote rejected] ... refusing to allow a Personal Access Token to create
+> or update workflow .github/workflows/ci.yml without 'workflow' scope`.
+> The commit is still created **locally**, but the push fails.
+>
+> Two fixes: (a) give your token the `workflow` scope (Settings → Developer
+> settings → Personal access tokens → regenerate with `workflow` checked), or
+> (b) use the GitHub web UI path below — no token involved.
+>
+> If a local commit was created but the push was rejected, and you then applied
+> the same file via the web UI, the local commit is a duplicate: discard it with
+> `git reset --hard origin/<branch>` (check first with
+> `git log origin/<branch>..HEAD --oneline`).
+
 ### If the agent asks you to update the workflow
 
 ```bash
