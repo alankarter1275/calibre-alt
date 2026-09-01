@@ -218,7 +218,11 @@ impl Component for SavedWordsModel {
                     .unwrap_or((String::new(), true));
                 crate::notify::outcome_info(
                     self.catalog.set_saved_word_known(id, word.1),
-                    if word.1 { "Marked as known" } else { "Back to review" },
+                    if word.1 {
+                        "Marked as known"
+                    } else {
+                        "Back to review"
+                    },
                     &word.0,
                     "Could not update the word",
                 );
@@ -247,28 +251,27 @@ impl Component for SavedWordsModel {
                 rebuild(&widgets.list_box, &self.words, &sender);
                 widgets.status_label.set_label(&self.status);
             }
-            SavedWordsMsg::ExportCsv => {
-                match export_saved_words_csv(&self.catalog) {
-                    Ok((n, path)) => {
-                        crate::notify::compact(
-                            &format!("{n} word{} exported", if n == 1 { "" } else { "s" }),
-                            &path.display().to_string(),
-                        );
-                    }
-                    Err(e) => crate::notify::error("Could not export words", &e),
+            SavedWordsMsg::ExportCsv => match export_saved_words_csv(&self.catalog) {
+                Ok((n, path)) => {
+                    crate::notify::compact(
+                        &format!("{n} word{} exported", if n == 1 { "" } else { "s" }),
+                        &path.display().to_string(),
+                    );
                 }
-            }
-            SavedWordsMsg::ExportAnki => {
-                match export_saved_words_anki(&self.catalog) {
-                    Ok((n, path)) => {
-                        crate::notify::compact(
-                            &format!("{n} word{} exported for Anki", if n == 1 { "" } else { "s" }),
-                            &path.display().to_string(),
-                        );
-                    }
-                    Err(e) => crate::notify::error("Could not export words", &e),
+                Err(e) => crate::notify::error("Could not export words", &e),
+            },
+            SavedWordsMsg::ExportAnki => match export_saved_words_anki(&self.catalog) {
+                Ok((n, path)) => {
+                    crate::notify::compact(
+                        &format!(
+                            "{n} word{} exported for Anki",
+                            if n == 1 { "" } else { "s" }
+                        ),
+                        &path.display().to_string(),
+                    );
                 }
-            }
+                Err(e) => crate::notify::error("Could not export words", &e),
+            },
             SavedWordsMsg::Refresh => {
                 self.reload();
                 rebuild(&widgets.list_box, &self.words, &sender);
@@ -301,7 +304,10 @@ impl SavedWordsModel {
                         "{n} to review · {total} word{} saved",
                         if total == 1 { "" } else { "s" }
                     ),
-                    Some(true) => format!("{n} known · {total} word{} saved", if total == 1 { "" } else { "s" }),
+                    Some(true) => format!(
+                        "{n} known · {total} word{} saved",
+                        if total == 1 { "" } else { "s" }
+                    ),
                 };
                 self.status = if self.query.trim().is_empty() {
                     if total == 0 {
@@ -489,7 +495,9 @@ fn saved_words_anki_tsv(words: &[SavedWord]) -> String {
 /// Export every saved word to `~/SavedWords.csv`. Shared shape with the
 /// ~/Quotes.md export: fixed home path, count + path returned for a toast.
 pub fn export_saved_words_csv(catalog: &Arc<Catalog>) -> Result<(usize, PathBuf), String> {
-    let words = catalog.list_saved_words("", None).map_err(|e| format!("{e}"))?;
+    let words = catalog
+        .list_saved_words("", None)
+        .map_err(|e| format!("{e}"))?;
     let csv = saved_words_csv(&words);
     let out_path = dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -501,7 +509,9 @@ pub fn export_saved_words_csv(catalog: &Arc<Catalog>) -> Result<(usize, PathBuf)
 /// Export every saved word to `~/SavedWords-Anki.txt` (tab-separated,
 /// Anki-importable: word / definition / context).
 pub fn export_saved_words_anki(catalog: &Arc<Catalog>) -> Result<(usize, PathBuf), String> {
-    let words = catalog.list_saved_words("", None).map_err(|e| format!("{e}"))?;
+    let words = catalog
+        .list_saved_words("", None)
+        .map_err(|e| format!("{e}"))?;
     let tsv = saved_words_anki_tsv(&words);
     let out_path = dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -531,14 +541,14 @@ mod tests {
     #[test]
     fn csv_escapes_commas_quotes_and_newlines() {
         let words = vec![
-            word(1, "serendipity", "a happy accident", Some("luck, chance"), false),
             word(
-                2,
-                "quoted\"word",
-                "line one\nline two",
-                Some("plain"),
-                true,
+                1,
+                "serendipity",
+                "a happy accident",
+                Some("luck, chance"),
+                false,
             ),
+            word(2, "quoted\"word", "line one\nline two", Some("plain"), true),
         ];
         let csv = saved_words_csv(&words);
         assert!(csv.starts_with("word,definition,context,dictionary,known,created_at\n"));
@@ -553,7 +563,13 @@ mod tests {
     #[test]
     fn anki_tsv_is_tab_separated_with_header() {
         let words = vec![
-            word(1, "serendipity", "a happy accident", Some("luck, chance"), false),
+            word(
+                1,
+                "serendipity",
+                "a happy accident",
+                Some("luck, chance"),
+                false,
+            ),
             word(2, "wander", "to walk aimlessly", None, true),
         ];
         let tsv = saved_words_anki_tsv(&words);

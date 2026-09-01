@@ -1351,10 +1351,24 @@ mod tests {
     fn saved_words_known_flag_round_trips_and_filters() {
         let cat = Catalog::open_in_memory().unwrap();
         let a = cat
-            .insert_saved_word("serendipity", "a happy accident", Some("WordNet"), None, None, Some("luck, chance"))
+            .insert_saved_word(
+                "serendipity",
+                "a happy accident",
+                Some("WordNet"),
+                None,
+                None,
+                Some("luck, chance"),
+            )
             .unwrap();
         let b = cat
-            .insert_saved_word("wander", "to walk aimlessly", Some("WordNet"), None, None, None)
+            .insert_saved_word(
+                "wander",
+                "to walk aimlessly",
+                Some("WordNet"),
+                None,
+                None,
+                None,
+            )
             .unwrap();
 
         // Fresh rows are unknown (to review).
@@ -1384,7 +1398,10 @@ mod tests {
         let hits = cat.list_saved_words("wan", Some(true)).unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].word, "wander");
-        assert!(cat.list_saved_words("serendipity", Some(true)).unwrap().is_empty());
+        assert!(cat
+            .list_saved_words("serendipity", Some(true))
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
