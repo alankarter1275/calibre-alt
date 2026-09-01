@@ -341,7 +341,6 @@ CSS and JS from <code>src/epub_book.rs</code> with the mockup palette substitute
       + '<div class="k-header-actions">'
       + '<button class="k-save-btn'+(saved?' saved':'')+'" id="kalam-dict-save" title="'+(saved?'Saved':'Save word')+'">'+(saved?'\u2713':'\u2606')+'</button>'
       + '<button class="k-save-btn" id="kalam-dict-copy" title="Copy">\u29c9</button>'
-      + '<button class="k-save-btn" id="kalam-dict-close" title="Close">\u2715</button>'
       + '</div>'
       + '</div>'
       + '<div class="k-body">';
@@ -411,22 +410,46 @@ CSS and JS from <code>src/epub_book.rs</code> with the mockup palette substitute
     var popupHeight = Math.min(p.offsetHeight || 240, Math.max(140, window.innerHeight - 16));
     var minLeft = window.scrollX + 8;
     var maxLeft = window.scrollX + window.innerWidth - popupWidth - 8;
-    var top, left;
     if (rect) {
-      top = window.scrollY + rect.y + rect.h + 10;
-      left = window.scrollX + rect.x;
+      // Anchor to the selection: below it when there is room, above it
+      // otherwise, and never over it — if neither side fits, use the
+      // larger side and shrink the body so the popup still fits.
+      var selTop = window.scrollY + rect.y;
+      var selBottom = selTop + (rect.h || 0);
+      var viewTop = window.scrollY + 8;
+      var viewBottom = window.scrollY + window.innerHeight - 8;
+      var spaceBelow = viewBottom - (selBottom + 10);
+      var spaceAbove = (selTop - 10) - viewTop;
+      var h = popupHeight;
+      var top;
+      if (spaceBelow >= h) {
+        top = selBottom + 10;
+      } else if (spaceAbove >= h) {
+        top = selTop - h - 10;
+      } else {
+        var above = spaceAbove > spaceBelow;
+        h = Math.max(120, Math.min(popupHeight, above ? spaceAbove : spaceBelow));
+        if (above) {
+          top = selTop - h - 10;
+        } else {
+          top = selBottom + 10;
+        }
+        var headerH = (p.querySelector('.k-header') || {}).offsetHeight || 80;
+        if (bodyEl) bodyEl.style.maxHeight = Math.max(80, h - headerH - 4) + 'px';
+      }
+      top = Math.max(viewTop, Math.min(top, viewBottom - h));
+      var left = window.scrollX + rect.x;
       if (left < minLeft) left = minLeft;
       if (left > maxLeft) left = Math.max(minLeft, maxLeft);
-      if (top + popupHeight > window.scrollY + window.innerHeight - 8) {
-        top = window.scrollY + rect.y - popupHeight - 10;
-      }
-      if (top < window.scrollY + 8) top = window.scrollY + 8;
-    } else {
-      top = window.scrollY + 180;
-      left = minLeft + 32;
+      p.style.top = top + 'px';
+      p.style.left = left + 'px';
+    } else if (!wasVisible) {
+      // No anchor (sidebar lookup): default position, only when opening.
+      p.style.top = (window.scrollY + 180) + 'px';
+      p.style.left = (minLeft + 32) + 'px';
     }
-    p.style.top = top + 'px';
-    p.style.left = left + 'px';
+    // Rect-less lookups on an already-open popup (synonym/antonym chips)
+    // keep the current position — the box must not jump around.
 
     var saveBtn = document.getElementById('kalam-dict-save');
     if (saveBtn) saveBtn.addEventListener('click', function() {
@@ -446,10 +469,15 @@ CSS and JS from <code>src/epub_book.rs</code> with the mockup palette substitute
       var text = word;
       senses.forEach(function(s, i){ text += '\n' + (i + 1) + '. ' + s.def; });
       try{ navigator.clipboard.writeText(text); }catch(e){}
-      hideDict();
+      // Brief check feedback — the popup stays open.
+      var oldGlyph = copyBtn.textContent;
+      copyBtn.textContent = '\u2713';
+      copyBtn.title = 'Copied';
+      setTimeout(function(){
+        copyBtn.textContent = oldGlyph;
+        copyBtn.title = 'Copy';
+      }, 900);
     });
-    var closeBtn = document.getElementById('kalam-dict-close');
-    if (closeBtn) closeBtn.addEventListener('click', function(){ hideDict(); });
     var chips = p.querySelectorAll('.k-chip');
     for (var i = 0; i < chips.length; i++) {
       chips[i].addEventListener('click', function() {
@@ -469,6 +497,14 @@ CSS and JS from <code>src/epub_book.rs</code> with the mockup palette substitute
     if (p) p.style.display='none';
   }
   window.kalamHideDict = hideDict;
+  // No close button — the popup closes when clicking anywhere outside it
+  // (clicks inside keep it open; Escape also closes it).
+  document.addEventListener('click', function(e){
+    var pop = document.getElementById('kalam-dict-popup');
+    if (!pop || pop.style.display !== 'block') return;
+    if (e.target && e.target.closest && e.target.closest('#kalam-dict-popup')) return;
+    hideDict();
+  });
   window.kalamShowDict = function(payload, rectJson) {
     var rect = null;
     try { if (rectJson) rect = JSON.parse(rectJson); } catch(e){}
