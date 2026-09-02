@@ -4,6 +4,7 @@
 
 use crate::db::{Catalog, DictLookup};
 use crate::pages::history::pretty_day;
+use crate::service::LibraryService;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -18,7 +19,7 @@ pub enum LookupHistoryMsg {
 }
 
 pub struct LookupHistoryModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     lookups: Vec<DictLookup>,
     query: String,
 }
@@ -100,12 +101,12 @@ impl Component for LookupHistoryModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let lookups = catalog
-            .list_dict_lookups("", PAGE_LIMIT)
-            .unwrap_or_default();
+        let service = LibraryService::new(catalog);
+        let snap = service.lookup_history("", PAGE_LIMIT);
+        report_errors(&snap.errors);
         let model = LookupHistoryModel {
-            catalog,
-            lookups,
+            service,
+            lookups: snap.lookups,
             query: String::new(),
         };
         let widgets = view_output!();
@@ -123,15 +124,14 @@ impl Component for LookupHistoryModel {
         match msg {
             LookupHistoryMsg::SearchChanged(query) => {
                 self.query = query;
-                self.lookups = self
-                    .catalog
-                    .list_dict_lookups(&self.query, PAGE_LIMIT)
-                    .unwrap_or_default();
+                let snap = self.service.lookup_history(&self.query, PAGE_LIMIT);
+                report_errors(&snap.errors);
+                self.lookups = snap.lookups;
                 populate_list(&widgets.list_box, &self.lookups);
             }
             LookupHistoryMsg::Clear => {
                 crate::notify::outcome_info(
-                    self.catalog.clear_dict_lookups(),
+                    self.service.catalog().clear_dict_lookups(),
                     "Lookup history cleared",
                     "",
                     "Could not clear the lookup history",
@@ -140,10 +140,9 @@ impl Component for LookupHistoryModel {
                 populate_list(&widgets.list_box, &self.lookups);
             }
             LookupHistoryMsg::Refresh => {
-                self.lookups = self
-                    .catalog
-                    .list_dict_lookups(&self.query, PAGE_LIMIT)
-                    .unwrap_or_default();
+                let snap = self.service.lookup_history(&self.query, PAGE_LIMIT);
+                report_errors(&snap.errors);
+                self.lookups = snap.lookups;
                 populate_list(&widgets.list_box, &self.lookups);
             }
         }
@@ -157,6 +156,14 @@ fn status_line(count: usize) -> String {
         }
         1 => "1 lookup recorded".into(),
         n => format!("{n} lookups recorded"),
+    }
+}
+
+/// Surface read failures instead of rendering them as an empty log. The
+/// service collects them; deciding what the user sees stays with the UI.
+fn report_errors(errors: &[String]) {
+    for err in errors {
+        crate::notify::error("Could not read your lookup history", err);
     }
 }
 

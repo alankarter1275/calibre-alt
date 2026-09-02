@@ -50,7 +50,10 @@
 //! add a snapshot method here, swap the page's field, delete its
 //! `unwrap_or_default()`s. See the roadmap's A0 step 2 entry.
 
-use crate::db::{Catalog, LibraryStats, ReadingListEntry, Shelf, SortKey};
+use crate::db::{
+    Catalog, DictLookup, EventKind, LibraryStats, ReadingEvent, ReadingListEntry, Shelf,
+    SortKey,
+};
 use crate::models::Book;
 use std::sync::Arc;
 
@@ -89,6 +92,20 @@ pub struct AnalyticsSnapshot {
     pub finished_this_year: i64,
     /// Which of the last 7 days had any reading.
     pub week: [bool; 7],
+    pub errors: Errors,
+}
+
+/// The history feed: opened/finished events, newest first.
+#[derive(Debug, Default)]
+pub struct HistorySnapshot {
+    pub events: Vec<ReadingEvent>,
+    pub errors: Errors,
+}
+
+/// The dictionary lookup log.
+#[derive(Debug, Default)]
+pub struct LookupHistorySnapshot {
+    pub lookups: Vec<DictLookup>,
     pub errors: Errors,
 }
 
@@ -182,6 +199,32 @@ impl LibraryService {
     }
 
     /// The tag cloud.
+    /// History page: reading events, optionally filtered by kind and text.
+    pub fn history(&self, kind: Option<EventKind>, query: &str, limit: usize) -> HistorySnapshot {
+        let mut errors = Errors::new();
+        HistorySnapshot {
+            events: take(
+                self.catalog.list_events(kind, query, limit),
+                "reading history",
+                &mut errors,
+            ),
+            errors,
+        }
+    }
+
+    /// Lookup History page: the dictionary lookup log.
+    pub fn lookup_history(&self, query: &str, limit: usize) -> LookupHistorySnapshot {
+        let mut errors = Errors::new();
+        LookupHistorySnapshot {
+            lookups: take(
+                self.catalog.list_dict_lookups(query, limit),
+                "lookup history",
+                &mut errors,
+            ),
+            errors,
+        }
+    }
+
     /// All books page: the whole library, filtered by `query` and sorted.
     pub fn all_books(&self, sort: SortKey, query: &str) -> AllBooksSnapshot {
         let mut errors = Errors::new();
@@ -348,6 +391,38 @@ mod tests {
         );
         assert_eq!(snap.stats.total_books, 2);
         assert_eq!(snap.recent.len(), 2);
+    }
+
+    #[test]
+    fn history_and_lookup_history_return_rows_without_errors() {
+        // Both pages used `unwrap_or_default()`, so a broken read looked like
+        // "nothing has happened yet" -- indistinguishable from a new install.
+        let cat = Catalog::open_in_memory().unwrap();
+        let book = seed(&cat, "Dune", &[]);
+        cat.log_event(book, EventKind::Opened, "").expect("log event");
+        cat.log_dict_lookup("melange", Some(book), None, None, true)
+            .expect("log lookup");
+        let svc = LibraryService::new(Arc::new(cat));
+
+        let hist = svc.history(None, "", 50);
+        assert_eq!(hist.events.len(), 1);
+        assert!(hist.errors.is_empty());
+
+        let looks = svc.lookup_history("", 50);
+        assert_eq!(looks.lookups.len(), 1);
+        assert!(looks.errors.is_empty());
+    }
+
+    #[test]
+    fn an_empty_log_is_not_an_error() {
+        // A fresh install has no history; that must stay silent, not toast.
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+
+        assert!(svc.history(None, "", 50).events.is_empty());
+        assert!(svc.history(None, "", 50).errors.is_empty());
+        assert!(svc.lookup_history("", 50).lookups.is_empty());
+        assert!(svc.lookup_history("", 50).errors.is_empty());
     }
 
     #[test]
