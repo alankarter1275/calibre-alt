@@ -1,7 +1,9 @@
 use crate::db::Catalog;
+use crate::pages::all_books::{ImportProgress, ImportTally};
 use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W};
 use gtk::prelude::*;
 use relm4::prelude::*;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -10,13 +12,24 @@ pub enum HomeOut {
     OpenBookDialog { book_id: i64 },
 }
 
-pub struct HomePageModel;
+#[derive(Debug)]
+pub enum HomeMsg {
+    AddBooks,
+    FilesChosen(Vec<PathBuf>),
+}
+
+pub struct HomePageModel {
+    catalog: Arc<Catalog>,
+    importing: bool,
+    status: String,
+}
 
 #[relm4::component(pub)]
-impl SimpleComponent for HomePageModel {
+impl Component for HomePageModel {
     type Init = Arc<Catalog>;
-    type Input = ();
+    type Input = HomeMsg;
     type Output = HomeOut;
+    type CommandOutput = ImportProgress;
 
     view! {
         #[root]
@@ -27,14 +40,41 @@ impl SimpleComponent for HomePageModel {
             set_vexpand: false,
             set_margin_all: 0,
 
-            gtk::Label {
-                set_label: "Home",
-                add_css_class: "kalam-page-title",
-                set_halign: gtk::Align::Start,
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 12,
+
+                gtk::Label {
+                    set_label: "Home",
+                    add_css_class: "kalam-page-title",
+                    set_halign: gtk::Align::Start,
+                    set_hexpand: true,
+                },
+
+                #[name = "add_btn"]
+                gtk::Button {
+                    #[watch]
+                    set_label: if model.importing { "Importing…" } else { "+ Add books" },
+                    add_css_class: "kalam-primary-btn",
+                    #[watch]
+                    set_sensitive: !model.importing,
+                    connect_clicked => HomeMsg::AddBooks,
+                },
             },
+
             gtk::Label {
                 set_label: "Continue reading and recently added · click = float · Ctrl+click = full page",
                 add_css_class: "kalam-page-sub",
+                set_halign: gtk::Align::Start,
+            },
+
+            #[name = "status_label"]
+            gtk::Label {
+                #[watch]
+                set_label: &model.status,
+                #[watch]
+                set_visible: !model.status.is_empty(),
+                add_css_class: "kalam-muted",
                 set_halign: gtk::Align::Start,
             },
 
@@ -99,169 +139,350 @@ impl SimpleComponent for HomePageModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = HomePageModel;
+        let model = HomePageModel {
+            catalog,
+            importing: false,
+            status: String::new(),
+        };
         let widgets = view_output!();
 
         // Bounded: Home shows a dozen covers, not the whole library.
-        let books = catalog.recent_books(12).unwrap_or_default();
-
-        // ── counts strip ────────────────────────────────────────────────
-        let stats = catalog.library_stats().unwrap_or_default();
-        for (label, value) in [
-            ("Books", stats.total_books.to_string()),
-            ("Reading", stats.reading.to_string()),
-            ("Finished", stats.finished.to_string()),
-            ("Up next", stats.reading_list.to_string()),
-        ] {
-            let tile = gtk::Box::new(gtk::Orientation::Vertical, 2);
-            tile.add_css_class("kalam-stat-tile");
-            let v = gtk::Label::new(Some(&value));
-            v.add_css_class("kalam-stat-value");
-            v.set_halign(gtk::Align::Start);
-            tile.append(&v);
-            let l = gtk::Label::new(Some(label));
-            l.add_css_class("kalam-stat-label");
-            l.set_halign(gtk::Align::Start);
-            tile.append(&l);
-            widgets.counts_host.append(&tile);
-        }
-
-        // ── continue: most recently opened, newest first ────────────────
-        let mut cont: Vec<_> = catalog.recently_opened(4).unwrap_or_default();
-        if cont.is_empty() {
-            // Fall back to anything part-read, then to the newest import.
-            cont = books
-                .iter()
-                .filter(|b| b.progress > 0 && b.progress < 100)
-                .take(4)
-                .cloned()
-                .collect();
-        }
-        if cont.is_empty() {
-            if let Some(first) = books.first() {
-                cont.push(first.clone());
-            }
-        }
-
-        if cont.is_empty() {
-            let empty = gtk::Label::new(Some(
-                "Nothing to continue — import books from My Library → All books.",
-            ));
-            empty.add_css_class("kalam-placeholder");
-            empty.set_wrap(true);
-            empty.set_halign(gtk::Align::Start);
-            widgets.continue_host.append(&empty);
-        } else {
-            for book in &cont {
-                let id = book.id;
-                let s1 = sender.clone();
-                let s2 = sender.clone();
-                let card = build_book_card(
-                    book,
-                    move || {
-                        s1.output(HomeOut::OpenBook { book_id: id }).ok();
-                    },
-                    move || {
-                        s2.output(HomeOut::OpenBookDialog { book_id: id }).ok();
-                    },
-                );
-                widgets.continue_host.append(&card);
-            }
-        }
-
-        // ── reading list peek ───────────────────────────────────────────
-        let tbr = catalog.list_reading_list().unwrap_or_default();
-        if tbr.is_empty() {
-            widgets.tbr_label.set_visible(false);
-            widgets.tbr_host.set_visible(false);
-        } else {
-            for (i, entry) in tbr.iter().take(3).enumerate() {
-                let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-                row.add_css_class("kalam-list-row");
-
-                let ordinal = gtk::Label::new(Some(&format!("{}", i + 1)));
-                ordinal.add_css_class("kalam-list-ordinal");
-                ordinal.set_width_chars(2);
-                row.append(&ordinal);
-
-                let title = gtk::Label::new(Some(&entry.book.title));
-                title.add_css_class("kalam-card-title");
-                title.set_halign(gtk::Align::Start);
-                title.set_hexpand(true);
-                title.set_xalign(0.0);
-                title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-                row.append(&title);
-
-                let author = gtk::Label::new(Some(entry.book.authors_display()));
-                author.add_css_class("kalam-card-meta");
-                row.append(&author);
-
-                let id = entry.book.id;
-                let s = sender.clone();
-                let click = gtk::GestureClick::new();
-                click.set_button(1);
-                click.connect_released(move |_, _, _, _| {
-                    s.output(HomeOut::OpenBook { book_id: id }).ok();
-                });
-                row.add_controller(click);
-                row.set_cursor_from_name(Some("pointer"));
-
-                widgets.tbr_host.append(&row);
-            }
-        }
-
-        let recent: Vec<_> = books.iter().take(12).cloned().collect();
-        if recent.is_empty() {
-            let empty = gtk::Label::new(Some("Your library is empty."));
-            empty.add_css_class("kalam-muted");
-            empty.set_halign(gtk::Align::Start);
-            widgets.recent_host.append(&empty);
-        } else {
-            // FlowBox left-aligned to avoid centered covers
-            let flow = gtk::FlowBox::builder()
-                .max_children_per_line(6)
-                .min_children_per_line(2)
-                .selection_mode(gtk::SelectionMode::None)
-                .column_spacing(16)
-                .row_spacing(20)
-                .halign(gtk::Align::Start)
-                .valign(gtk::Align::Start)
-                .hexpand(true)
-                .vexpand(false)
-                .build();
-            flow.add_css_class("kalam-book-grid");
-            flow.add_css_class("kalam-home-flow");
-
-            for book in &recent {
-                let id = book.id;
-                let s1 = sender.clone();
-                let s2 = sender.clone();
-                let card = build_book_card(
-                    book,
-                    {
-                        let s = s1.clone();
-                        move || {
-                            s.output(HomeOut::OpenBook { book_id: id }).ok();
-                        }
-                    },
-                    {
-                        let s = s2.clone();
-                        move || {
-                            s.output(HomeOut::OpenBookDialog { book_id: id }).ok();
-                        }
-                    },
-                );
-                // Wrap card in fixed cell to keep uniform size in FlowBox
-                let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
-                cell.set_size_request(CARD_W, CARD_H);
-                cell.set_halign(gtk::Align::Start);
-                cell.set_valign(gtk::Align::Start);
-                cell.append(&card);
-                flow.insert(&cell, -1);
-            }
-            widgets.recent_host.append(&flow);
-        }
+        rebuild(&widgets, &model.catalog, &sender);
 
         ComponentParts { model, widgets }
+    }
+
+    fn update_with_view(
+        &mut self,
+        _widgets: &mut Self::Widgets,
+        msg: Self::Input,
+        sender: ComponentSender<Self>,
+        root: &Self::Root,
+    ) {
+        match msg {
+            HomeMsg::AddBooks => {
+                let dialog = gtk::FileDialog::builder()
+                    .title("Import EPUB books")
+                    .modal(true)
+                    .build();
+
+                let filter = gtk::FileFilter::new();
+                filter.set_name(Some("EPUB books"));
+                filter.add_suffix("epub");
+                filter.add_mime_type("application/epub+zip");
+                let filters = gtk::gio::ListStore::new::<gtk::FileFilter>();
+                filters.append(&filter);
+                dialog.set_filters(Some(&filters));
+
+                let window = root.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+                let window = window.or_else(|| {
+                    relm4::main_application()
+                        .active_window()
+                        .and_then(|w| w.downcast::<gtk::Window>().ok())
+                });
+
+                dialog.open_multiple(
+                    window.as_ref(),
+                    gtk::gio::Cancellable::NONE,
+                    move |result| {
+                        let mut paths = Vec::new();
+                        if let Ok(files) = result {
+                            let n = files.n_items();
+                            for i in 0..n {
+                                if let Some(obj) = files.item(i) {
+                                    if let Ok(file) = obj.downcast::<gtk::gio::File>() {
+                                        if let Some(p) = file.path() {
+                                            paths.push(p);
+                                        }
+                                    }
+                                }
+                            }
+                            if !paths.is_empty() {
+                                sender.input(HomeMsg::FilesChosen(paths));
+                            }
+                        }
+                    },
+                );
+            }
+            HomeMsg::FilesChosen(paths) => {
+                // Importing parses, hashes and copies each file. Doing that
+                // inline froze the window, so it runs on a worker thread and
+                // reports back per file (the All Books page does the same).
+                let total = paths.len();
+                self.importing = true;
+                self.status = format!("Importing 1 of {total}…");
+
+                let catalog = self.catalog.clone();
+                sender.spawn_command(move |out| {
+                    let mut tally = ImportTally::default();
+                    for (i, path) in paths.iter().enumerate() {
+                        match crate::epub::import_epub(&catalog, path) {
+                            Ok(r) if r.duplicate => {
+                                tally.dupes += 1;
+                                tally.last_title = r.title.clone();
+                            }
+                            Ok(r) => {
+                                tally.imported += 1;
+                                if r.restored {
+                                    tally.restored += 1;
+                                }
+                                tally.last_title = r.title.clone();
+                            }
+                            Err(err) => {
+                                tally.errors += 1;
+                                let name = path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().into_owned())
+                                    .unwrap_or_default();
+                                crate::notify::error(
+                                    &format!("Could not import {name}"),
+                                    &format!("{err:#}"),
+                                );
+                            }
+                        }
+                        out.send(ImportProgress::Step {
+                            done: i + 1,
+                            total,
+                            title: tally.last_title.clone(),
+                        })
+                        .ok();
+                    }
+                    out.send(ImportProgress::Finished(tally)).ok();
+                });
+            }
+        }
+    }
+
+    fn update_cmd_with_view(
+        &mut self,
+        widgets: &mut Self::Widgets,
+        msg: Self::CommandOutput,
+        sender: ComponentSender<Self>,
+        _root: &Self::Root,
+    ) {
+        match msg {
+            ImportProgress::Step { done, total, title } => {
+                self.status = if title.is_empty() {
+                    format!("Importing {done} of {total}…")
+                } else {
+                    format!("Importing {done} of {total} — {title}")
+                };
+            }
+            ImportProgress::Finished(tally) => {
+                self.importing = false;
+
+                if tally.imported > 0 {
+                    crate::notify::success(
+                        &format!(
+                            "{} book{} imported",
+                            tally.imported,
+                            if tally.imported == 1 { "" } else { "s" }
+                        ),
+                        &tally.last_title,
+                    );
+                }
+
+                let restored_note = if tally.restored > 0 {
+                    format!(" {} kept your earlier metadata edits.", tally.restored)
+                } else {
+                    String::new()
+                };
+                self.status = format!(
+                    "Import done — {} added, {} already in library, {} failed.{restored_note}{}",
+                    tally.imported,
+                    tally.dupes,
+                    tally.errors,
+                    if tally.last_title.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" Last: {}", tally.last_title)
+                    }
+                );
+
+                // New books are in the catalog now; refresh this page so the
+                // counts / continue / recently-added cards reflect them.
+                rebuild(widgets, &self.catalog, &sender);
+            }
+        }
+    }
+}
+
+fn clear_box(host: &gtk::Box) {
+    while let Some(child) = host.first_child() {
+        host.remove(&child);
+    }
+}
+
+/// (Re)populate Home from the catalog. Called at init and again after an import.
+fn rebuild(
+    widgets: &HomePageModelWidgets,
+    catalog: &Arc<Catalog>,
+    sender: &ComponentSender<HomePageModel>,
+) {
+    clear_box(&widgets.counts_host);
+    clear_box(&widgets.continue_host);
+    clear_box(&widgets.tbr_host);
+    clear_box(&widgets.recent_host);
+
+    // ── counts strip ────────────────────────────────────────────────
+    let stats = catalog.library_stats().unwrap_or_default();
+    for (label, value) in [
+        ("Books", stats.total_books.to_string()),
+        ("Reading", stats.reading.to_string()),
+        ("Finished", stats.finished.to_string()),
+        ("Up next", stats.reading_list.to_string()),
+    ] {
+        let tile = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        tile.add_css_class("kalam-stat-tile");
+        let v = gtk::Label::new(Some(&value));
+        v.add_css_class("kalam-stat-value");
+        v.set_halign(gtk::Align::Start);
+        tile.append(&v);
+        let l = gtk::Label::new(Some(label));
+        l.add_css_class("kalam-stat-label");
+        l.set_halign(gtk::Align::Start);
+        tile.append(&l);
+        widgets.counts_host.append(&tile);
+    }
+
+    // Bounded: Home shows a dozen covers, not the whole library.
+    let books = catalog.recent_books(12).unwrap_or_default();
+
+    // ── continue: most recently opened, newest first ────────────────
+    let mut cont: Vec<_> = catalog.recently_opened(4).unwrap_or_default();
+    if cont.is_empty() {
+        cont = books
+            .iter()
+            .filter(|b| b.progress > 0 && b.progress < 100)
+            .take(4)
+            .cloned()
+            .collect();
+    }
+    if cont.is_empty() {
+        if let Some(first) = books.first() {
+            cont.push(first.clone());
+        }
+    }
+
+    if cont.is_empty() {
+        let empty = gtk::Label::new(Some(
+            "Nothing to continue — import a book and it will show up here.",
+        ));
+        empty.add_css_class("kalam-placeholder");
+        empty.set_wrap(true);
+        empty.set_halign(gtk::Align::Start);
+        widgets.continue_host.append(&empty);
+    } else {
+        for book in &cont {
+            let id = book.id;
+            let s1 = sender.clone();
+            let s2 = sender.clone();
+            let card = build_book_card(
+                book,
+                move || {
+                    s1.output(HomeOut::OpenBook { book_id: id }).ok();
+                },
+                move || {
+                    s2.output(HomeOut::OpenBookDialog { book_id: id }).ok();
+                },
+            );
+            widgets.continue_host.append(&card);
+        }
+    }
+
+    // ── reading list peek ───────────────────────────────────────────
+    let tbr = catalog.list_reading_list().unwrap_or_default();
+    if tbr.is_empty() {
+        widgets.tbr_label.set_visible(false);
+        widgets.tbr_host.set_visible(false);
+    } else {
+        widgets.tbr_label.set_visible(true);
+        widgets.tbr_host.set_visible(true);
+        for (i, entry) in tbr.iter().take(3).enumerate() {
+            let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            row.add_css_class("kalam-list-row");
+
+            let ordinal = gtk::Label::new(Some(&format!("{}", i + 1)));
+            ordinal.add_css_class("kalam-list-ordinal");
+            ordinal.set_width_chars(2);
+            row.append(&ordinal);
+
+            let title = gtk::Label::new(Some(&entry.book.title));
+            title.add_css_class("kalam-card-title");
+            title.set_halign(gtk::Align::Start);
+            title.set_hexpand(true);
+            title.set_xalign(0.0);
+            title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            row.append(&title);
+
+            let author = gtk::Label::new(Some(entry.book.authors_display()));
+            author.add_css_class("kalam-card-meta");
+            row.append(&author);
+
+            let id = entry.book.id;
+            let s = sender.clone();
+            let click = gtk::GestureClick::new();
+            click.set_button(1);
+            click.connect_released(move |_, _, _, _| {
+                s.output(HomeOut::OpenBook { book_id: id }).ok();
+            });
+            row.add_controller(click);
+            row.set_cursor_from_name(Some("pointer"));
+
+            widgets.tbr_host.append(&row);
+        }
+    }
+
+    // ── recently added ──────────────────────────────────────────────
+    let recent: Vec<_> = books.iter().take(12).cloned().collect();
+    if recent.is_empty() {
+        let empty = gtk::Label::new(Some("Your library is empty — add a book above."));
+        empty.add_css_class("kalam-muted");
+        empty.set_halign(gtk::Align::Start);
+        widgets.recent_host.append(&empty);
+    } else {
+        // FlowBox left-aligned to avoid centered covers
+        let flow = gtk::FlowBox::builder()
+            .max_children_per_line(6)
+            .min_children_per_line(2)
+            .selection_mode(gtk::SelectionMode::None)
+            .column_spacing(16)
+            .row_spacing(20)
+            .halign(gtk::Align::Start)
+            .valign(gtk::Align::Start)
+            .hexpand(true)
+            .vexpand(false)
+            .build();
+        flow.add_css_class("kalam-book-grid");
+        flow.add_css_class("kalam-home-flow");
+
+        for book in &recent {
+            let id = book.id;
+            let s1 = sender.clone();
+            let s2 = sender.clone();
+            let card = build_book_card(
+                book,
+                {
+                    let s = s1.clone();
+                    move || {
+                        s.output(HomeOut::OpenBook { book_id: id }).ok();
+                    }
+                },
+                {
+                    let s = s2.clone();
+                    move || {
+                        s.output(HomeOut::OpenBookDialog { book_id: id }).ok();
+                    }
+                },
+            );
+            // Wrap card in fixed cell to keep uniform size in FlowBox
+            let cell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            cell.set_size_request(CARD_W, CARD_H);
+            cell.set_halign(gtk::Align::Start);
+            cell.set_valign(gtk::Align::Start);
+            cell.append(&card);
+            flow.insert(&cell, -1);
+        }
+        widgets.recent_host.append(&flow);
     }
 }
