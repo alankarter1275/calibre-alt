@@ -1,9 +1,9 @@
 //! P4 — one shelf: its books, plus membership editing for manual shelves.
 
 use crate::db::{Catalog, Shelf, ShelfKind, SortKey};
-use crate::service::LibraryService;
 use crate::models::Book;
 use crate::pages::shelf_editor::{open_shelf_editor, ShelfEditorMode};
+use crate::service::LibraryService;
 use crate::widgets::book_row::build_book_grid;
 use gtk::prelude::*;
 use relm4::prelude::*;
