@@ -51,8 +51,7 @@
 //! `unwrap_or_default()`s. See the roadmap's A0 step 2 entry.
 
 use crate::db::{
-    Catalog, DictLookup, EventKind, LibraryStats, ReadingEvent, ReadingListEntry, Shelf,
-    SortKey,
+    Catalog, DictLookup, EventKind, LibraryStats, ReadingEvent, ReadingListEntry, Shelf, SortKey,
 };
 use crate::models::Book;
 use std::sync::Arc;
@@ -399,7 +398,8 @@ mod tests {
         // "nothing has happened yet" -- indistinguishable from a new install.
         let cat = Catalog::open_in_memory().unwrap();
         let book = seed(&cat, "Dune", &[]);
-        cat.log_event(book, EventKind::Opened, "").expect("log event");
+        cat.log_event(book, EventKind::Opened, "")
+            .expect("log event");
         cat.log_dict_lookup("melange", Some(book), None, None, true)
             .expect("log lookup");
         let svc = LibraryService::new(Arc::new(cat));
