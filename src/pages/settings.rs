@@ -461,9 +461,7 @@ impl SettingsPageModel {
         match self.catalog.list_dictionaries() {
             Ok(rows) => self.dicts = rows,
             // Keep the current list rather than blanking it.
-            Err(err) => {
-                crate::notify::error("Could not list your dictionaries", &err.to_string())
-            }
+            Err(err) => crate::notify::error("Could not list your dictionaries", &err.to_string()),
         }
     }
 }
