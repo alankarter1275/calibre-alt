@@ -810,6 +810,11 @@ impl Component for AppModel {
                 Arc::new(Catalog::open().expect("catalog open"))
             }
         };
+        // A0 step 3: give books imported before thumbnails existed a thumbnail
+        // without re-importing. Off the UI thread so first paint is not delayed;
+        // only missing files are generated, so it is cheap after the first pass.
+        let backfill_catalog = catalog.clone();
+        std::thread::spawn(move || crate::thumbs::backfill_missing(&backfill_catalog));
         if let Err(err) = crate::dict::install_bundled_dictionaries(&catalog) {
             crate::notify::error(
                 "Could not install the bundled dictionaries",

@@ -46,6 +46,35 @@ pub fn remove_thumbnail(uuid: &str) {
     let _ = std::fs::remove_file(crate::paths::thumbnail_path(uuid));
 }
 
+/// Generate the thumbnail for one book if it is missing. Returns `true` when
+/// it produced the file (or it already existed — i.e. the book is covered).
+/// `thumb_of` computes the destination path so tests can point somewhere inert.
+fn backfill_one(uuid: &str, cover: &Path, thumb_of: &dyn Fn(&str) -> PathBuf) -> bool {
+    let thumb = thumb_of(uuid);
+    if thumb.is_file() {
+        return true;
+    }
+    generate_thumbnail(cover, &thumb)
+}
+
+/// Backfill thumbnails for every book that has a cover but no thumbnail yet.
+///
+/// Runs off the UI thread at startup so a library imported *before* this change
+/// gains thumbnails without re-importing, and only missing files are generated
+/// (so it is cheap after the first pass). Best-effort: a failure for one book
+/// is skipped and the grid falls back to the full cover for that one.
+pub fn backfill_missing(cat: &crate::db::Catalog) {
+    let Ok(books) = cat.list_books(crate::db::SortKey::Title, "") else {
+        return;
+    };
+    for b in books {
+        let Some(cover) = b.cover_path.as_deref() else {
+            continue;
+        };
+        let _ = backfill_one(&b.uuid, cover, &crate::paths::thumbnail_path);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,5 +146,30 @@ mod tests {
         let dst = dir.join("thumb.png");
         assert!(!generate_thumbnail(&src, &dst));
         assert!(!dst.exists());
+    }
+
+    #[test]
+    fn backfill_generates_missing_and_skips_present() {
+        let dir = Scratch::new();
+        let cover = dir.join("cover.png");
+        write_solid_png(&cover, 600, 900, [20, 40, 60]);
+        let thumb_of = |uuid: &str| dir.join(format!("{uuid}.png"));
+
+        // First call produces the thumbnail.
+        assert!(backfill_one("abc", &cover, &thumb_of));
+        assert!(thumb_of("abc").is_file());
+
+        // Second call sees the file is present and does no work.
+        assert!(backfill_one("abc", &cover, &thumb_of));
+    }
+
+    #[test]
+    fn backfill_missing_source_is_a_noop() {
+        let dir = Scratch::new();
+        let thumb_of = |uuid: &str| dir.join(format!("{uuid}.png"));
+        // A missing source is not created, but it is not an error either.
+        let got = backfill_one("nope", &dir.join("absent.png"), &thumb_of);
+        assert!(!got);
+        assert!(!thumb_of("nope").exists());
     }
 }
