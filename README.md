@@ -74,6 +74,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 | **P5** | **Metadata edit, cover replace, Open Library fetch** ✅ |
 | Reader track | Annotation workflow + hybrid anchoring; dictionary overhaul (merged store, popup redesign, likely-sense hint, IPA pronunciation, tap-to-look-up, find in chapter) + vocabulary review (known flag, CSV/Anki export) ✅ · Phases 8–10 shipped: POS grouping dividers, dictionary priority reorder UI, lookup history |
 | Backend review | Full sweep of `db.rs` + `db/*`: importers hardened, reading-list column bug fixed, 9 new tests ✅ |
+| A0 (architecture) | Measured (`perf.rs` / `timing.rs`) ✅ · cover thumbnails ✅ · one reused WebView ✅ · `LibraryService` seam — **in progress** (Home/Analytics/Tags converted) · task manager + preloaders next |
 | P6–P11 | Downloads, AO3/FF, comics, PDF, tools — see ROADMAP |
 | UI overhaul (P5.5) | Colour system, 13 themes, Settings v2, book page, series float — **in progress** (Home/Library/Reader chrome next) |
 
@@ -172,6 +173,8 @@ src/
   icons.rs         symbolic icon helpers
   notify.rs        toast notifications + history
   paths.rs         XDG data/cache paths
+  service.rs       LibraryService — pages ask, it answers (A0 step 2)
+  webview_pool.rs  one reused WebKit view across book opens (A0)
   thumbs.rs        persistent cover thumbnails (A0 step 3)
   perf.rs          headless perf probes (#[ignore]d; run manually)
   timing.rs        in-app timing harness (KALAM_TIMING=1)

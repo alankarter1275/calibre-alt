@@ -93,6 +93,51 @@ Nested boolean groups were considered and deferred — the JSON can gain a
 ~/.config/kalam/config.toml  (future)
 ```
 
+## Service layer (A0 step 2)
+
+Pages do not talk to `Catalog` directly any more (three converted so far —
+Home, Analytics, Tags; the rest migrate incrementally). They hold a
+`LibraryService` and ask it one question:
+
+```rust
+let snap = service.home();   // stats + recent + continue row + reading list
+```
+
+Three properties matter, and each is load-bearing:
+
+1. **One call, one owned snapshot.** Not wrapped getters. A snapshot is a
+   plain `Send` struct, so the same call can later run on a worker thread and
+   be handed back to the UI *without touching the page* — the whole point of
+   the step. `snapshots_are_send()` asserts this at compile time.
+2. **One error policy.** A failed read degrades to the empty value **and**
+   records the reason; the page surfaces it. Previously each page decided for
+   itself, so a broken database looked like an empty library.
+3. **The service never calls `notify`.** Toasts are thread-local to the UI
+   thread; the service has to stay callable from a worker. Reporting belongs
+   to the caller.
+
+Query logic lives in the service, not in widget-building code — Home's
+"continue reading" fallback chain (recently opened → in progress → newest) is
+there, and unit-tested.
+
+Writes still go straight to `Catalog`. They belong to the task manager
+(A0 step 4), not to this read seam.
+
+## Reader WebView (A0)
+
+The reader borrows one long-lived `WebView` from `src/webview_pool.rs` instead
+of constructing one per book open (a WebKit process spawn, ~400 ms measured).
+Only the widget is pooled — not the reader page — so the reading session and
+progress save still happen on every entry and exit.
+
+The catch worth remembering: a recycled view keeps the previous reader's
+signal handlers, each holding a dropped component's `Sender`. So permanent
+setup (sizing, context-menu suppression, `register_script_message_handler`,
+which WebKit refuses twice for one name) lives in the pool, while every
+handler capturing a `ComponentSender` is recorded as a `SignalHandlerId` and
+disconnected in `shutdown()` before the view is parked.
+`KALAM_NO_WEBVIEW_POOL=1` restores the old spawn-per-open behaviour.
+
 ## Theming & CSS
 
 - **`src/theme.rs`** owns every colour. One `Theme` struct per palette, 13 dark

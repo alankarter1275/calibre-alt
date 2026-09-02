@@ -1286,9 +1286,26 @@ P6–P11.
   startup so nothing needs re-importing. **Next on this front:** the async
   *swap-in* (placeholder → texture on a worker) belongs to the task manager
   (step 4), where it architecturally lives.
-- **Step 2 (LibraryService), step 4 (task manager), step 5 (preloaders)** not
-  started. **Step 6 (grid virtualization) is not planned** — the data layer is
-  <20 ms and there is no measured grid lag, so it would add risk for no win.
+- **Step 2 (LibraryService) — started; the seam exists, 3 pages converted.**
+  `src/service.rs` answers a page's whole data question in **one call
+  returning one owned snapshot** (`service.home()`), instead of a page making
+  four direct `Catalog` reads and swallowing each error. Snapshots are plain
+  owned `Send` structs *on purpose*: that is what lets the same call move to a
+  worker thread later without touching the page, and a compile-time
+  `snapshots_are_send()` test stops a future edit from breaking the property.
+  The error policy now lives in one place — a failed read degrades to empty
+  **and records the reason**, which pages surface as a toast (the service does
+  not call `notify` itself: it must stay worker-callable, and `notify` is
+  UI-thread-only). Converted: **Home** (4 reads → 1), **Analytics** (4 → 1),
+  **Tags** cloud + tag-books. Home's "continue reading" fallback chain moved
+  into the service and is unit-tested. **Remaining pages still hold an
+  `Arc<Catalog>` and that is fine** — `LibraryService` borrows the same `Arc`,
+  so both styles coexist; converting the next page is: add a snapshot method,
+  swap the field, delete its `unwrap_or_default()`s. Writes (import) still go
+  straight to the catalog — they belong to step 4.
+- **Step 4 (task manager), step 5 (preloaders)** not started. **Step 6 (grid
+  virtualization) is not planned** — the data layer is <20 ms and there is no
+  measured grid lag, so it would add risk for no win.
 - **WebView reuse — done.** The cheap win the timing surfaced: the reader used
   to call `webkit6::WebView::new()` in `init()`, so every book open spawned a
   WebKit process (~400 ms). `src/webview_pool.rs` now parks exactly one view
@@ -1319,10 +1336,12 @@ fast — make it never wait"*) and lay the seams the source platform needs.
    open, chapter turn, dictionary lookup, library scroll. Record the numbers
    — they decide what gets fixed (asserted bottlenecks get measured before
    being trusted).
-2. **`LibraryService` behind `Catalog`.** Pages stop calling the DB directly
-   and *ask* the service. Moving queries off the UI thread then becomes a
-   change in one place. (`Catalog.conn` is already `Mutex`-wrapped — feasible
-   without a rewrite.)
+2. **`LibraryService` behind `Catalog`.** ✅ seam built (`src/service.rs`),
+   Home / Analytics / Tags converted; other pages migrate incrementally.
+   Pages stop calling the DB directly and *ask* the service, which answers in
+   one call with one owned `Send` snapshot. Moving queries off the UI thread
+   then becomes a change in one place. (`Catalog.conn` is already
+   `Mutex`-wrapped — feasible without a rewrite.)
 3. **Thumbnails at import + async cover decode.** ~200px thumbnails into
    `cache/thumbs/<uuid>.png` at import time; the grid decodes tiny files that
    survive restarts; cards show a placeholder and swap in the texture when a
@@ -1714,3 +1733,6 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-02 | **Held A0 step 6 (grid virtualization).** Measured evidence: the data layer is <20 ms for 2,000 books and there is no measured grid lag, so virtualization would add risk for no measured win. Recorded in the A0 status block. |
 | 2026-09-02 | Home gains an **"+ Add books"** button (header, right of the title) that opens the same EPUB picker and background import as **My Library → All books** — parse, hash, copy, per-file progress, and an "Import done — N added / M already in library / K failed" summary. It disables itself while importing and refreshes Home in place on completion so the counts, Continue and Recently-added cards update. Home was converted from a relm4 `SimpleComponent` to a full `Component` so the import worker can report progress and the button/label state can update; it reuses `ImportProgress`/`ImportTally` from All Books. The My Library dashboard keeps its own path, which heads to All books for import |
 | 2026-09-02 | A0 step 3 (thumbnails) shipped and CI-green: `src/thumbs.rs` generates a persistent 256×408 thumbnail (`cache/thumbs/<uuid>.png`) at import and on cover replacement; the grid prefers it when the slot is small enough (never upscales it); covered by 5 headless unit tests. New dep `image` (default-features off; only png/jpeg/gif/webp) because gdk-pixbuf in this toolchain cannot encode PNG. Thumbnails are removed on book delete. `src/perf.rs` gains a cover-decode probe (full cover vs thumbnail). **Existing books:** `backfill_missing` runs on a background thread at startup so a library imported before this change gains thumbnails without re-importing (only missing files are generated). Several CI iterations fixed the real bugs — image's `std` feature does not exist (default-features off is fine; `image::open`/`save_buffer` need no feature), `DynamicImage` has `width()/height()` not `dimensions()`, `paths.rs` needed `Path` imported, a temporary `Option<PathBuf>` was dropped while borrowed, and `thumbs.rs`/tests used `PathBuf` without importing it and passed a `String` to a `&str` parameter. The true async *swap-in* is deferred to the task manager (step 4) where it architecturally belongs — the thumbnail-decode win is already captured synchronously. Part of A; see the A0 later steps |
+| 2026-09-02 | **WebView reuse shipped** (the cheap A0 win step 1 measured): the reader called `webkit6::WebView::new()` in `init()`, so every book open spawned a WebKit process (~400 ms, vs ~3.5 ms to revisit a warm one). `src/webview_pool.rs` parks exactly one view between readers — `acquire()` in `init()`, `release()` in `shutdown()`. Only the widget is pooled, deliberately **not** the whole reader page: caching the page would also keep the reading session counting while the user browsed the library and defer the progress write, so the reader's lifecycle is unchanged. Handler discipline is the subtle part — a recycled view still carries the previous reader's handlers, each holding a dropped component's `Sender`, so sizing / context-menu suppression / the `"kalam"` script-message *registration* are permanent and live in the pool (WebKit rejects a second registration of that name on one manager), while every handler capturing a `ComponentSender` is recorded as a `SignalHandlerId` and disconnected in `shutdown()` before parking. Cost: the WebKit process (~100–200 MB) stays resident after the first book instead of being released on leave; the page is blanked on release so the book's DOM is still freed. `KALAM_NO_WEBVIEW_POOL=1` restores the old behaviour for A/B measurement with `KALAM_TIMING=1`. **Needs an Arch smoke-test:** book A → leave → book B → back to A, checking highlights, dictionary popup, tap-to-look-up and progress restore on the 2nd/3rd open |
+| 2026-09-02 | **A0 step 2 started: `LibraryService`** (`src/service.rs`) — the seam between pages and the database. Pages made several direct `Catalog` calls each and swallowed the errors individually (26 `unwrap_or_default()`, 16 `.ok().flatten()` across `pages/`), so a broken database rendered as an empty library, there was nowhere to put caching, and moving queries off the UI thread meant editing every page. The service answers a page's whole data question in **one call returning one owned snapshot**. Snapshots rather than one-for-one wrapped getters is the substance of the step: a snapshot is a plain owned `Send` struct, so the same call can later run on a worker and be handed back to the UI without touching the page — asserted at compile time by `snapshots_are_send()`. Error policy now lives in one place (degrade to empty **and** record the reason; pages surface it as a toast — the service never calls `notify`, which is UI-thread-only, so it stays worker-callable). Converted Home (4 reads → 1), Analytics (4 → 1), Tags cloud + tag-books; Home's "continue reading" fallback chain moved into the service and gained tests, including the previously untested rule that a 100%-finished book is not offered as "continue". Other pages keep their `Arc<Catalog>` and migrate incrementally — the service borrows the same `Arc`. Writes (import) still go straight to the catalog: those belong to step 4. 9 new unit tests |
+| 2026-09-02 | Docs accuracy pass: README file map listed `openlibrary.rs` at the top level (moved to `src/metadata/`) and omitted `author`/`notify`/`thumbs`/`perf`/`timing`/`icons`/`paths`; README + ARCH data-dir blocks said `override-covers/` where the code creates `covers/` (`paths.rs:43`) and omitted `cache/thumbs/` and `authors/`; ARCH phase table said "P4 ← you are here", three phases stale; ROADMAP pinned agents to a branch id from two sessions ago in two places (now states the per-session rule instead of naming one) and carried a verbatim duplicate of the "Reader chrome restyle (P2.1)" section; test count 156 → 163 (165 `#[test]`s, 2 `#[ignore]`d perf probes) in both files; `ci-logs/` held failures from runs that were since fixed, which reads as if the branch is red — cleared with a note, CI overwrites them on the next real failure |
