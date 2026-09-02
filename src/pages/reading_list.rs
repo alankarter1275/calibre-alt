@@ -112,7 +112,9 @@ impl Component for ReadingListModel {
             ReadingListMsg::Move { book_id, delta } => {
                 // The list visibly reorders itself, so success needs no toast.
                 crate::notify::report(
-                    self.service.catalog().move_reading_list_entry(book_id, delta),
+                    self.service
+                        .catalog()
+                        .move_reading_list_entry(book_id, delta),
                     "Could not reorder the reading list",
                 );
                 self.reload();
@@ -134,9 +136,11 @@ impl Component for ReadingListModel {
             }
             ReadingListMsg::AddBooks => {
                 let s = sender.clone();
-                open_picker(window_of(root).as_ref(), self.service.catalog().clone(), move || {
-                    s.input(ReadingListMsg::Refresh)
-                });
+                open_picker(
+                    window_of(root).as_ref(),
+                    self.service.catalog().clone(),
+                    move || s.input(ReadingListMsg::Refresh),
+                );
             }
             ReadingListMsg::Refresh => self.reload(),
         }
