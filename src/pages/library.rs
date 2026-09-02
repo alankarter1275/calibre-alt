@@ -772,73 +772,73 @@ fn history_feed(snap: &DashboardSnapshot, catalog: &Arc<Catalog>) -> Vec<FeedIte
     let mut items: Vec<FeedItem> = Vec::new();
 
     for e in &snap.events {
-            let sub = match e.kind {
-                // Opened events carry no detail — show where the book
-                // currently sits instead.
-                EventKind::Opened => catalog
-                    .get_reading_progress(e.book_id)
+        let sub = match e.kind {
+            // Opened events carry no detail — show where the book
+            // currently sits instead.
+            EventKind::Opened => catalog
+                .get_reading_progress(e.book_id)
+                .ok()
+                .flatten()
+                .map(|(_, frac)| format!("Resumed at {}%", (frac * 100.0).round() as i64))
+                .unwrap_or_default(),
+            EventKind::Finished => {
+                if e.detail == "auto" {
+                    format!("{} · auto-finished", e.book_authors)
+                } else {
+                    e.book_authors.clone()
+                }
+            }
+            EventKind::Unfinished => e.book_authors.clone(),
+            EventKind::Imported => {
+                let format_label = catalog
+                    .get_book(e.book_id)
                     .ok()
                     .flatten()
-                    .map(|(_, frac)| format!("Resumed at {}%", (frac * 100.0).round() as i64))
-                    .unwrap_or_default(),
-                EventKind::Finished => {
-                    if e.detail == "auto" {
-                        format!("{} · auto-finished", e.book_authors)
-                    } else {
-                        e.book_authors.clone()
-                    }
+                    .map(|b| b.format.as_str().to_string())
+                    .unwrap_or_default();
+                if format_label.is_empty() {
+                    e.book_authors.clone()
+                } else {
+                    format!("{} · {}", e.book_authors, format_label)
                 }
-                EventKind::Unfinished => e.book_authors.clone(),
-                EventKind::Imported => {
-                    let format_label = catalog
-                        .get_book(e.book_id)
-                        .ok()
-                        .flatten()
-                        .map(|b| b.format.as_str().to_string())
-                        .unwrap_or_default();
-                    if format_label.is_empty() {
-                        e.book_authors.clone()
-                    } else {
-                        format!("{} · {}", e.book_authors, format_label)
-                    }
-                }
-            };
-            items.push(FeedItem {
-                at: e.at.clone(),
-                title: format!("{} {}", e.kind.label(), e.book_title),
-                sub,
-                icon: e.kind.icon(),
-                tint: match e.kind {
-                    EventKind::Finished => "kalam-hist-tint-success",
-                    EventKind::Imported => "kalam-hist-tint-warning",
-                    _ => "kalam-hist-tint-accent",
-                },
-                icon_tint: match e.kind {
-                    EventKind::Finished => "kalam-event-finished",
-                    EventKind::Imported => "kalam-event-imported",
-                    _ => "kalam-event-opened",
-                },
+            }
+        };
+        items.push(FeedItem {
+            at: e.at.clone(),
+            title: format!("{} {}", e.kind.label(), e.book_title),
+            sub,
+            icon: e.kind.icon(),
+            tint: match e.kind {
+                EventKind::Finished => "kalam-hist-tint-success",
+                EventKind::Imported => "kalam-hist-tint-warning",
+                _ => "kalam-hist-tint-accent",
+            },
+            icon_tint: match e.kind {
+                EventKind::Finished => "kalam-event-finished",
+                EventKind::Imported => "kalam-event-imported",
+                _ => "kalam-event-opened",
+            },
             book_id: e.book_id,
         });
     }
 
     for s in &snap.sessions {
-            if s.seconds < 30 {
-                continue; // ignore flip-in-and-out sessions
-            }
-            let mins = (s.seconds / 60).max(1);
-            let sub = if (1..100).contains(&s.end_pct) {
-                format!("{mins} min session · reached {}%", s.end_pct)
-            } else {
-                format!("{mins} min session")
-            };
-            items.push(FeedItem {
-                at: s.started_at.clone(),
-                title: format!("Read {}", s.book_title),
-                sub,
-                icon: "media-playback-start-symbolic",
-                tint: "kalam-hist-tint-accent",
-                icon_tint: "kalam-event-opened",
+        if s.seconds < 30 {
+            continue; // ignore flip-in-and-out sessions
+        }
+        let mins = (s.seconds / 60).max(1);
+        let sub = if (1..100).contains(&s.end_pct) {
+            format!("{mins} min session · reached {}%", s.end_pct)
+        } else {
+            format!("{mins} min session")
+        };
+        items.push(FeedItem {
+            at: s.started_at.clone(),
+            title: format!("Read {}", s.book_title),
+            sub,
+            icon: "media-playback-start-symbolic",
+            tint: "kalam-hist-tint-accent",
+            icon_tint: "kalam-event-opened",
             book_id: s.book_id,
         });
     }
