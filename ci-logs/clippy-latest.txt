@@ -1,8 +1,2 @@
-[1m[92m  Downloaded[0m quick-error v2.0.1
-[1m[92m    Checking[0m quick-error v2.0.1
-src/paths.rs:81:36: [1m[91merror[E0425][0m: cannot find type `Path` in this scope: not found in this scope
-src/thumbs.rs:99:29: [1m[91merror[E0599][0m: no method named `dimensions` found for enum `image::DynamicImage` in the current scope: method not found in `image::DynamicImage`
-src/widgets/book_row.rs:227:30: [1m[91merror[E0716][0m: temporary value dropped while borrowed: creates a temporary value which is freed while still in use
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 3 previous errors
---- run 33592119399 ---
+[1m[91merror[0m: failed to select a version for `image`.
+--- run 33592390594 ---
