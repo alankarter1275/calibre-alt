@@ -1611,9 +1611,9 @@ entry.kalam-reader-search > text {
     color: alpha(@kalam_text, 0.55);
 }
 .kalam-known-btn-active {
-    background: alpha(@kalam_accent, 0.22) !important;
-    border-color: @kalam_accent !important;
-    color: @kalam_accent !important;
+    background: alpha(@kalam_accent, 0.22);
+    border-color: @kalam_accent;
+    color: @kalam_accent;
 }
 
 .kalam-badge-yellow {
