@@ -95,6 +95,19 @@ pub struct AnalyticsSnapshot {
     pub errors: Errors,
 }
 
+/// One book's float panel: the book plus the two flags the panel shows.
+///
+/// `book: None` means the book is genuinely gone, not that the read failed —
+/// a failed read pushes a row into `errors` instead, so the panel can stop
+/// showing "book not found" for what is really a database problem.
+#[derive(Debug, Default)]
+pub struct BookDetailSnapshot {
+    pub book: Option<Book>,
+    pub in_reading_list: bool,
+    pub finished: bool,
+    pub errors: Errors,
+}
+
 /// The vocabulary page: the visible word list plus its header counts.
 ///
 /// The counts used to come from two extra `list_saved_words` calls whose
@@ -245,6 +258,26 @@ impl LibraryService {
     }
 
     /// The tag cloud.
+    /// Everything the book float panel shows, in one call.
+    pub fn book_detail(&self, book_id: i64) -> BookDetailSnapshot {
+        let mut errors = Errors::new();
+        BookDetailSnapshot {
+            book: take(self.catalog.get_book(book_id), "book", &mut errors),
+            in_reading_list: take(
+                self.catalog.is_in_reading_list(book_id),
+                "reading list state",
+                &mut errors,
+            ),
+            finished: take(
+                self.catalog.book_finished_at(book_id),
+                "finished state",
+                &mut errors,
+            )
+            .is_some(),
+            errors,
+        }
+    }
+
     /// Vocabulary matching `query` and `known`, plus the header counts.
     ///
     /// The counts deliberately cover the whole table, not just the page's
@@ -457,6 +490,7 @@ mod tests {
         assert_send::<DashboardSnapshot>();
         assert_send::<QuotesSnapshot>();
         assert_send::<WordsSnapshot>();
+        assert_send::<BookDetailSnapshot>();
         // The service itself must be Send too, or it cannot be moved onto the
         // worker that would run those queries.
         assert_send::<LibraryService>();
@@ -541,6 +575,47 @@ mod tests {
         let looks = svc.lookup_history("", 50);
         assert_eq!(looks.lookups.len(), 1);
         assert!(looks.errors.is_empty());
+    }
+
+    #[test]
+    fn book_detail_separates_a_missing_book_from_a_failed_read() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let id = seed(svc.catalog(), "Dune", &["scifi"]);
+
+        let snap = svc.book_detail(id);
+        assert!(snap.errors.is_empty(), "{:?}", snap.errors);
+        assert_eq!(snap.book.map(|b| b.title), Some("Dune".to_string()));
+        assert!(!snap.in_reading_list);
+        assert!(!snap.finished);
+
+        // A book that does not exist is `None` with no error: the panel says
+        // so honestly, and a real DB failure stays distinguishable from it.
+        let gone = svc.book_detail(9999);
+        assert!(gone.book.is_none());
+        assert!(
+            gone.errors.is_empty(),
+            "a missing book is not a failed read: {:?}",
+            gone.errors
+        );
+    }
+
+    #[test]
+    fn book_detail_reflects_reading_list_and_finished_flags() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let id = seed(svc.catalog(), "Emma", &[]);
+        svc.catalog()
+            .add_to_reading_list(id)
+            .expect("add to reading list");
+        svc.catalog()
+            .set_book_finished(id, true)
+            .expect("mark finished");
+
+        let snap = svc.book_detail(id);
+        assert!(snap.errors.is_empty(), "{:?}", snap.errors);
+        assert!(snap.in_reading_list);
+        assert!(snap.finished);
     }
 
     #[test]

@@ -2092,6 +2092,30 @@ mod tests {
     }
 
     #[test]
+    fn finished_book_ids_batches_the_finished_flag() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = seed(&cat, "Dune", "Herbert", &[]);
+        let b = seed(&cat, "Emma", "Austen", &[]);
+        let c = seed(&cat, "Ulysses", "Joyce", &[]);
+        cat.set_book_finished(a, true).unwrap();
+        cat.set_book_finished(c, true).unwrap();
+
+        let done = cat.finished_book_ids(&[a, b, c]).unwrap();
+        assert!(done.contains(&a));
+        assert!(!done.contains(&b), "unfinished book must not appear");
+        assert!(done.contains(&c));
+        assert_eq!(done.len(), 2);
+
+        // It agrees with the per-row call it replaces.
+        for id in [a, b, c] {
+            let single = cat.book_finished_at(id).unwrap().is_some();
+            assert_eq!(single, done.contains(&id), "book {id}");
+        }
+
+        assert!(cat.finished_book_ids(&[]).unwrap().is_empty());
+    }
+
+    #[test]
     fn books_by_ids_batches_and_keeps_tags() {
         let cat = Catalog::open_in_memory().unwrap();
         let a = seed(&cat, "Dune", "Herbert", &["scifi", "classic"]);

@@ -4,6 +4,7 @@
 //! the right. Clicking the cover opens the full book page. Q / Esc closes.
 
 use crate::db::Catalog;
+use crate::service::LibraryService;
 use crate::models::Book;
 use crate::pages::metadata_editor::open_metadata_editor;
 use crate::widgets::book_row::{cover_widget, invalidate_cover_cache};
@@ -57,7 +58,7 @@ pub enum BookFloatMsg {
 }
 
 pub struct BookFloatModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     book: Option<Book>,
     in_reading_list: bool,
     finished: bool,
@@ -467,14 +468,14 @@ impl Component for BookFloatModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let book = catalog.get_book(book_id).ok().flatten();
-        let in_reading_list = catalog.is_in_reading_list(book_id).unwrap_or(false);
-        let finished = catalog.book_finished_at(book_id).ok().flatten().is_some();
+        let service = LibraryService::new(catalog);
+        let snap = service.book_detail(book_id);
+        report_errors(&snap.errors);
         let model = BookFloatModel {
-            catalog,
-            book,
-            in_reading_list,
-            finished,
+            service,
+            book: snap.book,
+            in_reading_list: snap.in_reading_list,
+            finished: snap.finished,
             desc_expanded: false,
         };
         let widgets = view_output!();
@@ -545,7 +546,7 @@ impl Component for BookFloatModel {
                     let id = book.id;
                     let title = book.title.clone();
                     if crate::notify::outcome(
-                        self.catalog.delete_book(id),
+                        self.service.catalog().delete_book(id),
                         "Book removed",
                         &title,
                         "Could not remove the book",
@@ -561,13 +562,13 @@ impl Component for BookFloatModel {
                     let title = book.title.clone();
                     if self.in_reading_list {
                         if crate::notify::report(
-                            self.catalog.remove_from_reading_list(id),
+                            self.service.catalog().remove_from_reading_list(id),
                             "Could not update the reading list",
                         ) {
                             crate::notify::info("Removed from reading list", &title);
                         }
                     } else if crate::notify::report(
-                        self.catalog.add_to_reading_list(id),
+                        self.service.catalog().add_to_reading_list(id),
                         "Could not update the reading list",
                     ) {
                         crate::notify::success("Added to reading list", &title);
@@ -581,7 +582,7 @@ impl Component for BookFloatModel {
                     let title = book.title.clone();
                     let becoming = !self.finished;
                     if crate::notify::report(
-                        self.catalog.set_book_finished(id, becoming),
+                        self.service.catalog().set_book_finished(id, becoming),
                         "Could not update the book",
                     ) {
                         if becoming {
@@ -602,7 +603,7 @@ impl Component for BookFloatModel {
                         format!("{:.1} / 5", half_stars as f32 / 2.0)
                     };
                     crate::notify::outcome(
-                        self.catalog.set_book_rating(id, half_stars),
+                        self.service.catalog().set_book_rating(id, half_stars),
                         "Rating saved",
                         &detail,
                         "Could not save the rating",
@@ -618,7 +619,7 @@ impl Component for BookFloatModel {
                         root.root()
                             .and_then(|r| r.downcast::<gtk::Window>().ok())
                             .as_ref(),
-                        self.catalog.clone(),
+                        self.service.catalog().clone(),
                         id,
                         move || s.input(BookFloatMsg::Refresh),
                     );
@@ -642,16 +643,21 @@ impl Component for BookFloatModel {
     }
 }
 
+/// Surface read failures. Without this a database problem looked exactly
+/// like "this book was deleted".
+fn report_errors(errors: &[String]) {
+    for err in errors {
+        crate::notify::error("Could not read this book", err);
+    }
+}
+
 impl BookFloatModel {
     fn reload_state(&mut self, book_id: i64) {
-        self.book = self.catalog.get_book(book_id).ok().flatten();
-        self.in_reading_list = self.catalog.is_in_reading_list(book_id).unwrap_or(false);
-        self.finished = self
-            .catalog
-            .book_finished_at(book_id)
-            .ok()
-            .flatten()
-            .is_some();
+        let snap = self.service.book_detail(book_id);
+        report_errors(&snap.errors);
+        self.book = snap.book;
+        self.in_reading_list = snap.in_reading_list;
+        self.finished = snap.finished;
     }
 }
 
@@ -729,7 +735,7 @@ fn fill(
         .set_label(&format!("{}%", book.progress.min(100)));
     widgets
         .progress_loc
-        .set_label(&progress_location_text(model.catalog.as_ref(), book));
+        .set_label(&progress_location_text(model.service.catalog(), book));
 
     widgets.format_val.set_label(book.format.as_str());
     widgets.publisher_val.set_label(blank_dash(&book.publisher));

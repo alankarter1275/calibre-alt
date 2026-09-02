@@ -338,7 +338,15 @@ fn merge_rows(catalog: &Arc<Catalog>, series_name: &str, remote: &[SeriesWork]) 
         })
         .collect();
 
-    let owned = catalog.books_in_series(series_name).unwrap_or_default();
+    // A failed read here would silently hide books you actually own, making
+    // the panel claim the series is entirely unowned.
+    let owned = match catalog.books_in_series(series_name) {
+        Ok(books) => books,
+        Err(err) => {
+            crate::notify::error("Could not check your copies of this series", &err.to_string());
+            Vec::new()
+        }
+    };
     let mut extras: Vec<SeriesRow> = Vec::new();
     for book in owned {
         let key = normalise(&book.title);
@@ -457,8 +465,17 @@ fn render(
 
             let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
             list.add_css_class("kalam-series-list");
+            // One query for the whole list instead of `book_finished_at` per
+            // row. A failed read leaves the set empty, which reads as "not
+            // finished" — the same thing the per-row `.ok()` used to do, but
+            // now it costs one query instead of N.
+            let owned_ids: Vec<i64> = rows.iter().filter_map(|r| r.local.as_ref().map(|b| b.id)).collect();
+            let finished_ids = model
+                .catalog
+                .finished_book_ids(&owned_ids)
+                .unwrap_or_default();
             for (pos, row) in rows.iter().enumerate() {
-                list.append(&build_series_row(row, pos, &model.catalog, sender));
+                list.append(&build_series_row(row, pos, &finished_ids, sender));
             }
             scroll.set_child(Some(&list));
             host.append(&scroll);
@@ -476,7 +493,7 @@ fn render(
 fn build_series_row(
     row: &SeriesRow,
     pos: usize,
-    catalog: &Arc<Catalog>,
+    finished_ids: &std::collections::HashSet<i64>,
     sender: &ComponentSender<SeriesFloatModel>,
 ) -> gtk::Box {
     let outer = gtk::Box::new(gtk::Orientation::Horizontal, 10);
@@ -514,7 +531,7 @@ fn build_series_row(
     // Status badge: live for books you own, muted for the rest.
     let (text, class): (String, &str) = match &row.local {
         Some(book) => {
-            let finished = catalog.book_finished_at(book.id).ok().flatten().is_some();
+            let finished = finished_ids.contains(&book.id);
             if finished || book.progress >= 100 {
                 ("Read".into(), "kalam-badge-series-read")
             } else if book.progress > 0 {

@@ -4,6 +4,7 @@
 //! the same methods on the same `Catalog`, moved verbatim.
 
 use super::*;
+use std::collections::HashSet;
 
 /// A closed session row, for the book page's timeline.
 #[derive(Debug, Clone)]
@@ -139,6 +140,32 @@ impl Catalog {
         self.remove_from_reading_list(book_id)?;
         self.log_event(book_id, EventKind::Finished, "auto")?;
         Ok(true)
+    }
+
+    /// Which of `ids` are marked finished, in one query.
+    ///
+    /// Callers rendering a list (the series panel) used to call
+    /// [`Catalog::book_finished_at`] once per row.
+    pub fn finished_book_ids(&self, ids: &[i64]) -> Result<HashSet<i64>> {
+        let mut out = HashSet::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        let conn = self.conn();
+        for chunk in ids.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT id FROM books WHERE finished_at IS NOT NULL AND id IN ({holders})"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), |r| {
+                r.get::<_, i64>(0)
+            })?;
+            for id in rows {
+                out.insert(id?);
+            }
+        }
+        Ok(out)
     }
 
     pub fn book_finished_at(&self, book_id: i64) -> Result<Option<String>> {
