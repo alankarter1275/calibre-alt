@@ -22,7 +22,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
   importers hardened (read-only SQLite packs, identifier quoting, rollback,
   catalog.db self-import guard), one latent bug fixed (reading-list column
   offsets), 9 new unit tests. No other defects.
-- **CI now runs the 163 unit tests on every push** (165 `#[test]`s, 2 of them
+- **CI now runs the 173 unit tests on every push** (175 `#[test]`s, 2 of them
   `#[ignore]`d perf probes that are run by hand — the `cargo test` step is
   live in `.github/workflows/ci.yml`). The first real run caught one failing
   test (a bad escape in the `quote_ident` test literal) — fixed, all green.
@@ -32,13 +32,17 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
   `docs/ci/github-actions-ci.yml` — see `docs/ci/README.md`.
 - **Your Arch machine** is only needed at **phase boundaries** (smoke-test + design feedback).
 - Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md) ·
-  design decisions: [`docs/conversation.md`](./docs/conversation.md)
+  design decisions: [`docs/conversation.md`](./docs/conversation.md) ·
+  how to smoke-test the A0 changes and read the timing output:
+  [`docs/testing-a0.md`](./docs/testing-a0.md)
 
 ## What works now
 
 - Slim sidebar shell + cover-card library grid
 - **SQLite catalog** at `~/.local/share/kalam/catalog.db`
 - **Import EPUB** (Home → “+ Add books”, or My Library → All books → “+ Import EPUB”)
+- **All books** grid (search, sort, cover cards) — reachable from Home → “All books”
+  or My Library → All books
 - **EPUB reader** (WebKitGTK): chapter-wise scroll, TOC, themes, font size, progress restore
 - **Highlights & quotes**: select text → floating chip (yellow/green/blue/pink/orange), save quote (❝), copy
 - **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip, tap, or `D` shortcut, a popup with numbered senses + POS, synonym/antonym chips, idiom cards, bookmark & copy, offline IPA pronunciation (`bank` → `/ˈbæŋk/`) from the bundled CMU Pronouncing Dictionary, keyboard support (↑/↓ focus a sense, Enter saves it), and **Find in chapter**
