@@ -12,7 +12,7 @@
 //! gdk-pixbuf in this toolchain can decode but not encode PNG, so we use the
 //! `image` crate (pure Rust, no system deps) for the resize + PNG encode.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Thumbnail size. 2× the grid card (128×204) to stay crisp on HiDPI, while
 /// still being tiny enough to decode and cache cheaply.
@@ -153,7 +153,7 @@ mod tests {
         let dir = Scratch::new();
         let cover = dir.join("cover.png");
         write_solid_png(&cover, 600, 900, [20, 40, 60]);
-        let thumb_of = |uuid: &str| dir.join(format!("{uuid}.png"));
+        let thumb_of = |uuid: &str| dir.join(&format!("{uuid}.png"));
 
         // First call produces the thumbnail.
         assert!(backfill_one("abc", &cover, &thumb_of));
@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn backfill_missing_source_is_a_noop() {
         let dir = Scratch::new();
-        let thumb_of = |uuid: &str| dir.join(format!("{uuid}.png"));
+        let thumb_of = |uuid: &str| dir.join(&format!("{uuid}.png"));
         // A missing source is not created, but it is not an error either.
         let got = backfill_one("nope", &dir.join("absent.png"), &thumb_of);
         assert!(!got);
