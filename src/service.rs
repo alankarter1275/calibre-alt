@@ -95,6 +95,17 @@ pub struct AnalyticsSnapshot {
     pub errors: Errors,
 }
 
+/// One shelf and the books on it.
+///
+/// `shelf: None` means the shelf is gone, which the page already has wording
+/// for; a failed read adds an `errors` row instead.
+#[derive(Debug, Default)]
+pub struct ShelfDetailSnapshot {
+    pub shelf: Option<Shelf>,
+    pub books: Vec<Book>,
+    pub errors: Errors,
+}
+
 /// One book's float panel: the book plus the two flags the panel shows.
 ///
 /// `book: None` means the book is genuinely gone, not that the read failed —
@@ -258,6 +269,28 @@ impl LibraryService {
     }
 
     /// The tag cloud.
+    /// One shelf plus its books, sorted and filtered.
+    ///
+    /// The books read is skipped when the shelf itself is missing, so a
+    /// deleted shelf produces one clear outcome instead of two vague ones.
+    pub fn shelf_detail(&self, shelf_id: i64, sort: SortKey, query: &str) -> ShelfDetailSnapshot {
+        let mut errors = Errors::new();
+        let shelf: Option<Shelf> = take(self.catalog.get_shelf(shelf_id), "shelf", &mut errors);
+        let books = match &shelf {
+            Some(s) => take(
+                self.catalog.shelf_books(s, sort, query),
+                "books on this shelf",
+                &mut errors,
+            ),
+            None => Vec::new(),
+        };
+        ShelfDetailSnapshot {
+            shelf,
+            books,
+            errors,
+        }
+    }
+
     /// Everything the book float panel shows, in one call.
     pub fn book_detail(&self, book_id: i64) -> BookDetailSnapshot {
         let mut errors = Errors::new();
@@ -491,6 +524,7 @@ mod tests {
         assert_send::<QuotesSnapshot>();
         assert_send::<WordsSnapshot>();
         assert_send::<BookDetailSnapshot>();
+        assert_send::<ShelfDetailSnapshot>();
         // The service itself must be Send too, or it cannot be moved onto the
         // worker that would run those queries.
         assert_send::<LibraryService>();
@@ -578,6 +612,40 @@ mod tests {
     }
 
     #[test]
+    fn shelf_detail_returns_the_shelf_and_its_books() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let book = seed(svc.catalog(), "Dune", &[]);
+        let shelf_id = svc
+            .catalog()
+            .create_shelf("To read", ShelfKind::Manual, "", "")
+            .expect("create shelf");
+        svc.catalog()
+            .add_book_to_shelf(shelf_id, book)
+            .expect("add to shelf");
+
+        let snap = svc.shelf_detail(shelf_id, SortKey::Added, "");
+        assert!(snap.errors.is_empty(), "{:?}", snap.errors);
+        assert_eq!(snap.shelf.map(|s| s.name), Some("To read".to_string()));
+        assert_eq!(snap.books.len(), 1);
+        assert_eq!(snap.books[0].title, "Dune");
+    }
+
+    #[test]
+    fn a_missing_shelf_yields_no_books_and_no_error() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let snap = svc.shelf_detail(9999, SortKey::Added, "");
+        assert!(snap.shelf.is_none());
+        assert!(snap.books.is_empty());
+        assert!(
+            snap.errors.is_empty(),
+            "a deleted shelf is not a failed read: {:?}",
+            snap.errors
+        );
+    }
+
+    #[test]
     fn book_detail_separates_a_missing_book_from_a_failed_read() {
         let cat = Catalog::open_in_memory().unwrap();
         let svc = LibraryService::new(Arc::new(cat));
@@ -605,17 +673,28 @@ mod tests {
         let cat = Catalog::open_in_memory().unwrap();
         let svc = LibraryService::new(Arc::new(cat));
         let id = seed(svc.catalog(), "Emma", &[]);
+
         svc.catalog()
             .add_to_reading_list(id)
             .expect("add to reading list");
+        let queued = svc.book_detail(id);
+        assert!(queued.errors.is_empty(), "{:?}", queued.errors);
+        assert!(queued.in_reading_list);
+        assert!(!queued.finished);
+
+        // Finishing a book deliberately drops it off the reading list, so the
+        // two flags are not independent — the snapshot must show that, not a
+        // stale "still queued".
         svc.catalog()
             .set_book_finished(id, true)
             .expect("mark finished");
-
-        let snap = svc.book_detail(id);
-        assert!(snap.errors.is_empty(), "{:?}", snap.errors);
-        assert!(snap.in_reading_list);
-        assert!(snap.finished);
+        let done = svc.book_detail(id);
+        assert!(done.errors.is_empty(), "{:?}", done.errors);
+        assert!(done.finished);
+        assert!(
+            !done.in_reading_list,
+            "set_book_finished removes the book from the reading list"
+        );
     }
 
     #[test]

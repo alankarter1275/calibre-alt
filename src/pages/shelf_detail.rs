@@ -1,6 +1,7 @@
 //! P4 — one shelf: its books, plus membership editing for manual shelves.
 
 use crate::db::{Catalog, Shelf, ShelfKind, SortKey};
+use crate::service::LibraryService;
 use crate::models::Book;
 use crate::pages::shelf_editor::{open_shelf_editor, ShelfEditorMode};
 use crate::widgets::book_row::build_book_grid;
@@ -25,7 +26,7 @@ pub enum ShelfDetailMsg {
 }
 
 pub struct ShelfDetailModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     shelf: Option<Shelf>,
     books: Vec<Book>,
     query: String,
@@ -137,17 +138,15 @@ impl Component for ShelfDetailModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let shelf = catalog.get_shelf(shelf_id).ok().flatten();
         let sort = SortKey::Added;
-        let books = shelf
-            .as_ref()
-            .and_then(|s| catalog.shelf_books(s, sort, "").ok())
-            .unwrap_or_default();
+        let service = LibraryService::new(catalog);
+        let snap = service.shelf_detail(shelf_id, sort, "");
+        report_errors(&snap.errors);
 
         let model = ShelfDetailModel {
-            catalog,
-            shelf,
-            books,
+            service,
+            shelf: snap.shelf,
+            books: snap.books,
             query: String::new(),
             sort,
         };
@@ -202,7 +201,7 @@ impl Component for ShelfDetailModel {
                     let s = sender.clone();
                     open_shelf_editor(
                         window_of(root).as_ref(),
-                        self.catalog.clone(),
+                        self.service.catalog().clone(),
                         ShelfEditorMode::Edit { shelf_id: shelf.id },
                         move || s.input(ShelfDetailMsg::Refresh),
                     );
@@ -214,7 +213,7 @@ impl Component for ShelfDetailModel {
                         let s = sender.clone();
                         open_book_picker(
                             window_of(root).as_ref(),
-                            self.catalog.clone(),
+                            self.service.catalog().clone(),
                             shelf.id,
                             move || s.input(ShelfDetailMsg::Refresh),
                         );
@@ -222,9 +221,6 @@ impl Component for ShelfDetailModel {
                 }
             }
             ShelfDetailMsg::Refresh => {
-                if let Some(shelf) = &self.shelf {
-                    self.shelf = self.catalog.get_shelf(shelf.id).ok().flatten();
-                }
                 self.reload();
             }
         }
@@ -232,6 +228,14 @@ impl Component for ShelfDetailModel {
         self.refresh_header(widgets);
         self.rebuild(widgets, &sender);
         self.update_view(widgets, sender);
+    }
+}
+
+/// Surface read failures. Without this a database problem looked like an
+/// empty shelf.
+fn report_errors(errors: &[String]) {
+    for err in errors {
+        crate::notify::error("Could not read this shelf", err);
     }
 }
 
@@ -243,12 +247,18 @@ impl ShelfDetailModel {
             .unwrap_or(false)
     }
 
+    /// Re-read the shelf **and** its books together. The shelf row itself can
+    /// change under us (rename, cover, kind), so refreshing only the books
+    /// left the header stale.
     fn reload(&mut self) {
-        self.books = self
-            .shelf
-            .as_ref()
-            .and_then(|s| self.catalog.shelf_books(s, self.sort, &self.query).ok())
-            .unwrap_or_default();
+        let Some(id) = self.shelf.as_ref().map(|s| s.id) else {
+            self.books.clear();
+            return;
+        };
+        let snap = self.service.shelf_detail(id, self.sort, &self.query);
+        report_errors(&snap.errors);
+        self.shelf = snap.shelf;
+        self.books = snap.books;
     }
 
     fn refresh_header(&self, widgets: &ShelfDetailModelWidgets) {
@@ -359,7 +369,7 @@ impl ShelfDetailModel {
             "Switch to “Shelf order” to reorder"
         }));
         {
-            let catalog = self.catalog.clone();
+            let catalog = self.service.catalog().clone();
             let s = sender.clone();
             up.connect_clicked(move |_| {
                 // Reordering is visible in the list itself, so only a failure
@@ -383,7 +393,7 @@ impl ShelfDetailModel {
         down.set_sensitive(sortable);
         down.set_tooltip_text(Some("Move down"));
         {
-            let catalog = self.catalog.clone();
+            let catalog = self.service.catalog().clone();
             let s = sender.clone();
             down.connect_clicked(move |_| {
                 crate::notify::report(
@@ -399,7 +409,7 @@ impl ShelfDetailModel {
         remove.add_css_class("kalam-mini-btn");
         remove.add_css_class("kalam-mini-btn-danger");
         {
-            let catalog = self.catalog.clone();
+            let catalog = self.service.catalog().clone();
             let s = sender.clone();
             let book_title = book.title.clone();
             remove.connect_clicked(move |_| {
