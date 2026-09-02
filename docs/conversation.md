@@ -877,3 +877,69 @@ last thing to arrive; nothing before it waits for it.
 ---
 
 *Last updated: 2026-09-02.*
+
+---
+
+## 14. Peer review of the renderer plan — adopted reframings (2026-09-02)
+
+An independent AI reviewed our renderer plan against the actual code (all
+its code claims verified: `cache_key()` → `None` for `Route::Reader` at
+app.rs:175; `wrapRangeByPaths` nodePath+offset highlights; five highlight
+colours; `LoadEvent::Finished` → `restore_pending_annotation`; find-in-
+chapter is JS; theme change → `load_html` reload).
+
+### Adopted: the justification is control, not speed
+
+Every awkward thing in the reader traces to the **engine boundary**, not
+layout: highlights as nodePath+offset (can't hold a DOM ref across load),
+dict popup injected into another document, selection in JS crossing
+`postMessage` with a `kalam://` iframe fallback, theme change = chapter
+reload, find-in-chapter = JS. In our own renderer all five become ordinary
+Rust calls against an in-memory layout tree. **That is the prize** — the
+reader's complexity budget, not milliseconds.
+
+Tractable because of the scope decision: no browse mode + sanitized
+content ⇒ a box model over clean markup, not "write a browser."
+
+### Adopted: plan changes
+
+1. **Annotation/dict parity becomes its own milestone** (was folded into
+   M2 as "selection/copy"). WebKit-side is mature: 5 highlight colours,
+   range re-anchoring, popup positioning, tap-to-lookup, POS-grouped
+   senses + flat-index hint, find-in-chapter. Rebuilding on our own
+   hit-testing ≈ layout-engine size. Budget it like one. M2 + parity ≈
+   2–3 months.
+2. **WebKit stays permanently as the EPUB fallback** (replaces "may be cut
+   later"). "WebKit unused for 95% of reading" is the win; the last 5% of
+   pathological publisher EPUBs is a tar pit that buys nothing.
+3. **First slice renders to PNG, GTK wired second** — typography converges
+   without the user in the loop. Est. 3–6 sessions (~1 week) to first
+   painted, paginated, themed chapter. §9's M1 (with GTK widget, page
+   turn, dict hook, position restore) stands at 2–4 weeks.
+4. **Committed golden corpus** (20–30 chapters: fiction, footnote-heavy
+   nonfiction, CJK, RTL, image-heavy, one pathological EPUB + golden PNGs)
+   — converts "does this look right" from conversation into test. The
+   golden-image harness is built **before** layout code.
+5. **One WebView alive across opens** — `cache_key()` returns `None` for
+   `Route::Reader` (app.rs:175) so a WebView is rebuilt per book open;
+   keeping one alive is a cheap A0 win, not renderer work.
+6. **Restate justification after A0 + measurement** as control + memory +
+   annotation architecture (perf alone is the weakest leg; A0 may already
+   capture most perceived slowness).
+
+### Nuances
+
+- Renderer's other legs beyond speed: memory (~100–200 MB per WebKit
+  instance) and startup (no engine spawn).
+- Golden PNGs earn their keep through **automated pixel-diff regression
+  testing** (CI-runnable, agent-testable) — not through the agent "looking"
+  at them; treat goldens as tests.
+- No need to vendor crates; CI fetches deps fine (the agent sandbox simply
+  can't build locally).
+- Total "WebKit unused for 95% of reading": 6–12 months stands;
+  "verification-bound forever" framing accepted — hardening is gated on the
+  user looking at real books.
+
+---
+
+*Last updated: 2026-09-02.*
