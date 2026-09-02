@@ -92,6 +92,13 @@ pub struct AnalyticsSnapshot {
     pub errors: Errors,
 }
 
+/// The reading list: the ordered to-be-read queue.
+#[derive(Debug, Default)]
+pub struct ReadingListSnapshot {
+    pub entries: Vec<ReadingListEntry>,
+    pub errors: Errors,
+}
+
 /// The tag cloud: every tag with how many books carry it.
 #[derive(Debug, Default)]
 pub struct TagsSnapshot {
@@ -161,6 +168,19 @@ impl LibraryService {
     }
 
     /// The tag cloud.
+    /// Reading list page: the ordered queue.
+    pub fn reading_list(&self) -> ReadingListSnapshot {
+        let mut errors = Errors::new();
+        ReadingListSnapshot {
+            entries: take(
+                self.catalog.list_reading_list(),
+                "reading list",
+                &mut errors,
+            ),
+            errors,
+        }
+    }
+
     pub fn tags(&self) -> TagsSnapshot {
         let mut errors = Errors::new();
         TagsSnapshot {
@@ -295,6 +315,40 @@ mod tests {
         );
         assert_eq!(snap.stats.total_books, 2);
         assert_eq!(snap.recent.len(), 2);
+    }
+
+    #[test]
+    fn reading_list_returns_the_queue_in_order() {
+        // The page used to render `unwrap_or_default()`, so a failed read and a
+        // genuinely empty queue looked identical. The snapshot separates them:
+        // entries carry the order, errors carry the reason.
+        let cat = Catalog::open_in_memory().unwrap();
+        let first = seed(&cat, "Dune", &[]);
+        let second = seed(&cat, "Emma", &[]);
+        cat.add_to_reading_list(first).expect("queue first");
+        cat.add_to_reading_list(second).expect("queue second");
+        let svc = LibraryService::new(Arc::new(cat));
+
+        let snap = svc.reading_list();
+        assert!(
+            snap.errors.is_empty(),
+            "unexpected errors: {:?}",
+            snap.errors
+        );
+        assert_eq!(snap.entries.len(), 2);
+        assert_eq!(snap.entries[0].book.title, "Dune");
+    }
+
+    #[test]
+    fn reading_list_is_empty_without_an_error_when_nothing_is_queued() {
+        // An empty queue is not a failure, and must not raise a toast.
+        let cat = Catalog::open_in_memory().unwrap();
+        seed(&cat, "Dune", &[]);
+        let svc = LibraryService::new(Arc::new(cat));
+
+        let snap = svc.reading_list();
+        assert!(snap.entries.is_empty());
+        assert!(snap.errors.is_empty(), "empty is not an error");
     }
 
     #[test]

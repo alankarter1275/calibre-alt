@@ -1,6 +1,7 @@
 //! P4 — Reading list: an ordered to-be-read queue.
 
 use crate::db::{Catalog, ReadingListEntry, SortKey};
+use crate::service::LibraryService;
 use crate::widgets::book_row::cover_widget;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -22,7 +23,7 @@ pub enum ReadingListMsg {
 }
 
 pub struct ReadingListModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     entries: Vec<ReadingListEntry>,
 }
 
@@ -88,8 +89,13 @@ impl Component for ReadingListModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let entries = catalog.list_reading_list().unwrap_or_default();
-        let model = ReadingListModel { catalog, entries };
+        let service = LibraryService::new(catalog);
+        let snap = service.reading_list();
+        report_errors(&snap.errors);
+        let model = ReadingListModel {
+            service,
+            entries: snap.entries,
+        };
         let widgets = view_output!();
         rebuild(&widgets.list, &model.entries, &sender);
         ComponentParts { model, widgets }
@@ -106,7 +112,7 @@ impl Component for ReadingListModel {
             ReadingListMsg::Move { book_id, delta } => {
                 // The list visibly reorders itself, so success needs no toast.
                 crate::notify::report(
-                    self.catalog.move_reading_list_entry(book_id, delta),
+                    self.service.catalog().move_reading_list_entry(book_id, delta),
                     "Could not reorder the reading list",
                 );
                 self.reload();
@@ -119,7 +125,7 @@ impl Component for ReadingListModel {
                     .map(|e| e.book.title.clone())
                     .unwrap_or_default();
                 crate::notify::outcome_info(
-                    self.catalog.remove_from_reading_list(book_id),
+                    self.service.catalog().remove_from_reading_list(book_id),
                     "Removed from reading list",
                     &title,
                     "Could not update the reading list",
@@ -128,7 +134,7 @@ impl Component for ReadingListModel {
             }
             ReadingListMsg::AddBooks => {
                 let s = sender.clone();
-                open_picker(window_of(root).as_ref(), self.catalog.clone(), move || {
+                open_picker(window_of(root).as_ref(), self.service.catalog().clone(), move || {
                     s.input(ReadingListMsg::Refresh)
                 });
             }
@@ -141,7 +147,17 @@ impl Component for ReadingListModel {
 
 impl ReadingListModel {
     fn reload(&mut self) {
-        self.entries = self.catalog.list_reading_list().unwrap_or_default();
+        let snap = self.service.reading_list();
+        report_errors(&snap.errors);
+        self.entries = snap.entries;
+    }
+}
+
+/// Surface read failures instead of rendering them as an empty queue. The
+/// service collects them; deciding what the user sees stays with the UI.
+fn report_errors(errors: &[String]) {
+    for err in errors {
+        crate::notify::error("Could not read the reading list", err);
     }
 }
 
