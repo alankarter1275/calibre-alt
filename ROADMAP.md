@@ -115,15 +115,15 @@ architecture.
    *only if the numbers say so* → perf-budget CI test → **plugin-host seam
    design** (the `Source` adapter API that P7/P9 depend on).
 2. **P6 — Downloads hub** (queue + folder watch; prerequisite for P7).
-3. **P7 — Fiction platform** (AO3 first, then FFN / Royal Road / ScribbleHub /
+4. **P7 — Fiction platform** (AO3 first, then FFN / Royal Road / ScribbleHub /
    Webnovel) via **Lua source plugins**; native tag search (fandom, tags,
    characters, ships, rating, status); download + offline reading; follow +
    **auto-updater** (background scheduler; FFN-app-class).
-4. **Renderer vertical slice** — starts *alongside* P7, not after: custom
+5. **Renderer vertical slice** — starts *alongside* P7, not after: custom
    renderer on **cosmic-text** for fiction content (clean plugin output).
    This is the **calibration milestone**: 2–4 weeks of sessions; if it takes
    longer, stop and reassess before sinking months in.
-5. **P8 — Comics local** (image pager — decode + paint, no engine) and
+6. **P8 — Comics local** (image pager — decode + paint, no engine) and
    **P9 — Manga platform** (Lua source plugins; MangaDex official API first,
    then Komga/Kavita/OPDS clients, scraped sites later).
 6. **EPUB path** → custom renderer takes EPUBs: either a normalization
@@ -1658,6 +1658,58 @@ lives at `docs/ci/github-actions-ci.yml`; install it by copying over
 
 ---
 
+## A1 — In-app dialogs (requested 2026-09-02, scheduled after A0 step 2)
+
+**Why:** on a tiling compositor (the user runs Sway) a `gtk::Window` is a real
+top-level window. Sway will happily send it to another workspace, tile it
+beside the main window, or leave it behind when you switch — none of which is
+what a modal dialog means. The app already agrees with this in principle:
+`app.rs` has an in-app float layer (`float_host` + `float_scrim` over a
+`gtk::Overlay`) and a comment on `open_annotations_floating` stating floats
+live there "never a separate window — so the compositor can't move it to
+another workspace". **The conversion was simply never finished.**
+
+**Current state (audited 2026-09-02):**
+
+*Already in-app (5):* book float, series float, annotations panel, shelves
+panel, tags panel. All five have a visible close affordance — a ✕ button on
+the two component floats, a **Done** button on the three panels — plus a
+global Esc/Q handler in `app.rs`, so none of them can trap the user.
+
+*Still separate `gtk::Window`s (5):*
+
+| Where | What it is |
+|---|---|
+| `metadata_editor.rs:72` | Edit metadata (the big one — 560px, scrolling content) |
+| `shelf_editor.rs:54` | New / edit shelf (manual **and** smart-rule builder) |
+| `reading_list.rs:340` | "Add to reading list" book picker |
+| `shelf_detail.rs:454` | "Add books to shelf" book picker |
+| `shelves_grid.rs:326` | "Delete shelf" confirmation |
+
+*Deliberately staying native (4):* every `gtk::FileDialog` (`all_books.rs`,
+`home.rs`, `metadata_editor.rs`, `settings.rs` ×2). These are portal-backed
+file pickers — the compositor and the desktop portal own them, the user
+expects their normal file manager, and re-implementing a file browser in-app
+would be strictly worse.
+
+**Hard requirement from the user:** every in-app dialog must have a visible
+close/✕ button. Without a title bar there is no compositor-provided way out,
+so a dialog with no button and no Esc handler is a trap. The existing five
+already satisfy this; the rule is that new ones must too, and Esc must keep
+working as a second way out (not the only one — an invisible shortcut is not
+an affordance).
+
+**Order (cheapest and safest first):** delete-shelf confirmation → the two
+book pickers (they are near-identical, so one helper serves both) → shelf
+editor → metadata editor last, because it is the largest and has its own
+scrolling/sizing logic tuned for short laptop screens.
+
+**Risk to watch:** the float layer is a `gtk::Box` in an overlay, not a
+window, so it has no built-in focus containment. The pickers contain long
+scrollable lists and the metadata editor contains many entries — Tab order and
+initial focus need checking on each conversion, and the scrim already blocks
+click-through.
+
 ## Immediate next steps
 
 **Next, in order (locked 2026-09-02):**
@@ -1665,7 +1717,11 @@ lives at `docs/ci/github-actions-ci.yml`; install it by copying over
 1. **A0 — Architecture & performance track** (the section above). Start with
    measurement, then `LibraryService` + thumbnails/async decode; design the
    plugin-host seam. This is the foundation for everything after.
-2. **P6 — Downloads hub** (unified queue + folder watch).
+2. **A1 — In-app dialogs** (the section above): finish converting the five
+   remaining `gtk::Window` dialogs to the existing float layer. User-requested
+   2026-09-02; sized as a small, self-contained track that can slot between A0
+   steps rather than waiting for the whole architecture track.
+3. **P6 — Downloads hub** (unified queue + folder watch).
 3. **P7 — Fiction platform** (AO3 first) via Lua source plugins; native tag
    search; download; follow + auto-updater.
 4. **Renderer vertical slice** (alongside P7) — cosmic-text fiction renderer;
@@ -1769,3 +1825,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-02 | A0 step 2 continues: **Reading list converted** (4th page). It read `list_reading_list().unwrap_or_default()` in two places, so a failed database read rendered as the friendly *"Books you plan to read next"* placeholder — the same empty-state lie as the All books search bug, and the same class as the series-fetch bug the strict clippy gate just exposed: **code written never to complain**. Now `service.reading_list()` returns one owned snapshot and the page reports failures as a toast. Writes (reorder, remove, bulk add) still go through `service.catalog()`, the deliberate escape hatch — they belong to step 4. 2 new tests, including one asserting an empty queue raises **no** error, so the fix cannot regress into a toast on every visit |
 | 2026-09-02 | A0 step 2 continues: **Shelves grid converted** (5th page) — `list_shelves().unwrap_or_default()` in both `init()` and `Refresh`, so a failed read rendered as "no shelves yet". Now one `service.shelves()` snapshot with the failure surfaced as a toast; the writes (create, edit, delete) keep going through `service.catalog()` until step 4. 1 new test covering both halves: a real shelf comes back, and an empty grid produces **no** error. **Saved quotes was examined and deliberately left alone** — it already does a full `match` on `list_all_quotes` and shows `"DB error: {e}"`, so it does not have the defect step 2 removes; converting it would be churn for its own sake. Being on the list of unconverted pages is not the same as being broken, and the count is not the goal |
 | 2026-09-02 | A0 step 2 continues: **All books converted** (6th page), and it turned out to be *half* honest already — `reload()` matched on `list_books` and showed `"Database error: .."`, but `init()` used `unwrap_or_default()`, so **the first paint of the page claimed an empty library where a refresh on the same broken database would have told the truth**. Exactly the inconsistency a single seam removes. Now both paths go through `service.all_books(sort, query)`; the error still lands in the status line rather than a toast, because this page has always reported failures there and changing that would be a UI change smuggled into a refactor. The import-summary line still outranks the generic count. 1 new test pinning the three cases the page's own copy distinguishes: all books, a matching search, and a search matching nothing (which is **not** an error) |
+| 2026-09-02 | **A1 (in-app dialogs) logged and scheduled** after the user reported that dialogs open as separate windows, which a tiling compositor (Sway) treats as ordinary top-levels — movable to another workspace, tiled beside the app, left behind on a workspace switch. Audit found the app already half-converted: an in-app float layer exists in `app.rs` (`float_host` + `float_scrim` on a `gtk::Overlay`) with a comment explicitly stating floats must never be separate windows "so the compositor can't move it to another workspace", and **5 dialogs already use it** (book float, series float, annotations, shelves, tags). **5 remain as `gtk::Window`**: metadata editor, shelf editor, the two book pickers, delete-shelf confirm. The 4 `FileDialog`s stay native on purpose — they are portal-backed and the user wants their real file manager. User's hard requirement recorded: **every in-app dialog needs a visible close/✕ button**, since without a title bar there is no compositor-provided escape; the existing five already comply (✕ on the floats, Done on the panels, global Esc/Q in `app.rs`). Ordered cheapest-first, metadata editor last |
