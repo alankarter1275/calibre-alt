@@ -1284,23 +1284,27 @@ runs — the constant that keeps appearing is the answer.
 ## A0 — Architecture & performance track  ◀ NEXT
 
 **Status:** decided 2026-09-02 (design in `docs/conversation.md` §§1–3);
-**step 3 (thumbnails) is in progress; step 1 (measure) is done.** A track, not
-a phase — interleaves with P6–P11.
+**steps 1 and 3 are done; CI green.** A track, not a phase — interleaves with
+P6–P11.
 - **Step 1 (measure) — done.** Data layer (headless `src/perf.rs`) confirmed all
   list-page queries < ~20 ms for 2,000 books; GUI (`src/timing.rs`,
   `KALAM_TIMING=1`) confirmed cold start ~0.9 s warm, book open 3.5 ms revisit,
   chapter turn ~50 ms warm, ~400 ms after a WebView re-spawn. The DB and warm
   reader are not the bottleneck; the cost is first-open + WebKit re-spawn +
   per-card decode of full covers.
-- **Step 3 (thumbnails) — in progress.** `src/thumbs.rs` generates a persistent
+- **Step 3 (thumbnails) — done.** `src/thumbs.rs` generates a persistent
   256×408 thumbnail (`cache/thumbs/<uuid>.png`) at import and on cover
   replacement; the grid decodes that instead of the full cover when the slot is
-  small enough. New dep: `image` (default features off; only png/jpeg/gif/webp).
+  small enough (never upscales it). New dep: `image` (default features off; only
+  png/jpeg/gif/webp). **Next on this front:** the async *swap-in* (placeholder →
+  texture on a worker) belongs to the task manager (step 4), where it
+  architecturally lives.
 - **Step 2 (LibraryService), step 4 (task manager), step 5 (preloaders)** not
   started. **Step 6 (grid virtualization) is not planned** — the data layer is
   <20 ms and there is no measured grid lag, so it would add risk for no win.
 - **A separate cheap win** the timing surfaced: keep one WebView alive across
-  book opens to remove the ~400 ms re-spawn on every reopen.
+  book opens to remove the ~400 ms re-spawn on every reopen (the user chose
+  thumbnails first, so this is still open).
 
 **Goal:** make Kalam feel instant (Yazi philosophy: *"don't make the UI
 fast — make it never wait"*) and lay the seams the source platform needs.
@@ -1704,4 +1708,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-02 | **chapbook discovered** (`ophymx/chapbook`, Apache-2.0): a week-old project that IS our custom-renderer plan — stylo (Firefox's CSS engine) + cosmic-text + tiny-skia/vello, no webview, pagination-first, GTK4 viewer, quote-anchored `LayeredLocator` positions, PDF via hayro. Recorded in `docs/conversation.md` §11: added as a **candidate renderer foundation** (re-evaluate at vertical-slice time, not a dependency yet), **quote-anchored locators adopted for annotations** (fixes the P7 auto-updater anchor risk), **hayro added to the P10 shortlist** (AGPL-free PDF), stylo noted as the preferred EPUB-cascade option vs hand-rolled normalization. WebKit fallback kept (chapbook's own stated limit: a subset of publisher EPUBs) |\n| 2026-09-02 | A0 step 1 (measure first) started: headless data-layer measurement harness added as `src/perf.rs` (`#[ignore]`d, seeds 2,000 books; times `list_books` ×3 sorts, search, `recent_books`, `library_stats`, tags). Run with `cargo test --release perf -- --ignored --nocapture`. CI compiles it but skips it, so CI stays fast. No behaviour change |
 | 2026-09-02 | A0 step 1, GUI half: in-app timing harness added as `src/timing.rs`, gated behind `KALAM_TIMING=1`. Prints cold start (`window_shown` via window `realize`), `book_open` (EPUB parse), `chapter_load`→`chapter_done` (WebKit render), and `dict_lookup` milliseconds to the terminal. No-op when the env var is absent, so zero overhead in normal use. `src/perf.rs` counts timings. The data-layer baseline is in: all list-page queries stay under ~20 ms for 2,000 books, confirming the DB layer is well-tuned and the UI side (sync cover decode + full grid rebuild + ephemeral cover cache) is where A0's later steps focus. Run with `KALAM_TIMING=1 cargo run --release` |
 | 2026-09-02 | **Held A0 step 6 (grid virtualization).** Measured evidence: the data layer is <20 ms for 2,000 books and there is no measured grid lag, so virtualization would add risk for no measured win. Recorded in the A0 status block. |
-| 2026-09-02 | A0 step 3 (thumbnails) shipped: `src/thumbs.rs` generates a persistent 256×408 thumbnail (`cache/thumbs/<uuid>.png`) at import and on cover replacement; the grid prefers it when the slot is small enough (never upscales it); covered by 3 headless unit tests. New dep `image` (default-features off; only png/jpeg/gif/webp) because gdk-pixbuf in this toolchain cannot encode PNG. Thumbnails are removed on book delete. `src/perf.rs` gains a cover-decode probe (full cover vs thumbnail). The true async *swap-in* is deferred to the task manager (step 4) where it architecturally belongs — the thumbnail-decode win is already captured synchronously. Part of A; see the A0 later steps |
+| 2026-09-02 | A0 step 3 (thumbnails) shipped and CI-green: `src/thumbs.rs` generates a persistent 256×408 thumbnail (`cache/thumbs/<uuid>.png`) at import and on cover replacement; the grid prefers it when the slot is small enough (never upscales it); covered by 3 headless unit tests. New dep `image` (default-features off; only png/jpeg/gif/webp) because gdk-pixbuf in this toolchain cannot encode PNG. Thumbnails are removed on book delete. `src/perf.rs` gains a cover-decode probe (full cover vs thumbnail). Three CI iterations fixed the real bugs — image's `std` feature does not exist (default-features off is fine; `image::open`/`save_buffer` need no feature), `DynamicImage` has `width()/height()` not `dimensions()`, `paths.rs` needed `Path` imported, and a temporary `Option<PathBuf>` was dropped while borrowed. The true async *swap-in* is deferred to the task manager (step 4) where it architecturally belongs — the thumbnail-decode win is already captured synchronously. Part of A; see the A0 later steps |
