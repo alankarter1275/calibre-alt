@@ -9,8 +9,12 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum HomeOut {
-    OpenBook { book_id: i64 },
-    OpenBookDialog { book_id: i64 },
+    OpenBook {
+        book_id: i64,
+    },
+    OpenBookDialog {
+        book_id: i64,
+    },
     /// Open My Library → All books (the full searchable/sortable grid).
     OpenAllBooks,
 }
