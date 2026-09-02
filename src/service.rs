@@ -51,7 +51,8 @@
 //! `unwrap_or_default()`s. See the roadmap's A0 step 2 entry.
 
 use crate::db::{
-    Catalog, DictLookup, EventKind, LibraryStats, ReadingEvent, ReadingListEntry, Shelf, SortKey,
+    Annotation, Catalog, DictLookup, EventKind, LibrarySession, LibraryStats, QuoteRef,
+    ReadingEvent, ReadingListEntry, SavedWord, Shelf, SortKey,
 };
 use crate::models::Book;
 use std::sync::Arc;
@@ -91,6 +92,28 @@ pub struct AnalyticsSnapshot {
     pub finished_this_year: i64,
     /// Which of the last 7 days had any reading.
     pub week: [bool; 7],
+    pub errors: Errors,
+}
+
+/// The My Library dashboard. One read of everything the page shows, so a
+/// broken database cannot render as a cheerful empty dashboard.
+///
+/// The page previously made **eight** independent reads and
+/// `unwrap_or_default()`d every one of them.
+#[derive(Debug, Default)]
+pub struct DashboardSnapshot {
+    pub stats: LibraryStats,
+    /// Most recently opened books; the page picks "now reading" from these.
+    pub recently_opened: Vec<Book>,
+    /// Fallback for the continue strip when nothing has been opened yet.
+    pub recent: Vec<Book>,
+    pub quotes: Vec<(Annotation, QuoteRef)>,
+    pub words: Vec<SavedWord>,
+    pub lookups: Vec<DictLookup>,
+    pub events: Vec<ReadingEvent>,
+    pub sessions: Vec<LibrarySession>,
+    pub goal: i64,
+    pub finished_this_year: i64,
     pub errors: Errors,
 }
 
@@ -198,6 +221,38 @@ impl LibraryService {
     }
 
     /// The tag cloud.
+    /// My Library dashboard: every strip on the page, in one call.
+    ///
+    /// `feed_limit` is doubled internally the way the page does it: the feed
+    /// merges events with sessions and then trims, so both sides need slack.
+    pub fn dashboard(&self, feed_limit: usize) -> DashboardSnapshot {
+        let mut errors = Errors::new();
+        let cat = &self.catalog;
+        DashboardSnapshot {
+            stats: take(cat.library_stats(), "library stats", &mut errors),
+            recently_opened: take(cat.recently_opened(6), "recently opened", &mut errors),
+            recent: take(cat.recent_books(60), "recent books", &mut errors),
+            quotes: take(cat.recent_quotes(2), "recent quotes", &mut errors),
+            words: take(cat.list_saved_words("", None), "saved words", &mut errors),
+            lookups: take(cat.list_dict_lookups("", 3), "recent lookups", &mut errors),
+            events: take(
+                cat.list_events(None, "", feed_limit * 2),
+                "reading history",
+                &mut errors,
+            ),
+            sessions: take(
+                cat.recent_sessions(feed_limit * 2),
+                "reading sessions",
+                &mut errors,
+            ),
+            // Infallible by construction (they fall back to a default inside
+            // the catalog), so they contribute no error rows.
+            goal: cat.reading_goal(),
+            finished_this_year: cat.finished_this_year(),
+            errors,
+        }
+    }
+
     /// History page: reading events, optionally filtered by kind and text.
     pub fn history(&self, kind: Option<EventKind>, query: &str, limit: usize) -> HistorySnapshot {
         let mut errors = Errors::new();
@@ -411,6 +466,40 @@ mod tests {
         let looks = svc.lookup_history("", 50);
         assert_eq!(looks.lookups.len(), 1);
         assert!(looks.errors.is_empty());
+    }
+
+    #[test]
+    fn dashboard_reads_every_strip_without_errors() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let id = seed(svc.catalog(), "Dune", &["scifi"]);
+        svc.catalog()
+            .log_event(id, EventKind::Opened, "")
+            .expect("log event");
+
+        let snap = svc.dashboard(4);
+        assert!(
+            snap.errors.is_empty(),
+            "healthy dashboard reported errors: {:?}",
+            snap.errors
+        );
+        assert_eq!(snap.stats.total_books, 1);
+        assert_eq!(snap.events.len(), 1);
+        // The goal counters are infallible, so they always have a value.
+        assert!(snap.goal >= 0);
+        assert!(snap.finished_this_year >= 0);
+    }
+
+    #[test]
+    fn an_empty_dashboard_is_not_an_error() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let snap = svc.dashboard(4);
+        assert!(snap.errors.is_empty(), "{:?}", snap.errors);
+        assert_eq!(snap.stats.total_books, 0);
+        assert!(snap.recently_opened.is_empty());
+        assert!(snap.events.is_empty());
+        assert!(snap.sessions.is_empty());
     }
 
     #[test]
