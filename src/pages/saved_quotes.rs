@@ -1,6 +1,6 @@
 use crate::db::{Annotation, Catalog};
-use crate::service::LibraryService;
 use crate::models::Book;
+use crate::service::LibraryService;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -172,7 +172,9 @@ impl Component for SavedQuotesModel {
             }
             SavedQuotesMsg::SaveNote { id, note } => {
                 crate::notify::outcome(
-                    self.service.catalog().update_annotation_note(id, note.trim()),
+                    self.service
+                        .catalog()
+                        .update_annotation_note(id, note.trim()),
                     "Note saved",
                     "",
                     "Could not save your note",
