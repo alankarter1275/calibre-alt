@@ -1,12 +1,33 @@
-(no clippy failures recorded)
-
-This file holds the clippy diagnostics from the most recent FAILED CI run.
-The Arena sandbox cannot download GitHub Actions logs, so the workflow commits
-them here instead (see .github/workflows/ci.yml, "publish clippy log on
-failure").
-
-Cleared 2026-09-02: the errors previously stored here (thumbs.rs PathBuf import
-and two String/&str mismatches, run 33593243760) were fixed and CI is green.
-A stale failure log reads as if the branch is broken, which it is not.
-
-CI overwrites this file automatically the next time clippy fails.
+src/thumbs.rs:98:12: [1m[91merror[0m: method `path` is never used
+src/db/dictionaries.rs:264:25: [1m[91merror[0m: using `contains()` instead of `iter().any()` is more efficient: help: try: `senses.contains(&row.definition)`
+src/db/dictionaries.rs:460:63: [1m[91merror[0m: redundant closure: help: replace the closure with the function itself: `combined_row_to_entry`
+src/db/dictionaries.rs:487:65: [1m[91merror[0m: redundant closure: help: replace the closure with the function itself: `combined_row_to_entry`
+src/db/dictionaries.rs:503:55: [1m[91merror[0m: redundant closure: help: replace the closure with the function itself: `combined_row_to_entry`
+src/db/dictionaries.rs:1090:33: [1m[91merror[0m: this `if` has identical blocks
+src/db/dictionaries.rs:1128:9: [1m[91merror[0m: this `if` has identical blocks
+src/db/metadata.rs:460:21: [1m[91merror[0m: using `contains()` instead of `iter().any()` is more efficient: help: try: `days.contains(&key)`
+src/epub_write.rs:413:1: [1m[91merror[0m: items after a test module
+src/metadata/mod.rs:297:5: [1m[91merror[0m: consider using `sort_by_key`
+src/pages/author.rs:23:1: [1m[91merror[0m: large size difference between variants: the entire enum is at least 376 bytes
+src/pages/book.rs:865:25: [1m[91merror[0m: this expression creates a reference which is immediately dereferenced by the compiler: help: change this to: `widgets`
+src/pages/book.rs:867:26: [1m[91merror[0m: this expression creates a reference which is immediately dereferenced by the compiler: help: change this to: `widgets`
+src/pages/book.rs:868:27: [1m[91merror[0m: this expression creates a reference which is immediately dereferenced by the compiler: help: change this to: `widgets`
+src/pages/book.rs:869:24: [1m[91merror[0m: this expression creates a reference which is immediately dereferenced by the compiler: help: change this to: `widgets`
+src/pages/book.rs:1594:31: [1m[91merror[0m: redundant reference in `format!` argument: help: remove the redundant `&`: `book.file_hash.chars().take(12).collect::<String>()`
+src/pages/book.rs:1670:17: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/book.rs:1675:9: [1m[91merror[0m: redundant redefinition of a binding `book_id`
+src/pages/book.rs:1909:17: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/book.rs:1914:9: [1m[91merror[0m: redundant redefinition of a binding `book_id`
+src/pages/home.rs:11:1: [1m[91merror[0m: all variants have the same prefix: `Open`
+src/pages/library.rs:373:39: [1m[91merror[0m: this expression creates a reference which is immediately dereferenced by the compiler: help: change this to: `book.authors_display()`
+src/pages/library.rs:657:39: [1m[91merror[0m: this expression creates a reference which is immediately dereferenced by the compiler: help: change this to: `book.authors_display()`
+src/pages/metadata_editor.rs:143:22: [1m[91merror[0m: very complex type used. Consider factoring parts into `type` definitions
+src/pages/metadata_editor.rs:224:9: [1m[91merror[0m: unnecessary use of `to_string`
+src/pages/reader.rs:2926:1: [1m[91merror[0m: this function has too many arguments (8/7)
+src/pages/series_float.rs:260:9: [1m[91merror[0m: non-binding `let` on a future
+src/pages/series_float.rs:456:73: [1m[91merror[0m: this expression creates a reference which is immediately dereferenced by the compiler: help: change this to: `sender`
+src/pages/settings.rs:612:29: [1m[91merror[0m: casting to the same type is unnecessary (`i32` -> `i32`): help: try: `((slot % 2))`
+src/pages/settings.rs:612:48: [1m[91merror[0m: casting to the same type is unnecessary (`i32` -> `i32`): help: try: `((slot / 2))`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 30 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 28 previous errors
+--- run 33637742847 ---
