@@ -1,6 +1,7 @@
 //! P4 — Analytics: honest numbers derived from the catalog and session log.
 
 use crate::db::{Catalog, LibraryStats};
+use crate::service::LibraryService;
 use crate::widgets::charts::{line_chart, monthly_series, sparkline, streak_strip};
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -13,7 +14,7 @@ pub enum AnalyticsMsg {
 }
 
 pub struct AnalyticsModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     stats: LibraryStats,
     goal: i64,
     finished_this_year: i64,
@@ -85,13 +86,17 @@ impl Component for AnalyticsModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let stats = catalog.library_stats().unwrap_or_default();
+        // A0 step 2: one service call replaces four direct catalog reads,
+        // each of which used to swallow its own error.
+        let service = LibraryService::new(catalog);
+        let snap = service.analytics();
+        report_errors(&snap.errors);
         let model = AnalyticsModel {
-            goal: catalog.reading_goal(),
-            finished_this_year: catalog.finished_this_year(),
-            week: catalog.week_activity(),
-            catalog,
-            stats,
+            service,
+            stats: snap.stats,
+            goal: snap.goal,
+            finished_this_year: snap.finished_this_year,
+            week: snap.week,
         };
         let widgets = view_output!();
         rebuild(&widgets.body, &model, &sender);
@@ -110,7 +115,7 @@ impl Component for AnalyticsModel {
                 self.reload();
             }
             AnalyticsMsg::SetGoal(books) => {
-                self.catalog.set_reading_goal(books);
+                self.service.catalog().set_reading_goal(books);
                 crate::notify::success(
                     "Reading goal saved",
                     &format!(
@@ -128,10 +133,20 @@ impl Component for AnalyticsModel {
 
 impl AnalyticsModel {
     fn reload(&mut self) {
-        self.stats = self.catalog.library_stats().unwrap_or_default();
-        self.goal = self.catalog.reading_goal();
-        self.finished_this_year = self.catalog.finished_this_year();
-        self.week = self.catalog.week_activity();
+        let snap = self.service.analytics();
+        report_errors(&snap.errors);
+        self.stats = snap.stats;
+        self.goal = snap.goal;
+        self.finished_this_year = snap.finished_this_year;
+        self.week = snap.week;
+    }
+}
+
+/// Surface read failures instead of rendering them as an empty page. The
+/// service collects them; deciding what the user sees stays with the UI.
+fn report_errors(errors: &[String]) {
+    for err in errors {
+        crate::notify::error("Could not read the library", err);
     }
 }
 

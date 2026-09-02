@@ -1,5 +1,6 @@
 use crate::db::Catalog;
 use crate::pages::all_books::{ImportProgress, ImportTally};
+use crate::service::LibraryService;
 use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W};
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -19,7 +20,7 @@ pub enum HomeMsg {
 }
 
 pub struct HomePageModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     importing: bool,
     status: String,
 }
@@ -140,14 +141,13 @@ impl Component for HomePageModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = HomePageModel {
-            catalog,
+            service: LibraryService::new(catalog),
             importing: false,
             status: String::new(),
         };
         let widgets = view_output!();
 
-        // Bounded: Home shows a dozen covers, not the whole library.
-        rebuild(&widgets, &model.catalog, &sender);
+        rebuild(&widgets, &model.service, &sender);
 
         ComponentParts { model, widgets }
     }
@@ -212,7 +212,10 @@ impl Component for HomePageModel {
                 self.importing = true;
                 self.status = format!("Importing 1 of {total}…");
 
-                let catalog = self.catalog.clone();
+                // Imports still go straight to the catalog: writes are not
+                // part of the read-snapshot seam (they belong to the task
+                // manager, A0 step 4).
+                let catalog = self.service.catalog().clone();
                 sender.spawn_command(move |out| {
                     let mut tally = ImportTally::default();
                     for (i, path) in paths.iter().enumerate() {
@@ -301,7 +304,7 @@ impl Component for HomePageModel {
 
                 // New books are in the catalog now; refresh this page so the
                 // counts / continue / recently-added cards reflect them.
-                rebuild(widgets, &self.catalog, &sender);
+                rebuild(widgets, &self.service, &sender);
             }
         }
     }
@@ -313,19 +316,29 @@ fn clear_box(host: &gtk::Box) {
     }
 }
 
-/// (Re)populate Home from the catalog. Called at init and again after an import.
+/// (Re)populate Home. Called at init and again after an import.
+///
+/// A0 step 2: one `service.home()` call replaces four direct catalog reads.
+/// Everything below is pure widget building against an owned snapshot — which
+/// is what makes moving the query to a worker thread a change in the service
+/// rather than in this function.
 fn rebuild(
     widgets: &HomePageModelWidgets,
-    catalog: &Arc<Catalog>,
+    service: &LibraryService,
     sender: &ComponentSender<HomePageModel>,
 ) {
+    let snap = service.home();
+    for err in &snap.errors {
+        crate::notify::error("Could not read the library", err);
+    }
+
     clear_box(&widgets.counts_host);
     clear_box(&widgets.continue_host);
     clear_box(&widgets.tbr_host);
     clear_box(&widgets.recent_host);
 
     // ── counts strip ────────────────────────────────────────────────
-    let stats = catalog.library_stats().unwrap_or_default();
+    let stats = &snap.stats;
     for (label, value) in [
         ("Books", stats.total_books.to_string()),
         ("Reading", stats.reading.to_string()),
@@ -345,24 +358,10 @@ fn rebuild(
         widgets.counts_host.append(&tile);
     }
 
-    // Bounded: Home shows a dozen covers, not the whole library.
-    let books = catalog.recent_books(12).unwrap_or_default();
-
     // ── continue: most recently opened, newest first ────────────────
-    let mut cont: Vec<_> = catalog.recently_opened(4).unwrap_or_default();
-    if cont.is_empty() {
-        cont = books
-            .iter()
-            .filter(|b| b.progress > 0 && b.progress < 100)
-            .take(4)
-            .cloned()
-            .collect();
-    }
-    if cont.is_empty() {
-        if let Some(first) = books.first() {
-            cont.push(first.clone());
-        }
-    }
+    // The fallback chain (opened -> in progress -> newest) now lives in the
+    // service, where it is unit-tested.
+    let cont = &snap.continue_reading;
 
     if cont.is_empty() {
         let empty = gtk::Label::new(Some(
@@ -373,7 +372,7 @@ fn rebuild(
         empty.set_halign(gtk::Align::Start);
         widgets.continue_host.append(&empty);
     } else {
-        for book in &cont {
+        for book in cont {
             let id = book.id;
             let s1 = sender.clone();
             let s2 = sender.clone();
@@ -391,7 +390,7 @@ fn rebuild(
     }
 
     // ── reading list peek ───────────────────────────────────────────
-    let tbr = catalog.list_reading_list().unwrap_or_default();
+    let tbr = &snap.reading_list;
     if tbr.is_empty() {
         widgets.tbr_label.set_visible(false);
         widgets.tbr_host.set_visible(false);
@@ -434,7 +433,8 @@ fn rebuild(
     }
 
     // ── recently added ──────────────────────────────────────────────
-    let recent: Vec<_> = books.iter().take(12).cloned().collect();
+    // Already bounded to 12 by the service, so no second `take` here.
+    let recent = &snap.recent;
     if recent.is_empty() {
         let empty = gtk::Label::new(Some("Your library is empty — add a book above."));
         empty.add_css_class("kalam-muted");
@@ -456,7 +456,7 @@ fn rebuild(
         flow.add_css_class("kalam-book-grid");
         flow.add_css_class("kalam-home-flow");
 
-        for book in &recent {
+        for book in recent {
             let id = book.id;
             let s1 = sender.clone();
             let s2 = sender.clone();

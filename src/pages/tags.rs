@@ -2,6 +2,7 @@
 
 use crate::db::{Catalog, SortKey};
 use crate::models::Book;
+use crate::service::LibraryService;
 use crate::widgets::book_row::build_book_grid;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -83,9 +84,12 @@ impl Component for TagsModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let tags = catalog.list_tags_with_counts().unwrap_or_default();
+        // A0 step 2: ask the service, and say so when the read fails instead
+        // of drawing an empty cloud.
+        let snap = LibraryService::new(catalog).tags();
+        report_errors(&snap.errors);
         let model = TagsModel {
-            tags,
+            tags: snap.tags,
             query: String::new(),
         };
         let widgets = view_output!();
@@ -191,7 +195,7 @@ pub enum TagBooksMsg {
 }
 
 pub struct TagBooksModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     tag: String,
     books: Vec<Book>,
     sort: SortKey,
@@ -263,11 +267,13 @@ impl Component for TagBooksModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let sort = SortKey::Title;
-        let books = catalog.books_with_tag(&tag, sort).unwrap_or_default();
+        let service = LibraryService::new(catalog);
+        let snap = service.tag_books(&tag, sort);
+        report_errors(&snap.errors);
         let model = TagBooksModel {
-            catalog,
+            service,
             tag,
-            books,
+            books: snap.books,
             sort,
         };
         let widgets = view_output!();
@@ -304,14 +310,21 @@ impl Component for TagBooksModel {
         match msg {
             TagBooksMsg::SortChanged(sort) => {
                 self.sort = sort;
-                self.books = self
-                    .catalog
-                    .books_with_tag(&self.tag, sort)
-                    .unwrap_or_default();
+                let snap = self.service.tag_books(&self.tag, sort);
+                report_errors(&snap.errors);
+                self.books = snap.books;
             }
         }
         rebuild_books(&widgets.list, &self.books, &sender);
         self.update_view(widgets, sender);
+    }
+}
+
+/// Surface read failures instead of rendering them as an empty page. The
+/// service collects them; deciding what the user sees stays with the UI.
+fn report_errors(errors: &[String]) {
+    for err in errors {
+        crate::notify::error("Could not read the library", err);
     }
 }
 
