@@ -95,6 +95,17 @@ pub struct AnalyticsSnapshot {
     pub errors: Errors,
 }
 
+/// Saved quotes, each already paired with its book.
+///
+/// The page used to call `get_book` once per quote, and `get_book` runs a
+/// second query for tags — roughly `2N + 1` round trips on every keystroke in
+/// the search box. The batch read collapses that to a constant three.
+#[derive(Debug, Default)]
+pub struct QuotesSnapshot {
+    pub quotes: Vec<(Annotation, Option<Book>)>,
+    pub errors: Errors,
+}
+
 /// The My Library dashboard. One read of everything the page shows, so a
 /// broken database cannot render as a cheerful empty dashboard.
 ///
@@ -221,6 +232,30 @@ impl LibraryService {
     }
 
     /// The tag cloud.
+    /// Saved quotes matching `query`, each paired with its book.
+    ///
+    /// A book that no longer exists yields `None` rather than an error row —
+    /// that is a missing book, not a failed read, and the page already has
+    /// wording for it.
+    pub fn quotes(&self, query: &str) -> QuotesSnapshot {
+        let mut errors = Errors::new();
+        let annos: Vec<Annotation> = take(
+            self.catalog.list_all_quotes(query),
+            "saved quotes",
+            &mut errors,
+        );
+        let ids: Vec<i64> = annos.iter().map(|a| a.book_id).collect();
+        let books = take(self.catalog.books_by_ids(&ids), "quote books", &mut errors);
+        let quotes = annos
+            .into_iter()
+            .map(|a| {
+                let book = books.get(&a.book_id).cloned();
+                (a, book)
+            })
+            .collect();
+        QuotesSnapshot { quotes, errors }
+    }
+
     /// My Library dashboard: every strip on the page, in one call.
     ///
     /// `feed_limit` is doubled internally the way the page does it: the feed
@@ -382,6 +417,8 @@ mod tests {
         assert_send::<AnalyticsSnapshot>();
         assert_send::<TagsSnapshot>();
         assert_send::<TagBooksSnapshot>();
+        assert_send::<DashboardSnapshot>();
+        assert_send::<QuotesSnapshot>();
         // The service itself must be Send too, or it cannot be moved onto the
         // worker that would run those queries.
         assert_send::<LibraryService>();
@@ -466,6 +503,50 @@ mod tests {
         let looks = svc.lookup_history("", 50);
         assert_eq!(looks.lookups.len(), 1);
         assert!(looks.errors.is_empty());
+    }
+
+    #[test]
+    fn quotes_pair_each_annotation_with_its_book_in_one_batch() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let id = seed(svc.catalog(), "Dune", &["scifi"]);
+        for excerpt in ["the spice must flow", "fear is the mind-killer"] {
+            svc.catalog()
+                .insert_annotation(id, "quote", 0, "/1", 0, "/1", 5, "", excerpt, "")
+                .expect("insert annotation");
+        }
+
+        let snap = svc.quotes("");
+        assert!(snap.errors.is_empty(), "{:?}", snap.errors);
+        assert_eq!(snap.quotes.len(), 2);
+        // Every quote resolved to its book: this is what the per-quote
+        // `get_book` loop used to do with 2N + 1 queries.
+        for (_, book) in &snap.quotes {
+            assert_eq!(book.as_ref().map(|b| b.title.as_str()), Some("Dune"));
+        }
+
+        // Search narrows the same way the page expects.
+        let hit = svc.quotes("spice");
+        assert_eq!(hit.quotes.len(), 1);
+        assert!(hit.errors.is_empty());
+
+        // A search matching nothing is not a failure.
+        let miss = svc.quotes("zzzz-no-such-text");
+        assert!(miss.quotes.is_empty());
+        assert!(miss.errors.is_empty(), "no matches is not an error");
+    }
+
+    #[test]
+    fn there_are_no_quotes_at_all_is_not_an_error() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let snap = svc.quotes("");
+        assert!(snap.quotes.is_empty());
+        assert!(
+            snap.errors.is_empty(),
+            "an empty quote list is not a failure: {:?}",
+            snap.errors
+        );
     }
 
     #[test]

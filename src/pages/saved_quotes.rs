@@ -1,4 +1,5 @@
 use crate::db::{Annotation, Catalog};
+use crate::service::LibraryService;
 use crate::models::Book;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -21,7 +22,7 @@ pub enum SavedQuotesMsg {
 }
 
 pub struct SavedQuotesModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     query: String,
     quotes: Vec<(Annotation, Option<Book>)>,
     status: String,
@@ -106,7 +107,7 @@ impl Component for SavedQuotesModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = SavedQuotesModel {
-            catalog: catalog.clone(),
+            service: LibraryService::new(catalog),
             query: String::new(),
             quotes: Vec::new(),
             status: String::new(),
@@ -136,7 +137,7 @@ impl Component for SavedQuotesModel {
             }
             SavedQuotesMsg::Delete(id) => {
                 crate::notify::outcome_info(
-                    self.catalog.delete_annotation(id),
+                    self.service.catalog().delete_annotation(id),
                     "Quote deleted",
                     "",
                     "Could not delete the quote",
@@ -171,7 +172,7 @@ impl Component for SavedQuotesModel {
             }
             SavedQuotesMsg::SaveNote { id, note } => {
                 crate::notify::outcome(
-                    self.catalog.update_annotation_note(id, note.trim()),
+                    self.service.catalog().update_annotation_note(id, note.trim()),
                     "Note saved",
                     "",
                     "Could not save your note",
@@ -190,33 +191,28 @@ impl Component for SavedQuotesModel {
 
 impl SavedQuotesModel {
     fn reload(&mut self) {
-        match self.catalog.list_all_quotes(&self.query) {
-            Ok(annos) => {
-                let mut enriched = Vec::new();
-                for a in annos {
-                    let book = self.catalog.get_book(a.book_id).ok().flatten();
-                    enriched.push((a, book));
-                }
-                let n = enriched.len();
-                self.quotes = enriched;
-                if self.query.trim().is_empty() {
-                    self.status = if n == 0 {
-                        "No saved quotes yet — highlight or save quotes while reading.".into()
-                    } else {
-                        format!("{n} quote{} saved", if n == 1 { "" } else { "s" })
-                    };
-                } else {
-                    self.status = format!(
-                        "{n} result{} for \"{}\"",
-                        if n == 1 { "" } else { "s" },
-                        self.query
-                    );
-                }
-            }
-            Err(e) => {
-                self.quotes.clear();
-                self.status = format!("DB error: {e}");
-            }
+        let snap = self.service.quotes(&self.query);
+        // This page has always reported failures in its status line rather
+        // than a toast; keep that, and keep the wording it already used.
+        if let Some(e) = snap.errors.first() {
+            self.quotes.clear();
+            self.status = format!("DB error: {e}");
+            return;
+        }
+        let n = snap.quotes.len();
+        self.quotes = snap.quotes;
+        if self.query.trim().is_empty() {
+            self.status = if n == 0 {
+                "No saved quotes yet — highlight or save quotes while reading.".into()
+            } else {
+                format!("{n} quote{} saved", if n == 1 { "" } else { "s" })
+            };
+        } else {
+            self.status = format!(
+                "{n} result{} for \"{}\"",
+                if n == 1 { "" } else { "s" },
+                self.query
+            );
         }
     }
 }
@@ -346,11 +342,16 @@ pub fn export_all_quotes_markdown(
     catalog: &Arc<Catalog>,
 ) -> Result<(usize, std::path::PathBuf), String> {
     let annos = catalog.list_all_quotes("").map_err(|e| format!("{e}"))?;
-    let mut quotes = Vec::with_capacity(annos.len());
-    for a in annos {
-        let book = catalog.get_book(a.book_id).ok().flatten();
-        quotes.push((a, book));
-    }
+    // One batch read, not one `get_book` per quote.
+    let ids: Vec<i64> = annos.iter().map(|a| a.book_id).collect();
+    let books = catalog.books_by_ids(&ids).map_err(|e| format!("{e}"))?;
+    let quotes: Vec<(Annotation, Option<Book>)> = annos
+        .into_iter()
+        .map(|a| {
+            let book = books.get(&a.book_id).cloned();
+            (a, book)
+        })
+        .collect();
     let markdown = export_quotes_markdown(&quotes);
     let out_path = dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))

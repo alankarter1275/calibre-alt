@@ -4,6 +4,7 @@
 use crate::models::{Book, BookFormat};
 use crate::paths::{book_dir, catalog_db, ensure_data_dirs};
 use rusqlite::{params, Connection, OptionalExtension};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -874,6 +875,69 @@ impl Catalog {
             b.file_path = book_dir(&b.uuid).join(&b.file_name);
         }
         Ok(book)
+    }
+
+    /// Fetch many books at once, keyed by id.
+    ///
+    /// Callers that enrich a list (saved quotes, the dashboard feed) used to
+    /// call [`Catalog::get_book`] in a loop. That is `2N + 1` queries, because
+    /// `get_book` runs a second query for tags — 500 quotes meant roughly
+    /// 1,001 round trips on every keystroke in the search box. This does it in
+    /// two queries total regardless of `N`.
+    ///
+    /// Ids that do not exist are simply absent from the map, which lets the
+    /// caller keep distinguishing "no such book" from "the read failed".
+    pub fn books_by_ids(&self, ids: &[i64]) -> Result<HashMap<i64, Book>> {
+        let mut out: HashMap<i64, Book> = HashMap::new();
+        if ids.is_empty() {
+            return Ok(out);
+        }
+        // De-duplicate: the same book usually owns many quotes.
+        let mut unique: Vec<i64> = ids.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+
+        let conn = self.conn();
+        // SQLite caps host parameters (999 by default), so chunk defensively.
+        for chunk in unique.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!("SELECT {BOOK_COLUMNS} FROM books WHERE books.id IN ({holders})");
+            let mut stmt = conn.prepare(&sql)?;
+            let params = rusqlite::params_from_iter(chunk.iter());
+            let rows = stmt.query_map(params, row_to_book)?;
+            for b in rows {
+                let mut b = b?;
+                b.cover_path = b
+                    .cover_name
+                    .as_ref()
+                    .map(|name| book_dir(&b.uuid).join(name));
+                b.file_path = book_dir(&b.uuid).join(&b.file_name);
+                out.insert(b.id, b);
+            }
+        }
+
+        // One tags query for the whole batch instead of one per book.
+        for chunk in unique.chunks(500) {
+            let holders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT bt.book_id, t.name FROM tags t
+                 JOIN book_tags bt ON bt.tag_id = t.id
+                 WHERE bt.book_id IN ({holders})
+                 ORDER BY t.name COLLATE NOCASE"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let params = rusqlite::params_from_iter(chunk.iter());
+            let rows = stmt.query_map(params, |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (book_id, tag) = row?;
+                if let Some(b) = out.get_mut(&book_id) {
+                    b.tags.push(tag);
+                }
+            }
+        }
+        Ok(out)
     }
 
     pub fn find_by_hash(&self, hash: &str) -> Result<Option<i64>> {
@@ -2025,6 +2089,38 @@ mod tests {
         // Not adjacent to today, so current is 0 but the run of 2 is longest.
         let (_, longest) = streaks(&days);
         assert_eq!(longest, 2);
+    }
+
+    #[test]
+    fn books_by_ids_batches_and_keeps_tags() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = seed(&cat, "Dune", "Herbert", &["scifi", "classic"]);
+        let b = seed(&cat, "Emma", "Austen", &[]);
+
+        // Duplicate and unknown ids are both tolerated: the same book usually
+        // owns many quotes, and a deleted book must not fail the whole read.
+        let map = cat.books_by_ids(&[a, b, a, 9999]).unwrap();
+        assert_eq!(map.len(), 2);
+        assert_eq!(map[&a].title, "Dune");
+        assert_eq!(map[&b].title, "Emma");
+        assert!(!map.contains_key(&9999));
+
+        // Tags survive the batch path (they come from a second query).
+        let mut tags = map[&a].tags.clone();
+        tags.sort();
+        assert_eq!(tags, vec!["classic".to_string(), "scifi".to_string()]);
+        assert!(map[&b].tags.is_empty());
+
+        // It agrees with the one-at-a-time path it replaces.
+        let single = cat.get_book(a).unwrap().unwrap();
+        assert_eq!(single.title, map[&a].title);
+        assert_eq!(single.file_path, map[&a].file_path);
+    }
+
+    #[test]
+    fn books_by_ids_on_no_ids_is_not_an_error() {
+        let cat = Catalog::open_in_memory().unwrap();
+        assert!(cat.books_by_ids(&[]).unwrap().is_empty());
     }
 
     #[test]

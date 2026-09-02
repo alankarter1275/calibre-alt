@@ -172,7 +172,7 @@ fn build_dashboard(
             } else {
                 "books".to_string()
             },
-            monthly_series(&stats),
+            monthly_series(stats),
             "kalam-spark-red",
         ),
         (
