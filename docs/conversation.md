@@ -778,3 +778,61 @@ fallback.
 ---
 
 *Last updated: 2026-09-02.*
+
+---
+
+## 12. chapbook deep-dive: fork? adopt? PDF? platforms? alternatives? (2026-09-02)
+
+**User asked:** can we copy it and develop it? any caveats? does it mean no
+MuPDF? is it Linux or Windows? should we develop it ourselves? what else
+exists?
+
+### Verified facts
+
+- **License Apache-2.0** — compatible with our GPL-3.0-or-later (permissive,
+  incorporable with attribution). But a **fork stays Apache-2.0** (cannot
+  relicense) → **dual-license tangle** (some files Apache, some GPL) if we
+  fork into our repo. Real maintenance cost.
+- **Cross-platform, not Linux-only**: `android/` (JNI), `ios/` (Swift),
+  `viewer` (winit — Linux/macOS/Windows), `viewer-gtk` (GTK4, Linux), C ABI
+  FFI for embedders. Commit history shows fontconfig excluded on
+  iOS/Android/macOS. So: a portable engine with Linux as one target.
+- **Not a passive library**: active, opinionated project, 196 commits/week,
+  heavy AI-assist, fast-moving author. Forking = competing with its
+  trajectory.
+- **PDF is real but young**: `chapbook-pdf` = hayro (pure-Rust, Apache-2.0,
+  most complete pure-Rust PDF rasterizer, 1000+ test PDFs) — but hayro has
+  **no encryption, no blending/knockout, no color-key masking, no perf
+  work yet**. So **MuPDF stays on the P10 shortlist** — hayro is the
+  AGPL-free candidate, not a replacement.
+- **stylo dependency is heavy**: pulls in Firefox's C++ CSS engine — real
+  build complexity + big dependency (the thing we avoided with cosmic-text).
+  Buys real CSS fidelity.
+- **Its stated limit = our plan**: "a subset of publisher EPUBs" → **WebKit
+  fallback stays**.
+
+### Alternatives survey (nothing else close)
+
+- **bookokrat** (MIT) — terminal EPUB/PDF/DJVU reader, full HTML rendering
+  (html5ever), MathML, tables — but a **TUI**, not an embeddable renderer.
+- **epub-rs / eGust/epub-reader / rustic-reader** — small or webview-based.
+- **KOReader / crengine** — C++ reference (license/FFI issues, §10).
+- **Tachiyomi/Suwayomi** — manga reference (§7).
+- **chapbook is the only "EPUB/CBZ/PDF on cosmic-text/stylo, no webview,
+  native" project.**
+
+### Decision (locked)
+
+1. **Do NOT fork** (license tangle + competing with a fast-moving author).
+2. **Do NOT adopt as a dependency yet** (1 week old, API churn).
+3. **Watch for 3–6 months; re-evaluate at renderer vertical-slice time.**
+   If solid → depend on it (clean Apache dep). If stalled → no loss.
+4. **Steal the ideas now** (done, §11): LayeredLocator, pagination-as-model,
+   stylo cascade, display-list architecture.
+5. **Build our own renderer swappable** so adopting chapbook later is a
+   clean swap.
+6. **MuPDF stays** on the P10 shortlist (hayro young; re-evaluate at P10).
+
+---
+
+*Last updated: 2026-09-02.*
