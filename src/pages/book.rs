@@ -1667,8 +1667,7 @@ pub fn build_annotations_panel(
 
     // Self-referential refresh: the delete buttons need to re-run it, so the
     // closure finds itself through a slot it fills in after construction.
-    let holder: crate::pages::SelfRebuild =
-        Rc::new(std::cell::RefCell::new(None));
+    let holder: crate::pages::SelfRebuild = Rc::new(std::cell::RefCell::new(None));
     let closure: Rc<dyn Fn()> = Rc::new({
         let host = list_host.clone();
         let catalog = catalog.clone();
@@ -1905,8 +1904,7 @@ pub fn build_tags_panel(
 
     // Self-referential refresh: add/remove need to re-run it, so the
     // closure finds itself through a slot it fills in after construction.
-    let holder: crate::pages::SelfRebuild =
-        Rc::new(std::cell::RefCell::new(None));
+    let holder: crate::pages::SelfRebuild = Rc::new(std::cell::RefCell::new(None));
     let closure: Rc<dyn Fn()> = Rc::new({
         let host = list_host.clone();
         let catalog = catalog.clone();
