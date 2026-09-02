@@ -50,7 +50,7 @@
 //! add a snapshot method here, swap the page's field, delete its
 //! `unwrap_or_default()`s. See the roadmap's A0 step 2 entry.
 
-use crate::db::{Catalog, LibraryStats, ReadingListEntry, SortKey};
+use crate::db::{Catalog, LibraryStats, ReadingListEntry, Shelf, SortKey};
 use crate::models::Book;
 use std::sync::Arc;
 
@@ -89,6 +89,13 @@ pub struct AnalyticsSnapshot {
     pub finished_this_year: i64,
     /// Which of the last 7 days had any reading.
     pub week: [bool; 7],
+    pub errors: Errors,
+}
+
+/// The shelves grid: manual and smart collections with their live counts.
+#[derive(Debug, Default)]
+pub struct ShelvesSnapshot {
+    pub shelves: Vec<Shelf>,
     pub errors: Errors,
 }
 
@@ -168,6 +175,15 @@ impl LibraryService {
     }
 
     /// The tag cloud.
+    /// Shelves page: every shelf, ordered as stored.
+    pub fn shelves(&self) -> ShelvesSnapshot {
+        let mut errors = Errors::new();
+        ShelvesSnapshot {
+            shelves: take(self.catalog.list_shelves(), "shelves", &mut errors),
+            errors,
+        }
+    }
+
     /// Reading list page: the ordered queue.
     pub fn reading_list(&self) -> ReadingListSnapshot {
         let mut errors = Errors::new();
@@ -239,6 +255,7 @@ fn continue_row(recently_opened: Vec<Book>, recent: &[Book]) -> Vec<Book> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::ShelfKind;
     use crate::models::BookFormat;
 
     /// The reason snapshots exist: they must be able to cross a thread
@@ -315,6 +332,26 @@ mod tests {
         );
         assert_eq!(snap.stats.total_books, 2);
         assert_eq!(snap.recent.len(), 2);
+    }
+
+    #[test]
+    fn shelves_are_returned_and_an_empty_grid_is_not_an_error() {
+        // Same defect as the reading list: `unwrap_or_default()` made a broken
+        // read look like "you have no shelves yet".
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+
+        let snap = svc.shelves();
+        assert!(snap.shelves.is_empty());
+        assert!(snap.errors.is_empty(), "no shelves is not a failure");
+
+        svc.catalog()
+            .create_shelf("To read", ShelfKind::Manual, "", "")
+            .expect("create shelf");
+        let snap = svc.shelves();
+        assert_eq!(snap.shelves.len(), 1);
+        assert_eq!(snap.shelves[0].name, "To read");
+        assert!(snap.errors.is_empty());
     }
 
     #[test]

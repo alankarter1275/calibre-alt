@@ -2,6 +2,7 @@
 
 use crate::db::{Catalog, Shelf, ShelfKind};
 use crate::pages::shelf_editor::{open_shelf_editor, ShelfEditorMode};
+use crate::service::LibraryService;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -21,7 +22,7 @@ pub enum ShelvesMsg {
 }
 
 pub struct ShelvesGridModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     shelves: Vec<Shelf>,
 }
 
@@ -95,8 +96,13 @@ impl Component for ShelvesGridModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let shelves = catalog.list_shelves().unwrap_or_default();
-        let model = ShelvesGridModel { catalog, shelves };
+        let service = LibraryService::new(catalog);
+        let snap = service.shelves();
+        report_errors(&snap.errors);
+        let model = ShelvesGridModel {
+            service,
+            shelves: snap.shelves,
+        };
         let widgets = view_output!();
         rebuild_grid(&widgets.grid_host, &model.shelves, &sender);
         ComponentParts { model, widgets }
@@ -118,7 +124,7 @@ impl Component for ShelvesGridModel {
                 let s = sender.clone();
                 open_shelf_editor(
                     window_of(root).as_ref(),
-                    self.catalog.clone(),
+                    self.service.catalog().clone(),
                     ShelfEditorMode::Create(kind),
                     move || s.input(ShelvesMsg::Refresh),
                 );
@@ -127,7 +133,7 @@ impl Component for ShelvesGridModel {
                 let s = sender.clone();
                 open_shelf_editor(
                     window_of(root).as_ref(),
-                    self.catalog.clone(),
+                    self.service.catalog().clone(),
                     ShelfEditorMode::Edit { shelf_id },
                     move || s.input(ShelvesMsg::Refresh),
                 );
@@ -142,7 +148,7 @@ impl Component for ShelvesGridModel {
                     .map(|s| s.name.clone())
                     .unwrap_or_default();
                 confirm_delete(window_of(root).as_ref(), {
-                    let catalog = self.catalog.clone();
+                    let catalog = self.service.catalog().clone();
                     let s = sender.clone();
                     move || {
                         crate::notify::outcome(
@@ -156,7 +162,9 @@ impl Component for ShelvesGridModel {
                 });
             }
             ShelvesMsg::Refresh => {
-                self.shelves = self.catalog.list_shelves().unwrap_or_default();
+                let snap = self.service.shelves();
+                report_errors(&snap.errors);
+                self.shelves = snap.shelves;
                 rebuild_grid(&widgets.grid_host, &self.shelves, &sender);
             }
         }
@@ -188,6 +196,14 @@ fn summary_line(shelves: &[Shelf]) -> String {
         shelves.len(),
         if shelves.len() == 1 { "" } else { "es" }
     )
+}
+
+/// Surface read failures instead of rendering them as an empty shelf grid.
+/// The service collects them; deciding what the user sees stays with the UI.
+fn report_errors(errors: &[String]) {
+    for err in errors {
+        crate::notify::error("Could not read your shelves", err);
+    }
 }
 
 fn rebuild_grid(host: &gtk::Box, shelves: &[Shelf], sender: &ComponentSender<ShelvesGridModel>) {
