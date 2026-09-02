@@ -58,8 +58,21 @@ fn open_editor_inner(
     book_id: i64,
     on_saved: Rc<dyn Fn()>,
 ) {
-    let Ok(Some(book)) = catalog.get_book(book_id) else {
-        return;
+    // Silently returning here meant the editor just never appeared: no
+    // dialog, no message, nothing to click. Say which of the two it was.
+    let book = match catalog.get_book(book_id) {
+        Ok(Some(book)) => book,
+        Ok(None) => {
+            crate::notify::error(
+                "Cannot edit this book",
+                "It is no longer in your library — it may have been deleted.",
+            );
+            return;
+        }
+        Err(err) => {
+            crate::notify::error("Could not open the metadata editor", &err.to_string());
+            return;
+        }
     };
 
     // Clamp to the display so the dialog fits on small laptop screens.

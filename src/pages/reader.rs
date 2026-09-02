@@ -2013,10 +2013,15 @@ impl ReaderModel {
                 PhraseLookup::Empty => Vec::new(),
             }
         } else {
-            self.service
-                .catalog()
-                .search_dict(query, limit)
-                .unwrap_or_default()
+            match self.service.catalog().search_dict(query, limit) {
+                Ok(hits) => hits,
+                Err(err) => {
+                    // Otherwise a broken dictionary index is indistinguishable
+                    // from "that word isn't in the dictionary".
+                    crate::notify::error("Dictionary search failed", &err.to_string());
+                    Vec::new()
+                }
+            }
         };
         // Phase 10: every lookup lands in the append-only history (gated by
         // the `dict_history_enabled` pref and hour-collapsed inside). The

@@ -39,6 +39,8 @@ pub fn open_shelf_editor(
         ShelfEditorMode::Create(kind) => {
             (None, kind, String::new(), String::new(), RuleSet::default())
         }
+        // `_ => return` meant the editor silently never opened. Both
+        // outcomes are worth a word.
         ShelfEditorMode::Edit { shelf_id } => match catalog.get_shelf(shelf_id) {
             Ok(Some(shelf)) => (
                 Some(shelf.id),
@@ -47,7 +49,17 @@ pub fn open_shelf_editor(
                 shelf.description.clone(),
                 shelf.rule_set(),
             ),
-            _ => return,
+            Ok(None) => {
+                crate::notify::error(
+                    "Cannot edit this shelf",
+                    "It no longer exists — it may have been deleted.",
+                );
+                return;
+            }
+            Err(err) => {
+                crate::notify::error("Could not open the shelf editor", &err.to_string());
+                return;
+            }
         },
     };
 
@@ -236,9 +248,18 @@ pub fn open_shelf_editor(
                 show_error(&error_label, "Give the shelf a name.");
                 return;
             }
-            if catalog.shelf_name_taken(&name, shelf_id).unwrap_or(false) {
-                show_error(&error_label, "A shelf with that name already exists.");
-                return;
+            // On a failed check this used to assume the name was free and
+            // carry on, which risks a confusing duplicate-name failure later.
+            match catalog.shelf_name_taken(&name, shelf_id) {
+                Ok(true) => {
+                    show_error(&error_label, "A shelf with that name already exists.");
+                    return;
+                }
+                Ok(false) => {}
+                Err(err) => {
+                    show_error(&error_label, &format!("Could not check the name: {err}"));
+                    return;
+                }
             }
 
             let desc = desc_entry.text().to_string();

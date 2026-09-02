@@ -316,7 +316,15 @@ impl Component for SettingsPageModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let dicts = catalog.list_dictionaries().unwrap_or_default();
+        // A failed read here rendered as "no dictionaries installed", which
+        // is exactly what a user would see after a successful uninstall.
+        let dicts = match catalog.list_dictionaries() {
+            Ok(rows) => rows,
+            Err(err) => {
+                crate::notify::error("Could not list your dictionaries", &err.to_string());
+                Vec::new()
+            }
+        };
         let active_tab = SettingsTab::Appearance;
         let model = SettingsPageModel {
             catalog,
@@ -450,7 +458,13 @@ impl Component for SettingsPageModel {
 
 impl SettingsPageModel {
     fn refresh(&mut self) {
-        self.dicts = self.catalog.list_dictionaries().unwrap_or_default();
+        match self.catalog.list_dictionaries() {
+            Ok(rows) => self.dicts = rows,
+            // Keep the current list rather than blanking it.
+            Err(err) => {
+                crate::notify::error("Could not list your dictionaries", &err.to_string())
+            }
+        }
     }
 }
 
