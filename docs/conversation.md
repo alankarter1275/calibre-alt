@@ -836,3 +836,44 @@ exists?
 ---
 
 *Last updated: 2026-09-02.*
+
+---
+
+## 13. Locked: own Linux-only renderer; chapbook watched, not adopted (2026-09-02)
+
+**User decisions (confirmed):**
+
+1. **Build our own renderer, Linux-only.** Kalam is a desktop Linux app, not
+   a cross-platform engine — so no Android/JNI, iOS/Swift, wasm, C ABI, or
+   per-platform font tables (all of chapbook's portability surface
+   evaporates for us). Trajectories differ from chapbook (portable engine
+   for embedders vs Linux content platform).
+2. **Steal chapbook's ideas** (locators, pagination-as-model, stylo cascade,
+   display-list architecture — already recorded §11–12); **keep watching**,
+   steal more in future. **No fork, no adopt.**
+
+**License check (user asked to verify):** chapbook is **Apache-2.0, not MIT**
+(repo has `LICENSE-APACHE` only). No practical difference for us: both are
+permissive; ideas are free; code copying allowed with attribution/NOTICE;
+Apache-2.0 is compatible with our GPL-3.0-or-later. (Apache-2.0 has a patent
+grant + NOTICE-preservation requirement; MIT is simpler. Neither infects our
+GPL code.)
+
+### Plugin system does NOT depend on the engine
+
+Pipeline: plugin fetches/parses → sanitize (lol_html) → clean content
+format → library/db/downloads/auto-updater (plugins live here) → renderer
+consumes at the very end. Plugins never touch rendering; they produce
+content. The plugin host seam (A0 step 8) can be built before the renderer
+exists; the renderer could be WebKit today, cosmic-text tomorrow, or even
+chapbook later, without plugins noticing. Only the *reading UX* (dict
+popup position, annotation rendering, selection) depends on the engine —
+and that depends on OUR renderer API, which we define.
+
+**Build order confirmed:** A0 service layer + plugin seam → P6 → P7
+(plugins, no engine needed) → renderer vertical slice. The engine is the
+last thing to arrive; nothing before it waits for it.
+
+---
+
+*Last updated: 2026-09-02.*
