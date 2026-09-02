@@ -78,7 +78,10 @@ fn main() {
         let db = paths::catalog_db();
         eprintln!("  mv {} {}.broken", db.display(), db.display());
         eprintln!("Kalam will build a fresh library. Your book files are kept");
-        eprintln!("separately in {} and are not affected.", paths::library_dir().display());
+        eprintln!(
+            "separately in {} and are not affected.",
+            paths::library_dir().display()
+        );
         std::process::exit(1);
     }
 
