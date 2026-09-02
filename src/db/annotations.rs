@@ -227,7 +227,7 @@ impl Catalog {
                     "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at, known
                      FROM saved_words ORDER BY created_at DESC LIMIT 500",
                 )?,
-                Some(k) => conn.prepare_cached(
+                Some(_k) => conn.prepare_cached(
                     "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at, known
                      FROM saved_words WHERE known = ?1 ORDER BY created_at DESC LIMIT 500",
                 )?,
@@ -247,7 +247,7 @@ impl Catalog {
                      WHERE word LIKE ?1 ESCAPE '\\' OR definition LIKE ?1 ESCAPE '\\'
                      ORDER BY created_at DESC LIMIT 500",
                 )?,
-                Some(k) => conn.prepare_cached(
+                Some(_k) => conn.prepare_cached(
                     "SELECT id, word, definition, dict_name, book_id, chapter_index, context_text, created_at, known
                      FROM saved_words
                      WHERE (word LIKE ?1 ESCAPE '\\' OR definition LIKE ?1 ESCAPE '\\')
