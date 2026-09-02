@@ -734,12 +734,9 @@ impl Component for BookPageModel {
                 if let Some(book) = &self.book {
                     let id = book.id;
                     let s = sender.clone();
-                    open_metadata_editor(
-                        root,
-                        self.service.catalog().clone(),
-                        id,
-                        move || s.input(BookPageMsg::Refresh),
-                    );
+                    open_metadata_editor(root, self.service.catalog().clone(), id, move || {
+                        s.input(BookPageMsg::Refresh)
+                    });
                 }
             }
             BookPageMsg::ShowShelfMenu => {

@@ -2,8 +2,8 @@
 
 use crate::db::{Catalog, ReadingListEntry, SortKey};
 use crate::service::LibraryService;
-use crate::widgets::in_app_dialog;
 use crate::widgets::book_row::cover_widget;
+use crate::widgets::in_app_dialog;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::rc::Rc;
@@ -137,11 +137,9 @@ impl Component for ReadingListModel {
             }
             ReadingListMsg::AddBooks => {
                 let s = sender.clone();
-                open_picker(
-                    root,
-                    self.service.catalog().clone(),
-                    move || s.input(ReadingListMsg::Refresh),
-                );
+                open_picker(root, self.service.catalog().clone(), move || {
+                    s.input(ReadingListMsg::Refresh)
+                });
             }
             ReadingListMsg::Refresh => self.reload(),
         }

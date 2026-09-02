@@ -54,12 +54,7 @@ pub fn open_metadata_editor(
     book_id: i64,
     on_saved: impl Fn() + 'static,
 ) {
-    open_editor_inner(
-        anchor.as_ref(),
-        catalog,
-        book_id,
-        Rc::new(on_saved),
-    );
+    open_editor_inner(anchor.as_ref(), catalog, book_id, Rc::new(on_saved));
 }
 
 fn open_editor_inner(
@@ -727,27 +722,31 @@ fn open_editor_inner(
             let cover_host = cover_host.clone();
             let pending_cover = pending_cover.clone();
             let status = status.clone();
-            dialog.open(app_window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
-                let Ok(file) = res else { return };
-                let Some(path) = file.path() else { return };
-                match std::fs::read(&path) {
-                    Ok(bytes) if !bytes.is_empty() => {
-                        if let Some(texture) = texture_from_bytes(&bytes) {
-                            while let Some(c) = cover_host.first_child() {
-                                cover_host.remove(&c);
+            dialog.open(
+                app_window.as_ref(),
+                gtk::gio::Cancellable::NONE,
+                move |res| {
+                    let Ok(file) = res else { return };
+                    let Some(path) = file.path() else { return };
+                    match std::fs::read(&path) {
+                        Ok(bytes) if !bytes.is_empty() => {
+                            if let Some(texture) = texture_from_bytes(&bytes) {
+                                while let Some(c) = cover_host.first_child() {
+                                    cover_host.remove(&c);
+                                }
+                                let pic = gtk::Picture::for_paintable(&texture);
+                                pic.set_size_request(150, 240);
+                                pic.set_content_fit(gtk::ContentFit::Fill);
+                                cover_host.append(&pic);
                             }
-                            let pic = gtk::Picture::for_paintable(&texture);
-                            pic.set_size_request(150, 240);
-                            pic.set_content_fit(gtk::ContentFit::Fill);
-                            cover_host.append(&pic);
+                            *pending_cover.borrow_mut() = Some(bytes);
+                            status.set_label("Cover selected — press Save to keep it.");
                         }
-                        *pending_cover.borrow_mut() = Some(bytes);
-                        status.set_label("Cover selected — press Save to keep it.");
+                        Ok(_) => status.set_label("That image file is empty."),
+                        Err(err) => status.set_label(&format!("Could not read that file: {err}")),
                     }
-                    Ok(_) => status.set_label("That image file is empty."),
-                    Err(err) => status.set_label(&format!("Could not read that file: {err}")),
-                }
-            });
+                },
+            );
         });
     }
 

@@ -10,8 +10,8 @@
 //! handling than with a static `view!` tree.
 
 use crate::db::{Catalog, ShelfKind};
-use crate::widgets::in_app_dialog;
 use crate::shelf_rules::{MatchMode, Rule, RuleField, RuleOp, RuleSet};
+use crate::widgets::in_app_dialog;
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;

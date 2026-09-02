@@ -615,12 +615,9 @@ impl Component for BookFloatModel {
                 if let Some(book) = &self.book {
                     let id = book.id;
                     let s = sender.clone();
-                    open_metadata_editor(
-                        root,
-                        self.service.catalog().clone(),
-                        id,
-                        move || s.input(BookFloatMsg::Refresh),
-                    );
+                    open_metadata_editor(root, self.service.catalog().clone(), id, move || {
+                        s.input(BookFloatMsg::Refresh)
+                    });
                 }
             }
             BookFloatMsg::ShowShelfMenu => {
