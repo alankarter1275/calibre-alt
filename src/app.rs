@@ -915,6 +915,11 @@ impl Component for AppModel {
         }
         sync_content_classes(&widgets.content_host, &model.route, model.show_back_chip());
 
+        // A0 step 1: mark the first window as drawn (cold-start END). Realize is
+        // the point GTK has produced the native window; it fires once. This is
+        // a no-op unless KALAM_TIMING=1.
+        widgets.main_window.connect_realize(|_| crate::timing::now("window_shown"));
+
         ComponentParts { model, widgets }
     }
 
