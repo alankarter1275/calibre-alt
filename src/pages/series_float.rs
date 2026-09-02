@@ -458,7 +458,7 @@ fn render(
             let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
             list.add_css_class("kalam-series-list");
             for (pos, row) in rows.iter().enumerate() {
-                list.append(&build_series_row(row, pos, &model.catalog, &sender));
+                list.append(&build_series_row(row, pos, &model.catalog, sender));
             }
             scroll.set_child(Some(&list));
             host.append(&scroll);
