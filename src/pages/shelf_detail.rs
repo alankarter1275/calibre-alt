@@ -4,6 +4,7 @@ use crate::db::{Catalog, Shelf, ShelfKind, SortKey};
 use crate::models::Book;
 use crate::pages::shelf_editor::{open_shelf_editor, ShelfEditorMode};
 use crate::service::LibraryService;
+use crate::widgets::in_app_dialog;
 use crate::widgets::book_row::build_book_grid;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -200,7 +201,7 @@ impl Component for ShelfDetailModel {
                 if let Some(shelf) = &self.shelf {
                     let s = sender.clone();
                     open_shelf_editor(
-                        window_of(root).as_ref(),
+                        root,
                         self.service.catalog().clone(),
                         ShelfEditorMode::Edit { shelf_id: shelf.id },
                         move || s.input(ShelfDetailMsg::Refresh),
@@ -212,7 +213,7 @@ impl Component for ShelfDetailModel {
                     if shelf.kind == ShelfKind::Manual {
                         let s = sender.clone();
                         open_book_picker(
-                            window_of(root).as_ref(),
+                            root,
                             self.service.catalog().clone(),
                             shelf.id,
                             move || s.input(ShelfDetailMsg::Refresh),
@@ -428,16 +429,6 @@ impl ShelfDetailModel {
     }
 }
 
-fn window_of(root: &gtk::Box) -> Option<gtk::Window> {
-    root.root()
-        .and_then(|r| r.downcast::<gtk::Window>().ok())
-        .or_else(|| {
-            relm4::main_application()
-                .active_window()
-                .and_then(|w| w.downcast::<gtk::Window>().ok())
-        })
-}
-
 fn group_toggles(box_: &gtk::Box) {
     let mut leader: Option<gtk::ToggleButton> = None;
     let mut child = box_.first_child();
@@ -455,25 +446,18 @@ fn group_toggles(box_: &gtk::Box) {
 
 /// Checklist of every book in the library, ticked for the ones already on this
 /// manual shelf. Toggling writes straight through to the DB.
+///
+/// A1: drawn inside the window rather than as a `gtk::Window`. Exit is
+/// [`in_app_dialog::DialogExit::OwnButtons`] — each tick writes straight to
+/// the DB, so "Done", Esc and a backdrop click all mean the same thing.
 fn open_book_picker(
-    parent: Option<&gtk::Window>,
+    anchor: &gtk::Box,
     catalog: Arc<Catalog>,
     shelf_id: i64,
     on_changed: impl Fn() + 'static,
 ) {
-    let window = gtk::Window::builder()
-        .title("Add books to shelf")
-        .modal(true)
-        .default_width(520)
-        .default_height(560)
-        .build();
-    window.add_css_class("kalam-window");
-    if let Some(parent) = parent {
-        window.set_transient_for(Some(parent));
-    }
-
     let root = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    root.set_margin_all(16);
+    root.set_size_request(520, 520);
 
     let hint = gtk::Label::new(Some("Tick the books that belong on this shelf."));
     hint.add_css_class("kalam-muted");
@@ -568,12 +552,19 @@ fn open_book_picker(
     let done = gtk::Button::with_label("Done");
     done.add_css_class("kalam-primary-btn");
     done.set_halign(gtk::Align::End);
-    {
-        let window = window.clone();
-        done.connect_clicked(move |_| window.close());
-    }
     root.append(&done);
 
-    window.set_child(Some(&root));
-    window.present();
+    let Some(dialog) = in_app_dialog::present(
+        anchor,
+        "Add books to shelf",
+        in_app_dialog::DialogExit::OwnButtons,
+        &root,
+    ) else {
+        crate::notify::error(
+            "Could not open the picker",
+            "Please try again once the page has finished loading.",
+        );
+        return;
+    };
+    done.connect_clicked(move |_| dialog.close());
 }

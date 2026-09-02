@@ -616,9 +616,7 @@ impl Component for BookFloatModel {
                     let id = book.id;
                     let s = sender.clone();
                     open_metadata_editor(
-                        root.root()
-                            .and_then(|r| r.downcast::<gtk::Window>().ok())
-                            .as_ref(),
+                        root,
                         self.service.catalog().clone(),
                         id,
                         move || s.input(BookFloatMsg::Refresh),

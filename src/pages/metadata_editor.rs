@@ -1,8 +1,12 @@
 //! P5 — edit metadata, replace the cover, fetch from Open Library.
 //!
-//! A standalone `gtk::Window` rather than a Relm4 component, matching
-//! `shelf_editor`: the Open Library results list is built and rebuilt
-//! dynamically, which is far simpler with direct widget handling.
+//! Built with direct widget handling rather than as a Relm4 component,
+//! matching `shelf_editor`: the Open Library results list is built and
+//! rebuilt dynamically, which is far simpler that way.
+//!
+//! A1: shown as an in-app dialog, not a `gtk::Window`. It holds unsaved edits,
+//! so backdrop-click is deliberately disabled — Cancel and Esc are the ways
+//! out. See `crate::widgets::in_app_dialog`.
 //!
 //! Network work runs on a worker thread and reports back through a channel on
 //! the main context, so the dialog never blocks the UI. Fetched values are
@@ -13,6 +17,7 @@ use crate::db::Catalog;
 use crate::metadata::{self, Candidate, CoverRef};
 use crate::widgets::book_row::cover_widget;
 use crate::widgets::charts::star_picker;
+use crate::widgets::in_app_dialog;
 use gtk::prelude::*;
 use relm4::RelmWidgetExt;
 use std::cell::RefCell;
@@ -44,16 +49,21 @@ enum FetchMsg {
 
 /// Open the editor for `book_id`. `on_saved` runs after a successful write.
 pub fn open_metadata_editor(
-    parent: Option<&gtk::Window>,
+    anchor: &impl IsA<gtk::Widget>,
     catalog: Arc<Catalog>,
     book_id: i64,
     on_saved: impl Fn() + 'static,
 ) {
-    open_editor_inner(parent, catalog, book_id, Rc::new(on_saved));
+    open_editor_inner(
+        anchor.as_ref(),
+        catalog,
+        book_id,
+        Rc::new(on_saved),
+    );
 }
 
 fn open_editor_inner(
-    parent: Option<&gtk::Window>,
+    anchor: &gtk::Widget,
     catalog: Arc<Catalog>,
     book_id: i64,
     on_saved: Rc<dyn Fn()>,
@@ -75,28 +85,26 @@ fn open_editor_inner(
         }
     };
 
-    // Clamp to the display so the dialog fits on small laptop screens.
-    let max_width = parent
-        .and_then(|p| p.surface())
+    // The app window: needed to measure the display, and later as the parent
+    // for the cover file chooser, which is a real portal dialog.
+    let app_window: Option<gtk::Window> =
+        anchor.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+
+    // Clamp to the display so the form fits on small laptop screens. As an
+    // in-app dialog it can never exceed the window, but a form wider than the
+    // window would still be clipped, so the clamp stays.
+    let max_width = app_window
+        .as_ref()
+        .and_then(|w| w.surface())
         .and_then(|s| gtk::gdk::Display::default().and_then(|d| d.monitor_at_surface(&s)))
         .map(|m| m.geometry().width() - 80)
         .unwrap_or(DIALOG_WIDTH);
 
-    let window = gtk::Window::builder()
-        .title("Edit metadata")
-        .modal(true)
-        .default_width(DIALOG_WIDTH.min(max_width))
-        // Deliberately short: on a 768px-tall laptop a 640px dialog plus window
-        // chrome pushed the action bar off-screen. Content scrolls instead.
-        .default_height(560)
-        .build();
-    window.add_css_class("kalam-window");
-    if let Some(parent) = parent {
-        window.set_transient_for(Some(parent));
-    }
-
     // Outer shell holds the scroller and an always-visible action bar.
     let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    // Width only: the height comes from the content, capped by the scroller
+    // below so the action bar is always reachable on a short laptop screen.
+    shell.set_size_request(DIALOG_WIDTH.min(max_width), -1);
 
     let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
     root.set_margin_all(18);
@@ -306,8 +314,14 @@ fn open_editor_inner(
     revealer.set_hexpand(false);
 
     // ── actions: pinned outside the scroller so Save is always reachable ─
+    // `max_content_height` is what keeps the form from growing taller than the
+    // screen. A `gtk::Window` was bounded by its own default height; an in-app
+    // panel is sized by its content, so without a cap a long description would
+    // push the action bar out of view.
     let content_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
+        .max_content_height(460)
+        .propagate_natural_height(true)
         .vexpand(true)
         .hexpand(true)
         .child(&root)
@@ -376,7 +390,20 @@ fn open_editor_inner(
     actions.append(&save);
     shell.append(&actions);
 
-    window.set_child(Some(&shell));
+    // A1: an in-app dialog, so Sway cannot tile it away from the app. Unsaved
+    // edits mean backdrop-click is disabled; Cancel and Esc remain.
+    let Some(dialog) = in_app_dialog::present(
+        anchor,
+        "Edit metadata",
+        in_app_dialog::DialogExit::UnsavedInput,
+        &shell,
+    ) else {
+        crate::notify::error(
+            "Could not open the metadata editor",
+            "Please try again once the page has finished loading.",
+        );
+        return;
+    };
 
     // Cover bytes fetched from Open Library, written only on Save.
     let pending_cover: Rc<RefCell<Option<Vec<u8>>>> = Rc::new(RefCell::new(None));
@@ -679,7 +706,7 @@ fn open_editor_inner(
 
     // ── replace cover from disk ─────────────────────────────────────────
     {
-        let window = window.clone();
+        let app_window = app_window.clone();
         let cover_host = cover_host.clone();
         let pending_cover = pending_cover.clone();
         let status = status.clone();
@@ -700,7 +727,7 @@ fn open_editor_inner(
             let cover_host = cover_host.clone();
             let pending_cover = pending_cover.clone();
             let status = status.clone();
-            dialog.open(Some(&window), gtk::gio::Cancellable::NONE, move |res| {
+            dialog.open(app_window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
                 let Ok(file) = res else { return };
                 let Some(path) = file.path() else { return };
                 match std::fs::read(&path) {
@@ -725,8 +752,8 @@ fn open_editor_inner(
     }
 
     {
-        let window = window.clone();
-        cancel.connect_clicked(move |_| window.close());
+        let dialog = dialog.clone();
+        cancel.connect_clicked(move |_| dialog.close());
     }
 
     // ── save ────────────────────────────────────────────────────────────
@@ -860,18 +887,19 @@ fn open_editor_inner(
     }
 
     {
-        let window = window.clone();
+        let dialog = dialog.clone();
         let commit = commit.clone();
         save.connect_clicked(move |_| {
             if commit() {
-                window.close();
+                dialog.close();
             }
         });
     }
 
     // Previous / Next: commit, close, reopen on the neighbour.
     for (btn, delta) in [(&prev_btn, -1_i64), (&next_btn, 1_i64)] {
-        let window = window.clone();
+        let dialog = dialog.clone();
+        let anchor = anchor.clone();
         let catalog = catalog.clone();
         let commit = commit.clone();
         let on_saved = on_saved.clone();
@@ -888,30 +916,14 @@ fn open_editor_inner(
                 return;
             }
             let next_id = neighbours[target as usize];
-            let parent = window.transient_for().or_else(|| {
-                relm4::main_application()
-                    .active_window()
-                    .and_then(|w| w.downcast::<gtk::Window>().ok())
-            });
-            window.close();
-            open_editor_inner(parent.as_ref(), catalog.clone(), next_id, on_saved.clone());
+            // Close this panel before reopening on the neighbour, or two
+            // dialogs would stack on the same overlay.
+            dialog.close();
+            open_editor_inner(&anchor, catalog.clone(), next_id, on_saved.clone());
         });
     }
 
-    let key = gtk::EventControllerKey::new();
-    {
-        let window = window.clone();
-        key.connect_key_pressed(move |_, keyval, _, _| {
-            if keyval == gtk::gdk::Key::Escape {
-                window.close();
-                return gtk::glib::Propagation::Stop;
-            }
-            gtk::glib::Propagation::Proceed
-        });
-    }
-    window.add_controller(key);
-
-    window.present();
+    // Esc is handled by the dialog helper, for every in-app dialog alike.
 }
 
 #[allow(clippy::too_many_arguments)]

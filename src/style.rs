@@ -738,6 +738,21 @@ button.kalam-author-photo-refresh:hover {
     background: transparent;
 }
 
+/* In-app dialogs (A1): same shell as a float, but sized by content rather
+ * than the fixed 700x368 a book float needs. */
+.kalam-in-app-dialog {
+    min-width: 0px;
+    min-height: 0px;
+}
+
+.kalam-in-app-dialog-head {
+    padding: 14px 16px 10px 18px;
+}
+
+.kalam-in-app-dialog-body {
+    padding: 0px 18px 18px 18px;
+}
+
 .kalam-float {
     background: @kalam_surface;
     border: 1px solid @kalam_border;

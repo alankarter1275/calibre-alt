@@ -1683,15 +1683,18 @@ panel, tags panel. All five have a visible close affordance — a ✕ button on
 the two component floats, a **Done** button on the three panels — plus a
 global Esc/Q handler in `app.rs`, so none of them can trap the user.
 
-*Still separate `gtk::Window`s (5):*
+*Still separate `gtk::Window`s: **none**. All five converted 2026-09-03.*
 
-| Where | What it is |
-|---|---|
-| `metadata_editor.rs:72` | Edit metadata (the big one — 560px, scrolling content) |
-| `shelf_editor.rs:54` | New / edit shelf (manual **and** smart-rule builder) |
-| `reading_list.rs:340` | "Add to reading list" book picker |
-| `shelf_detail.rs:454` | "Add books to shelf" book picker |
-| `shelves_grid.rs:326` | "Delete shelf" confirmation |
+| Where | What it is | Exit kind |
+|---|---|---|
+| `metadata_editor.rs` | Edit metadata (the big one — scrolling content) | `UnsavedInput` |
+| `shelf_editor.rs` | New / edit shelf (manual **and** smart-rule builder) | `UnsavedInput` |
+| `reading_list.rs` | "Add to reading list" book picker | `OwnButtons` |
+| `shelf_detail.rs` | "Add books to shelf" book picker | `OwnButtons` |
+| `shelves_grid.rs` | "Delete shelf" confirmation | `OwnButtons` |
+
+All five now go through `src/widgets/in_app_dialog.rs`. `gtk::Window::builder`
+no longer appears anywhere in `src/`.
 
 *Deliberately staying native (4):* every `gtk::FileDialog` (`all_books.rs`,
 `home.rs`, `metadata_editor.rs`, `settings.rs` ×2). These are portal-backed
@@ -1739,6 +1742,47 @@ scrollable lists and the metadata editor contains many entries — Tab order and
 initial focus need checking on each conversion, and the scrim already blocks
 click-through.
 
+### What the conversion actually needed (2026-09-03)
+
+`src/widgets/in_app_dialog.rs` — one helper, `present(anchor, title, exit,
+content) -> Option<InAppDialog>`. It walks up from any widget to the app's
+root `gtk::Overlay`, then adds its own scrim + centred panel. It deliberately
+does **not** reuse the `AppMsg` float layer: these dialogs are plain functions
+taking an `on_confirm: impl Fn()` closure, and a closure cannot travel through
+a `#[derive(Debug)]` message enum.
+
+`DialogExit` has two variants rather than the table's four, because the two
+kinds that were real windows both bring their own buttons:
+
+* `OwnButtons` — content supplies the named buttons (Done, or Cancel/Delete).
+  Backdrop-click dismisses; nothing is lost.
+* `UnsavedInput` — a form. Backdrop-click is **disabled**: silently discarding
+  a half-typed description because a click landed slightly off target is a bad
+  trade. Esc still works and Cancel is right there.
+
+The ‹ Back and ✕ rows of the table describe the book/series floats, which
+already live in `app.rs` with their own headers; they join `DialogExit` when
+those headers are revisited.
+
+**Three things a `gtk::Window` had been doing for free**, each of which had to
+be replaced by hand:
+
+1. **Teardown.** `window.close()` destroys the widget tree, which breaks the
+   reference loop between a widget and the callback that captures it. Removing
+   an overlay child does not, so `teardown()` also empties the host — without
+   it every dialog ever opened would stay in memory.
+2. **Height bounds.** A window has a default height; a panel centred in an
+   overlay is sized by its content. The metadata form and the smart-shelf rule
+   list both got `max_content_height` + `propagate_natural_height`, or a long
+   description / twenty rules would push Save off a 768px screen.
+3. **A real window handle** for the cover `gtk::FileDialog`, which is
+   portal-backed and needs a genuine top-level parent. Resolved from the
+   anchor's root instead of from the (now non-existent) dialog window.
+
+Also removed: three copies of a `window_of()` helper that existed only to find
+a parent window for these dialogs, and `shelf_editor`'s and `metadata_editor`'s
+hand-rolled Esc handlers, now that the helper provides Esc for all of them.
+
 ## Immediate next steps
 
 **Next, in order (locked 2026-09-02):**
@@ -1746,10 +1790,11 @@ click-through.
 1. **A0 — Architecture & performance track** (the section above). Start with
    measurement, then `LibraryService` + thumbnails/async decode; design the
    plugin-host seam. This is the foundation for everything after.
-2. **A1 — In-app dialogs** (the section above): finish converting the five
-   remaining `gtk::Window` dialogs to the existing float layer. User-requested
-   2026-09-02; sized as a small, self-contained track that can slot between A0
-   steps rather than waiting for the whole architecture track.
+2. ~~**A1 — In-app dialogs**~~ **done 2026-09-03.** All five remaining
+   `gtk::Window` dialogs now draw inside the main window via
+   `src/widgets/in_app_dialog.rs`. Remaining A1 polish: focus containment and
+   Tab order inside a float (no window means no built-in focus scope), and
+   folding the book/series float headers into `DialogExit`.
 3. **P6 — Downloads hub** (unified queue + folder watch).
 3. **P7 — Fiction platform** (AO3 first) via Lua source plugins; native tag
    search; download; follow + auto-updater.
@@ -1869,3 +1914,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-02 | Wrote `docs/testing-a0-step2.md` answering "do I need to test anything before A1?". Short answer recorded: **no new parameters, no required testing** — CI covers compile, clippy `-D warnings` and 199 tests. Two things CI genuinely cannot check are written down: (1) the **corrupt-database test**, which is the only way to see what step 2 actually fixed — `XDG_DATA_HOME=/tmp/kalam-test` gives a throwaway library so the real one is never touched, then overwrite `catalog.db` with garbage and confirm the app now *says* something instead of drawing a cheerful empty library; and (2) a two-minute pass opening each page to confirm the happy path still looks right, since CI has no display. Also noted the three user-visible effects of step 2 on a healthy database: the `book_first_opened` bug fix, Saved quotes no longer running ~1,001 queries per keystroke, and failures now toasting. Added a pre-A1 question for the user: the five already-in-app dialogs are the pattern A1 will copy five more times, so it is worth deciding now whether they are the standard to match |
 | 2026-09-03 | **Crash fixed: a corrupt catalog aborted the process with a core dump.** The user ran the corrupt-database test from `docs/testing-a0-step2.md` and it did not toast — it died. Cause was a fallback in `AppModel::init` that "handled" a failed `Catalog::open()` by **calling the same function again and `.expect()`ing it**, which is a guaranteed panic; and because `init()` runs inside a GTK signal callback, that panic **cannot unwind**, so it escalated to `panic in a function that cannot unwind` → abort → core dump, printing a raw backtrace instead of saying what was wrong. Fixed in two places: `main()` now opens the catalog **before** `app.run()` and, on failure, prints the error, the database path, and the exact `mv` command to move the broken file aside (noting book files live elsewhere and are safe), then exits 1; and the `init()` arm no longer retries — it reports and exits cleanly, since reaching it means the database broke between the pre-flight check and startup. **This is the second real bug the step-2 pass has surfaced**, and again the pattern is the same: the error path had never been executed, so nobody noticed it was nonsense |
 | 2026-09-03 | **Backdrop-click now closes in-app dialogs, and the A1 close-button rule is revised.** The user asked for click-outside-to-close and questioned whether the ✕ could then go away. Implementation turned out to be two lines: the scrim already had a `GestureClick` whose handler was **empty** — it existed only to stop clicks reaching the page behind it, so the dimmed area looked interactive and did nothing. It now sends `CloseBookDialog`, the same message Esc sends. Z-order was already correct (scrim added to the overlay before `float_host`), so clicks *inside* the dialog are unaffected. On the button question the user made the sharper point that **the dialogs exist for different reasons and should not all be dismissed identically**; the roadmap now carries a table mapping dialog *kind* to affordance — **‹ Back** for detours you navigated into, **✕** for transient overlays, **Cancel + Save** for forms with unsaved input, **Cancel / Delete** for confirmations. Recorded decision on dropping the button entirely: **no** — backdrop-click and Esc are both invisible affordances, so a dialog whose only exits are invisible is still a trap; keep one visible control, but the right one rather than a reflexive ✕ |
+| 2026-09-03 | **A1 done: all five remaining `gtk::Window` dialogs now draw inside the app.** `gtk::Window::builder` no longer appears anywhere in `src/`. One new helper, `src/widgets/in_app_dialog.rs`, walks up from any widget to the app's root `gtk::Overlay` and adds its own scrim + centred panel; it deliberately does **not** reuse the `AppMsg` float layer, because these dialogs are plain functions taking an `on_confirm: impl Fn()` closure and a closure cannot travel through a `#[derive(Debug)]` message enum. `DialogExit` ended up with two variants, not the table's four: both converted kinds already bring their own named buttons, so the header adds none — `OwnButtons` (pickers, delete confirmation) closes on a backdrop click, `UnsavedInput` (metadata editor, shelf editor) **does not**, because silently discarding a half-typed description over a slightly-off click is a bad trade. The ‹ Back and ✕ rows still describe the book/series floats, which have their own headers in `app.rs`. The interesting part was **what a `gtk::Window` had quietly been doing for free**: (1) `close()` destroys the widget tree and so breaks the reference loop between a widget and the callback capturing it — removing an overlay child does not, so `teardown()` empties the host too, otherwise every dialog ever opened would leak; (2) a window has a default height, while a panel centred in an overlay is sized by its content, so the metadata form and the smart-shelf rule list needed `max_content_height` + `propagate_natural_height` or a long description would push Save off a 768px screen; (3) the cover `gtk::FileDialog` is portal-backed and needs a genuine top-level parent, now resolved from the anchor's root. Also deleted three copies of a `window_of()` helper that existed only to parent these dialogs, and two hand-rolled Esc handlers now that the helper gives Esc to all of them. 1 new test |

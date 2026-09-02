@@ -3,6 +3,7 @@
 use crate::db::{Catalog, Shelf, ShelfKind};
 use crate::pages::shelf_editor::{open_shelf_editor, ShelfEditorMode};
 use crate::service::LibraryService;
+use crate::widgets::in_app_dialog;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -123,7 +124,7 @@ impl Component for ShelvesGridModel {
                 };
                 let s = sender.clone();
                 open_shelf_editor(
-                    window_of(root).as_ref(),
+                    root,
                     self.service.catalog().clone(),
                     ShelfEditorMode::Create(kind),
                     move || s.input(ShelvesMsg::Refresh),
@@ -132,7 +133,7 @@ impl Component for ShelvesGridModel {
             ShelvesMsg::Edit(shelf_id) => {
                 let s = sender.clone();
                 open_shelf_editor(
-                    window_of(root).as_ref(),
+                    root,
                     self.service.catalog().clone(),
                     ShelfEditorMode::Edit { shelf_id },
                     move || s.input(ShelvesMsg::Refresh),
@@ -147,7 +148,10 @@ impl Component for ShelvesGridModel {
                     .find(|s| s.id == shelf_id)
                     .map(|s| s.name.clone())
                     .unwrap_or_default();
-                confirm_delete(window_of(root).as_ref(), {
+                // The closure below moves `name` into the toast, so the
+                // prompt needs its own copy.
+                let title_name = name.clone();
+                confirm_delete(root, &title_name, {
                     let catalog = self.service.catalog().clone();
                     let s = sender.clone();
                     move || {
@@ -170,16 +174,6 @@ impl Component for ShelvesGridModel {
         }
         self.update_view(widgets, sender);
     }
-}
-
-fn window_of(root: &gtk::Box) -> Option<gtk::Window> {
-    root.root()
-        .and_then(|r| r.downcast::<gtk::Window>().ok())
-        .or_else(|| {
-            relm4::main_application()
-                .active_window()
-                .and_then(|w| w.downcast::<gtk::Window>().ok())
-        })
 }
 
 fn summary_line(shelves: &[Shelf]) -> String {
@@ -320,25 +314,23 @@ fn build_shelf_card(shelf: &Shelf, sender: &ComponentSender<ShelvesGridModel>) -
     card
 }
 
-/// Small confirm window — deleting a shelf never touches the books themselves,
-/// but it is still destructive enough to deserve a prompt.
-fn confirm_delete(parent: Option<&gtk::Window>, on_confirm: impl Fn() + 'static) {
-    let dialog = gtk::Window::builder()
-        .title("Delete shelf")
-        .modal(true)
-        .default_width(360)
-        .build();
-    dialog.add_css_class("kalam-window");
-    if let Some(parent) = parent {
-        dialog.set_transient_for(Some(parent));
-    }
-
+/// Confirm deleting a shelf. Destructive enough to deserve a prompt, even
+/// though the books themselves are never touched.
+///
+/// A1: drawn **inside** the window. As a `gtk::Window` this was a real
+/// top-level that Sway could tile beside the app or move to another
+/// workspace — for a modal confirmation that is simply wrong.
+///
+/// Exit is [`in_app_dialog::DialogExit::OwnButtons`]: two named outcomes, so no ✕
+/// (a third, vaguer exit next to "Cancel" and "Delete" only adds doubt).
+/// Clicking the backdrop cancels, which is safe here because nothing is lost.
+fn confirm_delete(anchor: &gtk::Box, shelf_name: &str, on_confirm: impl Fn() + 'static) {
     let body = gtk::Box::new(gtk::Orientation::Vertical, 14);
-    body.set_margin_all(18);
+    body.set_size_request(360, -1);
 
-    let text = gtk::Label::new(Some(
-        "Delete this shelf?\n\nThe books stay in your library — only the collection is removed.",
-    ));
+    let text = gtk::Label::new(Some(&format!(
+        "Delete “{shelf_name}”?\n\nThe books stay in your library — only the collection is removed."
+    )));
     text.set_wrap(true);
     text.set_halign(gtk::Align::Start);
     text.set_xalign(0.0);
@@ -354,7 +346,21 @@ fn confirm_delete(parent: Option<&gtk::Window>, on_confirm: impl Fn() + 'static)
     actions.append(&confirm);
     body.append(&actions);
 
-    dialog.set_child(Some(&body));
+    let Some(dialog) = in_app_dialog::present(
+        anchor,
+        "Delete shelf",
+        in_app_dialog::DialogExit::OwnButtons,
+        &body,
+    ) else {
+        // No overlay found means the page is not in the window yet, which
+        // should not happen from a button press. Do nothing rather than
+        // silently deleting without asking.
+        crate::notify::error(
+            "Could not show the confirmation",
+            "Please try again once the page has finished loading.",
+        );
+        return;
+    };
 
     {
         let dialog = dialog.clone();
@@ -367,6 +373,4 @@ fn confirm_delete(parent: Option<&gtk::Window>, on_confirm: impl Fn() + 'static)
             dialog.close();
         });
     }
-
-    dialog.present();
 }

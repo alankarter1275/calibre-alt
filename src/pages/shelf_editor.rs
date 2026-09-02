@@ -10,9 +10,9 @@
 //! handling than with a static `view!` tree.
 
 use crate::db::{Catalog, ShelfKind};
+use crate::widgets::in_app_dialog;
 use crate::shelf_rules::{MatchMode, Rule, RuleField, RuleOp, RuleSet};
 use gtk::prelude::*;
-use relm4::RelmWidgetExt;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -30,7 +30,7 @@ pub enum ShelfEditorMode {
 /// Open the editor. `on_saved` fires after a successful write so the caller can
 /// refresh its list.
 pub fn open_shelf_editor(
-    parent: Option<&gtk::Window>,
+    anchor: &gtk::Box,
     catalog: Arc<Catalog>,
     mode: ShelfEditorMode,
     on_saved: impl Fn() + 'static,
@@ -63,24 +63,17 @@ pub fn open_shelf_editor(
         },
     };
 
-    let window = gtk::Window::builder()
-        .title(match (&shelf_id, kind) {
-            (None, ShelfKind::Smart) => "New smart shelf",
-            (None, ShelfKind::Manual) => "New shelf",
-            (Some(_), _) => "Edit shelf",
-        })
-        .modal(true)
-        .default_width(if kind == ShelfKind::Smart { 620 } else { 460 })
-        .default_height(if kind == ShelfKind::Smart { 560 } else { 260 })
-        .build();
-    window.add_css_class("kalam-window");
-    if let Some(parent) = parent {
-        window.set_transient_for(Some(parent));
-    }
+    let title = match (&shelf_id, kind) {
+        (None, ShelfKind::Smart) => "New smart shelf",
+        (None, ShelfKind::Manual) => "New shelf",
+        (Some(_), _) => "Edit shelf",
+    };
 
     let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    root.set_margin_all(18);
     root.add_css_class("kalam-shelf-editor");
+    // Width only. Smart shelves carry a rule list, so they need the extra
+    // room; the height follows the content, capped by the rule scroller below.
+    root.set_size_request(if kind == ShelfKind::Smart { 620 } else { 460 }, -1);
 
     // ── name ────────────────────────────────────────────────────────────
     let name_label = gtk::Label::new(Some("NAME"));
@@ -134,8 +127,12 @@ pub fn open_shelf_editor(
         match_row.append(&gtk::Label::new(Some("of the following:")));
         root.append(&match_row);
 
+        // Capped: a window bounded this for us, but an in-app panel is sized
+        // by its content, so twenty rules would push Save off the screen.
         let scroll = gtk::ScrolledWindow::builder()
             .min_content_height(200)
+            .max_content_height(320)
+            .propagate_natural_height(true)
             .vexpand(true)
             .hscrollbar_policy(gtk::PolicyType::Never)
             .child(&rules_host)
@@ -226,15 +223,30 @@ pub fn open_shelf_editor(
     actions.append(&save);
     root.append(&actions);
 
-    window.set_child(Some(&root));
+    // A1: drawn inside the window instead of as a `gtk::Window`, which Sway
+    // could tile or move to another workspace. Exit is
+    // `DialogExit::UnsavedInput`: the form owns Cancel/Save, and a stray
+    // backdrop click must not throw away a half-typed name or rule list.
+    let Some(dialog) = in_app_dialog::present(
+        anchor,
+        title,
+        in_app_dialog::DialogExit::UnsavedInput,
+        &root,
+    ) else {
+        crate::notify::error(
+            "Could not open the shelf editor",
+            "Please try again once the page has finished loading.",
+        );
+        return;
+    };
 
     {
-        let window = window.clone();
-        cancel.connect_clicked(move |_| window.close());
+        let dialog = dialog.clone();
+        cancel.connect_clicked(move |_| dialog.close());
     }
 
     {
-        let window = window.clone();
+        let dialog = dialog.clone();
         let catalog = catalog.clone();
         let name_entry = name_entry.clone();
         let desc_entry = desc_entry.clone();
@@ -284,28 +296,14 @@ pub fn open_shelf_editor(
                         crate::notify::success("Shelf created", &name);
                     }
                     on_saved();
-                    window.close();
+                    dialog.close();
                 }
                 Err(err) => show_error(&error_label, &format!("Could not save: {err}")),
             }
         });
     }
 
-    // Esc closes.
-    let key = gtk::EventControllerKey::new();
-    {
-        let window = window.clone();
-        key.connect_key_pressed(move |_, keyval, _, _| {
-            if keyval == gtk::gdk::Key::Escape {
-                window.close();
-                return gtk::glib::Propagation::Stop;
-            }
-            gtk::glib::Propagation::Proceed
-        });
-    }
-    window.add_controller(key);
-
-    window.present();
+    // Esc is handled by the dialog helper, for every in-app dialog alike.
 }
 
 fn show_error(label: &gtk::Label, text: &str) {
