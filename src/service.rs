@@ -293,7 +293,11 @@ mod tests {
         let svc = LibraryService::new(Arc::new(cat));
 
         let snap = svc.home();
-        assert!(snap.errors.is_empty(), "unexpected errors: {:?}", snap.errors);
+        assert!(
+            snap.errors.is_empty(),
+            "unexpected errors: {:?}",
+            snap.errors
+        );
         assert_eq!(snap.stats.total_books, 2);
         assert_eq!(snap.recent.len(), 2);
     }
@@ -338,7 +342,10 @@ mod tests {
 
     #[test]
     fn continue_row_keeps_recently_opened_when_present() {
-        let row = continue_row(vec![book("Opened last night", 5)], &[book("Newer import", 0)]);
+        let row = continue_row(
+            vec![book("Opened last night", 5)],
+            &[book("Newer import", 0)],
+        );
         assert_eq!(row.len(), 1);
         assert_eq!(row[0].title, "Opened last night");
     }
@@ -405,5 +412,4 @@ mod tests {
             errors[0]
         );
     }
-
 }
