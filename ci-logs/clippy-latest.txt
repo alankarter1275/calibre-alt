@@ -1,8 +1,7 @@
-src/pages/library.rs:591:45: [1m[91merror[E0308][0m: arguments to this method are incorrect
-src/pages/library.rs:592:22: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found integer
-src/pages/library.rs:592:32: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `i32`
-src/pages/library.rs:592:58: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found integer
-src/pages/library.rs:592:68: [1m[91merror[E0308][0m: mismatched types: expected `f64`, found `i32`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors; 2 warnings emitted
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors; 1 warning emitted
---- run 33320317202 ---
+src/pages/lookup_history.rs:117:9: [1m[91merror[E0050][0m: method `update_with_view` has 4 parameters but the declaration in trait `relm4::Component::update_with_view` has 5: expected 5 parameters, found 4
+src/app.rs:405:57: [1m[91merror[E0308][0m: mismatched types: expected `AppMsg`, found `()`
+src/pages/lookup_history.rs:235:9: [1m[91merror[E0308][0m: mismatched types: expected `&str`, found `String`
+src/pages/lookup_history.rs:237:9: [1m[91merror[E0308][0m: mismatched types: expected `&str`, found `String`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors; 2 warnings emitted
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors; 2 warnings emitted
+--- run 33537907920 ---

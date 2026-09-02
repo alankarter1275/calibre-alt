@@ -8,7 +8,10 @@
 //! For simplicity P3 supports uncompressed .dict; .dict.dz is decompressed via flate2 if present.
 //! SQLite pack: a SQLite file with table entries(word TEXT, definition TEXT) or (word, definition) naming variations.
 
-use crate::db::Catalog;
+use crate::db::{
+    Catalog, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME,
+    BUNDLED_WORDNET_NAME,
+};
 use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::fs::File;
@@ -23,55 +26,102 @@ pub struct DictSearchResult {
     pub dict_name: String,
 }
 
-const BUNDLED_WORDNET_NAME: &str = "English WordNet 2025";
 const BUNDLED_WORDNET_PREF: &str = "bundled_dictionary_english_wordnet_2025";
 const BUNDLED_WORDNET_TSV_GZ: &[u8] =
     include_bytes!("../resources/dictionaries/english-wordnet-2025.tsv.gz");
-const BUNDLED_IDIOMS_NAME: &str = "English Idioms and Expressions";
 const BUNDLED_IDIOMS_PREF: &str = "bundled_dictionary_english_idioms_2024";
 const BUNDLED_IDIOMS_TSV_GZ: &[u8] =
     include_bytes!("../resources/dictionaries/english-idioms-2024.tsv.gz");
+const BUNDLED_SYNONYMS_PREF: &str = "bundled_dictionary_english_synonyms_3_0";
+const BUNDLED_SYNONYMS_TSV_GZ: &[u8] =
+    include_bytes!("../resources/dictionaries/english-synonyms-3.0.tsv.gz");
+const BUNDLED_ANTONYMS_PREF: &str = "bundled_dictionary_english_antonyms_3_0";
+const BUNDLED_ANTONYMS_TSV_GZ: &[u8] =
+    include_bytes!("../resources/dictionaries/english-antonyms-3.0.tsv.gz");
+
+// Merged-store priorities (lower = consulted first). WordNet speaks for
+// shared words by default; imported packs keep the schema default 100.
+const PRIORITY_WORDNET: i64 = 10;
+const PRIORITY_IDIOMS: i64 = 20;
+const PRIORITY_SYNONYMS: i64 = 30;
+const PRIORITY_ANTONYMS: i64 = 40;
 
 /// Install the small, redistributable English dictionaries shipped with Kalam.
 ///
 /// Each preference makes its pack a first-run action rather than a migration
 /// that re-adds a pack after the user removes it. The compressed sources are
 /// kept in the binary so the default dictionaries work without a download.
+/// The merged dictionary store is rebuilt only when at least one pack was
+/// actually installed this run.
 pub fn install_bundled_dictionaries(catalog: &Catalog) -> Result<()> {
-    install_bundled_tsv(
+    let mut installed = false;
+    if install_bundled_tsv(
         catalog,
         BUNDLED_WORDNET_NAME,
         BUNDLED_WORDNET_PREF,
         BUNDLED_WORDNET_TSV_GZ,
-    )?;
-    install_bundled_tsv(
+        PRIORITY_WORDNET,
+    )? {
+        installed = true;
+    }
+    if install_bundled_tsv(
         catalog,
         BUNDLED_IDIOMS_NAME,
         BUNDLED_IDIOMS_PREF,
         BUNDLED_IDIOMS_TSV_GZ,
-    )?;
+        PRIORITY_IDIOMS,
+    )? {
+        installed = true;
+    }
+    if install_bundled_tsv(
+        catalog,
+        BUNDLED_SYNONYMS_NAME,
+        BUNDLED_SYNONYMS_PREF,
+        BUNDLED_SYNONYMS_TSV_GZ,
+        PRIORITY_SYNONYMS,
+    )? {
+        installed = true;
+    }
+    if install_bundled_tsv(
+        catalog,
+        BUNDLED_ANTONYMS_NAME,
+        BUNDLED_ANTONYMS_PREF,
+        BUNDLED_ANTONYMS_TSV_GZ,
+        PRIORITY_ANTONYMS,
+    )? {
+        installed = true;
+    }
+    if installed {
+        catalog.rebuild_combined_dictionary()?;
+    }
     Ok(())
 }
 
+/// Install one bundled pack. Returns true when the pack was installed (or
+/// its priority refreshed) in this run.
 fn install_bundled_tsv(
     catalog: &Catalog,
     dictionary_name: &str,
     installed_pref: &str,
     compressed_tsv: &[u8],
-) -> Result<()> {
+    priority: i64,
+) -> Result<bool> {
     if catalog.get_pref(installed_pref).as_deref() == Some("installed") {
-        return Ok(());
+        return Ok(false);
     }
 
     // This also handles an upgrade from a build that seeded the row before it
-    // stored the first-run marker.
-    if catalog
+    // stored the first-run marker. The priority is (re)applied so packs
+    // installed by older builds still join the merged store in the right
+    // order.
+    if let Some(existing) = catalog
         .list_dictionaries()?
         .iter()
-        .any(|dict| dict.name == dictionary_name)
+        .find(|dict| dict.name == dictionary_name)
     {
+        catalog.set_dictionary_priority(existing.id, priority)?;
         catalog.set_pref(installed_pref, "installed");
-        return Ok(());
+        return Ok(false);
     }
 
     let decoder = flate2::read::GzDecoder::new(compressed_tsv);
@@ -95,12 +145,20 @@ fn install_bundled_tsv(
     }
 
     let dict_id = catalog.insert_dictionary(dictionary_name, Some("en"), entries.len() as i64)?;
-    catalog.clear_dict_entries(dict_id)?;
-    for chunk in entries.chunks(2000) {
-        catalog.batch_insert_dict_entries(dict_id, chunk)?;
+    catalog.set_dictionary_priority(dict_id, priority)?;
+    let outcome = (|| {
+        catalog.clear_dict_entries(dict_id)?;
+        for chunk in entries.chunks(2000) {
+            catalog.batch_insert_dict_entries(dict_id, chunk)?;
+        }
+        Ok(())
+    })();
+    if let Err(e) = outcome {
+        let _ = catalog.delete_dictionary(dict_id);
+        return Err(e);
     }
     catalog.set_pref(installed_pref, "installed");
-    Ok(())
+    Ok(true)
 }
 
 /// Import a dictionary pack into the catalog.
@@ -111,6 +169,16 @@ fn install_bundled_tsv(
 ///
 /// Returns the dictionary name and entry count.
 pub fn import_dictionary(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
+    // Guard: importing Kalam's own catalog database as a "dictionary pack"
+    // would read the app's tables as entries. Compare canonical paths so
+    // ~, symlinks and relative paths all resolve.
+    if same_file(path, &crate::paths::catalog_db()) {
+        return Err(anyhow!(
+            "{} is Kalam's own catalog database — pick a dictionary pack (.ifo/.idx/.dict, .db or .tsv) instead",
+            path.display()
+        ));
+    }
+
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -118,34 +186,47 @@ pub fn import_dictionary(catalog: &Catalog, path: &Path) -> Result<(String, i64)
         .to_ascii_lowercase();
 
     // Detect StarDict by .ifo/.idx/.dict extension or by sibling presence
-    if ext == "ifo" || ext == "idx" || ext == "dict" || ext == "dz" || ext == "dict" {
-        return import_stardict(catalog, path);
-    }
-
-    // Try SQLite detection: if file is SQLite (starts with "SQLite format 3\0")
-    if is_sqlite_file(path)? {
-        return import_sqlite_pack(catalog, path);
-    }
-
-    // Fallback: try stardict detection from base name (user selected .ifo)
-    if path
+    let outcome = if ext == "ifo" || ext == "idx" || ext == "dict" || ext == "dz" {
+        import_stardict(catalog, path)
+    } else if is_sqlite_file(path)? {
+        // Try SQLite detection: file starts with "SQLite format 3\0"
+        import_sqlite_pack(catalog, path)
+    } else if path
         .file_name()
         .and_then(|n| n.to_str())
-        .map(|n| n.to_ascii_lowercase().contains("stardict") || n.ends_with(".ifo"))
+        .map(|n| n.to_ascii_lowercase().contains("stardict"))
         .unwrap_or(false)
     {
-        return import_stardict(catalog, path);
-    }
+        // Fallback: try stardict detection from base name
+        import_stardict(catalog, path)
+    } else if ext == "txt" || ext == "tab" || ext == "tsv" {
+        // Last try: plain text tab-separated dictionary (word<TAB>definition)
+        import_tsv(catalog, path)
+    } else {
+        let hint = match ext.as_str() {
+            "db" | "sqlite" | "sqlite3" => "a SQLite dictionary pack",
+            "txt" | "tab" | "tsv" => "a tab-separated dictionary",
+            "ifo" | "idx" | "dz" => "a StarDict pack",
+            _ => "a StarDict pack, a SQLite dictionary pack, or a tab-separated dictionary",
+        };
+        return Err(anyhow!(
+            "unrecognized dictionary format for {} — expected {hint}",
+            path.display()
+        ));
+    }?;
 
-    // Last try: plain text tab-separated dictionary (word<TAB>definition per line)
-    if ext == "txt" || ext == "tab" || ext == "tsv" {
-        return import_tsv(catalog, path);
-    }
+    // A new dictionary must join the merged store immediately.
+    catalog.rebuild_combined_dictionary()?;
+    Ok(outcome)
+}
 
-    Err(anyhow!(
-        "unrecognized dictionary format for {} (.ifo/.idx/.dict, .db sqlite pack, or .txt tab-separated supported)",
-        path.display()
-    ))
+/// Whether two paths point at the same file (canonicalize both sides; a
+/// missing file fails the comparison rather than matching by accident).
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => false,
+    }
 }
 
 fn is_sqlite_file(path: &Path) -> Result<bool> {
@@ -162,7 +243,13 @@ fn is_sqlite_file(path: &Path) -> Result<bool> {
 fn import_sqlite_pack(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
     use rusqlite::Connection;
 
-    let conn = Connection::open(path).context("open sqlite dict")?;
+    // Read-only: an import must never modify the pack file (and never
+    // create -wal/-journal sidecars next to a user's read-only data).
+    let conn = Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .context("open sqlite dict")?;
     // Find a suitable table
     let mut tables = Vec::new();
     let mut stmt = conn.prepare(
@@ -185,7 +272,8 @@ fn import_sqlite_pack(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
     };
 
     // Determine column names
-    let mut columns_stmt = conn.prepare(&format!("PRAGMA table_info({chosen})"))?;
+    let chosen_ident = quote_ident(chosen);
+    let mut columns_stmt = conn.prepare(&format!("PRAGMA table_info({chosen_ident})"))?;
     let mut cols = Vec::new();
     for r in columns_stmt.query_map([], |row| row.get::<_, String>(1))? {
         cols.push(r?);
@@ -217,7 +305,13 @@ fn import_sqlite_pack(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
         &cols[0]
     };
 
-    let mut stmt = conn.prepare(&format!("SELECT {}, {} FROM {}", word_col, def_col, chosen))?;
+    let sql = format!(
+        "SELECT {}, {} FROM {}",
+        quote_ident(word_col),
+        quote_ident(def_col),
+        chosen_ident
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let mut entries = Vec::new();
     for r in stmt.query_map([], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -240,17 +334,14 @@ fn import_sqlite_pack(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
         .unwrap_or("ImportedDict")
         .to_string();
 
-    let dict_id = catalog
-        .insert_dictionary(&dict_name, None, entries.len() as i64)
-        .map_err(|e| anyhow!("insert dict meta: {e}"))?;
-    catalog
-        .clear_dict_entries(dict_id)
-        .map_err(|e| anyhow!("clear dict: {e}"))?;
-    catalog
-        .batch_insert_dict_entries(dict_id, &entries)
-        .map_err(|e| anyhow!("batch insert: {e}"))?;
-
+    insert_imported_entries(catalog, &dict_name, None, &entries)?;
     Ok((dict_name, entries.len() as i64))
+}
+
+/// Double-quote a SQLite identifier, doubling any embedded quotes so a
+/// crafted pack table/column name can never break out of the identifier.
+fn quote_ident(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
 }
 
 fn import_tsv(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
@@ -285,16 +376,40 @@ fn import_tsv(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
         .and_then(|s| s.to_str())
         .unwrap_or("TSVDict")
         .to_string();
-    let dict_id = catalog
-        .insert_dictionary(&dict_name, None, entries.len() as i64)
-        .map_err(|e| anyhow!("insert dict: {e}"))?;
-    catalog
-        .clear_dict_entries(dict_id)
-        .map_err(|e| anyhow!("clear: {e}"))?;
-    catalog
-        .batch_insert_dict_entries(dict_id, &entries)
-        .map_err(|e| anyhow!("batch: {e}"))?;
+    insert_imported_entries(catalog, &dict_name, None, &entries)?;
     Ok((dict_name, entries.len() as i64))
+}
+
+/// Register a dictionary and bulk-insert its entries, removing the meta row
+/// again if the insert fails — a half-imported dictionary would otherwise
+/// occupy its name (blocking a re-import) and report a wrong entry count.
+fn insert_imported_entries(
+    catalog: &Catalog,
+    name: &str,
+    lang: Option<&str>,
+    entries: &[(String, String)],
+) -> Result<i64> {
+    let dict_id = catalog
+        .insert_dictionary(name, lang, entries.len() as i64)
+        .map_err(|e| anyhow!("insert dict meta: {e}"))?;
+    let outcome = (|| {
+        // Clear first so re-importing an existing dictionary replaces its
+        // entries instead of duplicating them.
+        catalog
+            .clear_dict_entries(dict_id)
+            .map_err(|e| anyhow!("clear dict: {e}"))?;
+        for chunk in entries.chunks(2000) {
+            catalog
+                .batch_insert_dict_entries(dict_id, chunk)
+                .map_err(|e| anyhow!("batch insert: {e}"))?;
+        }
+        Ok(())
+    })();
+    if let Err(e) = outcome {
+        let _ = catalog.delete_dictionary(dict_id);
+        return Err(e);
+    }
+    Ok(dict_id)
 }
 
 // ---------------------------------------------------------------------------
@@ -371,18 +486,7 @@ fn import_stardict(catalog: &Catalog, any_path: &Path) -> Result<(String, i64)> 
         return Err(anyhow!("StarDict produced no entries"));
     }
 
-    let dict_id = catalog
-        .insert_dictionary(&dict_name, None, entries.len() as i64)
-        .map_err(|e| anyhow!("insert dict meta: {e}"))?;
-    catalog
-        .clear_dict_entries(dict_id)
-        .map_err(|e| anyhow!("clear: {e}"))?;
-    for chunk in entries.chunks(2000) {
-        catalog
-            .batch_insert_dict_entries(dict_id, chunk)
-            .map_err(|e| anyhow!("batch insert failed: {e}"))?;
-    }
-
+    insert_imported_entries(catalog, &dict_name, None, &entries)?;
     Ok((dict_name, entries.len() as i64))
 }
 
@@ -581,4 +685,193 @@ pub fn strip_dict_html(input: &str) -> String {
         out.push(ch);
     }
     out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Catalog;
+    use std::io::Write;
+
+    /// Unique scratch dir per test run; removed by drop.
+    struct ScratchDir(PathBuf);
+    impl ScratchDir {
+        fn new() -> Self {
+            let p = std::env::temp_dir().join(format!("kalam-dict-test-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(&p).unwrap();
+            ScratchDir(p)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+        fn join(&self, name: &str) -> PathBuf {
+            self.0.join(name)
+        }
+    }
+    impl Drop for ScratchDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn write_file(path: &Path, content: &str) {
+        let mut f = File::create(path).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn quote_ident_escapes_embedded_quotes() {
+        assert_eq!(quote_ident("entries"), "\"entries\"");
+        assert_eq!(quote_ident("my dict"), "\"my dict\"");
+        assert_eq!(
+            quote_ident("word\"; DROP TABLE x; --"),
+            "\"word\"\"; DROP TABLE x; --\""
+        );
+    }
+
+    #[test]
+    fn same_file_resolves_symlinks_and_relative_paths() {
+        let scratch = ScratchDir::new();
+        let target = scratch.join("target.txt");
+        write_file(&target, "x");
+        let link = scratch.join("link.txt");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        assert!(same_file(&target, &target));
+        assert!(same_file(&target, &link));
+        assert!(same_file(&target, &scratch.join("./target.txt")));
+        assert!(!same_file(&target, &scratch.join("other.txt")));
+        assert!(!same_file(&target, &scratch.join("missing.txt")));
+    }
+
+    #[test]
+    fn sqlite_pack_imports_entries_and_leaves_file_read_only() {
+        let scratch = ScratchDir::new();
+        let pack = scratch.join("mydict.db");
+        {
+            let conn = rusqlite::Connection::open(&pack).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE entries (word TEXT, definition TEXT);
+                 INSERT INTO entries VALUES ('serendipity', 'a happy accident');
+                 INSERT INTO entries VALUES ('ephemeral', 'short-lived');",
+            )
+            .unwrap();
+        }
+        let before = std::fs::read(&pack).unwrap();
+
+        let cat = Catalog::open_in_memory().unwrap();
+        let (name, count) = import_dictionary(&cat, &pack).unwrap();
+        assert_eq!(name, "mydict");
+        assert_eq!(count, 2);
+
+        let dicts = cat.list_dictionaries().unwrap();
+        assert_eq!(dicts.len(), 1);
+        assert_eq!(dicts[0].name, "mydict");
+        assert_eq!(dicts[0].entry_count, 2);
+
+        let entry = cat.lookup_entry("serendipity").unwrap();
+        assert_eq!(entry.word, "serendipity");
+        assert_eq!(entry.senses.len(), 1);
+        assert_eq!(entry.senses[0].def, "a happy accident");
+
+        // The pack must be untouched: same bytes, no wal/journal sidecars.
+        assert_eq!(std::fs::read(&pack).unwrap(), before);
+        let sidecars: Vec<_> = std::fs::read_dir(scratch.path())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with("-wal") || n.ends_with("-journal") || n.ends_with("-shm"))
+            .collect();
+        assert!(sidecars.is_empty(), "pack sidecars created: {sidecars:?}");
+    }
+
+    #[test]
+    fn sqlite_pack_with_odd_identifiers_imports_safely() {
+        let scratch = ScratchDir::new();
+        let pack = scratch.join("weird.db");
+        {
+            let conn = rusqlite::Connection::open(&pack).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE \"my dict\" (\"word\", \"definition\");
+                 INSERT INTO \"my dict\" VALUES ('kw1', 'def one');",
+            )
+            .unwrap();
+        }
+        let cat = Catalog::open_in_memory().unwrap();
+        let (_, count) = import_dictionary(&cat, &pack).unwrap();
+        assert_eq!(count, 1);
+        let entry = cat.lookup_entry("kw1").unwrap();
+        assert_eq!(entry.senses[0].def, "def one");
+    }
+
+    #[test]
+    fn tsv_import_accepts_tab_and_two_space_separators() {
+        let scratch = ScratchDir::new();
+        let tsv = scratch.join("words.tsv");
+        write_file(
+            &tsv,
+            "# comment line\napple\tA fruit.\nbee  A flying insect.\n\nstray no separator\n",
+        );
+        let cat = Catalog::open_in_memory().unwrap();
+        let (name, count) = import_dictionary(&cat, &tsv).unwrap();
+        assert_eq!(name, "words");
+        assert_eq!(count, 2);
+        assert_eq!(cat.lookup_entry("apple").unwrap().senses[0].def, "A fruit.");
+        assert_eq!(
+            cat.lookup_entry("bee").unwrap().senses[0].def,
+            "A flying insect."
+        );
+        assert!(cat.lookup_entry("stray").unwrap().senses.is_empty());
+    }
+
+    #[test]
+    fn same_file_rejects_distinct_files_and_directory_is_not_a_pack() {
+        // The self-import guard compares canonical paths; verify the
+        // comparison itself and that a directory is not accepted as a pack.
+        let scratch = ScratchDir::new();
+        let db = scratch.join("catalog.db");
+        {
+            let conn = rusqlite::Connection::open(&db).unwrap();
+            conn.execute_batch("CREATE TABLE x (y TEXT);").unwrap();
+        }
+        let copy = scratch.join("catalog-copy.db");
+        std::fs::copy(&db, &copy).unwrap();
+        assert!(same_file(&db, &db));
+        assert!(!same_file(&db, &copy));
+
+        // A directory is never a dictionary pack either.
+        let cat = Catalog::open_in_memory().unwrap();
+        let err = import_dictionary(&cat, scratch.path()).unwrap_err();
+        assert!(err.to_string().contains("unrecognized dictionary format"));
+    }
+
+    #[test]
+    fn unrecognized_format_error_names_the_expected_formats() {
+        let scratch = ScratchDir::new();
+        let f = scratch.join("data.xyz");
+        write_file(&f, "hello");
+        let cat = Catalog::open_in_memory().unwrap();
+        let err = import_dictionary(&cat, &f).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("StarDict"), "msg: {msg}");
+        assert!(msg.contains("SQLite"), "msg: {msg}");
+        assert!(msg.contains("tab-separated"), "msg: {msg}");
+    }
+
+    #[test]
+    fn reimport_replaces_entries_instead_of_duplicating() {
+        let scratch = ScratchDir::new();
+        let tsv = scratch.join("words.tsv");
+        write_file(&tsv, "alpha\tfirst version\n");
+        let cat = Catalog::open_in_memory().unwrap();
+        import_dictionary(&cat, &tsv).unwrap();
+        assert_eq!(cat.dict_entry_count().unwrap(), 1);
+
+        write_file(&tsv, "alpha\tsecond version\nbeta\tadded later\n");
+        let (_, count) = import_dictionary(&cat, &tsv).unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(cat.dict_entry_count().unwrap(), 2);
+        let entry = cat.lookup_entry("alpha").unwrap();
+        assert_eq!(entry.senses[0].def, "second version");
+    }
 }

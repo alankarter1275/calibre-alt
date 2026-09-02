@@ -318,9 +318,10 @@ impl Catalog {
             let book = row_to_book(row)?;
             Ok(ReadingListEntry {
                 book,
-                position: row.get(12)?,
-                note: row.get(13)?,
-                added_at: row.get(14)?,
+                // BOOK_COLUMNS is 16 wide; the reading_list columns follow it.
+                position: row.get(16)?,
+                note: row.get(17)?,
+                added_at: row.get(18)?,
             })
         })?;
         let mut entries = rows.collect::<std::result::Result<Vec<_>, _>>()?;

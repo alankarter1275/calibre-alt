@@ -105,6 +105,8 @@ pub enum LibrarySection {
     History,
     SavedQuotes,
     SavedWords,
+    /// Phase 10: the dictionary lookup log.
+    LookupHistory,
     Tags,
     Analytics,
 }
@@ -120,6 +122,7 @@ impl LibrarySection {
         LibrarySection::History,
         LibrarySection::SavedQuotes,
         LibrarySection::SavedWords,
+        LibrarySection::LookupHistory,
         LibrarySection::Tags,
         LibrarySection::Analytics,
     ];
@@ -132,6 +135,7 @@ impl LibrarySection {
             LibrarySection::History => "document-open-recent-symbolic",
             LibrarySection::SavedQuotes => "insert-text-symbolic",
             LibrarySection::SavedWords => "accessories-dictionary-symbolic",
+            LibrarySection::LookupHistory => "edit-find-symbolic",
             LibrarySection::Tags => "tag-symbolic",
             LibrarySection::Analytics => "view-bar-symbolic",
         }

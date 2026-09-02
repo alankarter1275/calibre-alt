@@ -13,12 +13,20 @@ mod annotations;
 mod authors;
 mod dictionaries;
 mod history;
+mod lookup_history;
 mod metadata;
 mod prefs;
+mod pronunciation;
 mod series;
 mod shelves;
 mod stats;
 
+pub use dictionaries::{
+    likely_sense_index, EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME,
+    BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
+};
+pub use lookup_history::DictLookup;
+pub use pronunciation::pronunciation_for;
 pub use series::{series_key, SeriesWork};
 
 #[derive(Debug, Error)]
@@ -36,7 +44,11 @@ pub type Result<T> = std::result::Result<T, DbError>;
 /// · v5 = ratings + reading goals · v6 = publisher/published/series index
 /// · v7 = remembered metadata edits, keyed by file hash · v8 = reader bookmarks
 /// · v9 = cached author profiles and aliases · v10 = series cache (Open Library)
-pub const SCHEMA_VERSION: i64 = 10;
+/// · v11 = dictionary headword key (fold_key) + idx_dict_entries_key
+/// · v12 = dictionary priority + combined_words merged store
+/// · v13 = saved_words.known (review status for vocabulary tools)
+/// · v14 = dict_lookups (append-only lookup history, Phase 10)
+pub const SCHEMA_VERSION: i64 = 14;
 
 /// Process-wide DB handle (GTK app is single-threaded for UI; imports run sync on UI for P1).
 pub struct Catalog {
@@ -89,6 +101,8 @@ pub struct SavedWord {
     pub chapter_index: Option<i64>,
     pub context_text: Option<String>,
     pub created_at: String,
+    /// Phase 7: review status — true once the word is marked as known.
+    pub known: bool,
 }
 
 /// Book identity attached to a saved quote — the library dashboard renders
@@ -162,6 +176,8 @@ pub struct Dictionary {
     pub lang: Option<String>,
     pub entry_count: i64,
     pub added_at: String,
+    /// Merged-store priority (schema v12): lower numbers speak first.
+    pub priority: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -539,6 +555,19 @@ impl Catalog {
             CREATE INDEX IF NOT EXISTS idx_dict_entries_word ON dict_entries(word COLLATE NOCASE);
             CREATE INDEX IF NOT EXISTS idx_dict_entries_dict ON dict_entries(dict_id);
 
+            -- v12: merged dictionary store. One row per headword key; the
+            -- dictionary that speaks for a word is the one with the lowest
+            -- priority (ties: lowest id). `senses` is a JSON array of that
+            -- dictionary's definitions for the word. The reader searches
+            -- only this table — never the raw entries — so a word always
+            -- appears once.
+            CREATE TABLE IF NOT EXISTS combined_words (
+                key     TEXT    PRIMARY KEY COLLATE NOCASE,
+                word    TEXT    NOT NULL,
+                dict_id INTEGER NOT NULL REFERENCES dictionaries(id) ON DELETE CASCADE,
+                senses  TEXT    NOT NULL
+            );
+
             -- P4 tables
             CREATE TABLE IF NOT EXISTS shelves (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -581,6 +610,22 @@ impl Catalog {
             CREATE INDEX IF NOT EXISTS idx_reading_events_book ON reading_events(book_id);
             CREATE INDEX IF NOT EXISTS idx_reading_events_at ON reading_events(at DESC);
             CREATE INDEX IF NOT EXISTS idx_reading_events_kind ON reading_events(kind);
+
+            -- v14: append-only dictionary lookup history (Phase 10).
+            -- book_id/chapter_index are nullable: the sidebar search logs
+            -- lookups that are not tied to a book. `found` = the lookup
+            -- resolved to senses (misses are the signal for pack gaps).
+            CREATE TABLE IF NOT EXISTS dict_lookups (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                word          TEXT    NOT NULL,
+                book_id       INTEGER REFERENCES books(id) ON DELETE SET NULL,
+                chapter_index INTEGER,
+                context_text  TEXT    NOT NULL DEFAULT '',
+                found         INTEGER NOT NULL DEFAULT 1,
+                at            TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_dict_lookups_word ON dict_lookups(word COLLATE NOCASE);
+            CREATE INDEX IF NOT EXISTS idx_dict_lookups_at ON dict_lookups(at DESC);
 
             -- One row per reader visit; closed out when the reader shuts down.
             CREATE TABLE IF NOT EXISTS reading_sessions (
@@ -684,6 +729,51 @@ impl Catalog {
             CREATE INDEX IF NOT EXISTS idx_books_finished ON books(finished_at);
             ",
         )?;
+
+        // v11: precomputed dictionary headword key (fold_key — lowercased,
+        // diacritics stripped, whitespace collapsed) so exact/prefix lookups
+        // hit an index instead of a case-insensitive LIKE scan over word.
+        // Added after the CREATE TABLE because older databases were built
+        // without it, exactly like the books columns above.
+        add_column_if_missing(&conn, "dict_entries", "key", "TEXT")?;
+        conn.execute_batch(
+            "
+            CREATE INDEX IF NOT EXISTS idx_dict_entries_key ON dict_entries(key COLLATE NOCASE);
+            ",
+        )?;
+
+        // Backfill the key column for rows imported before v11. Computed in
+        // Rust (SQLite cannot strip diacritics), batched in small write
+        // transactions; guarded by `key IS NULL` so it runs at most once.
+        // The read guard is dropped first so the write transaction can take
+        // the connection.
+        drop(conn);
+        self.backfill_dict_entry_keys()?;
+        let mut conn = self.conn();
+
+        // v12: dictionary priority (lower = shown first; imports default 100)
+        // and the merged store. Databases that already have entries get the
+        // store built once here; later rebuilds happen whenever the
+        // dictionary set changes (import / remove / bundled install).
+        add_column_if_missing(
+            &conn,
+            "dictionaries",
+            "priority",
+            "INTEGER NOT NULL DEFAULT 100",
+        )?;
+        let has_entries: i64 =
+            conn.query_row("SELECT COUNT(*) FROM dict_entries", [], |r| r.get(0))?;
+        let combined_empty: i64 =
+            conn.query_row("SELECT COUNT(*) FROM combined_words", [], |r| r.get(0))?;
+        if has_entries > 0 && combined_empty == 0 {
+            drop(conn);
+            self.rebuild_combined_dictionary()?;
+            conn = self.conn();
+        }
+
+        // v13: saved_words.known — Phase 7 review status. Existing rows
+        // default to 0 (unknown), so nothing needs a backfill.
+        add_column_if_missing(&conn, "saved_words", "known", "INTEGER NOT NULL DEFAULT 0")?;
 
         let version: Option<i64> = conn
             .query_row("SELECT version FROM schema_version LIMIT 1", [], |r| {
@@ -1157,6 +1247,7 @@ fn row_to_saved_word(row: &rusqlite::Row<'_>) -> rusqlite::Result<SavedWord> {
         chapter_index: row.get(5)?,
         context_text: row.get(6)?,
         created_at: row.get(7)?,
+        known: row.get::<_, i64>(8)? != 0,
     })
 }
 
@@ -1278,6 +1369,63 @@ mod tests {
     }
 
     #[test]
+    fn saved_words_known_flag_round_trips_and_filters() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = cat
+            .insert_saved_word(
+                "serendipity",
+                "a happy accident",
+                Some("WordNet"),
+                None,
+                None,
+                Some("luck, chance"),
+            )
+            .unwrap();
+        let b = cat
+            .insert_saved_word(
+                "wander",
+                "to walk aimlessly",
+                Some("WordNet"),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        // Fresh rows are unknown (to review).
+        let all = cat.list_saved_words("", None).unwrap();
+        assert_eq!(all.len(), 2);
+        assert!(all.iter().all(|w| !w.known));
+        assert_eq!(cat.list_saved_words("", Some(false)).unwrap().len(), 2);
+        assert!(cat.list_saved_words("", Some(true)).unwrap().is_empty());
+
+        // Mark one known; the flag round-trips and the filters split.
+        cat.set_saved_word_known(a, true).unwrap();
+        let known = cat.list_saved_words("", Some(true)).unwrap();
+        assert_eq!(known.len(), 1);
+        assert_eq!(known[0].id, a);
+        assert!(known[0].known);
+        let review = cat.list_saved_words("", Some(false)).unwrap();
+        assert_eq!(review.len(), 1);
+        assert_eq!(review[0].id, b);
+
+        // Toggling back works too.
+        cat.set_saved_word_known(a, false).unwrap();
+        assert_eq!(cat.list_saved_words("", Some(true)).unwrap().len(), 0);
+        assert_eq!(cat.list_saved_words("", Some(false)).unwrap().len(), 2);
+
+        // Search still combines with the filter.
+        cat.set_saved_word_known(b, true).unwrap();
+        let hits = cat.list_saved_words("wan", Some(true)).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].word, "wander");
+        assert!(cat
+            .list_saved_words("serendipity", Some(true))
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
     fn manual_shelf_membership_round_trips() {
         let cat = Catalog::open_in_memory().unwrap();
         let a = seed(&cat, "Dune", "Frank Herbert", &["scifi"]);
@@ -1392,6 +1540,34 @@ mod tests {
         // Moving past the edge is a no-op, not an error.
         cat.move_reading_list_entry(a, -1).unwrap();
         assert_eq!(cat.list_reading_list().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn reading_list_note_and_meta_are_not_book_fields() {
+        // Regression: list_reading_list once read position/note/added_at from
+        // indices 12..14, which are actually progress/rating/publisher. Give
+        // the book non-default values so the wrong reads would be visible.
+        let cat = Catalog::open_in_memory().unwrap();
+        let a = seed(&cat, "A", "x", &[]);
+        cat.conn()
+            .execute(
+                "UPDATE books SET progress = 42, rating = 4, publisher = 'TestPub' WHERE id = ?1",
+                params![a],
+            )
+            .unwrap();
+        cat.add_to_reading_list(a).unwrap();
+        cat.set_reading_list_note(a, "my note").unwrap();
+
+        let entries = cat.list_reading_list().unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].position, 0);
+        assert_eq!(entries[0].note, "my note");
+        assert!(!entries[0].added_at.is_empty());
+        assert_ne!(entries[0].added_at, "TestPub");
+        // The book row itself still hydrates its real values.
+        assert_eq!(entries[0].book.progress, 42);
+        assert_eq!(entries[0].book.rating, 4);
+        assert_eq!(entries[0].book.publisher, "TestPub");
     }
 
     #[test]
@@ -1518,8 +1694,12 @@ mod tests {
 
     #[test]
     fn a_restored_book_keeps_its_cover() {
+        // NOTE: this test writes real files under the data dir (book cover +
+        // the stashed override copy). The seeded title must stay unique so
+        // its uuid/hash paths cannot collide with the other cover tests,
+        // which run in parallel.
         let cat = Catalog::open_in_memory().unwrap();
-        let id = seed(&cat, "A", "x", &[]);
+        let id = seed(&cat, "CoverRestored", "x", &[]);
         let book = cat.get_book(id).unwrap().unwrap();
         let hash = book.file_hash.clone();
 
@@ -1564,8 +1744,10 @@ mod tests {
         // The bug: editing metadata stashed the cover, then the new cover was
         // written afterwards, so the override kept the *previous* jacket and a
         // re-import restored the wrong image.
+        // Unique seeded title: this test writes real files (book dir + stashed
+        // override cover) and must not collide with the other cover tests.
         let cat = Catalog::open_in_memory().unwrap();
-        let id = seed(&cat, "A", "x", &[]);
+        let id = seed(&cat, "CoverSwap", "x", &[]);
         let book = cat.get_book(id).unwrap().unwrap();
         let hash = book.file_hash.clone();
         let dir = crate::paths::book_dir(&book.uuid);
@@ -1610,8 +1792,10 @@ mod tests {
         // edit path, which re-stashes. At that moment the book still has the
         // freshly-imported cover, so the saved image was overwritten with the
         // EPUB default a moment before it was due to be copied back.
+        // Unique seeded title: this test writes real files (book dir + stashed
+        // override cover) and must not collide with the other cover tests.
         let cat = Catalog::open_in_memory().unwrap();
-        let id = seed(&cat, "A", "x", &[]);
+        let id = seed(&cat, "CoverClobber", "x", &[]);
         let book = cat.get_book(id).unwrap().unwrap();
         let hash = book.file_hash.clone();
         let dir = crate::paths::book_dir(&book.uuid);

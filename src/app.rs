@@ -11,6 +11,7 @@ use crate::pages::{
     history::{HistoryModel, HistoryOut},
     home::{HomeOut, HomePageModel},
     library::{LibraryOut, LibraryPageModel},
+    lookup_history::LookupHistoryModel,
     placeholder::PlaceholderPageModel,
     reader::{ReaderModel, ReaderOut},
     reading_list::{ReadingListModel, ReadingListOut},
@@ -72,6 +73,7 @@ enum PageSlot {
     AllBooks(Controller<AllBooksModel>),
     SavedQuotes(Controller<SavedQuotesModel>),
     SavedWords(Controller<SavedWordsModel>),
+    LookupHistory(Controller<LookupHistoryModel>),
     Shelves(Controller<ShelvesGridModel>),
     ShelfDetail(Controller<ShelfDetailModel>),
     ReadingList(Controller<ReadingListModel>),
@@ -94,6 +96,7 @@ impl PageSlot {
             PageSlot::AllBooks(c) => c.widget().clone().upcast(),
             PageSlot::SavedQuotes(c) => c.widget().clone().upcast(),
             PageSlot::SavedWords(c) => c.widget().clone().upcast(),
+            PageSlot::LookupHistory(c) => c.widget().clone().upcast(),
             PageSlot::Shelves(c) => c.widget().clone().upcast(),
             PageSlot::ShelfDetail(c) => c.widget().clone().upcast(),
             PageSlot::ReadingList(c) => c.widget().clone().upcast(),
@@ -395,6 +398,12 @@ impl AppModel {
                             }
                         });
                 PageSlot::SavedWords(ctrl)
+            }
+            Route::LibrarySection(LibrarySection::LookupHistory) => {
+                let ctrl = LookupHistoryModel::builder()
+                    .launch(catalog.clone())
+                    .detach();
+                PageSlot::LookupHistory(ctrl)
             }
             Route::LibrarySection(LibrarySection::ReadingList) => {
                 let ctrl = ReadingListModel::builder().launch(catalog.clone()).forward(

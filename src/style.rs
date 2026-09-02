@@ -1602,6 +1602,20 @@ entry.kalam-reader-search > text {
     color: @kalam_text;
 }
 
+/* Phase 7: vocabulary review — known words recede; the mark-known button
+   turns accent-filled when the word is known. */
+.kalam-word-row-known .kalam-word-title {
+    color: @kalam_text_dim;
+}
+.kalam-word-row-known .kalam-muted {
+    color: alpha(@kalam_text, 0.55);
+}
+.kalam-known-btn-active {
+    background: alpha(@kalam_accent, 0.22) !important;
+    border-color: @kalam_accent !important;
+    color: @kalam_accent !important;
+}
+
 .kalam-badge-yellow {
     background: #fef08a;
     color: #1a1a12;

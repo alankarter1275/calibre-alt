@@ -3,24 +3,46 @@
 **Kalam** is a lightweight, personal, all-in-one ebook manager and reader for Linux.
 Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest hardware.
 
-> Phase 5 — metadata editing, cover replacement and Open Library lookup.
+> Reader-improvements track complete — merged dictionary store, popup redesign,
+> POS + likely-sense hint, offline IPA pronunciation, tap-to-look-up, find in
+> chapter, vocabulary review + CSV/Anki export. Dictionary track Phases 8–10
+> shipped (POS dividers, priority reorder, lookup history).
+
+> **For AI agents / new chats — read this first.** Plan and status:
+> [`ROADMAP.md`](./ROADMAP.md) (its **"Read this first"** block and **"Current
+> trajectory"** section). Design decisions: [`docs/conversation.md`](./docs/conversation.md).
+> **Keep all three updated in the same commit as your code** — a change that
+> leaves the roadmap stale is not done.
 
 ## Working agreement
 
-- **CI (GitHub Actions)** compiles every push — you don’t need to build between commits.
+- **CI (GitHub Actions)** compiles, clippys, runs the unit tests and builds
+  debug+release on every push — you don’t need to build between commits.
+- **Backend review pass done** — full line-by-line sweep of the data layer:
+  importers hardened (read-only SQLite packs, identifier quoting, rollback,
+  catalog.db self-import guard), one latent bug fixed (reading-list column
+  offsets), 9 new unit tests. No other defects.
+- **CI now runs the 156 unit tests on every push** (the `cargo test` step is
+  live in `.github/workflows/ci.yml`). The first real run caught one failing
+  test (a bad escape in the `quote_ident` test literal) — fixed, all green.
+  On failure the diagnostics are published to `ci-logs/test-latest.txt`.
+- Workflow changes are made by you with your own account (the App cannot push
+  `.github/workflows/`); the canonical copy lives at
+  `docs/ci/github-actions-ci.yml` — see `docs/ci/README.md`.
 - **Your Arch machine** is only needed at **phase boundaries** (smoke-test + design feedback).
-- Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md)
+- Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md) ·
+  design decisions: [`docs/conversation.md`](./docs/conversation.md)
 
-## What works now (P5)
+## What works now
 
 - Slim sidebar shell + cover-card library grid
 - **SQLite catalog** at `~/.local/share/kalam/catalog.db`
 - **Import EPUB** (My Library → All books → “+ Import EPUB”)
 - **EPUB reader** (WebKitGTK): chapter-wise scroll, TOC, themes, font size, progress restore
 - **Highlights & quotes**: select text → floating chip (yellow/green/blue/pink/orange), save quote (❝), copy
-- **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip or `D` shortcut, a popup with up to five matching results, save/copy each result
+- **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip, tap, or `D` shortcut, a popup with numbered senses + POS, synonym/antonym chips, idiom cards, bookmark & copy, offline IPA pronunciation (`bank` → `/ˈbæŋk/`) from the bundled CMU Pronouncing Dictionary, keyboard support (↑/↓ focus a sense, Enter saves it), and **Find in chapter**
 - **Annotations list**: reader bottom pill ✎ shows highlights/quotes for current book, jump & delete
-- **Library hub**: My Library → Saved quotes (real data) → export to Markdown (`~/Quotes.md`), Saved words (real data)
+- **Library hub**: My Library → Saved quotes (real data) → export to Markdown (`~/Quotes.md`), Saved words (real data) → vocabulary review (mark known / to review, All/To review/Known filter) → export CSV (`~/SavedWords.csv`) or Anki TSV (`~/SavedWords-Anki.txt`)
 - **Settings**: dictionary packs import (+ Import dictionary), list & remove, data paths
 - **Shelves**: manual collections + **smart shelves** with a rule builder
   (tag / author / series / format / progress / title / added · is · is not ·
@@ -45,11 +67,14 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 |-------|---------|
 | P0 | Shell + nav ✅ |
 | P1 | SQLite library, EPUB import, covers ✅ |
-| P2 | EPUB reader ✅ |
+| P2 | EPUB reader (incl. P2.1 chrome restyle) ✅ |
 | P3 | Highlights, quotes, offline dictionary ✅ |
 | P4 | Shelves engine, lists, history, tags, analytics ✅ |
-| **P5** | **Metadata edit, cover replace, Open Library fetch** ← current ✅ |
+| **P5** | **Metadata edit, cover replace, Open Library fetch** ✅ |
+| Reader track | Annotation workflow + hybrid anchoring; dictionary overhaul (merged store, popup redesign, likely-sense hint, IPA pronunciation, tap-to-look-up, find in chapter) + vocabulary review (known flag, CSV/Anki export) ✅ · Phases 8–10 shipped: POS grouping dividers, dictionary priority reorder UI, lookup history |
+| Backend review | Full sweep of `db.rs` + `db/*`: importers hardened, reading-list column bug fixed, 9 new tests ✅ |
 | P6–P11 | Downloads, AO3/FF, comics, PDF, tools — see ROADMAP |
+| UI overhaul (P5.5) | Colour system, 13 themes, Settings v2, book page, series float — **in progress** (Home/Library/Reader chrome next) |
 
 ## Requirements (Arch Linux)
 
@@ -146,8 +171,27 @@ src/
   pages/           Home, Library, Shelves (+ editor/detail), ReadingList,
                    History, Tags, Analytics, Book, Reader, SavedQuotes,
                    SavedWords, Settings
+  db/              db.rs split: annotations, authors, dictionaries, history,
+                   metadata, prefs, pronunciation, series, shelves, stats
   widgets/         book row, shelf card
 ```
+
+### Backend layout (post split)
+
+The 3,400-line `db.rs` was split so each area is navigable. All methods live
+on the same `Catalog`:
+
+| File | Covers |
+|------|--------|
+| `db.rs` | schema/migrations, book CRUD, progress, row mappers, helpers (`escape_like`, `chrono_like_now`, streaks) |
+| `db/dictionaries.rs` | merged store, search/lookup chain, sense parsing |
+| `db/annotations.rs` | highlights, quotes, saved words, reading bookmarks |
+| `db/history.rs` | event log, reading sessions |
+| `db/metadata.rs` | metadata edits, overrides/restore, covers, ratings, goals |
+| `db/shelves.rs` | shelves, reading list |
+| `db/stats.rs` | analytics, backup |
+| `db/authors.rs` / `db/series.rs` | author profiles, series cache |
+| `db/prefs.rs` / `db/pronunciation.rs` | app prefs, IPA pronunciation |
 
 ## Data
 
@@ -157,8 +201,12 @@ src/
   library/<uuid>/
   dictionaries/        (imported packs meta only; entries in catalog.db)
   cache/reader/<uuid>/
+  override-covers/     (stashed covers for metadata restore)
+  series-covers/       (cached series float covers)
 ~/.config/kalam/       (future)
-~/Quotes.md            (export target)
+~/Quotes.md            (export target — saved quotes, Markdown)
+~/SavedWords.csv       (export target — vocabulary, RFC-4180)
+~/SavedWords-Anki.txt  (export target — vocabulary, Anki TSV)
 ```
 
 ## Offline dictionaries
@@ -184,10 +232,41 @@ and can be removed there. On Linux, the dictionary data directory is
 `~/.local/share/kalam/dictionaries`.
 
 In the reader, select a word or complete phrase and choose **Dictionary** (or
-press `D`). Kalam keeps the phrase, removes surrounding punctuation, and tries
-common simple forms such as `running` → `run`. When more than one dictionary
-entry matches, the popup shows up to five results. Each result has its own
-**Save word** and **Copy** buttons.
+press `D`). Kalam keeps the phrase, removes surrounding punctuation, and
+lemmatizes the term before looking it up: WordNet's irregular exception lists
+resolve `went` → `go`, `mice` → `mouse`, `better` → `good` and `running` →
+`run`, with regular suffix rules as the fallback. Lookups are case- and
+diacritic-insensitive — `Run`, `RUN` and `rún` all find `run` — because every
+headword is indexed under a normalized key. Selecting a phrase looks for the
+phrase itself first (so `run out of steam` resolves to the idiom entry), then
+falls back to per-word results (`odd mixture` yields `odd` and `mixture`).
+
+All installed dictionaries are combined into one merged store: each word
+appears exactly once, provided by the highest-priority dictionary that has it
+(WordNet first, then the other bundled packs, then any dictionary you
+import), with all of that dictionary's senses listed. A word shared by two
+dictionaries is never shown twice, and the other dictionary's version stays
+hidden. The store rebuilds automatically whenever you import or remove a
+dictionary. The popup shows up to five matching words; each has **Save word**
+and **Copy** buttons.
+
+The popup also shows the word's pronunciation as a compact IPA
+transcription — `bank` → `/ˈbæŋk/`, `run` → `/ˈrʌn/` — from the bundled CMU
+Pronouncing Dictionary 0.7a (BSD-style licence; provenance and checksums in
+`resources/dictionaries/cmudict-0.7a.NOTICE.txt`). It is fully offline: the
+packed dictionary is compiled into the binary, ARPABET phonemes are
+converted to IPA with stress marks, and lookups resolve through the same
+lemmatization as definitions, so `running` finds `run`. Words absent from
+the dictionary (and multi-word phrases) simply show no transcription.
+
+You can also tap any word in the book to look it up — no selection needed.
+A plain click resolves the word under the caret and opens the popup for it
+(with the surrounding sentence as context); a double-click still selects a
+word for highlighting. With the popup open, ↑/↓ move a focus ring across
+the senses and Enter saves the word with the focused sense's definition.
+The magnifier button in the popup header highlights every occurrence of
+the headword in the current chapter (Esc clears the highlights) — a
+chapter-scoped stand-in until an in-book search exists.
 
 ### Reliable download sources
 
@@ -210,17 +289,27 @@ not safe to bundle without a separate redistribution licence.
 
 ### Bundled dictionaries
 
-The base app includes two small English-only starter packs. **English WordNet
+The base app includes four small English-only starter packs. **English WordNet
 2025** has about 127,000 headwords and is about 4.2 MB compressed. **English
 Idioms and Expressions** adds 1,024 phrase-to-meaning entries and is about
-16 KB compressed. Both packs are installed and enabled on the first run, work
-without a download, and appear separately in **Settings → Dictionaries**. If
-you remove either pack, Kalam remembers that choice and does not silently add
-it back.
+16 KB compressed. **English Synonyms (WordNet 3.0)** covers 110,000+ words
+with their synset companions (about 1.7 MB compressed), and **English
+Antonyms (WordNet 3.0)** adds 6,600+ antonym pairs (about 50 KB compressed).
+All four packs are installed and enabled on the first run (new packs also
+appear automatically on the first launch after this update), work without a
+download, and appear separately in **Settings → Dictionaries**. If you remove
+a pack, Kalam remembers that choice and does not silently add it back.
 
 The WordNet pack is a format conversion of the [Open English Wordnet 2025
 Edition](https://github.com/globalwordnet/english-wordnet/releases/tag/2025-edition),
-which is derived from Princeton WordNet. The idiom pack is a format conversion
+which is derived from Princeton WordNet. Kalam also bundles the Princeton
+WordNet 3.0 morphological exception lists (`noun.exc`, `verb.exc`, `adj.exc`,
+`adv.exc`, gzipped) to resolve irregular lookup forms such as `went` → `go`,
+and the English Synonyms and English Antonyms packs, which are derived from
+the Princeton WordNet 3.0 synset and antonym-pointer data; their source,
+checksums and licence note are kept beside the packed lists
+(`wordnet-3.0-exc.NOTICE.txt`, `wordnet-3.0-synonyms.NOTICE.txt`).
+The idiom pack is a format conversion
 of [`baiango/english_idioms`](https://github.com/baiango/english_idioms), using
 commit `d47bfb40a3f76d0f08ba1867016c383d3c21c596`. Its upstream repository
 releases the data under The Unlicense. Its README says the list was collected

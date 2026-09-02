@@ -1,6 +1,9 @@
 //! Immersive EPUB reader.
 
-use crate::db::{Annotation, Catalog, DictEntry, HighlightColor, ReadingBookmark, SavedWord};
+use crate::db::{
+    Annotation, Catalog, DictEntry, EntryData, HighlightColor, PhraseLookup, ReadingBookmark,
+    SavedWord,
+};
 use crate::epub_book::{reading_css, OpenBook, ReadingTheme};
 use crate::models::Book;
 use crate::paths::reader_cache_dir;
@@ -50,6 +53,8 @@ struct JsPayload {
     rect: Option<serde_json::Value>,
     #[serde(default)]
     definition: Option<String>,
+    #[serde(default)]
+    count: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -166,6 +171,9 @@ pub enum ReaderMsg {
     SwitchSettingsPane(ReaderSettingsPane),
     SetUiSetting(ReaderUiSetting, i32),
     AdjustUiSetting(ReaderUiSetting, i32),
+    SetDictSenseHint(bool),
+    /// Phase 10: `dict_history_enabled` — records every dictionary lookup.
+    SetDictHistory(bool),
     JsRaw(String),
     Progress(f64),
     AnnotationsReload,
@@ -622,7 +630,7 @@ impl Component for ReaderModel {
             .get_annotations_for_book(book_id)
             .unwrap_or_default();
         let bookmarks = catalog.list_reading_bookmarks(book_id).unwrap_or_default();
-        let saved_words = catalog.list_saved_words("").unwrap_or_default();
+        let saved_words = catalog.list_saved_words("", None).unwrap_or_default();
 
         let catalog_theme = catalog
             .get_pref("reader.theme")
@@ -673,6 +681,8 @@ impl Component for ReaderModel {
             catalog_line_height,
             catalog_column,
             ui_prefs,
+            catalog.get_pref_i64("dict_sense_hint", 1) != 0,
+            catalog.get_pref_i64("dict_history_enabled", 1) != 0,
         );
         let settings_scroll = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
@@ -1174,6 +1184,19 @@ impl Component for ReaderModel {
                     refresh_controls = true;
                 }
             }
+            ReaderMsg::SetDictSenseHint(on) => {
+                // P5.5: `dict_sense_hint` toggles the Lesk "likely here"
+                // marker; POS grouping (the pill) stays always on.
+                self.catalog
+                    .set_pref("dict_sense_hint", if on { "1" } else { "0" });
+            }
+            ReaderMsg::SetDictHistory(on) => {
+                // Phase 10: lookup history is opt-out, but the toggle ships
+                // with the feature — a silent log of unknown words needs a
+                // visible off switch.
+                self.catalog
+                    .set_pref("dict_history_enabled", if on { "1" } else { "0" });
+            }
             ReaderMsg::JsRaw(raw) => {
                 let cleaned = raw.trim();
                 let json_part = if cleaned.starts_with("kalam://") {
@@ -1343,20 +1366,29 @@ impl Component for ReaderModel {
                 if q.trim().is_empty() {
                     self.dict_results.clear();
                 } else {
-                    self.dict_results = self.catalog.search_dict(&q, 30).unwrap_or_default();
+                    self.dict_results = self.lookup_dict(&q, 30);
                 }
                 refresh_words = true;
             }
             ReaderMsg::DictSearchSelect(word) => {
-                let results = self.catalog.search_dict(&word, 5).unwrap_or_default();
-                if let Some(entry) = results.first() {
-                    self.dict_lookup_word = Some(entry.word.clone());
-                    self.dict_lookup_def = Some(entry.definition.clone());
-                    self.show_dict_in_webview(&word, &results, None);
-                    self.right_tab = RightSidebarTab::Words;
-                    self.right_sidebar_open = true;
-                    refresh_tabs = true;
-                }
+                let data = self
+                    .catalog
+                    .lookup_entry(&word)
+                    .unwrap_or_else(|_| EntryData {
+                        word: word.clone(),
+                        ..Default::default()
+                    });
+                self.dict_lookup_word = Some(data.word.clone());
+                self.dict_lookup_def = data
+                    .senses
+                    .first()
+                    .map(|s| s.def.clone())
+                    .or_else(|| (!data.suggestions.is_empty()).then(|| data.word.clone()));
+                // Sidebar searches have no surrounding sentence: no hint.
+                self.show_dict_in_webview(&word, None, None);
+                self.right_tab = RightSidebarTab::Words;
+                self.right_sidebar_open = true;
+                refresh_tabs = true;
             }
             ReaderMsg::SaveCurrentWord => {
                 if let (Some(word), Some(def)) = (&self.dict_lookup_word, &self.dict_lookup_def) {
@@ -1648,7 +1680,7 @@ impl ReaderModel {
     }
 
     fn reload_saved_words(&mut self) {
-        self.saved_words = self.catalog.list_saved_words("").unwrap_or_default();
+        self.saved_words = self.catalog.list_saved_words("", None).unwrap_or_default();
     }
 
     fn toc_display_position(&self) -> Option<(usize, usize)> {
@@ -1850,26 +1882,94 @@ impl ReaderModel {
         eval_js(&self.webview, &script);
     }
 
-    fn show_dict_in_webview(&self, query: &str, results: &[DictEntry], rect_json: Option<String>) {
-        let query_json = serde_json::to_string(query).unwrap_or_else(|_| "\"\"".into());
-        let popup_results: Vec<_> = results
-            .iter()
-            .take(5)
-            .map(|entry| {
-                serde_json::json!({
-                    "word": entry.word,
-                    "definition": entry.definition.chars().take(2000).collect::<String>(),
-                })
-            })
-            .collect();
-        let results_json = serde_json::to_string(&popup_results).unwrap_or_else(|_| "[]".into());
+    /// Run a dictionary lookup through the Phase-3 phrase pipeline when the
+    /// query has more than one token (whole phrase → contained phrase
+    /// headword → per-token breakdown); plain single-word search otherwise.
+    /// Every lookup path — the selection popup and the sidebar Words search —
+    /// goes through here so phrases never dead-end.
+    fn lookup_dict(&self, query: &str, limit: usize) -> Vec<DictEntry> {
+        let results = if query.split_whitespace().count() > 1 {
+            match self
+                .catalog
+                .search_phrase(query, limit)
+                .unwrap_or(PhraseLookup::Empty)
+            {
+                PhraseLookup::Phrase(hits) => hits,
+                PhraseLookup::Breakdown(parts) => parts
+                    .iter()
+                    .filter_map(|(_, hits)| hits.first().cloned())
+                    .take(limit)
+                    .collect(),
+                PhraseLookup::Empty => Vec::new(),
+            }
+        } else {
+            self.catalog.search_dict(query, limit).unwrap_or_default()
+        };
+        // Phase 10: every lookup lands in the append-only history (gated by
+        // the `dict_history_enabled` pref and hour-collapsed inside). The
+        // popup path logs separately in the "dict-lookup" handler.
+        let _ = self.catalog.log_dict_lookup(
+            query,
+            Some(self.book_id),
+            Some(self.chapter as i64),
+            self.dict_context.as_deref(),
+            !results.is_empty(),
+        );
+        results
+    }
+
+    /// Render the redesigned popup: one entry per word, with POS, numbered
+    /// senses, synonym/antonym chips, idiom cards, and did-you-mean chips.
+    /// `hint_index` (P5.5) is the sense the Lesk ranking marked as most
+    /// likely for the surrounding sentence — `None` when the pref is off,
+    /// the entry is not WordNet, or the context gives no evidence.
+    /// `pronunciation` (Phase 5.6) is the word's IPA transcription from the
+    /// bundled CMU Pronouncing Dictionary, or `None` when it has no entry.
+    fn show_dict_in_webview(
+        &self,
+        query: &str,
+        rect_json: Option<String>,
+        hint_index: Option<usize>,
+    ) {
+        let data = self
+            .catalog
+            .lookup_entry(query)
+            .unwrap_or_else(|_| EntryData {
+                word: query.trim().to_string(),
+                ..Default::default()
+            });
+        let saved = self
+            .catalog
+            .saved_word_exists(&data.word, self.book_id)
+            .unwrap_or(false);
+        let pronunciation = crate::db::pronunciation_for(&data.word).map(|p| format!("/{p}"));
+        let payload = serde_json::json!({
+            "word": data.word,
+            "pos": data.pos,
+            "senses": data.senses.iter().map(|s| serde_json::json!({
+                "number": s.number,
+                "pos": s.pos,
+                "def": s.def.chars().take(2000).collect::<String>(),
+                "example": s.example,
+            })).collect::<Vec<_>>(),
+            "synonyms": data.synonyms,
+            "antonyms": data.antonyms,
+            "idioms": data.idioms.iter().map(|(phrase, def)| {
+                serde_json::json!({ "phrase": phrase, "def": def })
+            }).collect::<Vec<_>>(),
+            "suggestions": data.suggestions,
+            "saved": saved,
+            "hint": hint_index,
+            "pronunciation": pronunciation,
+        });
+        let payload_json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
         let rect_part = rect_json
             .as_deref()
             .map(|rect| serde_json::to_string(rect).unwrap_or_else(|_| "null".into()))
             .unwrap_or_else(|| "null".into());
         let script = format!(
-            "if (window.kalamShowDict) window.kalamShowDict({}, {}, {});",
-            query_json, results_json, rect_part
+            "if (window.kalamShowDict) window.kalamShowDict({}, {});",
+            payload_json, rect_part
         );
         eval_js(&self.webview, &script);
     }
@@ -1964,27 +2064,47 @@ impl ReaderModel {
                 }
                 self.dict_context = context.clone();
                 self.dict_lookup_rect_json = rect_json.clone();
-                let results = self.catalog.search_dict(&word, 5).unwrap_or_default();
-                if let Some(entry) = results.first() {
-                    self.dict_lookup_word = Some(entry.word.clone());
-                    self.dict_lookup_def = Some(entry.definition.clone());
-                    self.show_dict_in_webview(&word, &results, rect_json);
-                } else {
-                    let def = format!(
-                        "No definition found for '{}'. Total dict entries: {}",
-                        word,
-                        self.catalog.dict_entry_count().unwrap_or(0)
-                    );
-                    self.dict_lookup_word = Some(word.clone());
-                    self.dict_lookup_def = Some(def.clone());
-                    let fallback = DictEntry {
-                        id: 0,
-                        dict_id: 0,
+                // The popup gets the full merged entry: senses with POS,
+                // chips, idioms, or did-you-mean suggestions. The fake
+                // "No definition found / Total dict entries" result is gone.
+                let data = self
+                    .catalog
+                    .lookup_entry(&word)
+                    .unwrap_or_else(|_| EntryData {
                         word: word.clone(),
-                        definition: def,
-                    };
-                    self.show_dict_in_webview(&word, std::slice::from_ref(&fallback), rect_json);
-                }
+                        ..Default::default()
+                    });
+                self.dict_lookup_word = Some(data.word.clone());
+                self.dict_lookup_def = data
+                    .senses
+                    .first()
+                    .map(|s| s.def.clone())
+                    .or_else(|| (!data.suggestions.is_empty()).then(|| data.word.clone()));
+                // P5.5 Lesk hint: only for WordNet entries (senses carry
+                // POS), only when the pref is on, and only from the
+                // surrounding sentence. `likely_sense_index` returns None
+                // when there is no evidence, so a neutral context produces
+                // no marker and no sense is ever hidden.
+                let hint_index = context.as_deref().and_then(|sentence| {
+                    if self.catalog.get_pref_i64("dict_sense_hint", 1) == 0 {
+                        return None;
+                    }
+                    if !data.senses.iter().any(|s| s.pos.is_some()) {
+                        return None;
+                    }
+                    crate::db::likely_sense_index(sentence, &data.word, &data.senses)
+                });
+                // Phase 10: log the popup lookup itself (the sidebar funnel
+                // logs in `lookup_dict`; the same word re-logged within the
+                // hour collapses to one row).
+                let _ = self.catalog.log_dict_lookup(
+                    &word,
+                    Some(self.book_id),
+                    Some(self.chapter as i64),
+                    context.as_deref(),
+                    !data.senses.is_empty(),
+                );
+                self.show_dict_in_webview(&word, rect_json, hint_index);
             }
             "save-word" => {
                 let word = payload.word.unwrap_or_default();
@@ -2008,10 +2128,41 @@ impl ReaderModel {
                     }
                 }
             }
+            "unsave-word" => {
+                // Popup bookmark toggle-off: forget the saved copies of this
+                // word for the current book.
+                let word = payload.word.unwrap_or_default();
+                if !word.trim().is_empty() {
+                    match self.catalog.delete_saved_word_by_word(&word, self.book_id) {
+                        Ok(_) => {
+                            crate::notify::compact("Word removed", &word);
+                            self.reload_saved_words();
+                        }
+                        Err(e) => crate::notify::error("Could not remove the word", &e.to_string()),
+                    }
+                }
+            }
             "dict-shortcut" => {
                 self.right_tab = RightSidebarTab::Words;
                 self.right_sidebar_open = true;
             }
+            // Phase 6 find-in-chapter: the popup's magnifier asks the
+            // webview to highlight every occurrence of the headword in the
+            // current chapter (no in-book search exists yet, so this is the
+            // scoped version the roadmap allows).
+            "search-in-book" => {
+                let word = payload.word.unwrap_or_default();
+                if !word.trim().is_empty() {
+                    let word_json = serde_json::to_string(&word).unwrap_or_else(|_| "\"\"".into());
+                    let script = format!("window.kalamSearchInBook({word_json});");
+                    eval_js(&self.webview, &script);
+                }
+            }
+            "search-in-book-done" => match payload.count.unwrap_or(0) {
+                0 => crate::notify::compact("No matches in this chapter", ""),
+                1 => crate::notify::compact("1 match in this chapter", ""),
+                n => crate::notify::compact(&format!("{n} matches in this chapter"), ""),
+            },
             "reader-ui-hide" => {
                 self.show_back_button = false;
                 self.show_bottom_pill = false;
@@ -2722,6 +2873,8 @@ fn build_reader_settings_panel(
     line_height: f32,
     column_px: u32,
     ui_prefs: ReaderUiPrefs,
+    dict_sense_hint: bool,
+    dict_history_enabled: bool,
 ) -> ReaderSettingsControls {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -2808,6 +2961,41 @@ fn build_reader_settings_panel(
         ReaderMsg::ColumnWidthDelta(20),
     ));
     reading_page.append(&width_section);
+    reading_page.append(&reader_panel_divider());
+
+    // P5.5: the Lesk "likely here" hint is a reader preference. POS
+    // grouping itself (the header pill) is always on and has no toggle.
+    let dict_section = reader_settings_section("Dictionary");
+    let hint_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    hint_row.add_css_class("kalam-reader-setting-row");
+    let hint_label = gtk::Label::new(Some("Sense hint"));
+    hint_label.add_css_class("kalam-reader-setting-name");
+    hint_label.set_hexpand(true);
+    hint_label.set_halign(gtk::Align::Start);
+    hint_row.append(&hint_label);
+    let hint_tx = sender.input_sender().clone();
+    let hint_switch = crate::pages::settings::toggle_switch(dict_sense_hint, move |on| {
+        let _ = hint_tx.send(ReaderMsg::SetDictSenseHint(on));
+    });
+    hint_row.append(&hint_switch);
+    dict_section.append(&hint_row);
+
+    // Phase 10: lookup history toggle. Off stops all writes; the history
+    // page also has Clear. Shipping the off switch with the feature.
+    let history_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    history_row.add_css_class("kalam-reader-setting-row");
+    let history_label = gtk::Label::new(Some("Lookup history"));
+    history_label.add_css_class("kalam-reader-setting-name");
+    history_label.set_hexpand(true);
+    history_label.set_halign(gtk::Align::Start);
+    history_row.append(&history_label);
+    let history_tx = sender.input_sender().clone();
+    let history_switch = crate::pages::settings::toggle_switch(dict_history_enabled, move |on| {
+        let _ = history_tx.send(ReaderMsg::SetDictHistory(on));
+    });
+    history_row.append(&history_switch);
+    dict_section.append(&history_row);
+    reading_page.append(&dict_section);
     stack.add_named(
         &reading_page,
         Some(reader_settings_pane_name(ReaderSettingsPane::Reading)),
