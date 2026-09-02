@@ -1,7 +1,7 @@
 //! XDG paths for Kalam data and config.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// `~/.local/share/kalam`
 pub fn data_dir() -> PathBuf {

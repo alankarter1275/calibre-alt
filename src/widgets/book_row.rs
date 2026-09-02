@@ -224,10 +224,10 @@ fn scaled_cover_picture(path: &Path, w: i32, h: i32) -> Option<gtk::Picture> {
     // the grid does not decode the full 1000×1500+ cover on the UI thread. Use
     // it whenever it exists and this slot is small enough to fit without
     // upscaling; large slots (book page, author photo) still decode the cover.
-    let decode_path: &Path = thumb_for_slot(path, w, h)
-        .filter(|p| p.is_file())
-        .as_deref()
-        .unwrap_or(path);
+    // Keep the thumbnail PathBuf alive for the whole call so the borrow below
+    // outlives it (an ephemeral Option<PathBuf> would drop before decode).
+    let thumb = thumb_for_slot(path, w, h).filter(|p| p.is_file());
+    let decode_path: &Path = thumb.as_deref().unwrap_or(path);
 
     let texture = decode_cover(decode_path, w, h)?;
     COVER_CACHE.with(|c| {

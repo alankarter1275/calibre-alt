@@ -96,7 +96,7 @@ mod tests {
         assert!(dst.is_file());
 
         let reopened = image::open(&dst).expect("reopen thumb");
-        assert_eq!(reopened.dimensions(), (THUMB_W, THUMB_H));
+        assert_eq!((reopened.width(), reopened.height()), (THUMB_W, THUMB_H));
     }
 
     #[test]
