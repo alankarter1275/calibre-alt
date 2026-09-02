@@ -1,11 +1,4 @@
-(no clippy failures recorded)
-
-This file holds the clippy diagnostics from the most recent FAILED CI run.
-The Arena sandbox cannot download GitHub Actions logs, so the workflow commits
-them here instead (see .github/workflows/ci.yml, "publish clippy log on
-failure"). It is overwritten automatically on the next failure.
-
-Cleared 2026-09-02 after run 33640613634 passed with `-D warnings` enabled.
-The previous contents were the 30 pre-existing warnings that flag exposed on
-its first run, plus a follow-up double-borrow -- all fixed in ac9b7fa and
-f3225d0, so leaving them here would read as if the branch were still red.
+src/pages/library.rs:175:28: [1m[91merror[0m: this expression creates a reference which is immediately dereferenced by the compiler: help: change this to: `stats`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+--- run 33664072379 ---
