@@ -1279,19 +1279,29 @@ P6–P11.
   reader are not the bottleneck; the cost is first-open + WebKit re-spawn +
   per-card decode of full covers.
 - **Measured on the user's Arch machine, 2026-09-02 (post-WebView-pool).** The
-  steady state is now good and the tail is gone: chapter turns settle at
-  **37–48 ms** and repeat book opens at **2.8 / 98 / 124 / 215 ms** — no
-  ~400 ms re-spawn appears after the first book, which is the pool working.
-  What the run also showed is that **cold start regressed badly: 8018.7 ms**,
-  against the ~0.9 s baseline, with the first `book_open` at 1105 ms and the
-  first two `chapter_load`s at 2772.9 / 697.2 ms (one-off WebKit process
-  startup, expected). The 8 s is not explained by anything A0 has touched;
-  it is un-attributed, so `startup_db_open` / `startup_dicts` /
-  `startup_first_page` spans were added to split `window_shown` into its
-  parts rather than guess. Prime suspect is the first-run bundled-dictionary
-  import (~6.8 MB of gzipped TSV decompressed and inserted **on the UI
-  thread**, `app.rs` init) — if so it is once-per-install, not per-launch, and
-  the second run will show it. **Open until re-measured.**
+  steady state is good: chapter turns settle at **37–48 ms**, repeat book opens
+  at **2.8–215 ms**, and **no ~400 ms WebKit re-spawn appears after the first
+  book** — the pool works. First book of a session still pays WebKit process
+  startup (`chapter_load` 2772.9 then 697.2 ms); unavoidable without pre-warming.
+- **Cold start, resolved 2026-09-02 — there was no regression.** The alarming
+  8018.7 ms was a *first-run-after-build* artefact. Six consecutive runs:
+  6290 → 1596 → 965 → 852 → 945 → 831 ms, i.e. **~900 ms steady, exactly the
+  documented baseline**. The decay is the OS page cache warming on a
+  freshly-linked binary (and its GTK/WebKit/ICU shared libraries), not app work.
+  **My stated suspect — the bundled-dictionary import — was wrong**:
+  `startup_dicts` measured **0.1–0.2 ms on every run including the first**, so
+  the pref early-out was already doing its job. Splitting the span is what
+  disproved it; the guess would have sent a fix at the wrong code.
+- **What the breakdown does show.** Of a steady ~898 ms cold start, our
+  instrumented work is **~138 ms (16%)**: `startup_db_open` ~6 ms (nothing to
+  win), `startup_dicts` ~0.1 ms (nothing to win), `startup_first_page`
+  ~137 ms — the only app-side target, and the one A0 can actually move.
+  The remaining **~754 ms (84%) is un-instrumented**: GTK/libadwaita init,
+  WebKit process setup, CSS parsing and GTK's first layout/realize, most of it
+  before `AppModel::init` runs. So cold start is **not** a data-layer or
+  page-construction problem, and further service-layer work will not touch it.
+  A0 step 5 should treat ~750 ms of toolkit startup as the floor unless the
+  first paint is decoupled from full initialisation.
 - **Step 3 (thumbnails) — done.** `src/thumbs.rs` generates a persistent
   256×408 thumbnail (`cache/thumbs/<uuid>.png`) at import and on cover
   replacement; the grid decodes that instead of the full cover when the slot is
@@ -1753,3 +1763,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-02 | Home gains an **"All books"** button (header, left of "+ Add books") routing to the existing `Route::LibrarySection(AllBooks)` — the full grid was previously reachable only from the My Library dashboard's empty-library placeholder — see the correction row below, this claim was wrong. Browsing is secondary-styled, importing keeps the primary emphasis. Also fixed a real defect found while wiring it: when a search matched nothing, All books rendered "Your library is empty. Click + Import EPUB" — wrong for anyone with books, and it hid the actual fix. `rebuild_list` now takes the query and distinguishes the two empty cases, naming the failed term and pointing at clearing the search. Added `docs/testing-a0.md`: the Arch smoke-test recipe (the 5 checks that catch a stale WebView handler on the 2nd/3rd book open), what each `KALAM_TIMING=1` label measures, and the A/B procedure against `KALAM_NO_WEBVIEW_POOL=1` that quantifies the ~400 ms saving. Corrected `timing.rs`'s own module docs, which advertised a `chapter_done` line that is never printed — `span_end` prints under the opening label, so `chapter_load` is a single line covering load→rendered. Test count corrected again: README/ROADMAP claimed 163, the tree now has 175 `#[test]`s minus the 2 `#[ignore]`d perf probes = **173** that CI runs (the `service.rs`, `webview_pool.rs` and `thumbs.rs` tests landed after the last recount) |
 | 2026-09-02 | **Correction + dead-UI fix, prompted by the user disputing the previous row.** I had written that All books was "reachable through the My Library dashboard"; that was wrong. `library.rs` linked `AllBooks` from exactly one place — line 114, inside the `if stats.total_books == 0 { … return; }` placeholder — so the only moment the full grid was reachable was while the library was empty, and importing your first book removed the link. Auditing the other sections found worse: `ReadingList`, `Tags` and `Analytics` have complete pages, `PageSlot` variants and `Route::LibrarySection` arms in `app.rs`, but **nothing anywhere in the UI ever emitted those routes** — three finished pages that could not be opened at all. (`LibrarySection::ALL`/`icon()` are `#[allow(dead_code)]`, a leftover of the tile grid that the v5 dashboard replaced; the dashboard routes via content sections, and sections only render when they have content, so pages with no section were orphaned.) Added a `quick_links` row under the My Library title — All books / Reading list / Tags / Analytics — and dropped the now-duplicate "ALL BOOKS" section from the empty branch. Lesson recorded: "a route exists in `app.rs`" is not evidence the user can get there; reachability means grepping for who *emits* the route |
 | 2026-09-02 | First real `KALAM_TIMING=1` run on the user's library (Arch, release build). **The WebView pool is confirmed working**: chapter turns settle at 37–48 ms and later book opens at 2.8–215 ms, with no ~400 ms WebKit re-spawn after the first book — the tail the pool was built to remove. The first book of a session still pays WebKit startup (`chapter_load` 2772.9 then 697.2 ms), which is expected and unavoidable without pre-warming. **But cold start came back at 8018.7 ms against a ~0.9 s baseline**, which nothing in A0 explains. Rather than guess, split `window_shown` into `startup_db_open` / `startup_dicts` / `startup_first_page` so the next run attributes it; prime suspect is the first-run bundled-dictionary import, which decompresses and inserts ~6.8 MB of gzipped TSV **on the UI thread** before first paint (`install_bundled_dictionaries`, `app.rs` init) and early-outs on a pref afterwards — i.e. probably once-per-install, not per-launch. Also removed `LibraryService::change_token`, a passthrough I added in step 2 that nothing ever called (the app cache uses `self.catalog.change_token()` directly): it was `pub`, so only the binary's `dead_code` warning caught it, and **CI could not have** — the clippy step has `continue-on-error: true` and no `-D warnings`, so warnings never fail a run. Noted as a gap in the CI gate |
+| 2026-09-02 | Cold-start scare **resolved: there was no regression, and my diagnosis was wrong.** Six consecutive `KALAM_TIMING=1` runs decayed 6290 → 1596 → 965 → 852 → 945 → 831 ms, settling at **~898 ms — the documented ~0.9 s baseline**. The 8 s was a first-run-after-build artefact (OS page cache warming on a freshly-linked binary and its GTK/WebKit/ICU libraries), not app work. I had named the bundled-dictionary import as prime suspect; the spans measured `startup_dicts` at **0.1–0.2 ms on every run including the first**, so the pref early-out was already working and the suspect was innocent — had I "fixed" it on the hypothesis I would have rewritten correct code and left the real distribution unmeasured. Useful result from the breakdown: of a steady ~898 ms, only **~138 ms (16%)** is instrumented app work, and **~754 ms (84%) is toolkit startup** (GTK/libadwaita/WebKit/CSS/first layout) before or around `AppModel::init`. `startup_first_page` (~137 ms) is the only app-side target worth attacking; the DB open (~6 ms) and dictionary check (~0.1 ms) have nothing left in them. Recorded as the floor for A0 step 5. **CI gate tightened** in the staged workflow: clippy now runs `-- -D warnings`, so a `dead_code` warning like the unused `LibraryService::change_token` fails the run instead of passing green (handed to the user to install — the agent cannot push `.github/workflows/`) |

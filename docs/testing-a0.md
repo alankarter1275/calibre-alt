@@ -149,26 +149,26 @@ open after that.)
 
 Paste both sets of numbers to me and I will record them in the roadmap.
 
-### If cold start looks slow
+### If cold start looks slow — run it more than once
 
-`window_shown` is now broken into three parts:
+**Measured 2026-09-02, six consecutive runs on the user's Arch machine:**
 
-```text
-[timing] startup_db_open        12.4 ms
-[timing] startup_dicts        6100.2 ms   ← first run only
-[timing] startup_first_page    180.7 ms
-[timing] window_shown         8018.7 ms
-```
+| run | db_open | dicts | first_page | window_shown |
+|---:|---:|---:|---:|---:|
+| 1 | 6.3 | 0.2 | 577.9 | **6290.1** |
+| 2 | 6.8 | 0.2 | 474.8 | **1596.5** |
+| 3 | 5.7 | 0.1 | 137.5 | 964.8 |
+| 4 | 5.9 | 0.1 | 135.8 | 852.0 |
+| 5 | 5.5 | 0.1 | 144.2 | 945.1 |
+| 6 | 5.6 | 0.1 | 135.2 | 830.6 |
 
-- **`startup_dicts` large on run 1, ~0 ms on run 2** → that is the one-off
-  bundled-dictionary import. Annoying once per install, not a real bug.
-- **`startup_dicts` large every run** → the skip-check is broken; tell me.
-- **`startup_first_page` large** → Home is doing too much work for your library
-  size; that is a real fix and one I can make.
-- **All three small but `window_shown` still big** → the cost is GTK/WebKit
-  process startup before our code runs, and I will need a different approach.
+**The first run after a build is meaningless.** It is the OS reading a
+freshly-linked binary and its GTK/WebKit libraries off disk for the first time.
+It settles at ~900 ms by run 3, which is the real number. Always discard run 1.
 
-So: **run it twice** and send both. The second run is the honest number.
+Of that steady ~900 ms, only ~138 ms is Kalam's own startup work — the other
+~750 ms is GTK/WebKit/CSS initialisation that happens before and around our
+code. So a slow cold start is mostly not something the app controls.
 
 ### Optional: the headless data-layer probes
 

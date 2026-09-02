@@ -58,11 +58,21 @@ jobs:
       # The Arena sandbox cannot download Actions logs (the log host is
       # unreachable from it), so on failure we commit the compiler output back
       # to the branch under ci-logs/ where the agent can read it.
+      # `-D warnings` turns every warning into an error, including plain rustc
+      # ones like dead_code. Without it a warning could never fail a run: an
+      # unused `pub fn` in src/service.rs sat through several "green" runs and
+      # was only caught when a human read their own build output. `--all-targets`
+      # compiles the bin, so unused items in the binary crate are reported.
+      #
+      # Trade-off, accepted deliberately: the toolchain is `stable`, so a new
+      # Rust release that adds a lint can turn this red without the code
+      # changing. The failure publishes to ci-logs/clippy-latest.txt, which the
+      # agent can read, so that is recoverable rather than mysterious.
       - name: clippy
         id: clippy
         run: |
           set -o pipefail
-          cargo clippy --all-targets --message-format=short 2>&1 \
+          cargo clippy --all-targets --message-format=short -- -D warnings 2>&1 \
             | tee /tmp/clippy.txt
         continue-on-error: true
 
