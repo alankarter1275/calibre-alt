@@ -16,6 +16,7 @@ mod models;
 mod notify;
 mod pages;
 mod paths;
+mod perf;
 mod shelf_rules;
 mod style;
 mod theme;
