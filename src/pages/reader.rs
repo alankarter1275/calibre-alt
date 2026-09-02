@@ -562,6 +562,8 @@ impl Component for ReaderModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let book = catalog.get_book(book_id).ok().flatten();
+        // A0 step 1: measure book-open (EPUB parsed) when KALAM_TIMING=1.
+        crate::timing::span("book_open");
         let webview = webkit6::WebView::new();
         // The reader is not a browser: suppress WebKit's Back/Forward/Stop/
         // Reload context menu so a right-click cannot navigate the EPUB view.
@@ -573,6 +575,7 @@ impl Component for ReaderModel {
             let cache = reader_cache_dir(&book.uuid);
             match OpenBook::open(&book.file_path, &cache) {
                 Ok(open) => {
+                    crate::timing::span_end("book_open");
                     let (ch, frac) = catalog
                         .get_reading_progress(book_id)
                         .ok()
@@ -890,6 +893,9 @@ impl Component for ReaderModel {
         let s = sender.clone();
         webview.connect_load_changed(move |_wv, event| {
             if event == webkit6::LoadEvent::Finished {
+                // A0 step 1: WebKit finished rendering the chapter — the end of
+                // a chapter turn (started in `load_chapter`).
+                crate::timing::span_end("chapter_load");
                 s.input(ReaderMsg::AnnotationsReload);
             }
         });
@@ -1888,6 +1894,8 @@ impl ReaderModel {
     /// Every lookup path — the selection popup and the sidebar Words search —
     /// goes through here so phrases never dead-end.
     fn lookup_dict(&self, query: &str, limit: usize) -> Vec<DictEntry> {
+        // A0 step 1: dictionary-lookup measurement (KALAM_TIMING=1).
+        crate::timing::span("dict_lookup");
         let results = if query.split_whitespace().count() > 1 {
             match self
                 .catalog
@@ -1915,6 +1923,8 @@ impl ReaderModel {
             self.dict_context.as_deref(),
             !results.is_empty(),
         );
+        // A0 step 1: end the dict-lookup span.
+        crate::timing::span_end("dict_lookup");
         results
     }
 
@@ -4121,6 +4131,9 @@ fn load_chapter(model: &ReaderModel) {
     if model.open.chapter_count() == 0 {
         return;
     }
+    // A0 step 1: chapter-turn measurement (KALAM_TIMING=1). Ends in the
+    // LoadEvent::Finished handler below.
+    crate::timing::span("chapter_load");
     match model
         .open
         .chapter_html(model.chapter, &model.css(), model.fraction)

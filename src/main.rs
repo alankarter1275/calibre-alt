@@ -16,15 +16,22 @@ mod models;
 mod notify;
 mod pages;
 mod paths;
+mod perf;
 mod shelf_rules;
 mod style;
 mod theme;
+mod thumbs;
+mod timing;
 mod widgets;
 
 use app::AppModel;
 use relm4::RelmApp;
 
 fn main() {
+    // A0 step 1: GUI timing. KALAM_TIMING=1 prints cold-start / book-open /
+    // chapter-turn / dict-lookup milliseconds to the terminal (no-op otherwise).
+    timing::start();
+
     // RelmApp::new initializes GTK; only touch Adwaita/GTK after that.
     let app = RelmApp::new("app.kalam.Kalam");
 

@@ -962,6 +962,9 @@ impl Catalog {
         if dir.exists() {
             let _ = fs::remove_dir_all(&dir);
         }
+        // A0 step 3: drop the cover thumbnail so the cache cannot grow with
+        // deleted books.
+        crate::thumbs::remove_thumbnail(&book.uuid);
         Ok(())
     }
 
