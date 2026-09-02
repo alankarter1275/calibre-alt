@@ -22,7 +22,9 @@ pub enum AuthorPageOut {
 #[derive(Debug)]
 pub enum AuthorPageMsg {
     Refresh,
-    Fetched(Result<AuthorProfile, String>),
+    // Boxed: AuthorProfile is ~376 bytes, so an unboxed variant made every
+    // AuthorPageMsg that large -- including the far more frequent Refresh.
+    Fetched(Box<Result<AuthorProfile, String>>),
 }
 
 pub struct AuthorPageModel {
@@ -197,7 +199,7 @@ impl Component for AuthorPageModel {
             }
             AuthorPageMsg::Fetched(result) => {
                 self.loading = false;
-                match result {
+                match *result {
                     Ok(profile) => {
                         self.profile = Some(profile);
                         self.error = None;
@@ -226,7 +228,7 @@ fn spawn_author_fetch(
     let tx = sender.input_sender().clone();
     std::thread::spawn(move || {
         let result = author::fetch_and_cache_author(&catalog, &author_name, &owned_books);
-        let _ = tx.send(AuthorPageMsg::Fetched(result));
+        let _ = tx.send(AuthorPageMsg::Fetched(Box::new(result)));
     });
 }
 

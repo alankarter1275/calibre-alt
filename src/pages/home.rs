@@ -7,16 +7,19 @@ use relm4::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// Navigation requests from Home. Variants are named for their destination
+/// rather than sharing an `Open` prefix (clippy::enum_variant_names) -- the
+/// same convention `LibraryOut` uses.
 #[derive(Debug)]
 pub enum HomeOut {
-    OpenBook {
+    Book {
         book_id: i64,
     },
-    OpenBookDialog {
+    BookDialog {
         book_id: i64,
     },
-    /// Open My Library → All books (the full searchable/sortable grid).
-    OpenAllBooks,
+    /// My Library → All books (the full searchable/sortable grid).
+    AllBooks,
 }
 
 #[derive(Debug)]
@@ -179,7 +182,7 @@ impl Component for HomePageModel {
     ) {
         match msg {
             HomeMsg::AllBooks => {
-                sender.output(HomeOut::OpenAllBooks).ok();
+                sender.output(HomeOut::AllBooks).ok();
             }
             HomeMsg::AddBooks => {
                 let dialog = gtk::FileDialog::builder()
@@ -400,10 +403,10 @@ fn rebuild(
             let card = build_book_card(
                 book,
                 move || {
-                    s1.output(HomeOut::OpenBook { book_id: id }).ok();
+                    s1.output(HomeOut::Book { book_id: id }).ok();
                 },
                 move || {
-                    s2.output(HomeOut::OpenBookDialog { book_id: id }).ok();
+                    s2.output(HomeOut::BookDialog { book_id: id }).ok();
                 },
             );
             widgets.continue_host.append(&card);
@@ -444,7 +447,7 @@ fn rebuild(
             let click = gtk::GestureClick::new();
             click.set_button(1);
             click.connect_released(move |_, _, _, _| {
-                s.output(HomeOut::OpenBook { book_id: id }).ok();
+                s.output(HomeOut::Book { book_id: id }).ok();
             });
             row.add_controller(click);
             row.set_cursor_from_name(Some("pointer"));
@@ -486,13 +489,13 @@ fn rebuild(
                 {
                     let s = s1.clone();
                     move || {
-                        s.output(HomeOut::OpenBook { book_id: id }).ok();
+                        s.output(HomeOut::Book { book_id: id }).ok();
                     }
                 },
                 {
                     let s = s2.clone();
                     move || {
-                        s.output(HomeOut::OpenBookDialog { book_id: id }).ok();
+                        s.output(HomeOut::BookDialog { book_id: id }).ok();
                     }
                 },
             );

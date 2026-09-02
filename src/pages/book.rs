@@ -862,11 +862,11 @@ impl BookPageModel {
             }));
 
         // Cards.
-        fill_stats_card(&widgets, self, &chapters);
+        fill_stats_card(widgets, self, &chapters);
         fill_highlights_card(&widgets.highlights_host, self, &chapters);
-        fill_author_card(&widgets, self.book.as_ref(), self.catalog.as_ref(), sender);
-        fill_journey_card(&widgets, self, &chapters);
-        fill_file_card(&widgets, self.book.as_ref());
+        fill_author_card(widgets, self.book.as_ref(), self.catalog.as_ref(), sender);
+        fill_journey_card(widgets, self, &chapters);
+        fill_file_card(widgets, self.book.as_ref());
     }
 }
 
@@ -1591,7 +1591,7 @@ fn fill_file_card(widgets: &BookPageModelWidgets, book: Option<&Book>) {
     imported.add_css_class("kalam-meta-val");
     imported.set_halign(gtk::Align::Start);
     rows.append(&meta_row("Imported", &imported));
-    let hash = format!("{}…", &book.file_hash.chars().take(12).collect::<String>());
+    let hash = format!("{}…", book.file_hash.chars().take(12).collect::<String>());
     let hash_label = gtk::Label::new(Some(&hash));
     hash_label.add_css_class("kalam-meta-val");
     hash_label.set_halign(gtk::Align::Start);
@@ -1667,12 +1667,11 @@ pub fn build_annotations_panel(
 
     // Self-referential refresh: the delete buttons need to re-run it, so the
     // closure finds itself through a slot it fills in after construction.
-    let holder: Rc<std::cell::RefCell<Option<Rc<dyn Fn()>>>> =
+    let holder: crate::pages::SelfRebuild =
         Rc::new(std::cell::RefCell::new(None));
     let closure: Rc<dyn Fn()> = Rc::new({
         let host = list_host.clone();
         let catalog = catalog.clone();
-        let book_id = book_id;
         let holder = holder.clone();
         move || {
             while let Some(child) = host.first_child() {
@@ -1906,12 +1905,11 @@ pub fn build_tags_panel(
 
     // Self-referential refresh: add/remove need to re-run it, so the
     // closure finds itself through a slot it fills in after construction.
-    let holder: Rc<std::cell::RefCell<Option<Rc<dyn Fn()>>>> =
+    let holder: crate::pages::SelfRebuild =
         Rc::new(std::cell::RefCell::new(None));
     let closure: Rc<dyn Fn()> = Rc::new({
         let host = list_host.clone();
         let catalog = catalog.clone();
-        let book_id = book_id;
         let holder = holder.clone();
         move || {
             while let Some(child) = host.first_child() {

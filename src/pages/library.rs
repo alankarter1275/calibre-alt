@@ -370,7 +370,7 @@ fn now_reading_card(
     title.set_xalign(0.0);
     title.set_halign(gtk::Align::Start);
     meta.append(&title);
-    let author = gtk::Label::new(Some(&book.authors_display()));
+    let author = gtk::Label::new(Some(book.authors_display()));
     author.add_css_class("kalam-nr-author");
     author.set_halign(gtk::Align::Start);
     author.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -654,7 +654,7 @@ fn continue_card(book: &Book, sender: &ComponentSender<LibraryPageModel>) -> gtk
     title.set_halign(gtk::Align::Start);
     cell.append(&title);
 
-    let author = gtk::Label::new(Some(&book.authors_display()));
+    let author = gtk::Label::new(Some(book.authors_display()));
     author.add_css_class("kalam-lib-author");
     author.set_ellipsize(gtk::pango::EllipsizeMode::End);
     author.set_halign(gtk::Align::Start);

@@ -457,7 +457,7 @@ impl Catalog {
         let days: Vec<String> = rows.flatten().collect();
         for (i, slot) in out.iter_mut().enumerate() {
             let key = iso_days_ago(6 - i as i64)[..10].to_string();
-            *slot = days.iter().any(|d| *d == key);
+            *slot = days.contains(&key);
         }
         out
     }

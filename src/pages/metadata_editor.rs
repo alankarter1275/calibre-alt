@@ -140,7 +140,7 @@ fn open_editor_inner(
         let rating_host_inner = rating_host.clone();
         let rating_value = rating_value.clone();
         // Rebuilt on each pick so the filled glyphs follow the click.
-        let rebuild: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+        let rebuild: crate::pages::SelfRebuild = Rc::new(RefCell::new(None));
         let rebuild_ref = rebuild.clone();
         let f: Rc<dyn Fn()> = Rc::new(move || {
             while let Some(c) = rating_host_inner.first_child() {
@@ -220,11 +220,7 @@ fn open_editor_inner(
     search_entry.set_hexpand(true);
     search_entry.set_placeholder_text(Some("Title and author…"));
     // Seed with what we already know so one click usually suffices.
-    search_entry.set_text(
-        &format!("{} {}", book.title, book.authors)
-            .trim()
-            .to_string(),
-    );
+    search_entry.set_text(format!("{} {}", book.title, book.authors).trim());
 
     let search_btn = gtk::Button::with_label("Search");
     search_btn.add_css_class("kalam-primary-btn");

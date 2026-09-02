@@ -95,9 +95,6 @@ mod tests {
             std::fs::create_dir_all(&p).expect("scratch dir");
             Scratch(p)
         }
-        fn path(&self) -> &Path {
-            &self.0
-        }
         fn join(&self, name: &str) -> PathBuf {
             self.0.join(name)
         }

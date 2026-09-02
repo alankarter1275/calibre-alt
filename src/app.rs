@@ -340,9 +340,9 @@ impl AppModel {
                 let ctrl = HomePageModel::builder().launch(catalog.clone()).forward(
                     sender.input_sender(),
                     |out| match out {
-                        HomeOut::OpenBook { book_id } => AppMsg::Push(Route::BookPage { book_id }),
-                        HomeOut::OpenBookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
-                        HomeOut::OpenAllBooks => {
+                        HomeOut::Book { book_id } => AppMsg::Push(Route::BookPage { book_id }),
+                        HomeOut::BookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
+                        HomeOut::AllBooks => {
                             AppMsg::Push(Route::LibrarySection(LibrarySection::AllBooks))
                         }
                     },

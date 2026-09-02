@@ -2923,6 +2923,10 @@ fn update_reader_ui_setting(model: &mut ReaderModel, setting: ReaderUiSetting, v
     true
 }
 
+// 8 typed settings rather than a struct built solely to satisfy the lint:
+// every argument is a distinct reader preference read straight from the model,
+// and wrapping them would add a type that exists only at this one call site.
+#[allow(clippy::too_many_arguments)]
 fn build_reader_settings_panel(
     sender: &ComponentSender<ReaderModel>,
     theme: ReadingTheme,

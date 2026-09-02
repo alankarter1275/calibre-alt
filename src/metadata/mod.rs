@@ -294,7 +294,8 @@ pub fn search_all(
 /// Ordering is by richness so the most complete match is easiest to reach,
 /// which matters more than preserving provider order.
 fn merge(mut candidates: Vec<Candidate>) -> Vec<Candidate> {
-    candidates.sort_by(|a, b| b.richness().cmp(&a.richness()));
+    // Descending richness: sort_by_key on Reverse avoids the manual cmp.
+    candidates.sort_by_key(|c| std::cmp::Reverse(c.richness()));
 
     let mut seen: Vec<String> = Vec::new();
     let mut out = Vec::new();

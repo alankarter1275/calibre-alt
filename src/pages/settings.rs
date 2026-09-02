@@ -609,7 +609,7 @@ fn build_theme_picker(host: &gtk::Grid, catalog: &Arc<Catalog>) {
             continue;
         }
         let block = theme_family_block(&family, name, desc, prefix, active, host, catalog);
-        host.attach(&block, (slot % 2) as i32, (slot / 2) as i32, 1, 1);
+        host.attach(&block, slot % 2, slot / 2, 1, 1);
         slot += 1;
     }
 }

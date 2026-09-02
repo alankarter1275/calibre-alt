@@ -257,7 +257,12 @@ fn start_fetch(
 
     std::thread::spawn(move || {
         let result = fetch_and_cache(&cat, &name, &key);
-        let _ = tx.send(result);
+        // `send()` on an async_channel Sender returns a future: on this plain
+        // worker thread nothing polls it, so `let _ = tx.send(..)` dropped the
+        // result on the floor and the receiver only woke when `tx` dropped --
+        // surfacing every successful fetch as "Fetch worker ended
+        // unexpectedly". `send_blocking` is the sync-thread counterpart.
+        let _ = tx.send_blocking(result);
     });
 
     gtk::glib::spawn_future_local(async move {
