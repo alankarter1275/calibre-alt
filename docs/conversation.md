@@ -611,6 +611,8 @@ it; Poppler/GPL is the alternative if we ever want to avoid AGPL).
 | **vello / skia-safe** | Apache/MIT | 2D/GPU painting for custom engine |
 | **lol_html** | Apache/MIT (Cloudflare) | HTML parsing/sanitizing for scrapers + EPUB normalization |
 | **ammonia** | MIT | HTML sanitizer for plugin output |
+| **chapbook** | Apache-2.0 | **Candidate foundation for the custom renderer** — stylo + cosmic-text + tiny-skia/vello, no webview, GTK4 viewer, LayeredLocator, pagination-first (§11) |
+| **hayro** | Apache-2.0 | Pure-Rust PDF rasterizer — AGPL-free alternative to MuPDF for P10 (§11) |
 | **Yazi** | MIT | Task system + preloader architecture (already discussed) |
 | **Foliate** | GPL | GTK+WebKit reference; CSS pagination tricks |
 
@@ -700,6 +702,78 @@ much time do you reckon it will take you?"
    cosmic-text + our own normalizer.** The hard part (messy HTML/CSS →
    clean content) is ours either way; fight our own code, not a foreign
    engine's API with license baggage.
+
+---
+
+*Last updated: 2026-09-02.*
+
+---
+
+## 11. chapbook — the project that already IS our renderer plan (2026-09-02)
+
+**User asked:** "do you know about chapbook? it's attempting something similar
+to what we want, with cosmic-text I mean."
+
+**Found:** `ophymx/chapbook` — "Core components for a lightweight ereader, in
+Rust. EPUB 3, CBZ and PDF on stylo + cosmic-text + tiny-skia — no webview."
+
+### Facts (verified)
+
+- **License: Apache-2.0** — fully compatible with our GPL-3.0-or-later (Apache
+  2.0 is permissive; can be incorporated into GPL projects).
+- **Age: 1 week** (created 2026-08-25), 196 commits, 0 stars/forks, 1 open
+  issue, heavy AI-assist (Claude co-authored). **Very early, API churn
+  guaranteed** (STABILITY.md defines tiers).
+- **Stack:** stylo (the CSS engine behind Firefox/Servo) for the cascade +
+  cosmic-text for shaping/line layout + tiny-skia (CPU) / vello (GPU) for
+  rasterization + rbook (EPUB container). No webview.
+- **Workspace:** core · epub · layout (Arena DOM + stylo) · paint ·
+  render-tinyskia · render-vello · opds-client · opds · cbz · **pdf (via
+  hayro, pure-Rust rasterizer, Apache-2.0)** · library (SQLite) · reader ·
+  viewer (winit) · **viewer-gtk (GTK4, Linux)** · ffi (C ABI) · jni (Android).
+- Fonts/HTTP/credentials/storage are **injected by the host**; hosts speak
+  C ABI / JNI / wasm-bindgen.
+
+### Why it validates our plan (and teaches us three things)
+
+1. **It IS our "custom renderer endgame," built independently.** Pagination
+   is the model (break rules, widows/orphans first-class — a sidecar cascade
+   for the fragmentation properties stylo doesn't carry); pages leave the
+   engine as paint-neutral display lists; e-ink is a first-class target. The
+   architecture we converged on is real and buildable.
+2. **The stylo answer to "EPUB normalization is the hard part":** instead of
+   normalizing EPUB HTML/CSS to clean content (lol_html + rules, our §8
+   plan), chapbook feeds real XHTML + the EPUB 3 CSS profile into **stylo** —
+   Firefox's actual CSS engine — and adds a sidecar for fragmentation.
+   Real CSS fidelity without a browser. **This is now the preferred option
+   for our EPUB path** (fiction-first still needs no CSS at all).
+3. **The locator answer to our "auto-updater breaks annotations" risk:**
+   `LayeredLocator` = quote context → spine fraction → whole-book
+   progression. A position survives relayout, font-size change, screen size
+   change, and — via the quote layer — **a replaced edition of the same
+   book**. Highlights re-anchor the same way; positions exchange as EPUB
+   CFIs. **Steal this idea regardless of adoption** — it directly fixes our
+   P7 auto-updater anchor risk.
+
+### Honest assessment for Kalam
+
+- **Not a foundation yet:** 1 week old, 0 users. Building our platform on a
+  week-old API is a bet on its trajectory. Re-evaluate when we start the
+  renderer vertical slice (A0 milestone) — it will be months old by then.
+- **Its stated limit matches our plan:** "a real subset of what publishers
+  ship… the wrong one for an app whose job is rendering arbitrary publisher
+  EPUBs faithfully." That is exactly why we keep WebKit as the fallback.
+- **What remains ours regardless:** the platform (sources, plugins,
+  downloads, auto-updater), the library/DB, the dict integration, the native
+  UI. Chapbook is the reading engine, not the app.
+- **PDF:** chapbook uses **hayro** (Apache-2.0, pure Rust) — a credible
+  AGPL-free alternative to MuPDF for P10. Early-stage (no encryption,
+  blending), but pure Rust + permissive. Add to the P10 shortlist.
+
+**Decision recorded:** add chapbook to the renderer section as a *candidate
+foundation* (re-evaluate at vertical-slice time); adopt the **LayeredLocator
+idea** for annotations now; add hayro to the P10 shortlist; keep WebKit
+fallback.
 
 ---
 

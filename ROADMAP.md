@@ -124,8 +124,12 @@ architecture.
 5. **P8 — Comics local** (image pager — decode + paint, no engine) and
    **P9 — Manga platform** (Lua source plugins; MangaDex official API first,
    then Komga/Kavita/OPDS clients, scraped sites later).
-6. **EPUB normalization** (lol_html + rules) → custom renderer takes EPUBs;
-   WebKit demoted to fallback for exotic EPUBs (may be cut later).
+6. **EPUB path** → custom renderer takes EPUBs: either a normalization
+   pipeline (lol_html + rules) or **stylo** (Firefox's CSS engine, via
+   chapbook — the approach chapbook proves); WebKit demoted to fallback for
+   exotic EPUBs (may be cut later). **Adopt quote-anchored locators
+   (LayeredLocator, chapbook's model) for annotations regardless** — it
+   fixes the auto-updater anchor risk (§11).
 7. **P10 — PDF** (MuPDF) · **P11 — Tools** · **P12 — Lua plugin system**
    matures into a user-facing plugin surface.
 
@@ -139,11 +143,16 @@ architecture.
   based). WebKit = EPUB fallback only, may be cut. crengine rejected as the
   base: GPL-2/AGPL license mismatch with our GPL-3.0, C++ FFI burden, partial
   CSS 2.1; at most a separate dynamically-linked fallback bridge (§8, §10).
+  **chapbook (ophymx, Apache-2.0) is a candidate foundation** — it is this
+  exact architecture, already built (stylo + cosmic-text + tiny-skia/vello,
+  no webview, GTK4 viewer, quote-anchored locators). Re-evaluate at
+  vertical-slice time (§11).
 - **Manga = Tachiyomi-shaped `Source` adapter API, Lua plugins we write.**
   No Kotlin extension bridge (Android APKs — wrong shape); no Suwayomi server
   rewrite; optional Suwayomi-server *client* adapter later (§7–8).
 - **PDF = MuPDF** (fixed-layout, AGPL — acceptable; Poppler/GPL the
-  alternative). **Comics = image decode + GTK pager** — no engine (§8).
+  alternative; **hayro** — Apache-2.0 pure-Rust — also on the P10 shortlist,
+  §11). **Comics = image decode + GTK pager** — no engine (§8).
 - **Perf order:** measure → thumbnails/async decode → virtualize if numbers
   say so (§2).
 - **Renderer effort estimate:** 2–4 wk vertical slice; 6–12 months total for
@@ -1676,3 +1685,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-02 | Renderer direction sharpened (user push-back): custom renderer is the **endgame for all reflowable text** — cosmic-text based (Rust text layout, NOT an EPUB engine; we build normalization/pagination/painting), fiction first (clean content), EPUB via a lol_html normalization pipeline after; WebKit demoted to fallback for exotic EPUBs (may be cut). crengine (C++ EPUB engine) kept as a legitimate shortcut if EPUB-before-custom-engine is wanted, at the cost of C++ in the stack + less dict/theme/annotation control. Manga architecture confirmed: Tachiyomi-shaped `Source` adapter API with **Lua plugins we write**; **no Kotlin-extension bridge** (they are Android APKs — wrong shape for desktop; pattern + scraping logic port instead; MangaDex/Komga/OPDS need no scraping). PDF stays MuPDF (P10); comics = image decode + GTK pager (no engine). Engine map recorded in `docs/conversation.md` §8 |
 | 2026-09-02 | Renderer timing decided: **not now, not at the end — start right after sources, grow alongside.** Order: A0 architecture → P7 fiction sources → renderer vertical slice (alongside) → EPUB normalization → PDF/comics. crengine deep-dive: GPL-2.0 (KOReader fork AGPL-3.0) vs our GPL-3.0-or-later — license mismatch; C++ codebase with no Rust bindings (FFI wrapper burden); partial CSS 2.1 (no float/border/etc. — what real EPUBs use); dict/annotation integration is the same fight against a foreign engine. Verdict: crengine only as a separate dynamically-linked fallback bridge; **cosmic-text + our own normalizer remains the recommendation** (hard part is ours either way) — recorded in `docs/conversation.md` §10 |
 | 2026-09-02 | Roadmap restructured as the single handoff document for future chats: new "⚠️ Read this first" block (agent instructions: read README/ROADMAP/conversation.md, keep docs current in the same commit, never skip the changelog, CI is the gate, user is the QA loop); new "Documentation discipline" rules in the Working agreement; new **"Current trajectory (locked)"** section — agreed order A0 → P6 → P7 → renderer vertical slice (alongside P7) → P8/P9 → EPUB normalization → P10/P11/P12, plus all locked decisions in one place; detailed **A0 section** (measure → LibraryService → thumbnails/async decode → task manager → preloaders → virtualization-if-numbers-earn-it → perf-budget CI test → plugin-host seam); detailed **P12 section** (Lua via mlua, source-adapter API, no Kotlin bridge, no Suwayomi rewrite); phase map + next steps rewritten to match |
+| 2026-09-02 | **chapbook discovered** (`ophymx/chapbook`, Apache-2.0): a week-old project that IS our custom-renderer plan — stylo (Firefox's CSS engine) + cosmic-text + tiny-skia/vello, no webview, pagination-first, GTK4 viewer, quote-anchored `LayeredLocator` positions, PDF via hayro. Recorded in `docs/conversation.md` §11: added as a **candidate renderer foundation** (re-evaluate at vertical-slice time, not a dependency yet), **quote-anchored locators adopted for annotations** (fixes the P7 auto-updater anchor risk), **hayro added to the P10 shortlist** (AGPL-free PDF), stylo noted as the preferred EPUB-cascade option vs hand-rolled normalization. WebKit fallback kept (chapbook's own stated limit: a subset of publisher EPUBs) |
