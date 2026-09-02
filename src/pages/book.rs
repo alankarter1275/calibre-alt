@@ -9,6 +9,7 @@
 //! a float (see `series_float.rs`) opened from the hero's Series row.
 
 use crate::db::{Catalog, ShelfKind};
+use crate::service::LibraryService;
 use crate::models::{Book, BookFormat};
 use crate::pages::history::pretty_day;
 use crate::pages::metadata_editor::open_metadata_editor;
@@ -72,7 +73,7 @@ pub enum BookPageMsg {
 }
 
 pub struct BookPageModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     book: Option<Book>,
     in_reading_list: bool,
     finished: bool,
@@ -585,15 +586,17 @@ impl Component for BookPageModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let book = catalog.get_book(book_id).ok().flatten();
+        let service = LibraryService::new(catalog);
+        let snap = service.book_detail(book_id);
+        report_errors(&snap.errors);
         let mut model = BookPageModel {
-            in_reading_list: catalog.is_in_reading_list(book_id).unwrap_or(false),
-            finished: catalog.book_finished_at(book_id).ok().flatten().is_some(),
+            in_reading_list: snap.in_reading_list,
+            finished: snap.finished,
             journey_expanded: false,
             chapter_titles: Vec::new(),
             chapter_titles_for: 0,
-            catalog,
-            book,
+            service,
+            book: snap.book,
         };
         let widgets = view_output!();
 
@@ -629,7 +632,7 @@ impl Component for BookPageModel {
                         invalidate_cover_cache(path);
                     }
                     let title = book.title.clone();
-                    match self.catalog.delete_book(id) {
+                    match self.service.catalog().delete_book(id) {
                         Ok(()) => {
                             crate::notify::success("Book removed", &title);
                             self.book = None;
@@ -649,13 +652,13 @@ impl Component for BookPageModel {
                     let title = book.title.clone();
                     if self.in_reading_list {
                         if crate::notify::report(
-                            self.catalog.remove_from_reading_list(id),
+                            self.service.catalog().remove_from_reading_list(id),
                             "Could not update the reading list",
                         ) {
                             crate::notify::info("Removed from reading list", &title);
                         }
                     } else if crate::notify::report(
-                        self.catalog.add_to_reading_list(id),
+                        self.service.catalog().add_to_reading_list(id),
                         "Could not update the reading list",
                     ) {
                         crate::notify::success("Added to reading list", &title);
@@ -673,12 +676,12 @@ impl Component for BookPageModel {
                         format!("{stars} of 5 \u{2605}")
                     };
                     crate::notify::outcome(
-                        self.catalog.set_book_rating(id, half_stars),
+                        self.service.catalog().set_book_rating(id, half_stars),
                         "Rating saved",
                         &detail,
                         "Could not save the rating",
                     );
-                    self.book = self.catalog.get_book(id).ok().flatten();
+                    self.reload_state(id);
                 }
             }
             BookPageMsg::OpenAuthor(name) => {
@@ -715,7 +718,7 @@ impl Component for BookPageModel {
                     let becoming = !self.finished;
                     let title = book.title.clone();
                     if crate::notify::report(
-                        self.catalog.set_book_finished(id, becoming),
+                        self.service.catalog().set_book_finished(id, becoming),
                         "Could not update the book",
                     ) {
                         if becoming {
@@ -724,7 +727,6 @@ impl Component for BookPageModel {
                             crate::notify::info("Marked as unread", &title);
                         }
                     }
-                    self.book = self.catalog.get_book(id).ok().flatten();
                     self.reload_state(id);
                 }
             }
@@ -736,7 +738,7 @@ impl Component for BookPageModel {
                         root.root()
                             .and_then(|r| r.downcast::<gtk::Window>().ok())
                             .as_ref(),
-                        self.catalog.clone(),
+                        self.service.catalog().clone(),
                         id,
                         move || s.input(BookPageMsg::Refresh),
                     );
@@ -756,7 +758,6 @@ impl Component for BookPageModel {
             }
             BookPageMsg::Refresh => {
                 if let Some(id) = self.book.as_ref().map(|b| b.id) {
-                    self.book = self.catalog.get_book(id).ok().flatten();
                     self.reload_state(id);
                 }
             }
@@ -765,16 +766,25 @@ impl Component for BookPageModel {
     }
 }
 
+/// Surface read failures. Without this a database problem looked like a
+/// book that had been deleted.
+fn report_errors(errors: &[String]) {
+    for err in errors {
+        crate::notify::error("Could not read this book", err);
+    }
+}
+
 impl BookPageModel {
-    /// Re-read the mutable state the widgets must reflect.
+    /// Re-read the book row and the mutable state the widgets must reflect.
+    ///
+    /// This used to be three separate swallowed reads spread over four call
+    /// sites, two of which re-read the book row themselves first.
     fn reload_state(&mut self, book_id: i64) {
-        self.in_reading_list = self.catalog.is_in_reading_list(book_id).unwrap_or(false);
-        self.finished = self
-            .catalog
-            .book_finished_at(book_id)
-            .ok()
-            .flatten()
-            .is_some();
+        let snap = self.service.book_detail(book_id);
+        report_errors(&snap.errors);
+        self.book = snap.book;
+        self.in_reading_list = snap.in_reading_list;
+        self.finished = snap.finished;
     }
 
     /// Spine titles for the journey + progress location. Cached per book;
@@ -811,7 +821,7 @@ impl BookPageModel {
             &widgets.prog_pct,
             &widgets.prog_loc,
             &widgets.prog_fill,
-            &self.catalog,
+            self.service.catalog(),
             self.book.as_ref(),
             &chapters,
         );
@@ -864,7 +874,7 @@ impl BookPageModel {
         // Cards.
         fill_stats_card(widgets, self, &chapters);
         fill_highlights_card(&widgets.highlights_host, self, &chapters);
-        fill_author_card(widgets, self.book.as_ref(), self.catalog.as_ref(), sender);
+        fill_author_card(widgets, self.book.as_ref(), self.service.catalog(), sender);
         fill_journey_card(widgets, self, &chapters);
         fill_file_card(widgets, self.book.as_ref());
     }
@@ -1092,10 +1102,19 @@ fn fill_stats_card(widgets: &BookPageModelWidgets, model: &BookPageModel, chapte
         host.remove(&child);
     }
 
+    // One read for the whole panel. These six queries used to be scattered
+    // through the function and every one of them was swallowed, so a broken
+    // database drew a page saying you had never read this book.
+    let stats = model
+        .book
+        .as_ref()
+        .map(|b| model.service.book_stats(b.id, 7, 3))
+        .unwrap_or_default();
+    report_errors(&stats.errors);
+
     let (total_secs, sessions, est, pace) = if let Some(book) = &model.book {
-        let id = book.id;
-        let total = model.catalog.total_reading_seconds(id).unwrap_or(0);
-        let sessions = model.catalog.count_sessions_for_book(id).unwrap_or(0);
+        let total = stats.total_seconds;
+        let sessions = stats.session_count;
 
         let est: String = if book.progress >= 100 || model.finished {
             "Done".into()
@@ -1108,13 +1127,7 @@ fn fill_stats_card(widgets: &BookPageModelWidgets, model: &BookPageModel, chapte
         };
 
         let chapters_done = {
-            let ci = model
-                .catalog
-                .get_reading_progress(id)
-                .ok()
-                .flatten()
-                .map(|(ci, _)| ci)
-                .unwrap_or(0);
+            let ci = stats.chapter_index;
             if book.progress >= 100 {
                 chapters.len().max(ci)
             } else {
@@ -1140,12 +1153,7 @@ fn fill_stats_card(widgets: &BookPageModelWidgets, model: &BookPageModel, chapte
     let by_day = model
         .book
         .as_ref()
-        .map(|b| {
-            model
-                .catalog
-                .book_seconds_by_day(b.id, 7)
-                .unwrap_or_default()
-        })
+        .map(|_| stats.seconds_by_day.clone())
         .unwrap_or_default();
     let bars = &widgets.bars_host;
     while let Some(child) = bars.first_child() {
@@ -1195,14 +1203,9 @@ fn fill_stats_card(widgets: &BookPageModelWidgets, model: &BookPageModel, chapte
     while let Some(child) = timeline.first_child() {
         timeline.remove(&child);
     }
-    if let Some(book) = &model.book {
-        let id = book.id;
+    if model.book.is_some() {
         let mut items: Vec<(String, &str, &str, Option<i64>)> = Vec::new();
-        for s in model
-            .catalog
-            .book_recent_sessions(id, 3)
-            .unwrap_or_default()
-        {
+        for s in &stats.recent_sessions {
             items.push((
                 s.started_at.clone(),
                 "Reading session",
@@ -1210,11 +1213,16 @@ fn fill_stats_card(widgets: &BookPageModelWidgets, model: &BookPageModel, chapte
                 Some(s.seconds),
             ));
         }
-        if let Some(finished_at) = model.catalog.book_finished_at(id).ok().flatten() {
-            items.push((finished_at, "Finished", "kalam-tl-dot-success", None));
+        if let Some(finished_at) = &stats.finished_at {
+            items.push((
+                finished_at.clone(),
+                "Finished",
+                "kalam-tl-dot-success",
+                None,
+            ));
         }
-        if let Some(first) = model.catalog.book_first_opened(id).ok().flatten() {
-            items.push((first, "First opened", "kalam-tl-dot-dim", None));
+        if let Some(first) = &stats.first_opened {
+            items.push((first.clone(), "First opened", "kalam-tl-dot-dim", None));
         }
         items.sort_by(|a, b| b.0.cmp(&a.0));
 

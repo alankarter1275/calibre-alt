@@ -52,7 +52,7 @@
 
 use crate::db::{
     Annotation, Catalog, DictLookup, EventKind, LibrarySession, LibraryStats, QuoteRef,
-    ReadingEvent, ReadingListEntry, SavedWord, Shelf, SortKey,
+    ReadingEvent, ReadingListEntry, SavedWord, SessionRow, Shelf, SortKey,
 };
 use crate::models::Book;
 use std::sync::Arc;
@@ -92,6 +92,22 @@ pub struct AnalyticsSnapshot {
     pub finished_this_year: i64,
     /// Which of the last 7 days had any reading.
     pub week: [bool; 7],
+    pub errors: Errors,
+}
+
+/// The book page's reading-stats and timeline panel.
+///
+/// Six reads that were each swallowed, so a database problem drew a page
+/// saying you had never read the book.
+#[derive(Debug, Default)]
+pub struct BookStatsSnapshot {
+    pub total_seconds: i64,
+    pub session_count: i64,
+    pub chapter_index: usize,
+    pub seconds_by_day: Vec<(String, i64)>,
+    pub recent_sessions: Vec<SessionRow>,
+    pub finished_at: Option<String>,
+    pub first_opened: Option<String>,
     pub errors: Errors,
 }
 
@@ -269,6 +285,47 @@ impl LibraryService {
     }
 
     /// The tag cloud.
+    /// The book page's stats strip and timeline, in one call.
+    pub fn book_stats(&self, book_id: i64, days: i64, session_limit: usize) -> BookStatsSnapshot {
+        let mut errors = Errors::new();
+        let cat = &self.catalog;
+        let progress: Option<(usize, f64)> = take(
+            cat.get_reading_progress(book_id),
+            "reading position",
+            &mut errors,
+        );
+        BookStatsSnapshot {
+            total_seconds: take(
+                cat.total_reading_seconds(book_id),
+                "total reading time",
+                &mut errors,
+            ),
+            session_count: take(
+                cat.count_sessions_for_book(book_id),
+                "session count",
+                &mut errors,
+            ),
+            chapter_index: progress.map(|(ci, _)| ci).unwrap_or(0),
+            seconds_by_day: take(
+                cat.book_seconds_by_day(book_id, days),
+                "daily reading time",
+                &mut errors,
+            ),
+            recent_sessions: take(
+                cat.book_recent_sessions(book_id, session_limit),
+                "recent sessions",
+                &mut errors,
+            ),
+            finished_at: take(cat.book_finished_at(book_id), "finished date", &mut errors),
+            first_opened: take(
+                cat.book_first_opened(book_id),
+                "first opened date",
+                &mut errors,
+            ),
+            errors,
+        }
+    }
+
     /// One shelf plus its books, sorted and filtered.
     ///
     /// The books read is skipped when the shelf itself is missing, so a
@@ -525,6 +582,7 @@ mod tests {
         assert_send::<WordsSnapshot>();
         assert_send::<BookDetailSnapshot>();
         assert_send::<ShelfDetailSnapshot>();
+        assert_send::<BookStatsSnapshot>();
         // The service itself must be Send too, or it cannot be moved onto the
         // worker that would run those queries.
         assert_send::<LibraryService>();
@@ -609,6 +667,40 @@ mod tests {
         let looks = svc.lookup_history("", 50);
         assert_eq!(looks.lookups.len(), 1);
         assert!(looks.errors.is_empty());
+    }
+
+    #[test]
+    fn book_stats_are_zero_for_an_unread_book_without_erroring() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let id = seed(svc.catalog(), "Dune", &[]);
+
+        let snap = svc.book_stats(id, 7, 3);
+        assert!(
+            snap.errors.is_empty(),
+            "a never-opened book is not a failed read: {:?}",
+            snap.errors
+        );
+        assert_eq!(snap.total_seconds, 0);
+        assert_eq!(snap.session_count, 0);
+        assert_eq!(snap.chapter_index, 0);
+        assert!(snap.recent_sessions.is_empty());
+        assert!(snap.finished_at.is_none());
+        assert!(snap.first_opened.is_none());
+    }
+
+    #[test]
+    fn book_stats_pick_up_a_finished_date() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let id = seed(svc.catalog(), "Emma", &[]);
+        svc.catalog()
+            .set_book_finished(id, true)
+            .expect("mark finished");
+
+        let snap = svc.book_stats(id, 7, 3);
+        assert!(snap.errors.is_empty(), "{:?}", snap.errors);
+        assert!(snap.finished_at.is_some(), "finished date must come back");
     }
 
     #[test]

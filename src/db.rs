@@ -26,7 +26,7 @@ pub use dictionaries::{
     likely_sense_index, EntryData, PhraseLookup, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME,
     BUNDLED_SYNONYMS_NAME, BUNDLED_WORDNET_NAME,
 };
-pub use history::LibrarySession;
+pub use history::{LibrarySession, SessionRow};
 pub use lookup_history::DictLookup;
 pub use pronunciation::pronunciation_for;
 pub use series::{series_key, SeriesWork};
