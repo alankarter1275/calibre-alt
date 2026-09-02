@@ -3,6 +3,7 @@
 use crate::db::{Catalog, SortKey};
 use crate::epub;
 use crate::models::Book;
+use crate::service::LibraryService;
 use crate::widgets::book_row::build_book_grid;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -45,7 +46,7 @@ pub struct ImportTally {
 }
 
 pub struct AllBooksModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     books: Vec<Book>,
     query: String,
     sort: SortKey,
@@ -132,12 +133,19 @@ impl Component for AllBooksModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let sort = SortKey::Added;
-        let books = catalog.list_books(sort, "").unwrap_or_default();
-        let status = status_line(books.len(), "");
+        let service = LibraryService::new(catalog);
+        let snap = service.all_books(sort, "");
+        // `reload()` has always shown "Database error: .." in the status line;
+        // `init()` used `unwrap_or_default()`, so the very first paint claimed
+        // an empty library where a refresh would have told the truth.
+        let status = match snap.errors.first() {
+            Some(err) => format!("Database error: {err}"),
+            None => status_line(snap.books.len(), ""),
+        };
 
         let model = AllBooksModel {
-            catalog,
-            books,
+            service,
+            books: snap.books,
             query: String::new(),
             sort,
             status,
@@ -297,7 +305,7 @@ impl Component for AllBooksModel {
                 self.importing = true;
                 self.status = format!("Importing 1 of {total}…");
 
-                let catalog = self.catalog.clone();
+                let catalog = self.service.catalog().clone();
                 sender.spawn_command(move |out| {
                     let mut tally = ImportTally::default();
                     for (i, path) in paths.iter().enumerate() {
@@ -344,19 +352,18 @@ impl Component for AllBooksModel {
 
 impl AllBooksModel {
     fn reload(&mut self) {
-        match self.catalog.list_books(self.sort, &self.query) {
-            Ok(books) => {
-                let n = books.len();
-                self.books = books;
-                let keep = self.status.starts_with("Import done");
-                if !keep {
-                    self.status = status_line(n, &self.query);
-                }
-            }
-            Err(err) => {
-                self.books.clear();
-                self.status = format!("Database error: {err}");
-            }
+        let snap = self.service.all_books(self.sort, &self.query);
+        if let Some(err) = snap.errors.first() {
+            self.books.clear();
+            self.status = format!("Database error: {err}");
+            return;
+        }
+        let n = snap.books.len();
+        self.books = snap.books;
+        // An import summary outranks the generic count: it is the result of
+        // something the user just did.
+        if !self.status.starts_with("Import done") {
+            self.status = status_line(n, &self.query);
         }
     }
 }

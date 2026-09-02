@@ -92,6 +92,13 @@ pub struct AnalyticsSnapshot {
     pub errors: Errors,
 }
 
+/// The All books grid: every book matching `query`, in `sort` order.
+#[derive(Debug, Default)]
+pub struct AllBooksSnapshot {
+    pub books: Vec<Book>,
+    pub errors: Errors,
+}
+
 /// The shelves grid: manual and smart collections with their live counts.
 #[derive(Debug, Default)]
 pub struct ShelvesSnapshot {
@@ -175,6 +182,15 @@ impl LibraryService {
     }
 
     /// The tag cloud.
+    /// All books page: the whole library, filtered by `query` and sorted.
+    pub fn all_books(&self, sort: SortKey, query: &str) -> AllBooksSnapshot {
+        let mut errors = Errors::new();
+        AllBooksSnapshot {
+            books: take(self.catalog.list_books(sort, query), "books", &mut errors),
+            errors,
+        }
+    }
+
     /// Shelves page: every shelf, ordered as stored.
     pub fn shelves(&self) -> ShelvesSnapshot {
         let mut errors = Errors::new();
@@ -332,6 +348,28 @@ mod tests {
         );
         assert_eq!(snap.stats.total_books, 2);
         assert_eq!(snap.recent.len(), 2);
+    }
+
+    #[test]
+    fn all_books_respects_the_search_query() {
+        // The page distinguishes "no books at all" from "nothing matched", so
+        // the snapshot has to actually filter rather than always return all.
+        let cat = Catalog::open_in_memory().unwrap();
+        seed(&cat, "Dune", &[]);
+        seed(&cat, "Emma", &[]);
+        let svc = LibraryService::new(Arc::new(cat));
+
+        let all = svc.all_books(SortKey::Title, "");
+        assert_eq!(all.books.len(), 2);
+        assert!(all.errors.is_empty());
+
+        let hit = svc.all_books(SortKey::Title, "Dune");
+        assert_eq!(hit.books.len(), 1);
+        assert_eq!(hit.books[0].title, "Dune");
+
+        let miss = svc.all_books(SortKey::Title, "zzzz");
+        assert!(miss.books.is_empty());
+        assert!(miss.errors.is_empty(), "no match is not a failure");
     }
 
     #[test]
