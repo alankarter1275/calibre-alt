@@ -74,6 +74,17 @@ there and is not from this change.
 
 ---
 
+## Test 2b — the My Library quick links (new)
+
+Under the **My Library** title there is now a row: **All books · Reading list ·
+Tags · Analytics**. Click each one; each should open its page and **Back**
+should return.
+
+Reading list, Tags and Analytics were unreachable before this — the pages were
+built and wired into the router, but nothing in the UI opened them. If any of
+them looks broken or unfinished, that is why, and it is worth telling me: they
+have had no real use yet.
+
 ## Test 3 — the pages I rewired (Home, Analytics, Tags)
 
 These now get their data through the new service layer. They should look
