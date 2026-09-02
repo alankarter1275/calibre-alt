@@ -16,9 +16,10 @@ gdk-pixbuf = "0.20"
 # A0 step 3: persistent cover thumbnails. gdk-pixbuf can decode but cannot
 # encode PNG in this toolchain, so we use `image` (pure Rust, no system deps)
 # to generate the small thumbnails written to cache/thumbs/ at import time.
-# Default features are off to keep the binary lean; just the codecs covers
-# need to decode (jpg/png/gif/webp) plus PNG to encode the thumbnail.
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# Default features are off to keep the binary lean (drop tiff/avif/etc.); we
+# keep `std` (required by image::open / save_buffer) plus the codecs covers
+# actually use (png to encode the thumbnail, jpeg/gif/webp to read covers).
+image = { version = "0.25", default-features = false, features = ["std", "png", "jpeg", "gif", "webp"] }
 webkit6 = { version = "0.4", package = "webkit6", features = ["v2_44"] }
 javascriptcore = { version = "0.4", package = "javascriptcore6" }
 glib = "0.20"
