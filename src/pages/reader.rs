@@ -4,10 +4,10 @@ use crate::db::{
     Annotation, Catalog, DictEntry, EntryData, HighlightColor, PhraseLookup, ReadingBookmark,
     SavedWord,
 };
-use crate::service::LibraryService;
 use crate::epub_book::{reading_css, OpenBook, ReadingTheme};
 use crate::models::Book;
 use crate::paths::reader_cache_dir;
+use crate::service::LibraryService;
 use crate::widgets::book_row::cover_widget;
 use gtk::glib;
 use gtk::prelude::*;
@@ -826,7 +826,11 @@ impl Component for ReaderModel {
             let start_pct = book.as_ref().map(|b| b.progress as i64).unwrap_or(0);
             model.session_start_pct = start_pct;
             model.session_start = std::time::Instant::now();
-            model.session_id = model.service.catalog().start_reading_session(book_id, start_pct).ok();
+            model.session_id = model
+                .service
+                .catalog()
+                .start_reading_session(book_id, start_pct)
+                .ok();
         }
 
         let widgets = view_output!();
@@ -1162,7 +1166,9 @@ impl Component for ReaderModel {
             ReaderMsg::Theme(theme) => {
                 self.close_annotation_editor();
                 self.theme = theme;
-                self.service.catalog().set_pref("reader.theme", theme.as_str());
+                self.service
+                    .catalog()
+                    .set_pref("reader.theme", theme.as_str());
                 self.loading = true;
                 load_chapter(self);
                 self.loading = false;
@@ -1174,7 +1180,9 @@ impl Component for ReaderModel {
                 if next != self.font_px {
                     self.close_annotation_editor();
                     self.font_px = next;
-                    self.service.catalog().set_pref("reader.font_px", &next.to_string());
+                    self.service
+                        .catalog()
+                        .set_pref("reader.font_px", &next.to_string());
                     self.loading = true;
                     load_chapter(self);
                     self.loading = false;
@@ -1187,7 +1195,8 @@ impl Component for ReaderModel {
                 if (next - self.line_height).abs() > f32::EPSILON {
                     self.close_annotation_editor();
                     self.line_height = next;
-                    self.service.catalog()
+                    self.service
+                        .catalog()
                         .set_pref("reader.line_height", &format!("{next:.1}"));
                     self.loading = true;
                     load_chapter(self);
@@ -1200,7 +1209,9 @@ impl Component for ReaderModel {
                 if next != self.column_px {
                     self.close_annotation_editor();
                     self.column_px = next;
-                    self.service.catalog().set_pref("reader.column_px", &next.to_string());
+                    self.service
+                        .catalog()
+                        .set_pref("reader.column_px", &next.to_string());
                     self.loading = true;
                     load_chapter(self);
                     self.loading = false;
@@ -1229,14 +1240,16 @@ impl Component for ReaderModel {
             ReaderMsg::SetDictSenseHint(on) => {
                 // P5.5: `dict_sense_hint` toggles the Lesk "likely here"
                 // marker; POS grouping (the pill) stays always on.
-                self.service.catalog()
+                self.service
+                    .catalog()
                     .set_pref("dict_sense_hint", if on { "1" } else { "0" });
             }
             ReaderMsg::SetDictHistory(on) => {
                 // Phase 10: lookup history is opt-out, but the toggle ships
                 // with the feature — a silent log of unknown words needs a
                 // visible off switch.
-                self.service.catalog()
+                self.service
+                    .catalog()
                     .set_pref("dict_history_enabled", if on { "1" } else { "0" });
             }
             ReaderMsg::JsRaw(raw) => {
@@ -1330,7 +1343,11 @@ impl Component for ReaderModel {
                 if unchanged {
                     return;
                 }
-                match self.service.catalog().update_annotation_color(id, color_name) {
+                match self
+                    .service
+                    .catalog()
+                    .update_annotation_color(id, color_name)
+                {
                     Ok(()) => {
                         for annotation in &mut self.all_book_annotations {
                             if annotation.id == id {
@@ -1702,7 +1719,10 @@ impl ReaderModel {
             self.open.chapter_count(),
         );
         let pct = self.progress_pct();
-        let _ = self.service.catalog().auto_finish_if_complete(self.book_id, pct);
+        let _ = self
+            .service
+            .catalog()
+            .auto_finish_if_complete(self.book_id, pct);
     }
 
     fn close_session(&mut self) {
@@ -1710,10 +1730,10 @@ impl ReaderModel {
             return;
         };
         let seconds = self.session_start.elapsed().as_secs() as i64;
-        let _ = self
-            .service
-            .catalog()
-            .end_reading_session(session_id, seconds, self.progress_pct());
+        let _ =
+            self.service
+                .catalog()
+                .end_reading_session(session_id, seconds, self.progress_pct());
     }
 
     fn go_chapter(&mut self, idx: usize, frac: f64) {
@@ -1733,7 +1753,10 @@ impl ReaderModel {
             .service
             .catalog()
             .get_annotations_for_chapter(self.book_id, self.chapter as i64);
-        let book = self.service.catalog().get_annotations_for_book(self.book_id);
+        let book = self
+            .service
+            .catalog()
+            .get_annotations_for_book(self.book_id);
         match (chapter, book) {
             (Ok(ch), Ok(all)) => {
                 self.chapter_annotations = ch;
@@ -1846,7 +1869,11 @@ impl ReaderModel {
         {
             return true;
         }
-        if let Err(err) = self.service.catalog().update_annotation_note(id, normalized) {
+        if let Err(err) = self
+            .service
+            .catalog()
+            .update_annotation_note(id, normalized)
+        {
             crate::notify::error("Could not save your note", &err.to_string());
             return false;
         }
@@ -1986,7 +2013,10 @@ impl ReaderModel {
                 PhraseLookup::Empty => Vec::new(),
             }
         } else {
-            self.service.catalog().search_dict(query, limit).unwrap_or_default()
+            self.service
+                .catalog()
+                .search_dict(query, limit)
+                .unwrap_or_default()
         };
         // Phase 10: every lookup lands in the append-only history (gated by
         // the `dict_history_enabled` pref and hour-collapsed inside). The
@@ -2221,7 +2251,11 @@ impl ReaderModel {
                 // word for the current book.
                 let word = payload.word.unwrap_or_default();
                 if !word.trim().is_empty() {
-                    match self.service.catalog().delete_saved_word_by_word(&word, self.book_id) {
+                    match self
+                        .service
+                        .catalog()
+                        .delete_saved_word_by_word(&word, self.book_id)
+                    {
                         Ok(_) => {
                             crate::notify::compact("Word removed", &word);
                             self.reload_saved_words();

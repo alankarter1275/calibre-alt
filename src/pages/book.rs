@@ -9,10 +9,10 @@
 //! a float (see `series_float.rs`) opened from the hero's Series row.
 
 use crate::db::{Catalog, ShelfKind};
-use crate::service::LibraryService;
 use crate::models::{Book, BookFormat};
 use crate::pages::history::pretty_day;
 use crate::pages::metadata_editor::open_metadata_editor;
+use crate::service::LibraryService;
 use crate::widgets::author_links::replace_author_links;
 use crate::widgets::book_row::{cover_widget, invalidate_cover_cache};
 use crate::widgets::charts::star_picker;
