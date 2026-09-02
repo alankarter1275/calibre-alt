@@ -52,7 +52,7 @@
 
 use crate::db::{
     Annotation, Catalog, DictLookup, EventKind, LibrarySession, LibraryStats, QuoteRef,
-    ReadingEvent, ReadingListEntry, SavedWord, SessionRow, Shelf, SortKey,
+    ReadingBookmark, ReadingEvent, ReadingListEntry, SavedWord, SessionRow, Shelf, SortKey,
 };
 use crate::models::Book;
 use std::sync::Arc;
@@ -92,6 +92,20 @@ pub struct AnalyticsSnapshot {
     pub finished_this_year: i64,
     /// Which of the last 7 days had any reading.
     pub week: [bool; 7],
+    pub errors: Errors,
+}
+
+/// Everything the reader needs about a book when it opens.
+///
+/// Four reads that were each swallowed at startup, so opening a book against
+/// a broken database silently dropped your highlights, bookmarks and saved
+/// words — the reader looked fine and simply showed none of your work.
+#[derive(Debug, Default)]
+pub struct ReaderSnapshot {
+    pub book: Option<Book>,
+    pub annotations: Vec<Annotation>,
+    pub bookmarks: Vec<ReadingBookmark>,
+    pub saved_words: Vec<SavedWord>,
     pub errors: Errors,
 }
 
@@ -285,6 +299,27 @@ impl LibraryService {
     }
 
     /// The tag cloud.
+    /// Everything the reader loads when a book opens.
+    pub fn reader(&self, book_id: i64) -> ReaderSnapshot {
+        let mut errors = Errors::new();
+        let cat = &self.catalog;
+        ReaderSnapshot {
+            book: take(cat.get_book(book_id), "book", &mut errors),
+            annotations: take(
+                cat.get_annotations_for_book(book_id),
+                "highlights and notes",
+                &mut errors,
+            ),
+            bookmarks: take(
+                cat.list_reading_bookmarks(book_id),
+                "bookmarks",
+                &mut errors,
+            ),
+            saved_words: take(cat.list_saved_words("", None), "saved words", &mut errors),
+            errors,
+        }
+    }
+
     /// The book page's stats strip and timeline, in one call.
     pub fn book_stats(&self, book_id: i64, days: i64, session_limit: usize) -> BookStatsSnapshot {
         let mut errors = Errors::new();
@@ -583,6 +618,7 @@ mod tests {
         assert_send::<BookDetailSnapshot>();
         assert_send::<ShelfDetailSnapshot>();
         assert_send::<BookStatsSnapshot>();
+        assert_send::<ReaderSnapshot>();
         // The service itself must be Send too, or it cannot be moved onto the
         // worker that would run those queries.
         assert_send::<LibraryService>();
@@ -667,6 +703,43 @@ mod tests {
         let looks = svc.lookup_history("", 50);
         assert_eq!(looks.lookups.len(), 1);
         assert!(looks.errors.is_empty());
+    }
+
+    #[test]
+    fn reader_returns_the_book_with_its_marks() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let id = seed(svc.catalog(), "Dune", &[]);
+        svc.catalog()
+            .insert_annotation(id, "highlight", 0, "/1", 0, "/1", 9, "", "the spice", "")
+            .expect("insert annotation");
+        svc.catalog()
+            .insert_saved_word("melange", "a spice", None, Some(id), None, None)
+            .expect("insert saved word");
+
+        let snap = svc.reader(id);
+        assert!(snap.errors.is_empty(), "{:?}", snap.errors);
+        assert_eq!(snap.book.map(|b| b.title), Some("Dune".to_string()));
+        assert_eq!(snap.annotations.len(), 1);
+        assert_eq!(snap.saved_words.len(), 1);
+        assert!(snap.bookmarks.is_empty());
+    }
+
+    #[test]
+    fn opening_a_book_with_no_marks_is_not_an_error() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let id = seed(svc.catalog(), "Emma", &[]);
+
+        let snap = svc.reader(id);
+        assert!(
+            snap.errors.is_empty(),
+            "a fresh book is not a failed read: {:?}",
+            snap.errors
+        );
+        assert!(snap.annotations.is_empty());
+        assert!(snap.bookmarks.is_empty());
+        assert!(snap.saved_words.is_empty());
     }
 
     #[test]

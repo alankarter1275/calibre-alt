@@ -9,10 +9,10 @@
 //! a float (see `series_float.rs`) opened from the hero's Series row.
 
 use crate::db::{Catalog, ShelfKind};
+use crate::service::LibraryService;
 use crate::models::{Book, BookFormat};
 use crate::pages::history::pretty_day;
 use crate::pages::metadata_editor::open_metadata_editor;
-use crate::service::LibraryService;
 use crate::widgets::author_links::replace_author_links;
 use crate::widgets::book_row::{cover_widget, invalidate_cover_cache};
 use crate::widgets::charts::star_picker;
@@ -1319,10 +1319,13 @@ fn fill_highlights_card(host: &gtk::Box, model: &BookPageModel, chapters: &[Stri
     let Some(book) = &model.book else {
         return;
     };
-    let annos = model
-        .catalog
-        .get_annotations_for_book(book.id)
-        .unwrap_or_default();
+    let annos = match model.service.catalog().get_annotations_for_book(book.id) {
+        Ok(rows) => rows,
+        Err(err) => {
+            crate::notify::error("Could not read your highlights", &err.to_string());
+            Vec::new()
+        }
+    };
     if annos.is_empty() {
         let none = gtk::Label::new(Some("No highlights yet — select some text in the reader."));
         none.add_css_class("kalam-muted");
@@ -1502,7 +1505,8 @@ fn fill_journey_card(widgets: &BookPageModelWidgets, model: &BookPageModel, chap
     }
 
     let (chapter_index, _frac) = model
-        .catalog
+        .service
+        .catalog()
         .get_reading_progress(book.id)
         .ok()
         .flatten()
