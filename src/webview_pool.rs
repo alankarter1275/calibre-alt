@@ -123,7 +123,10 @@ pub fn release(view: webkit6::WebView) {
     // Finished event this triggers lands with no handlers connected, and the
     // next reader's chapter load supersedes it.
     view.stop_loading();
-    view.load_html("<!doctype html><html><head></head><body></body></html>", None);
+    view.load_html(
+        "<!doctype html><html><head></head><body></body></html>",
+        None,
+    );
 
     if !pooling_enabled() {
         return;
