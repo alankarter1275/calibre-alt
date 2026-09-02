@@ -2092,6 +2092,23 @@ mod tests {
     }
 
     #[test]
+    fn book_first_opened_is_none_not_an_error_for_a_never_opened_book() {
+        // `MIN(at)` over zero rows returns one row containing NULL, so this
+        // used to be a hard error that every caller hid with `.ok().flatten()`
+        // -- which is exactly how it stayed unnoticed.
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = seed(&cat, "Dune", "Herbert", &[]);
+
+        let first = cat
+            .book_first_opened(id)
+            .expect("never opened is not a failure");
+        assert!(first.is_none());
+
+        cat.log_event(id, EventKind::Opened, "").unwrap();
+        assert!(cat.book_first_opened(id).unwrap().is_some());
+    }
+
+    #[test]
     fn finished_book_ids_batches_the_finished_flag() {
         let cat = Catalog::open_in_memory().unwrap();
         let a = seed(&cat, "Dune", "Herbert", &[]);

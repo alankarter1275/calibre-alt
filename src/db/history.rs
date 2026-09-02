@@ -380,14 +380,16 @@ impl Catalog {
     /// timeline entry.
     pub fn book_first_opened(&self, book_id: i64) -> Result<Option<String>> {
         let conn = self.conn();
-        let row = conn
-            .query_row(
-                "SELECT MIN(at) FROM reading_events
+        // `MIN(at)` over zero rows still returns one row, containing NULL, so
+        // `.optional()` does not help here: the value itself must be nullable.
+        // Reading it as a plain String made "never opened" a hard error, which
+        // the callers used to hide with `.ok().flatten()`.
+        let row: Option<String> = conn.query_row(
+            "SELECT MIN(at) FROM reading_events
                  WHERE book_id = ?1 AND kind = 'opened'",
-                params![book_id],
-                |r| r.get(0),
-            )
-            .optional()?;
+            params![book_id],
+            |r| r.get(0),
+        )?;
         Ok(row)
     }
 }
