@@ -95,6 +95,19 @@ pub struct AnalyticsSnapshot {
     pub errors: Errors,
 }
 
+/// The vocabulary page: the visible word list plus its header counts.
+///
+/// The counts used to come from two extra `list_saved_words` calls whose
+/// errors were swallowed with `.unwrap_or(0)`, so a failed read reported
+/// "0 known" as though it were a fact.
+#[derive(Debug, Default)]
+pub struct WordsSnapshot {
+    pub words: Vec<SavedWord>,
+    pub total: i64,
+    pub known: i64,
+    pub errors: Errors,
+}
+
 /// Saved quotes, each already paired with its book.
 ///
 /// The page used to call `get_book` once per quote, and `get_book` runs a
@@ -232,6 +245,30 @@ impl LibraryService {
     }
 
     /// The tag cloud.
+    /// Vocabulary matching `query` and `known`, plus the header counts.
+    ///
+    /// The counts deliberately cover the whole table, not just the page's
+    /// 500-row display cap, so the header stays true for large vocabularies.
+    pub fn words(&self, query: &str, known: Option<bool>) -> WordsSnapshot {
+        let mut errors = Errors::new();
+        let words = take(
+            self.catalog.list_saved_words(query, known),
+            "saved words",
+            &mut errors,
+        );
+        let (total, known_count) = take(
+            self.catalog.saved_word_counts(),
+            "vocabulary counts",
+            &mut errors,
+        );
+        WordsSnapshot {
+            words,
+            total,
+            known: known_count,
+            errors,
+        }
+    }
+
     /// Saved quotes matching `query`, each paired with its book.
     ///
     /// A book that no longer exists yields `None` rather than an error row —
@@ -419,6 +456,7 @@ mod tests {
         assert_send::<TagBooksSnapshot>();
         assert_send::<DashboardSnapshot>();
         assert_send::<QuotesSnapshot>();
+        assert_send::<WordsSnapshot>();
         // The service itself must be Send too, or it cannot be moved onto the
         // worker that would run those queries.
         assert_send::<LibraryService>();
@@ -503,6 +541,49 @@ mod tests {
         let looks = svc.lookup_history("", 50);
         assert_eq!(looks.lookups.len(), 1);
         assert!(looks.errors.is_empty());
+    }
+
+    #[test]
+    fn word_counts_are_read_not_guessed() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let mut ids = Vec::new();
+        for w in ["ephemeral", "petrichor", "susurrus"] {
+            ids.push(
+                svc.catalog()
+                    .insert_saved_word(w, "a definition", None, None, None, None)
+                    .expect("insert saved word"),
+            );
+        }
+        svc.catalog()
+            .set_saved_word_known(ids[0], true)
+            .expect("mark known");
+
+        let snap = svc.words("", None);
+        assert!(snap.errors.is_empty(), "{:?}", snap.errors);
+        assert_eq!(snap.words.len(), 3);
+        assert_eq!(snap.total, 3);
+        // The old code swallowed this read and showed 0 on failure.
+        assert_eq!(snap.known, 1);
+
+        // Filtering narrows the list but the header counts stay whole-table,
+        // which is what "3 of 1 known" style wording needs.
+        let known_only = svc.words("", Some(true));
+        assert_eq!(known_only.words.len(), 1);
+        assert_eq!(known_only.total, 3);
+        assert_eq!(known_only.known, 1);
+        assert!(known_only.errors.is_empty());
+    }
+
+    #[test]
+    fn an_empty_vocabulary_is_not_an_error() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let svc = LibraryService::new(Arc::new(cat));
+        let snap = svc.words("", None);
+        assert!(snap.words.is_empty());
+        assert_eq!(snap.total, 0);
+        assert_eq!(snap.known, 0);
+        assert!(snap.errors.is_empty(), "{:?}", snap.errors);
     }
 
     #[test]
