@@ -59,6 +59,30 @@ pub fn dictionaries_dir() -> PathBuf {
     data_dir().join("dictionaries")
 }
 
+/// `~/.local/share/kalam/cache/thumbs` — persistent cover thumbnails (A0 step 3).
+///
+/// Unlike the in-memory `COVER_CACHE` (which dies at relaunch), these stay on
+/// disk so a relaunched library grid decodes a tiny 256×408 PNG instead of the
+/// full cover on every open.
+pub fn thumbs_dir() -> PathBuf {
+    data_dir().join("cache").join("thumbs")
+}
+
+/// Thumbnail path for a book's uuid.
+pub fn thumbnail_path(uuid: &str) -> PathBuf {
+    thumbs_dir().join(format!("{uuid}.png"))
+}
+
+/// Derive the thumbnail path for a *library* cover path.
+///
+/// Covers live at `library/<uuid>/cover.ext`, so the parent directory name is
+/// the uuid. Returns `None` for any path that is not a library cover (e.g. a
+/// stashed override or a remote series cover) — those simply decode full.
+pub fn thumbnail_for_cover(cover: &Path) -> Option<PathBuf> {
+    let uuid = cover.parent()?.file_name()?.to_str()?;
+    Some(thumbnail_path(uuid))
+}
+
 fn dirs_next_home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
@@ -67,6 +91,7 @@ pub fn ensure_data_dirs() -> std::io::Result<()> {
     fs::create_dir_all(data_dir())?;
     fs::create_dir_all(library_dir())?;
     fs::create_dir_all(data_dir().join("cache").join("reader"))?;
+    fs::create_dir_all(thumbs_dir())?;
     fs::create_dir_all(dictionaries_dir())?;
     fs::create_dir_all(override_covers_dir())?;
     fs::create_dir_all(authors_dir())?;

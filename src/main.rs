@@ -20,6 +20,7 @@ mod perf;
 mod shelf_rules;
 mod style;
 mod theme;
+mod thumbs;
 mod timing;
 mod widgets;
 

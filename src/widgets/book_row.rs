@@ -211,6 +211,8 @@ pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
 }
 
 fn scaled_cover_picture(path: &Path, w: i32, h: i32) -> Option<gtk::Picture> {
+    // Cache key stays the *original* cover path so invalidation on a cover
+    // change/replacement keeps working exactly as before.
     let key = (path.to_string_lossy().to_string(), w, h);
 
     // Serve from cache when we have already decoded this cover at this size.
@@ -218,7 +220,16 @@ fn scaled_cover_picture(path: &Path, w: i32, h: i32) -> Option<gtk::Picture> {
         return Some(build_picture(&texture, w, h));
     }
 
-    let texture = decode_cover(path, w, h)?;
+    // Once imported, we generate a tiny thumbnail (cache/thumbs/<uuid>.png) so
+    // the grid does not decode the full 1000×1500+ cover on the UI thread. Use
+    // it whenever it exists and this slot is small enough to fit without
+    // upscaling; large slots (book page, author photo) still decode the cover.
+    let decode_path: &Path = thumb_for_slot(path, w, h)
+        .filter(|p| p.is_file())
+        .as_deref()
+        .unwrap_or(path);
+
+    let texture = decode_cover(decode_path, w, h)?;
     COVER_CACHE.with(|c| {
         let mut cache = c.borrow_mut();
         // Crude bound: a few hundred covers is plenty for one session and keeps
@@ -229,6 +240,15 @@ fn scaled_cover_picture(path: &Path, w: i32, h: i32) -> Option<gtk::Picture> {
         cache.insert(key, texture.clone());
     });
     Some(build_picture(&texture, w, h))
+}
+
+/// The thumbnail path to decode for a cover slot, or `None` when this slot is
+/// too large to use the thumbnail (never upscale it).
+fn thumb_for_slot(cover: &Path, w: i32, h: i32) -> Option<std::path::PathBuf> {
+    if w > crate::thumbs::THUMB_W as i32 || h > crate::thumbs::THUMB_H as i32 {
+        return None;
+    }
+    crate::paths::thumbnail_for_cover(cover)
 }
 
 fn decode_cover(path: &Path, w: i32, h: i32) -> Option<gtk::gdk::Texture> {

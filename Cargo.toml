@@ -13,6 +13,12 @@ relm4 = { version = "0.9", features = ["libadwaita", "gnome_45"] }
 libadwaita = { version = "0.7", features = ["v1_4"] }
 gtk = { version = "0.9", package = "gtk4", features = ["v4_12"] }
 gdk-pixbuf = "0.20"
+# A0 step 3: persistent cover thumbnails. gdk-pixbuf can decode but cannot
+# encode PNG in this toolchain, so we use `image` (pure Rust, no system deps)
+# to generate the small thumbnails written to cache/thumbs/ at import time.
+# Default features are off to keep the binary lean; just the codecs covers
+# need to decode (jpg/png/gif/webp) plus PNG to encode the thumbnail.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 webkit6 = { version = "0.4", package = "webkit6", features = ["v2_44"] }
 javascriptcore = { version = "0.4", package = "javascriptcore6" }
 glib = "0.20"

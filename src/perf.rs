@@ -1,19 +1,20 @@
-//! A0 step 1 — measurement harness for the **data layer**.
+//! A0 measurement harness (headless — no display needed, safe in CI).
 //!
-//! These run against an in-memory catalog, so they need no display and are safe
-//! in CI. They are `#[ignore]`d by default so the normal `cargo test` run stays
-//! fast; run them when you want a baseline or a regression check:
+//! Two probes, both `#[ignore]`d so the normal `cargo test` stays fast:
+//!
+//! - **Data layer** (`perf_data_layer_report`): the cost of the queries that
+//!   feed every list page, seeded with 2,000 books.
+//! - **Cover decode** (`perf_cover_decode`): the A0 step 3 win — decoding a
+//!   full cover vs the persistent thumbnail for a grid slot.
+//!
+//! Run them on the Arch machine for a baseline / regression check:
 //!
 //! ```text
 //! cargo test --release perf -- --ignored --nocapture
 //! ```
 //!
-//! What this measures: the cost of the queries that feed every list page. The
-//! other half of A0 — cold start, book open, chapter turn, grid scroll — is
-//! GUI-side and needs the user's Arch machine (`perf`, sysprof, GTK inspector);
-//! see A0 in `ROADMAP.md` and `docs/conversation.md` §§1–3.
-//!
-//! Sizing: 2,000 books is the A0 acceptance target, so that's what we seed.
+//! The other half of A0 (cold start, book open, chapter turn, grid scroll) is
+//! measured in-app via `KALAM_TIMING=1` (see `src/timing.rs`).
 
 #![cfg(test)]
 
@@ -125,4 +126,43 @@ fn perf_data_layer_report() {
     assert_under("books_with_tag(scifi)", ms);
 
     println!("\nAll data-layer probes under {CEILING_MS:.0} ms — no O(n²) regression visible.");
+}
+
+/// A0 step 3 — cover decode: full cover vs the persistent thumbnail. This is
+/// the cost behind every grid card on a cold launch. Creates a real cover image
+/// in a scratch dir and times both decode paths (gdk-pixbuf).
+#[test]
+#[ignore = "run manually: cargo test --release perf -- --ignored --nocapture"]
+fn perf_cover_decode() {
+    use gdk_pixbuf::{InterpType, Pixbuf};
+
+    let scratch = std::env::temp_dir().join(format!("kalam-perf-cover-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch).unwrap();
+    let cover = scratch.join("cover.png");
+    let thumb = scratch.join("thumb.png");
+
+    // A believable full cover (600×900) and the 256×408 thumbnail.
+    let w = 600u32;
+    let h = 900u32;
+    let buf: Vec<u8> = (0..(w * h)).flat_map(|_| [40u8, 70, 130]).collect();
+    image::save_buffer(&cover, &buf, w, h, image::ExtendedColorType::Rgb8).unwrap();
+    assert!(crate::thumbs::generate_thumbnail(&cover, &thumb));
+
+    println!("== Cover decode: full cover vs thumbnail (grid slot 128×204) ==");
+
+    let ms = timed!("gtk decode FULL cover → 128×204", || {
+        let p = Pixbuf::from_file_at_scale(&cover, 128, 204, false).unwrap();
+        let _ = p.scale_simple(128, 204, InterpType::Bilinear).unwrap();
+    });
+    println!("{:<40} {:>8.2} ms", "(full cover decode)", ms);
+
+    let ms = timed!("gtk decode THUMB → 128×204", || {
+        let p = Pixbuf::from_file_at_scale(&thumb, 128, 204, false).unwrap();
+        let _ = p.scale_simple(128, 204, InterpType::Bilinear).unwrap();
+    });
+    println!("{:<40} {:>8.2} ms", "(thumbnail decode)", ms);
+
+    println!("\nGrid-slot decode of the thumbnail is the hot path after import; the full-cover decode is what a cold launch pays per card today.");
+
+    let _ = std::fs::remove_dir_all(&scratch);
 }

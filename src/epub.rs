@@ -96,6 +96,16 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
 
     let cover_name = extract_cover(source, &meta, &dest_dir)?;
 
+    // A0 step 3: generate a persistent thumbnail at import so the grid decodes
+    // a tiny PNG instead of the full cover. Best-effort — a failure here just
+    // means the grid falls back to the full cover.
+    if let Some(cover) = &cover_name {
+        crate::thumbs::generate_thumbnail(
+            &dest_dir.join(cover),
+            &crate::paths::thumbnail_path(&uuid),
+        );
+    }
+
     let id = catalog.insert_book(
         &uuid,
         &title,
@@ -475,6 +485,12 @@ pub fn replace_cover_bytes(
     }
 
     catalog.set_cover_name(book.id, Some(&name))?;
+    // A0 step 3: the cover changed, so regenerate the thumbnail to keep it in
+    // sync (the grid prefers the thumbnail when it exists).
+    crate::thumbs::generate_thumbnail(
+        &path,
+        &crate::paths::thumbnail_path(&book.uuid),
+    );
     Ok(name)
 }
 
