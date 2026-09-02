@@ -41,8 +41,9 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - Slim sidebar shell + cover-card library grid
 - **SQLite catalog** at `~/.local/share/kalam/catalog.db`
 - **Import EPUB** (Home → “+ Add books”, or My Library → All books → “+ Import EPUB”)
-- **All books** grid (search, sort, cover cards) — reachable from Home → “All books”
-  or My Library → All books
+- **All books** grid (search, sort, cover cards) — from Home → “All books” or the
+  My Library quick links
+- **Reading list**, **Tags** and **Analytics** — from the My Library quick links
 - **EPUB reader** (WebKitGTK): chapter-wise scroll, TOC, themes, font size, progress restore
 - **Highlights & quotes**: select text → floating chip (yellow/green/blue/pink/orange), save quote (❝), copy
 - **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip, tap, or `D` shortcut, a popup with numbered senses + POS, synonym/antonym chips, idiom cards, bookmark & copy, offline IPA pronunciation (`bank` → `/ˈbæŋk/`) from the bundled CMU Pronouncing Dictionary, keyboard support (↑/↓ focus a sense, Enter saves it), and **Find in chapter**

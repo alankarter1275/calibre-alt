@@ -7,6 +7,9 @@
 //! Below: continue reading (with hover play buttons), saved quotes, a
 //! merged history feed (events + sessions) and a vocabulary strip.
 //! Section headers double as the way in — click a header to drill down.
+//! Sections only render when they have content, though, so the pages that
+//! have no section here (or whose section is empty) are reached from the
+//! quick-links row under the title instead.
 
 use crate::db::{Catalog, EventKind};
 use crate::models::{Book, BookFormat, LibrarySection};
@@ -98,8 +101,11 @@ fn build_dashboard(
     sub.set_halign(gtk::Align::Start);
     head.append(&sub);
     body.append(&head);
+    body.append(&quick_links(sender));
 
     if stats.total_books == 0 {
+        // The "All books" quick link above is the way in (that page owns the
+        // importer), so there is no duplicate section header here.
         let empty = gtk::Label::new(Some(concat!(
             "Your library is empty.\n\n",
             "Import an EPUB from All books to get started — this page fills up ",
@@ -109,12 +115,6 @@ fn build_dashboard(
         empty.set_wrap(true);
         empty.set_halign(gtk::Align::Start);
         body.append(&empty);
-        body.append(&section(
-            "ALL BOOKS",
-            LibrarySection::AllBooks,
-            sender,
-            gtk::Label::new(Some("Import your first book here.")).upcast::<gtk::Widget>(),
-        ));
         return;
     }
 
@@ -904,6 +904,59 @@ fn feed_time(at: &str) -> String {
 
 /// Section with a clickable header that routes to the full page, showing a
 /// "Show all →" affordance on the right (whole header is the affordance).
+/// Quick links to the library pages that this dashboard does not give a
+/// section of its own.
+///
+/// These were unreachable. `AllBooks` was linked only from the empty-library
+/// placeholder below, inside its `return` branch — so the one moment you could
+/// open the full grid from here was while you owned no books, and importing
+/// your first book made the link vanish. `ReadingList`, `Tags` and `Analytics`
+/// have complete pages wired into the router in `app.rs`, but nothing in the
+/// UI ever pushed those routes, so they could not be opened at all.
+///
+/// Content sections (history, quotes, vocabulary) keep their own clickable
+/// headers; this row deliberately does not duplicate them.
+fn quick_links(sender: &ComponentSender<LibraryPageModel>) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row.set_halign(gtk::Align::Start);
+
+    let targets = [
+        (
+            "All books",
+            LibrarySection::AllBooks,
+            "Browse, search and sort every book in your library",
+        ),
+        (
+            "Reading list",
+            LibrarySection::ReadingList,
+            "Your ordered to-read queue",
+        ),
+        (
+            "Tags",
+            LibrarySection::Tags,
+            "Browse your tags and the books under each one",
+        ),
+        (
+            "Analytics",
+            LibrarySection::Analytics,
+            "Reading stats, charts and streaks",
+        ),
+    ];
+
+    for (label, target, tip) in targets {
+        let btn = gtk::Button::with_label(label);
+        btn.add_css_class("kalam-secondary-btn");
+        btn.set_tooltip_text(Some(tip));
+        let s = sender.clone();
+        btn.connect_clicked(move |_| {
+            s.output(LibraryOut::Section(target)).ok();
+        });
+        row.append(&btn);
+    }
+
+    row
+}
+
 fn section(
     title: &str,
     target: LibrarySection,
