@@ -154,9 +154,8 @@ impl Catalog {
         let conn = self.conn();
         for chunk in ids.chunks(500) {
             let holders = vec!["?"; chunk.len()].join(",");
-            let sql = format!(
-                "SELECT id FROM books WHERE finished_at IS NOT NULL AND id IN ({holders})"
-            );
+            let sql =
+                format!("SELECT id FROM books WHERE finished_at IS NOT NULL AND id IN ({holders})");
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map(rusqlite::params_from_iter(chunk.iter()), |r| {
                 r.get::<_, i64>(0)

@@ -343,7 +343,10 @@ fn merge_rows(catalog: &Arc<Catalog>, series_name: &str, remote: &[SeriesWork]) 
     let owned = match catalog.books_in_series(series_name) {
         Ok(books) => books,
         Err(err) => {
-            crate::notify::error("Could not check your copies of this series", &err.to_string());
+            crate::notify::error(
+                "Could not check your copies of this series",
+                &err.to_string(),
+            );
             Vec::new()
         }
     };
@@ -469,7 +472,10 @@ fn render(
             // row. A failed read leaves the set empty, which reads as "not
             // finished" — the same thing the per-row `.ok()` used to do, but
             // now it costs one query instead of N.
-            let owned_ids: Vec<i64> = rows.iter().filter_map(|r| r.local.as_ref().map(|b| b.id)).collect();
+            let owned_ids: Vec<i64> = rows
+                .iter()
+                .filter_map(|r| r.local.as_ref().map(|b| b.id))
+                .collect();
             let finished_ids = model
                 .catalog
                 .finished_book_ids(&owned_ids)
