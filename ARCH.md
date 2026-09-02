@@ -73,7 +73,7 @@ Nested boolean groups were considered and deferred — the JSON can gain a
   Durations are clamped to 6h — a suspended laptop must not claim a marathon.
 - Auto-finish fires once at ≥99% progress; `finished_at` guards re-firing.
 
-## Data dirs (P4 actual)
+## Data dirs (actual)
 
 ```text
 ~/.local/share/kalam/
@@ -82,7 +82,14 @@ Nested boolean groups were considered and deferred — the JSON can gain a
   library/<uuid>/            # book.epub + cover.*
   dictionaries/              # (placeholder dir, actual entries in catalog.db)
   cache/reader/<uuid>/       # extracted EPUB for WebView
+  cache/thumbs/<uuid>.png    # persistent cover thumbnails (A0 step 3)
+  covers/<file_hash>.<ext>   # stashed covers for metadata restore — survives
+                             #   book deletion, hence not under library/<uuid>/
+  authors/                   # cached author photos
+  series-covers/             # cached series float covers
 ~/Quotes.md                  # exported quotes Markdown
+~/SavedWords.csv             # exported vocabulary (RFC-4180)
+~/SavedWords-Anki.txt        # exported vocabulary (Anki TSV)
 ~/.config/kalam/config.toml  (future)
 ```
 
@@ -120,5 +127,11 @@ Nested boolean groups were considered and deferred — the JSON can gain a
 | P1 | SQLite + EPUB import + covers ✅ |
 | P2 | Reader (chapter scroll, fonts, progress) ✅ |
 | P3 | Highlights, quotes, offline dictionary ✅ |
-| P4 | Shelves engine, lists, history, tags, analytics ✅ ← **you are here** |
-| P5+ | Sources (AO3, FF), comics, convert |
+| P4 | Shelves engine, lists, history, tags, analytics ✅ |
+| P5 | Metadata edit, cover replace, Open Library fetch ✅ |
+| P5.5 | UI overhaul (colour system, 13 themes, Settings v2, book page) — in progress |
+| A0 | Architecture & performance track ← **you are here** |
+| P6+ | Downloads, sources (AO3, FF), comics, PDF, tools |
+
+`ROADMAP.md` is the authoritative plan; this table is a summary. See its
+"Current trajectory" section for the locked order.

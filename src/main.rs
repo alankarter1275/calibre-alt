@@ -22,6 +22,7 @@ mod style;
 mod theme;
 mod thumbs;
 mod timing;
+mod webview_pool;
 mod widgets;
 
 use app::AppModel;

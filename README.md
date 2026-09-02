@@ -22,7 +22,8 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
   importers hardened (read-only SQLite packs, identifier quoting, rollback,
   catalog.db self-import guard), one latent bug fixed (reading-list column
   offsets), 9 new unit tests. No other defects.
-- **CI now runs the 156 unit tests on every push** (the `cargo test` step is
+- **CI now runs the 163 unit tests on every push** (165 `#[test]`s, 2 of them
+  `#[ignore]`d perf probes that are run by hand — the `cargo test` step is
   live in `.github/workflows/ci.yml`). The first real run caught one failing
   test (a bad escape in the `quote_ident` test literal) — fixed, all green.
   On failure the diagnostics are published to `ci-logs/test-latest.txt`.
@@ -159,21 +160,31 @@ cargo run
 ```text
 src/
   main.rs          entry + dark preference
-  app.rs           shell, sidebar, routing
+  app.rs           shell, sidebar, routing, page cache
   db.rs            SQLite catalog + annotations + dict + P4 shelves/lists/stats
   dict.rs          StarDict / SQLite / TSV import & search
   shelf_rules.rs   smart-shelf rule documents → SQL
   epub.rs          EPUB OPF metadata + cover extract/replace
-  openlibrary.rs   Open Library search / description / cover
   epub_book.rs     spine, TOC, chapter HTML + reading CSS/JS (highlights, chip, dict)
+  epub_write.rs    metadata writeback into the EPUB's OPF
+  author.rs        author profile fetch + normalisation
   models.rs        routes + books/shelves
-  style.rs         global CSS (including P3 badges/rows)
+  icons.rs         symbolic icon helpers
+  notify.rs        toast notifications + history
+  paths.rs         XDG data/cache paths
+  thumbs.rs        persistent cover thumbnails (A0 step 3)
+  perf.rs          headless perf probes (#[ignore]d; run manually)
+  timing.rs        in-app timing harness (KALAM_TIMING=1)
+  theme.rs         every colour — 13 dark themes
+  style.rs         global CSS — shape only (spacing, radii, type scale)
+  metadata/        Open Library + Google Books fetch, series lookup
   pages/           Home, Library, Shelves (+ editor/detail), ReadingList,
                    History, Tags, Analytics, Book, Reader, SavedQuotes,
-                   SavedWords, Settings
+                   SavedWords, LookupHistory, Settings, floats
   db/              db.rs split: annotations, authors, dictionaries, history,
-                   metadata, prefs, pronunciation, series, shelves, stats
-  widgets/         book row, shelf card
+                   lookup_history, metadata, prefs, pronunciation, series,
+                   shelves, stats
+  widgets/         book row/card, charts, author links
 ```
 
 ### Backend layout (post split)
@@ -200,8 +211,10 @@ on the same `Catalog`:
   catalog.db
   library/<uuid>/
   dictionaries/        (imported packs meta only; entries in catalog.db)
-  cache/reader/<uuid>/
-  override-covers/     (stashed covers for metadata restore)
+  cache/reader/<uuid>/  (extracted EPUB for the reader)
+  cache/thumbs/<uuid>.png  (persistent cover thumbnails)
+  covers/              (stashed covers for metadata restore, keyed by file hash)
+  authors/             (cached author photos)
   series-covers/       (cached series float covers)
 ~/.config/kalam/       (future)
 ~/Quotes.md            (export target — saved quotes, Markdown)

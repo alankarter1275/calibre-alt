@@ -38,7 +38,9 @@ touching code:
 - **You cannot see the screen.** The user is the QA loop for anything visual:
   ask for error text (not screenshots — you can't view them), and have the
   user run the app on Arch at phase boundaries.
-- **Branch:** work only on `arena/01a05974-calibre-alt`; push only to it.
+- **Branch:** each Arena session is pinned to its own `arena/<id>-calibre-alt`
+  branch. Work only on the branch the current session names, and push only to
+  it. Do not copy the branch id out of this file — it changes every session.
 
 ---
 
@@ -100,7 +102,7 @@ pipeline (comics) · MuPDF later (PDF) · cosmic-text (custom renderer, A0)
 ## Current trajectory (locked 2026-09-02)
 
 **Where we are:** P0–P5 shipped and CI-green; dictionary track Phases 1–10
-shipped and CI-green (156 unit tests). The product is now a **content
+shipped and CI-green (163 unit tests). The product is now a **content
 platform**: fiction (AO3 / FFN / webnovels) and manga sources with native tag
 search, downloads, offline reading, auto-updates — on a fast, Yazi-style
 architecture.
@@ -346,22 +348,6 @@ top toolbar. Restyled while P2 was still open.
 
 ---
 
-## Reader chrome restyle (P2.1)  ✅ done
-
-**Decision (2026-07-26):** the reader is a tablet-book, not a browser: no heavy
-top toolbar. Restyled while P2 was still open.
-
-- [x] Top-left close + crumb (book → chapter); no reader top bar
-- [x] Bottom floating pill: `‹ ☰ ch Aa ›` (prev / TOC / chapter label / font+theme)
-- [x] Immersive mode: app sidebar + topbar hidden while reading
-- [x] Reading CSS: body/links forced to ink color (never browser-blue), no
-      underlines on body text; selection tint reserved for P3
-- [x] Chapter reload on theme/font change (accepted; instant CSS-var swap deferred)
-
-**Look target:** immersive "tablet book" — cream/sepia page, floating chrome.
-
----
-
 ## P3 — Annotations & dictionary  ✅ done
 
 **Goal:** “Editor in the viewer” on the text-reader surface.
@@ -566,8 +552,8 @@ future isolated reader-improvement steps.
 
 #### Context for the implementing AI
 
-Kalam is a Rust + GTK4 + Relm4 + WebKitGTK ebook reader. Work on branch
-`arena/01a05974-calibre-alt`. The dictionary spans three areas:
+Kalam is a Rust + GTK4 + Relm4 + WebKitGTK ebook reader. Work on the branch
+your session names (see "Hard rules" above). The dictionary spans three areas:
 
 - `src/db.rs` — schema/migrations. `migrate()` uses `CREATE TABLE IF NOT EXISTS`
   plus guarded `ALTER TABLE ... ADD COLUMN` plus a `SCHEMA_VERSION` constant /
@@ -1303,9 +1289,26 @@ P6–P11.
 - **Step 2 (LibraryService), step 4 (task manager), step 5 (preloaders)** not
   started. **Step 6 (grid virtualization) is not planned** — the data layer is
   <20 ms and there is no measured grid lag, so it would add risk for no win.
-- **A separate cheap win** the timing surfaced: keep one WebView alive across
-  book opens to remove the ~400 ms re-spawn on every reopen (the user chose
-  thumbnails first, so this is still open).
+- **WebView reuse — done.** The cheap win the timing surfaced: the reader used
+  to call `webkit6::WebView::new()` in `init()`, so every book open spawned a
+  WebKit process (~400 ms). `src/webview_pool.rs` now parks exactly one view
+  between readers; the reader acquires it in `init()` and releases it in
+  `shutdown()`. The reader's own lifecycle is unchanged (session start/end and
+  progress save still run on every entry/exit) — only the expensive object is
+  pooled, deliberately *not* the whole page, which would keep a reading session
+  counting while the user browsed the library. Handlers that capture the
+  component's `Sender` are recorded as `SignalHandlerId`s and disconnected
+  before parking; sizing, context-menu suppression and the `"kalam"`
+  script-message *registration* are permanent and live in the pool (WebKit
+  rejects a second registration of that name). Escape hatch:
+  `KALAM_NO_WEBVIEW_POOL=1` restores the old spawn-per-open behaviour for A/B
+  measurement with `KALAM_TIMING=1`. Cost: the WebKit process (~100–200 MB)
+  stays resident after the first book instead of being released on leave; the
+  page is blanked on release so the book's DOM is still freed.
+  **Needs an Arch smoke-test:** open book A → leave → open book B → return to
+  A, checking highlights, dictionary popup, tap-to-look-up and progress restore
+  all still work on the second and third opens (that is what a stale handler or
+  a missed re-registration would break).
 
 **Goal:** make Kalam feel instant (Yazi philosophy: *"don't make the UI
 fast — make it never wait"*) and lay the seams the source platform needs.
@@ -1629,7 +1632,7 @@ lives at `docs/ci/github-actions-ci.yml`; install it by copying over
 **Recently completed (do not redo):** dictionary track Phases 8–10 (shipped,
 CI-green: POS dividers `be11c07`, priority reorder `d12c905`, lookup history
 `7ce8bfb`+fixes); CI workflow with the `cargo test` step installed and green
-(156 unit tests, failures publish to `ci-logs/test-latest.txt`); backend
+(163 unit tests, failures publish to `ci-logs/test-latest.txt`); backend
 review done (one latent bug fixed, dict importers hardened, 9 new tests);
 reader milestones 1–3 shipped (annotation workflow, hybrid anchoring, dict
 multi-result popup).
