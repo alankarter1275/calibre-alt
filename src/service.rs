@@ -118,11 +118,6 @@ impl LibraryService {
         &self.catalog
     }
 
-    /// Changes-counter passthrough, used by the app's page cache.
-    pub fn change_token(&self) -> i64 {
-        self.catalog.change_token()
-    }
-
     // -- snapshots ---------------------------------------------------------
 
     /// Home: counts strip, continue row, reading-list peek, recently added.

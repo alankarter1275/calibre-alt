@@ -805,6 +805,11 @@ impl Component for AppModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        // Cold start is one number until it is broken down, and the first
+        // measurement on a real library came back at 8 s. These three spans
+        // split `window_shown` into the work that precedes first paint, so the
+        // next run says which part to fix instead of inviting a guess.
+        crate::timing::span("startup_db_open");
         let catalog = match Catalog::open() {
             Ok(c) => Arc::new(c),
             Err(err) => {
@@ -813,20 +818,28 @@ impl Component for AppModel {
                 Arc::new(Catalog::open().expect("catalog open"))
             }
         };
+        crate::timing::span_end("startup_db_open");
         // A0 step 3: give books imported before thumbnails existed a thumbnail
         // without re-importing. Off the UI thread so first paint is not delayed;
         // only missing files are generated, so it is cheap after the first pass.
         let backfill_catalog = catalog.clone();
         std::thread::spawn(move || crate::thumbs::backfill_missing(&backfill_catalog));
+        // First run decompresses and imports ~6.8 MB of gzipped TSV packs on
+        // this thread; later runs early-out on a pref. Timed to confirm which
+        // of the two a given start was.
+        crate::timing::span("startup_dicts");
         if let Err(err) = crate::dict::install_bundled_dictionaries(&catalog) {
             crate::notify::error(
                 "Could not install the bundled dictionaries",
                 &err.to_string(),
             );
         }
+        crate::timing::span_end("startup_dicts");
 
         let initial_route = Route::Module(NavItem::Home);
+        crate::timing::span("startup_first_page");
         let page = Self::build_page(&catalog, &initial_route, &sender);
+        crate::timing::span_end("startup_first_page");
 
         let float_scrim = gtk::Box::new(gtk::Orientation::Vertical, 0);
         float_scrim.add_css_class("kalam-float-scrim");

@@ -18,6 +18,12 @@
 //! Then read the `[timing]` lines. They mark the boundaries A0 cares about:
 //!   window_shown  → first window drawn, measured from process start
 //!                   (cold start; a `now` snapshot, not a span)
+//!   startup_db_open / startup_dicts / startup_first_page
+//!                 → the three pieces of work that run before first paint,
+//!                   so a slow `window_shown` can be attributed rather than
+//!                   guessed at. `startup_dicts` is large only on the very
+//!                   first run (it imports the bundled packs), and
+//!                   `startup_first_page` scales with library size.
 //!   book_open     → EPUB parsed and the reader initialised
 //!   chapter_load  → chapter HTML handed to WebKit *until* WebKit finished
 //!                   rendering it — i.e. the whole chapter turn
