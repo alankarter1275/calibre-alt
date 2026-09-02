@@ -162,7 +162,7 @@ impl Component for AllBooksModel {
         }
         group_toggles(&widgets.sort_box);
 
-        rebuild_list(&widgets.list, &model.books, &sender);
+        rebuild_list(&widgets.list, &model.books, &model.query, &sender);
 
         ComponentParts { model, widgets }
     }
@@ -222,7 +222,7 @@ impl Component for AllBooksModel {
             }
         }
 
-        rebuild_list(&widgets.list, &self.books, &sender);
+        rebuild_list(&widgets.list, &self.books, &self.query, &sender);
         self.update_view(widgets, sender);
     }
 
@@ -337,7 +337,7 @@ impl Component for AllBooksModel {
             }
         }
 
-        rebuild_list(&widgets.list, &self.books, &sender);
+        rebuild_list(&widgets.list, &self.books, &self.query, &sender);
         self.update_view(widgets, sender);
     }
 }
@@ -392,15 +392,27 @@ fn group_toggles(box_: &gtk::Box) {
     }
 }
 
-fn rebuild_list(list: &gtk::Box, books: &[Book], sender: &ComponentSender<AllBooksModel>) {
+/// `query` distinguishes the two very different reasons the grid can be empty.
+/// Telling a user with 300 books that their "library is empty" because a
+/// search matched nothing is simply wrong, and it hides the fix: clear it.
+fn rebuild_list(
+    list: &gtk::Box,
+    books: &[Book],
+    query: &str,
+    sender: &ComponentSender<AllBooksModel>,
+) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
 
     if books.is_empty() {
-        let empty = gtk::Label::new(Some(
-            "Your library is empty.\nClick “+ Import EPUB” to add books.",
-        ));
+        let query = query.trim();
+        let message = if query.is_empty() {
+            "Your library is empty.\nClick “+ Import EPUB” to add books.".to_string()
+        } else {
+            format!("No books match “{query}”.\nTry another search, or clear it to see everything.")
+        };
+        let empty = gtk::Label::new(Some(&message));
         empty.add_css_class("kalam-placeholder");
         empty.set_wrap(true);
         list.append(&empty);

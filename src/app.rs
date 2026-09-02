@@ -342,6 +342,9 @@ impl AppModel {
                     |out| match out {
                         HomeOut::OpenBook { book_id } => AppMsg::Push(Route::BookPage { book_id }),
                         HomeOut::OpenBookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
+                        HomeOut::OpenAllBooks => {
+                            AppMsg::Push(Route::LibrarySection(LibrarySection::AllBooks))
+                        }
                     },
                 );
                 PageSlot::Home(ctrl)

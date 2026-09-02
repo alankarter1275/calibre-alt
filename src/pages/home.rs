@@ -11,11 +11,14 @@ use std::sync::Arc;
 pub enum HomeOut {
     OpenBook { book_id: i64 },
     OpenBookDialog { book_id: i64 },
+    /// Open My Library → All books (the full searchable/sortable grid).
+    OpenAllBooks,
 }
 
 #[derive(Debug)]
 pub enum HomeMsg {
     AddBooks,
+    AllBooks,
     FilesChosen(Vec<PathBuf>),
 }
 
@@ -50,6 +53,17 @@ impl Component for HomePageModel {
                     add_css_class: "kalam-page-title",
                     set_halign: gtk::Align::Start,
                     set_hexpand: true,
+                },
+
+                // Sits left of "+ Add books": browsing the whole library is
+                // the more common intent, importing the rarer one, but the
+                // primary-styled button stays the import action.
+                #[name = "all_books_btn"]
+                gtk::Button {
+                    set_label: "All books",
+                    add_css_class: "kalam-secondary-btn",
+                    set_tooltip_text: Some("Browse, search and sort every book in your library"),
+                    connect_clicked => HomeMsg::AllBooks,
                 },
 
                 #[name = "add_btn"]
@@ -160,6 +174,9 @@ impl Component for HomePageModel {
         root: &Self::Root,
     ) {
         match msg {
+            HomeMsg::AllBooks => {
+                sender.output(HomeOut::OpenAllBooks).ok();
+            }
             HomeMsg::AddBooks => {
                 let dialog = gtk::FileDialog::builder()
                     .title("Import EPUB books")
