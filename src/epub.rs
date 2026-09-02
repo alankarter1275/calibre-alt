@@ -487,10 +487,7 @@ pub fn replace_cover_bytes(
     catalog.set_cover_name(book.id, Some(&name))?;
     // A0 step 3: the cover changed, so regenerate the thumbnail to keep it in
     // sync (the grid prefers the thumbnail when it exists).
-    crate::thumbs::generate_thumbnail(
-        &path,
-        &crate::paths::thumbnail_path(&book.uuid),
-    );
+    crate::thumbs::generate_thumbnail(&path, &crate::paths::thumbnail_path(&book.uuid));
     Ok(name)
 }
 
