@@ -80,10 +80,17 @@ of zero. History said "Opened and finished books show up here as you read", the
 same message a brand-new install shows. The reader opened your book and quietly
 displayed none of your highlights. Nothing anywhere said a word was wrong.
 
-If step 3 of that recipe just shows a hard error at startup instead of toasts,
-that is also fine and arguably better — it means SQLite rejected the file at
-open time, before any page ran. The failure mode being tested is the *silent*
-one.
+**What actually happened when the user ran this (2026-09-03):** neither. It
+**aborted with a core dump**. `AppModel::init` "handled" the failed open by
+calling `Catalog::open()` again and `.expect()`ing it — a guaranteed panic —
+and since `init()` runs inside a GTK callback the panic could not unwind, so
+the process aborted. That was a real bug and this test is what found it.
+
+It now exits cleanly with a readable message naming the file and the exact
+command to move the broken database aside. A whole-file corruption is
+rejected by SQLite at open time, before any page runs, so you get that message
+rather than per-page toasts. The toasts are for the case this test cannot
+easily produce: a database that opens fine but fails on individual reads.
 
 Clean up when done:
 

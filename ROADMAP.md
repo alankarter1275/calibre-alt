@@ -1699,12 +1699,34 @@ file pickers — the compositor and the desktop portal own them, the user
 expects their normal file manager, and re-implementing a file browser in-app
 would be strictly worse.
 
-**Hard requirement from the user:** every in-app dialog must have a visible
-close/✕ button. Without a title bar there is no compositor-provided way out,
-so a dialog with no button and no Esc handler is a trap. The existing five
-already satisfy this; the rule is that new ones must too, and Esc must keep
-working as a second way out (not the only one — an invisible shortcut is not
-an affordance).
+**Requirement (revised by the user 2026-09-03).** The earlier rule was
+"every in-app dialog needs a visible ✕". The user corrected it: **the dialogs
+exist for different reasons, so they should not all be dismissed the same
+way.** The affordance must match what the dialog *is*:
+
+| Dialog is… | Affordance | Why |
+|---|---|---|
+| A **detour** you came to from somewhere (book float, series float) | **‹ Back** | You are returning to where you were, not discarding something. Back says that. |
+| A **transient panel** layered on the current context (annotations, shelves, tags) | **✕** | Nothing to return to; you are dismissing an overlay. |
+| A **form with unsaved input** (metadata editor, shelf editor) | **Cancel** + explicit Save | "✕" is ambiguous next to unsaved edits: does it discard? Cancel is unambiguous. |
+| A **confirmation** (delete shelf) | **Cancel / Delete** | Two named outcomes; a ✕ is a third, vaguer one. |
+
+**Universal, on top of the above: clicking the dimmed backdrop closes the
+dialog, and Esc closes it.** Backdrop-click is now implemented (see the
+changelog entry for 2026-09-03) — the scrim already intercepted those clicks
+so they could not reach the page behind it, but its handler was empty, which
+made the dim look interactive and do nothing.
+
+**Open question the user raised:** with backdrop-click and Esc both working,
+can the explicit button be dropped entirely? **Decision: no, not for all of
+them.** Backdrop-click and Esc are both *invisible* affordances — nothing on
+screen advertises them, so a dialog whose only exits are invisible is still a
+trap for anyone who does not already know the trick. Keep one visible control
+per dialog, but let it be the *right* one from the table above rather than a
+reflexive ✕. Forms and confirmations especially must keep a named button,
+because for those the question is not only "how do I leave" but "what happens
+to my edits when I do". The one place a bare ✕ can go is where the visible
+control would be pure duplication of an already obvious action.
 
 **Order (cheapest and safest first):** delete-shelf confirmation → the two
 book pickers (they are near-identical, so one helper serves both) → shelf
@@ -1845,3 +1867,5 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-02 | **A0 step 2 complete.** Final pass over the last four files, none of which needed a snapshot but three of which were lying anyway. **Metadata editor** and **Shelf editor** both did `let Ok(Some(x)) = ... else { return }` / `_ => return`, so on a failed read the dialog **simply never appeared** — no window, no message, nothing to click; they now say whether the thing was deleted or the read failed. Shelf editor's duplicate-name check was `.unwrap_or(false)`, i.e. a failed check assumed the name was free. **Settings** rendered a failed `list_dictionaries()` as "no dictionaries installed", which is exactly what a successful uninstall looks like. The reader's dictionary search made a broken index indistinguishable from "that word isn't in the dictionary". **`author.rs` genuinely needed nothing** — it makes no database reads at all, it only passes the `Arc` to its children, and its lone `unwrap_or_default()` is on a local helper; that is what a real skip looks like, stated precisely, versus the earlier hand-waving. Remaining `unwrap_or`s across the pages are now only `get_pref(key, default)` calls (defaults by design, step 4) and string/slice defaults like `.get(..10).unwrap_or("")`. **Score for the whole step: 16 pages converted, 5 N+1 query storms removed, 3 new batch queries (`books_by_ids`, `saved_word_counts`, `finished_book_ids`), 198 tests** |
 | 2026-09-02 | **A real bug the step-2 pass uncovered, not just a refactor.** The new `book_stats` tests failed in CI, and the cause was a genuine defect in `Catalog::book_first_opened`: `SELECT MIN(at) ...` over zero rows still returns **one row containing NULL**, so `.optional()` does not help — the *value* has to be nullable. Reading it as a plain `String` made "this book has never been opened" a **hard error**. It went unnoticed for as long as it existed precisely because every caller wrote `.ok().flatten()`,which turned the error into `None` and produced the right screen by accident. This is the clearest possible demonstration of why step 2 was worth doing: the swallow was not just hiding hypothetical future failures, it was hiding a live bug in the query underneath it. Fixed by reading into `Option<String>`; audited the other aggregates and they all already use `IFNULL`. 1 regression test (199 total) |
 | 2026-09-02 | Wrote `docs/testing-a0-step2.md` answering "do I need to test anything before A1?". Short answer recorded: **no new parameters, no required testing** — CI covers compile, clippy `-D warnings` and 199 tests. Two things CI genuinely cannot check are written down: (1) the **corrupt-database test**, which is the only way to see what step 2 actually fixed — `XDG_DATA_HOME=/tmp/kalam-test` gives a throwaway library so the real one is never touched, then overwrite `catalog.db` with garbage and confirm the app now *says* something instead of drawing a cheerful empty library; and (2) a two-minute pass opening each page to confirm the happy path still looks right, since CI has no display. Also noted the three user-visible effects of step 2 on a healthy database: the `book_first_opened` bug fix, Saved quotes no longer running ~1,001 queries per keystroke, and failures now toasting. Added a pre-A1 question for the user: the five already-in-app dialogs are the pattern A1 will copy five more times, so it is worth deciding now whether they are the standard to match |
+| 2026-09-03 | **Crash fixed: a corrupt catalog aborted the process with a core dump.** The user ran the corrupt-database test from `docs/testing-a0-step2.md` and it did not toast — it died. Cause was a fallback in `AppModel::init` that "handled" a failed `Catalog::open()` by **calling the same function again and `.expect()`ing it**, which is a guaranteed panic; and because `init()` runs inside a GTK signal callback, that panic **cannot unwind**, so it escalated to `panic in a function that cannot unwind` → abort → core dump, printing a raw backtrace instead of saying what was wrong. Fixed in two places: `main()` now opens the catalog **before** `app.run()` and, on failure, prints the error, the database path, and the exact `mv` command to move the broken file aside (noting book files live elsewhere and are safe), then exits 1; and the `init()` arm no longer retries — it reports and exits cleanly, since reaching it means the database broke between the pre-flight check and startup. **This is the second real bug the step-2 pass has surfaced**, and again the pattern is the same: the error path had never been executed, so nobody noticed it was nonsense |
+| 2026-09-03 | **Backdrop-click now closes in-app dialogs, and the A1 close-button rule is revised.** The user asked for click-outside-to-close and questioned whether the ✕ could then go away. Implementation turned out to be two lines: the scrim already had a `GestureClick` whose handler was **empty** — it existed only to stop clicks reaching the page behind it, so the dimmed area looked interactive and did nothing. It now sends `CloseBookDialog`, the same message Esc sends. Z-order was already correct (scrim added to the overlay before `float_host`), so clicks *inside* the dialog are unaffected. On the button question the user made the sharper point that **the dialogs exist for different reasons and should not all be dismissed identically**; the roadmap now carries a table mapping dialog *kind* to affordance — **‹ Back** for detours you navigated into, **✕** for transient overlays, **Cancel + Save** for forms with unsaved input, **Cancel / Delete** for confirmations. Recorded decision on dropping the button entirely: **no** — backdrop-click and Esc are both invisible affordances, so a dialog whose only exits are invisible is still a trap; keep one visible control, but the right one rather than a reflexive ✕ |

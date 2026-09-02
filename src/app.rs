@@ -810,12 +810,20 @@ impl Component for AppModel {
         // split `window_shown` into the work that precedes first paint, so the
         // next run says which part to fix instead of inviting a guess.
         crate::timing::span("startup_db_open");
+        // `main()` already proved the catalog opens and exits cleanly if it
+        // does not, so reaching the error arm here means the database broke
+        // between that check and now. There is no useful fallback: the old
+        // code "handled" it by calling the same failing function again and
+        // `.expect()`ing it, which is a guaranteed panic — and because init()
+        // runs inside a GTK callback that panic cannot unwind, so it aborted
+        // with a core dump. Say what happened and leave, in one piece.
         let catalog = match Catalog::open() {
             Ok(c) => Arc::new(c),
             Err(err) => {
-                // Raised before the overlay exists; notify queues it.
-                crate::notify::error("Could not open the library", &err.to_string());
-                Arc::new(Catalog::open().expect("catalog open"))
+                eprintln!("kalam: the library database became unreadable during startup.");
+                eprintln!("  {err}");
+                eprintln!("  file: {}", crate::paths::catalog_db().display());
+                std::process::exit(1);
             }
         };
         crate::timing::span_end("startup_db_open");
@@ -881,9 +889,16 @@ impl Component for AppModel {
         widgets.root_overlay.add_overlay(&float_scrim);
         widgets.root_overlay.add_overlay(&float_host);
 
-        let block_float_clicks = gtk::GestureClick::new();
-        block_float_clicks.connect_pressed(|_, _, _, _| {});
-        float_scrim.add_controller(block_float_clicks);
+        // Clicking the dimmed area closes the float. The scrim already
+        // swallowed those clicks so they could not reach the page behind it;
+        // the handler was simply empty, which made the dim look interactive
+        // and do nothing. Same behaviour as Esc, reachable with the mouse.
+        let scrim_click = gtk::GestureClick::new();
+        let s_scrim = sender.clone();
+        scrim_click.connect_pressed(move |_, _, _, _| {
+            s_scrim.input(AppMsg::CloseBookDialog);
+        });
+        float_scrim.add_controller(scrim_click);
 
         let close_float_key = gtk::EventControllerKey::new();
         let s_key = sender.clone();
