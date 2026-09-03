@@ -395,6 +395,17 @@ impl Component for BookFloatModel {
                     // This is never hidden — see `fill()`. An empty tag row
                     // still occupies its height so the action buttons below
                     // sit in the same place for every book.
+
+                    // The spacer goes ABOVE the tags, not between the tags and
+                    // the buttons. Both need to be anchored to the bottom: put
+                    // the slack between them and the tags float up, leaving an
+                    // ugly gap over the action row. Here it pushes the tag row
+                    // and the buttons down together, so they keep their natural
+                    // 10px body spacing and the pair lands at a fixed position.
+                    gtk::Box {
+                        set_vexpand: true,
+                    },
+
                     #[name = "tags_scroll"]
                     gtk::ScrolledWindow {
                         add_css_class: "kalam-float-tags-scroll",
@@ -416,7 +427,10 @@ impl Component for BookFloatModel {
                         set_max_content_height: TAGS_ROW_H,
                         set_hexpand: true,
                         set_vexpand: false,
-                        set_valign: gtk::Align::Start,
+                        // End, not Start: the spacer above has already pushed
+                        // this row down to the buttons, and Start would let it
+                        // drift back up inside its own allocation.
+                        set_valign: gtk::Align::End,
 
                         #[name = "tags"]
                         gtk::Box {
@@ -426,18 +440,6 @@ impl Component for BookFloatModel {
                             set_halign: gtk::Align::Start,
                             set_valign: gtk::Align::Center,
                         },
-                    },
-
-                    // Anchors the action row to the bottom of the panel.
-                    //
-                    // Nothing else in the body expands, so any leftover height
-                    // used to sit *below* the buttons and their position
-                    // followed whatever was above them. This spacer soaks up
-                    // that slack instead, and since the float itself is a fixed
-                    // 420px tall, the buttons now land at the same place for
-                    // every book — tags or no tags, long description or short.
-                    gtk::Box {
-                        set_vexpand: true,
                     },
 
                     gtk::Box {

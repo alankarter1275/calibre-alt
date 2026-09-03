@@ -114,10 +114,16 @@ body had `vexpand: true`, so all leftover height pooled *below* the action row
 and its position tracked whatever happened to sit above it. Every variable
 child would have needed its own bound, forever.
 
-**Do instead: anchor the thing that must not move.** One `vexpand: true` spacer
-immediately before the action row, plus `valign: End` on the row itself, makes
-the slack collect *above* the buttons. In a fixed-height panel that pins them
-absolutely, regardless of what changes higher up.
+**Do instead: anchor the thing that must not move.** One `vexpand: true` spacer,
+plus `valign: End` on the rows below it, makes the slack collect *above* them.
+In a fixed-height panel that pins them absolutely, regardless of what changes
+higher up.
+
+**Where you put the spacer decides what gets separated.** Placing it directly
+before the action row anchored the buttons but shoved the tag row up with the
+slack, leaving a gap between two things that belong together. If several
+trailing rows should stay as a group, the spacer goes **above the whole group**,
+not between its members.
 
 ## 5. Never use `opacity` on a scrollbar
 
