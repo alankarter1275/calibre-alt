@@ -123,6 +123,30 @@ there, and unit-tested.
 Writes still go straight to `Catalog`. They belong to the task manager
 (A0 step 4), not to this read seam.
 
+## Source seam (A0 step 8 — designed, not yet code)
+
+Where books come from that are not the user's disk: AO3, FanFiction.net, Royal
+Road, MangaDex, Komga. Full design in
+[`docs/source-seam.md`](./docs/source-seam.md); the essentials:
+
+- **One `Source` trait for fiction and manga**, not two. They differ only in
+  the final step, which is a two-variant `Content` enum (`Text` / `Images`).
+  Everything else — search, pagination, chapter lists, rate limits, the
+  download queue, the follow scheduler — is shared and must not be duplicated.
+- **`SourceFactory` is `Send`; `Source` is not.** The factory (a path plus a
+  manifest) crosses to a worker thread, which then builds the live source
+  there. This is what lets a future Lua-backed source work at all: `mlua`'s VM
+  is `!Send` and must be born and destroyed on one thread.
+- **Plugins are pure functions from a query to structured data.** They get
+  HTTP (through the host's rate-limited agent), an HTML selector and a JSON
+  decoder. No filesystem, no catalog, no sockets. The host decides what to
+  store — the same discipline that keeps `LibraryService` worker-callable.
+- **Rate limits are declared by the source and enforced by the host**, because
+  a user-written plugin cannot be trusted to sleep.
+
+Lands as code with AO3 in P7, its first implementation and first caller — a
+trait with no implementation would fail `-D warnings` in a binary crate.
+
 ## Reader WebView (A0)
 
 The reader borrows one long-lived `WebView` from `src/webview_pool.rs` instead
@@ -175,7 +199,7 @@ disconnected in `shutdown()` before the view is parked.
 | P4 | Shelves engine, lists, history, tags, analytics ✅ |
 | P5 | Metadata edit, cover replace, Open Library fetch ✅ |
 | P5.5 | UI overhaul (colour system, 13 themes, Settings v2, book page) — in progress |
-| A0 | Architecture & performance track ← **you are here** |
+| A0 | Architecture & performance track ← **you are here** (steps 1–5 done, 6 closed on evidence, 8 designed; 7 open) |
 | P6+ | Downloads, sources (AO3, FF), comics, PDF, tools |
 
 `ROADMAP.md` is the authoritative plan; this table is a summary. See its

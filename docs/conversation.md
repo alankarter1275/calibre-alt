@@ -334,7 +334,13 @@ it requires throwing nothing away.
 
 ## 5. Plugin system — decision reversed
 
-**Status: 🔶 under discussion → leaning Lua, design TBD.**
+**Status: ✅ seam designed 2026-09-03 — [`source-seam.md`](./source-seam.md).
+The author's lean below ("define the seams now, add scripting later") is what
+was built.** Open question 1 (Lua vs alternatives) resolves as: the *seam* is a
+Rust trait, landing with AO3; `mlua` comes after two native sources prove the
+shape. Open question 3 (when) is answered — the architecture track is done, so
+the design was safe to do now. Question 2 (scope) is narrowed to source
+adapters only for the moment.
 
 The roadmap listed **Plugin API** as a non-goal. The user has **changed their
 mind**: plugins are wanted — "it will help in the future phases" — and the
@@ -363,7 +369,14 @@ surface — they become a second API you must keep stable forever.
 1. **Lua vs alternatives?**
    - **Lua (mlua)** — the default choice; tiny, embeddable, used by Yazi,
      Neovim, AwesomeWM. Good for config + scripting. Risk: a DSL-shaped
-     surface that grows.
+     surface that grows. **Finding (2026-09-03):** `mlua` is `!Send` by
+     default — the VM holds a raw `*mut lua_State`. Its `send` feature exists
+     but works by putting a reentrant mutex around every VM access, a
+     permanent cost. Since `tasks::spawn` requires `Send`, the resolution is
+     to send a `SourceFactory` (a path + manifest, trivially `Send`) to the
+     worker and build the VM *there*, so it is born and dies on one thread.
+     **The `send` feature should not be enabled** — see `source-seam.md` §9,
+     recorded because "just turn the feature on" is the obvious wrong answer.
    - **WebAssembly (wasmtime)** — sandboxed, language-agnostic (plugins in
      Rust/C/Go), fast, but more tooling complexity and a steeper authoring
      curve.

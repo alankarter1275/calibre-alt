@@ -1358,8 +1358,21 @@ A track, not a phase — interleaves with P6–P11.
   measuring widget construction, not cover work), and peak memory is **flat** —
   233 MB at 139 books vs 252 MB at 2,000 — because the cover cache is a bounded
   300-entry LRU. Reopen only if a real complaint arrives.
-- **Steps 7 and 8 are the only A0 items still open** (perf-budget CI test;
-  plugin-host seam design).
+- **Step 8 (plugin-host seam) — designed 2026-09-03**, written up in
+  [`docs/source-seam.md`](./docs/source-seam.md). Code lands with AO3 in P7,
+  deliberately (see the scope entry below).
+- **Step 7 (perf-budget CI test) is the only A0 item still open**, and it needs
+  reshaping before it is built: the runner's timings swing ~60% between
+  identical runs (`startup_first_page` 7.1 / 13.7 / 16.4 ms at 2,000 books;
+  `startup_dicts`, byte-identical work, 2774 → 3740 ms), so a time threshold
+  loose enough not to flake cannot catch anything short of a 3× regression.
+  Step 7 also says "assert grid build under N ms" and **CI has never reached
+  the grid** — `grid_build` appears in zero of the seven committed reports.
+  Recommended replacement: assert **query counts** ("the book float issues 2
+  queries"), which are machine-independent and catch the N+1 class that has
+  actually bitten three times; plus un-`#[ignore]` the existing
+  `src/perf.rs` probes, which already seed 2,000 books and assert ceilings but
+  never run in CI.
 - **WebView reuse — done.** The cheap win the timing surfaced: the reader used
   to call `webkit6::WebView::new()` in `init()`, so every book open spawned a
   WebKit process (~400 ms). `src/webview_pool.rs` now parks exactly one view
@@ -1430,10 +1443,14 @@ fast — make it never wait"*) and lay the seams the source platform needs.
    real complaint.
 7. **Perf-budget CI test.** Seed 2,000 books; assert grid build under N ms.
    Catches regressions like a new `for book in books` loop.
-8. **Plugin-host seam design** (the dependency for P7/P9): define the
-   `Source` adapter API shape (search / details / chapters / content — text
-   and image flavors) and the Lua plugin host interface, even if the first
-   real plugins ship in P7.
+8. **Plugin-host seam design** (the dependency for P7/P9): ✅ **designed
+   2026-09-03 — [`docs/source-seam.md`](./docs/source-seam.md).** Defines the
+   `Source` adapter API (search / detail / chapters / content, with a
+   two-variant `Content` for the text and image flavours) and the Lua host
+   rules. **The trait deliberately does not land as code yet**: this is a
+   binary crate with no `lib.rs`, so an unimplemented trait fails `-D warnings`
+   or adds more `#[allow(dead_code)]`. It ships in the same commit as AO3,
+   its first implementation and first caller (P7's opening move).
 
 **Acceptance:** library grid stays smooth with 2,000+ books; book open and
 page turns feel instant; all slow work is off the UI thread; pages are thin
@@ -1466,7 +1483,12 @@ across sources with tag filters, download fics, read offline, and
 
 ### Scope
 
-- `FictionSource` trait → implemented by **source plugins (P12, Lua)**
+- **One `Source` trait, not a separate `FictionSource`** — see
+  [`docs/source-seam.md`](./docs/source-seam.md) §2. Fiction and manga differ
+  only in the final step (text vs image URLs), which is a two-variant
+  `Content` enum; searching, pagination, chapter lists, rate limits, the
+  download queue and the follow scheduler are identical and must not be
+  written twice. Implemented natively first (AO3), by Lua plugins later (P12)
 - Sources: AO3 first, then FFN, Royal Road, Webnovel, Scribble Hub, … each
   exposes search / detail / chapter list / chapter content (sanitized)
 - **Structured search UI** (native): fandom, tags, characters, ships,
@@ -1520,8 +1542,9 @@ Open large CBZ, scrub pages, zoom, RTL, quit/restore page; RAM stays reasonable.
 
 ### Scope
 
-- `MangaSource` trait → **source plugins (P12, Lua)**; same adapter shape as
-  Tachiyomi/Suwayomi extensions: search, popular, chapter list, page fetch  
+- **The same `Source` trait as P7**, with `ContentKind::Images` — see
+  [`docs/source-seam.md`](./docs/source-seam.md) §2. Same adapter shape as
+  Tachiyomi/Suwayomi extensions: search, chapter list, page fetch  
 - **No Suwayomi server rewrite:** Suwayomi's value is its Kotlin extension
   ecosystem, which can't run in Rust; we reimplement the *adapter concept*
   natively (porting an extension's scraping logic is hours — they are simple
@@ -1567,9 +1590,11 @@ Only sources you’re allowed to use. No unauthorized scraper assistance.
 
 ## P12 — Lua plugin system
 
-**Status:** wanted (reversed 2026-09-02 from "no plugin API"); design TBD.
-**Dependency:** the A0 plugin-host seam (the `Source` adapter API + Lua host
-interface) must exist first.
+**Status:** wanted (reversed 2026-09-02 from "no plugin API"). **The seam is
+now designed — read [`docs/source-seam.md`](./docs/source-seam.md) before
+touching this phase.** **Dependency:** that seam ships as code with AO3 in P7;
+the Lua host comes after two native sources exist, so the API is validated by
+use rather than guessed.
 
 **Goal:** a user-facing plugin surface. First-class consumers: **fiction
 source plugins** (P7) and **manga source plugins** (P9) — one Lua plugin per
@@ -2027,3 +2052,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-03 | **Thumbnail backfill skip confirmed on a real library — the one fix CI structurally cannot prove.** The user relaunched a settled 139-book library and the `thumbs_backfilled 50/100/139` ladder was **gone**. Worth stating why this needed a human: every CI run seeds a fresh library, so it is always a first launch and always does the full pass — the ladder appears there and *should*, which means a green CI run says nothing at all about whether the skip works. The evidence for a fix whose entire purpose is that nothing happens can only come from a library that has already settled, and CI does not have one. Same shape as the dictionary move in reverse: that one is invisible on the user's box (0.1 ms, packs installed months ago) and only CI's genuine first run could demonstrate it. Two fixes, two environments, neither able to check the other's. Remaining parts of Test 1c still unrun: that a re-import brings the ladder back exactly once, and that `startup_dicts` now prints after `window_shown` |
 | 2026-09-03 | **Backfill re-arm confirmed; the dictionary check turned out to be a test that could not fail.** The user imported five books and the `thumbs_backfilled` ladder returned exactly once, running to `144` — the marker noticing the count changed and re-verifying. No `thumbs_backfill_done` line came with it, which is correct and worth recording: the importer already writes a thumbnail per book, so the pass found all 144 present and generated nothing. Both halves of the skip are now proven on a real library. The same output also showed `startup_dicts 0.6 ms` printing *before* `window_shown 711.6 ms`, which my own test doc had called a failure. The build is fine; the instruction was broken. The line prints when the work finishes, and on a settled machine the packs installed months ago so it early-outs on a pref in under a millisecond — before the window at ~700 ms. Critically **it would have printed before `window_shown` on the unfixed build too**, because sub-millisecond work delays nothing wherever it runs; the check emitted identical output for a correct and an incorrect build, so it never had the power to distinguish them. Rewritten to use a throwaway `XDG_DATA_HOME`, which forces a genuine ~2–3 s install and makes the ordering mean something. New pitfall §19, whose rule is: before writing a manual check, ask what it would print if the bug were still present — if the answer is "the same thing", it is not a test |
 | 2026-09-03 | **A0 status corrected in the roadmap — it still said steps 4 and 5 were "not started".** Both shipped days ago, and step 6 was closed on measured evidence, but the summary bullet at the top of the A0 section had never been updated to match the per-step entries below it. This matters more than a normal stale line: the file's own first section orders every new agent to read the roadmap before touching code, and "Current trajectory" is named there as *the* single summary of where the project is. A fresh chat reading it would have set out to build a task manager that already exists. Now states plainly that steps 1–5 are done and CI-green, step 6 is closed with the numbers that closed it (~0.17 ms/card, 233 MB at 139 books vs 252 MB at 2,000), and **only steps 7 (perf-budget CI test) and 8 (plugin-host seam design) remain**. No code changed. Recorded because the failure mode is the same one §15–§19 keep describing: trusting a convenient summary instead of checking the thing it summarises |
+| 2026-09-03 | **A0 step 8: the source seam is designed — [`docs/source-seam.md`](./docs/source-seam.md).** P7 (fiction) and P9 (manga) both depend on it, so designing it once beforehand is the entire point; two phases inventing their own shape would mean rewriting one. **The biggest call is one trait, not two.** The roadmap listed `FictionSource` and `MangaSource` separately, but they differ in exactly one place — the last step returns text or image URLs — while searching, pagination, chapter lists, rate limits, the download queue and the follow scheduler are identical. Two traits means writing all of that twice and watching it drift; one trait with a two-variant `Content` enum writes it once, and a future third flavour breaks every `match` until handled, which is the good failure. Three things are load-bearing and are argued rather than asserted. **`ResultPage.has_more` from day one** — without it a search can never reach hit 21, and adding it later changes the return type of the most-used method in the API. **`WorkRef` must be complete enough to draw a result card**, because Tachiyomi's own docs warn that a missing thumbnail triggers an immediate per-row detail fetch — an N+1 over the network, the same bug this repo has now fixed three times in SQL (§16, §18). **`remote_id` must be the site's permanent id, never a URL or title slug**, because the auto-updater re-fetches by it and annotations anchor into what it returns. Also settled: rate limits are declared by the source but **enforced by the host**, since a user-written plugin cannot be trusted to sleep and one bad script gets Kalam's User-Agent blocked for everyone. **Research finding that changed the shape:** `mlua` is `!Send` (raw `*mut lua_State`), and its `send` feature buys thread-safety with a reentrant mutex on every VM access — permanent cost for a problem we do not have. Since `tasks::spawn` demands `Send`, the design sends a `SourceFactory` (path + manifest) to the worker and builds the VM *there*, born and dying on one thread; the feature stays off. Build order is deliberate: **not the Lua host first** — a plugin API with zero implementations is a guess. AO3 native, then MangaDex native, then Lua with AO3 ported as the proof. And the trait **does not land as code yet**: this is a binary crate with no `lib.rs`, so an unimplemented trait either fails `-D warnings` or adds to the 28 existing `#[allow(dead_code)]` escapes; it ships in the same commit as AO3, its first caller |
