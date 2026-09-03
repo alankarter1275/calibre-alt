@@ -11,6 +11,12 @@
 //! clipped, and both side columns clip their overflow. Removing any one of
 //! those bounds brings back "the panel changes size depending on the book".
 //!
+//! **No "Read more".** The description box is a fixed size and the full text
+//! is always in it; long descriptions scroll. The old expand/collapse toggle
+//! was removed after it turned out to work backwards — see the comment in
+//! `fill()`. A scroll wheel is a better answer than a button that changes the
+//! shape of a panel whose whole point is that it does not change shape.
+//!
 //! Two traps in particular, both learned the hard way:
 //!
 //! - **Ellipsising a label does not stop it widening its parent.** The label
@@ -44,17 +50,15 @@ const AUTHOR_ROW_H: i32 = 22;
 
 const COVER_W: i32 = 120;
 const COVER_H: i32 = 176;
-const DESC_PREVIEW_CHARS: usize = 240;
-/// Floor for the text area itself. The scroller no longer caps its height —
-/// it expands — so there is no separate "preview height" any more: a collapsed
-/// description is bounded by DESC_PREVIEW_CHARS, not by pixels.
-const DESC_EXPANDED_HEIGHT: i32 = 154;
-const READ_MORE_HEIGHT: i32 = 20;
-/// Floor for the description block. It is only a floor: the section carries
+/// Floor for the description block. Only a floor: the section carries
 /// `vexpand`, so it takes whatever the rest of the panel does not use — which
 /// is how a one-line title donates its spare row to the description instead of
 /// changing the panel's height.
-const DESC_SECTION_HEIGHT: i32 = DESC_EXPANDED_HEIGHT + 8 + READ_MORE_HEIGHT;
+///
+/// There is no "preview" height and no character limit any more. The whole
+/// description is always in the box and long ones simply scroll; see the
+/// module doc.
+const DESC_SECTION_HEIGHT: i32 = 182;
 /// The title wraps to at most this many lines, then ellipsises.
 const TITLE_MAX_LINES: i32 = 2;
 /// Caps the natural width of the fact values in the left column (publisher,
@@ -100,7 +104,6 @@ pub enum BookFloatMsg {
     EditMetadata,
     ShowShelfMenu,
     Refresh,
-    ToggleDescription,
 }
 
 pub struct BookFloatModel {
@@ -108,7 +111,6 @@ pub struct BookFloatModel {
     book: Option<Book>,
     in_reading_list: bool,
     finished: bool,
-    desc_expanded: bool,
 }
 
 #[relm4::component(pub)]
@@ -407,9 +409,9 @@ impl Component for BookFloatModel {
                         set_hexpand: true,
                         set_vexpand: true,
 
-                        // `vexpand` here too, so the text area absorbs the
-                        // section's growth and the button below is pushed to
-                        // the bottom edge instead of sitting under the text.
+                        // `vexpand` here too, so the text area takes the whole
+                        // section. Without it the scroller collapses to its own
+                        // minimum and the description shows a single line.
                         #[name = "desc_scroll"]
                         gtk::ScrolledWindow {
                             add_css_class: "kalam-float-desc-scroll",
@@ -427,19 +429,6 @@ impl Component for BookFloatModel {
                                 set_xalign: 0.0,
                                 set_selectable: true,
                             },
-                        },
-
-                        // Sits at the bottom of the section. It used to be
-                        // followed by a `vexpand` spacer, which pushed the
-                        // button up against the text and wasted the rest of
-                        // the section on blank space.
-                        #[name = "read_more_btn"]
-                        gtk::Button {
-                            add_css_class: "kalam-float-read-more",
-                            set_halign: gtk::Align::Start,
-                            set_valign: gtk::Align::End,
-                            set_vexpand: false,
-                            connect_clicked => BookFloatMsg::ToggleDescription,
                         },
                     },
 
@@ -631,7 +620,6 @@ impl Component for BookFloatModel {
             book: snap.book,
             in_reading_list: snap.in_reading_list,
             finished: snap.finished,
-            desc_expanded: false,
         };
         let widgets = view_output!();
         root.set_size_request(720, 420);
@@ -783,9 +771,6 @@ impl Component for BookFloatModel {
                     self.reload_state(book.id);
                 }
             }
-            BookFloatMsg::ToggleDescription => {
-                self.desc_expanded = !self.desc_expanded;
-            }
         }
 
         fill(widgets, self, &sender);
@@ -843,7 +828,6 @@ fn fill(
         widgets.header_title.set_label("Book not found");
         widgets.series_val.set_visible(false);
         widgets.description.set_label("This book was removed.");
-        widgets.read_more_btn.set_visible(false);
         widgets.progress_pct.set_label("");
         widgets.progress_loc.set_label("");
         widgets.progress_bar.set_fraction(0.0);
@@ -897,57 +881,25 @@ fn fill(
     widgets.publisher_val.set_label(blank_dash(&book.publisher));
     widgets.published_val.set_label(blank_dash(&book.published));
 
-    let full_desc = clean_description(book);
-    let (desc_text, can_expand) = description_preview(&full_desc, model.desc_expanded);
-    let expanded = model.desc_expanded && can_expand;
-    widgets.description.set_label(&desc_text);
-    widgets.desc_scroll.set_vexpand(false);
-    widgets.read_more_btn.set_height_request(READ_MORE_HEIGHT);
-    if can_expand {
-        widgets.desc_section.set_height_request(DESC_SECTION_HEIGHT);
-        widgets.read_more_btn.set_visible(true);
-        widgets
-            .read_more_btn
-            .set_label(if expanded { "Show less" } else { "Read more" });
-        if expanded {
-            // Expanded: no max, so the text fills whatever height the
-            // section was given and scrolls past that. `max_content_height`
-            // would cap it below the space now available.
-            widgets.desc_scroll.set_propagate_natural_height(false);
-            widgets.desc_scroll.set_min_content_height(-1);
-            widgets.desc_scroll.set_max_content_height(-1);
-            widgets.desc_scroll.set_height_request(-1);
-            widgets
-                .desc_scroll
-                .set_vscrollbar_policy(gtk::PolicyType::Automatic);
-        } else {
-            // Collapsed: the preview is a fixed number of characters, so
-            // there is nothing to scroll. No max either — the box simply
-            // fills its share and the short text sits at the top of it.
-            widgets.desc_scroll.set_propagate_natural_height(false);
-            widgets.desc_scroll.set_min_content_height(-1);
-            widgets.desc_scroll.set_max_content_height(-1);
-            widgets.desc_scroll.set_height_request(-1);
-            widgets
-                .desc_scroll
-                .set_vscrollbar_policy(gtk::PolicyType::Never);
-        }
-    } else {
-        // Short description — no "Read more". This branch used to leave the
-        // section unbounded (`height_request(-1)`, natural height, no max), so
-        // a one-line blurb produced a short panel and a nearly-long-enough one
-        // produced a tall panel. The section now reserves the same height it
-        // does in every other branch, so the float is one size for every book.
-        widgets.desc_section.set_height_request(DESC_SECTION_HEIGHT);
-        widgets.read_more_btn.set_visible(false);
-        widgets.desc_scroll.set_propagate_natural_height(false);
-        widgets.desc_scroll.set_min_content_height(-1);
-        widgets.desc_scroll.set_max_content_height(-1);
-        widgets.desc_scroll.set_height_request(-1);
-        widgets
-            .desc_scroll
-            .set_vscrollbar_policy(gtk::PolicyType::Automatic);
-    }
+    // The full description, always. No truncation and no expand/collapse:
+    // the box is a fixed size and long text scrolls inside it.
+    //
+    // The old toggle was also *backwards*. `fill()` ran on every update and
+    // called `set_vexpand(false)` here, quietly overriding the `vexpand: true`
+    // set in the view. The section still expanded but the text area inside it
+    // did not, so pressing "Read more" swapped the scrollbar policy from
+    // `Never` to `Automatic`, the scroller dropped to its own minimum, and the
+    // description *shrank to one line* instead of growing.
+    widgets.description.set_label(&clean_description(book));
+    widgets.desc_scroll.set_vexpand(true);
+    widgets.desc_section.set_height_request(DESC_SECTION_HEIGHT);
+    widgets.desc_scroll.set_propagate_natural_height(false);
+    widgets.desc_scroll.set_min_content_height(-1);
+    widgets.desc_scroll.set_max_content_height(-1);
+    widgets.desc_scroll.set_height_request(-1);
+    widgets
+        .desc_scroll
+        .set_vscrollbar_policy(gtk::PolicyType::Automatic);
 
     // No `.take(12)` any more: the row scrolls, so every tag can be shown
     // without changing the panel's size. Truncating was only ever a way to
@@ -1074,32 +1026,6 @@ fn clean_description(book: &Book) -> String {
     } else {
         desc.to_string()
     }
-}
-
-fn description_preview(full: &str, expanded: bool) -> (String, bool) {
-    if full == "No description." || full.chars().count() <= DESC_PREVIEW_CHARS {
-        return (full.to_string(), false);
-    }
-    if expanded {
-        return (full.to_string(), true);
-    }
-    (truncate_text(full, DESC_PREVIEW_CHARS), true)
-}
-
-fn truncate_text(text: &str, max_chars: usize) -> String {
-    let total = text.chars().count();
-    if total <= max_chars {
-        return text.to_string();
-    }
-    let mut out = String::new();
-    for ch in text.chars().take(max_chars) {
-        out.push(ch);
-    }
-    while out.chars().last().is_some_and(char::is_whitespace) {
-        out.pop();
-    }
-    out.push('…');
-    out
 }
 
 fn rating_text(book: &Book) -> String {

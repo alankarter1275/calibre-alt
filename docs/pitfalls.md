@@ -87,6 +87,30 @@ request is doing it. And when a shared helper (like `replace_author_links`)
 behaves correctly elsewhere, constrain it **at the call site**, not in the
 helper.
 
+## 3b. A view property and a fill function are two writers
+
+The book float's "Read more" button made the description **shrink to one
+line**. The view declared `set_vexpand: true` on the description scroller;
+`fill()` — which runs on every update, not just the first — called
+`set_vexpand(false)` on the same widget. The fill function always wins, because
+it runs last.
+
+The bug hid for a while because the collapsed state used
+`PolicyType::Never`, and `Never` forces a scroller to show its content at full
+height (see 4b). That masked the missing `vexpand`. Expanding switched the
+policy to `Automatic`, which released the scroller back down to its own
+minimum — one line.
+
+**Do instead:** decide where each property lives and keep it there. If a value
+is static, set it in the view and never touch it in the update path. If it
+varies, set it *only* in the update path so there is one writer. When a widget
+misbehaves, grep its name across the whole file before assuming the view is the
+source of truth.
+
+Corollary: a control that changes a panel's shape does not belong in a panel
+whose defining property is a fixed shape. The toggle was deleted rather than
+repaired — scrolling already solved the problem it existed for.
+
 ## 4. Hiding a widget removes its space
 
 Fixing (3) introduced a new bug: `fill()` hid the tag row when a book had no

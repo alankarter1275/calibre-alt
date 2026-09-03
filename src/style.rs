@@ -929,22 +929,6 @@ progressbar.kalam-float-progress progress {
     padding-top: 2px;
 }
 
-button.kalam-float-read-more {
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    box-shadow: none;
-    color: @kalam_accent;
-    padding: 0;
-    min-width: 0;
-    min-height: 0;
-    font-size: 0.76rem;
-}
-
-button.kalam-float-read-more:hover {
-    color: @kalam_text;
-}
-
 /* The tag row scrolls sideways on one line — see the note in book_float.rs.
  * The scroller owns the margins now; the inner box just holds the chips.
  *
