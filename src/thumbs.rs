@@ -68,21 +68,30 @@ fn backfill_one(uuid: &str, cover: &Path, thumb_of: &dyn Fn(&str) -> PathBuf) ->
 /// the window closes. Without that, quitting during the very first launch of a
 /// large library left a thread decoding covers with nothing left to show them
 /// to, and the process lingered until it finished.
-pub fn backfill_missing(cat: &crate::db::Catalog, reporter: &crate::tasks::Reporter) {
+/// Returns how many thumbnails were actually generated.
+pub fn backfill_missing(cat: &crate::db::Catalog, reporter: &crate::tasks::Reporter) -> usize {
     let Ok(books) = cat.list_books(crate::db::SortKey::Title, "") else {
-        return;
+        return 0;
     };
     let total = books.len();
+    let mut generated = 0;
     for (i, b) in books.iter().enumerate() {
         if reporter.cancelled() {
-            return;
+            return generated;
         }
         let Some(cover) = b.cover_path.as_deref() else {
             continue;
         };
-        let _ = backfill_one(&b.uuid, cover, &crate::paths::thumbnail_path);
+        // `backfill_one` returns true when the thumbnail is *present*, which
+        // includes "was already there" — so count only the ones that were
+        // actually missing beforehand, or the number is just the library size.
+        let existed = crate::paths::thumbnail_path(&b.uuid).is_file();
+        if backfill_one(&b.uuid, cover, &crate::paths::thumbnail_path) && !existed {
+            generated += 1;
+        }
         reporter.step(i + 1, total, b.title.clone());
     }
+    generated
 }
 
 #[cfg(test)]

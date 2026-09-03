@@ -405,8 +405,6 @@ impl Component for SettingsPageModel {
                                     .file_name()
                                     .map(|n| n.to_string_lossy().into_owned())
                                     .unwrap_or_default();
-                                crate::notify::activity("Importing dictionary…", &name);
-
                                 // A0 step 4. This used to run `import_dictionary`
                                 // right here, inside the file-chooser callback on
                                 // the UI thread: parsing a StarDict or TSV pack of
@@ -416,14 +414,31 @@ impl Component for SettingsPageModel {
                                 let catalog = catalog_clone.clone();
                                 let done_sender = sender_clone.clone();
                                 crate::tasks::spawn(
-                                    move |_reporter| {
+                                    move |reporter| {
                                         // Worker thread: no GTK, no notify. The
                                         // outcome is returned as plain data and
                                         // reported by `on_done` below.
+                                        //
+                                        // `import_dictionary` is a single long
+                                        // call with no inner progress, so this
+                                        // is the one honest report available:
+                                        // which file is being parsed.
+                                        reporter.step(0, 1, name);
                                         dict::import_dictionary(&catalog, &path)
                                             .map_err(|e| format!("{e:#}"))
                                     },
-                                    |_update| {},
+                                    // A dictionary pack can take a while. The
+                                    // worker cannot raise a toast itself, so it
+                                    // reports here and this runs on the main
+                                    // thread where `notify` is safe.
+                                    |update| {
+                                        if !update.detail.is_empty() {
+                                            crate::notify::activity(
+                                                "Importing dictionary…",
+                                                &update.detail,
+                                            );
+                                        }
+                                    },
                                     move |result| {
                                         match result {
                                             Ok((name, count)) => crate::notify::success(

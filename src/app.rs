@@ -852,8 +852,19 @@ impl Component for AppModel {
         let backfill_catalog = catalog.clone();
         crate::tasks::spawn(
             move |reporter| crate::thumbs::backfill_missing(&backfill_catalog, &reporter),
-            |_update| {},
-            |_done| {},
+            // Only interesting under KALAM_TIMING=1: a first launch over a big
+            // library can spend a while here, and without a progress line
+            // there was no way to tell a slow backfill from a stalled one.
+            |update| {
+                if update.done == update.total || update.done % 50 == 0 {
+                    crate::timing::note("thumbs_backfilled", update.done);
+                }
+            },
+            |generated| {
+                if generated > 0 {
+                    crate::timing::note("thumbs_backfill_done", generated);
+                }
+            },
         );
         // First run decompresses and imports ~6.8 MB of gzipped TSV packs on
         // this thread; later runs early-out on a pref. Timed to confirm which
