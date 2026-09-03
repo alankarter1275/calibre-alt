@@ -214,6 +214,17 @@ records the history entry synchronously (plain data) and defers only the
 *display* via `MainContext::invoke`, which runs inline when already on the main
 thread.
 
+**And the history itself was `thread_local!` too.** Fixing the display was only
+half of it: `HISTORY` was a thread-local `RefCell`, so a worker's entry was
+filed in that thread's own copy, invisible to Settings → Notifications (which
+reads it from the main thread) and discarded when the thread ended. Background
+work is precisely where unattended failures happen, so that was the worst half
+of the app to lose. It is now a process-wide `static Mutex<VecDeque<Entry>>`.
+
+Rule of thumb: `thread_local!` is right for *UI-owned* state (the widget host,
+the pending-display queue) and wrong for anything a different thread might
+legitimately produce or a different thread might read back.
+
 **The first attempt bounced the whole function, and that broke two tests.**
 Cargo's test harness runs each test on its own thread, so nothing under `cargo
 test` is the main-context owner: every `push` got deferred to a main loop that
