@@ -1,10 +1,10 @@
 === kalam screenshot run ===
 books=2000 out=ci-shots-2000 settle=60
-binary: 15988728 bytes
+binary: 16004696 bytes
 
 === seeding 2000 books ===
 seed-library: 2000 books, 1882 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 FATAL: sway never came up. Its log:
---- run 33765695212 ---
+--- run 33766763115 ---
