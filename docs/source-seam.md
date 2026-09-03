@@ -18,6 +18,13 @@ that fresh chat and something below is ambiguous, that is a bug in this file.
 
 ## 0. Scale: personal use, no ecosystem (decided 2026-09-03)
 
+> **The short answer, because it is the question people ask first:**
+> **No, extension surfaces are NOT done through Lua.** There is no scripting
+> runtime and none is planned. A new source, metadata provider, export format
+> or theme is a **Rust file compiled into the app**, exactly like the two
+> metadata providers that ship today. §9a has the full reasoning; §12a lists
+> the surfaces.
+
 The user settled the audience question:
 
 > *"sources and metadata and maybe a few more, not an ecosystem, because it's
@@ -351,10 +358,10 @@ and someone will propose it.
 
 ---
 
-## 9a. Does Lua earn its place at all? (open — leaning no)
+## 9a. Does Lua earn its place at all? — **NO (decided 2026-09-03)**
 
-§9 solves *how* to host Lua. It does not ask *whether* to, and the answer
-changed when the audience did (§0).
+§9 solves *how* to host Lua. It never asked *whether* to — and that was the
+mistake. The audience answer in §0 settles it: **no scripting runtime.**
 
 **What a scripting runtime buys you:** people who cannot or will not compile
 the app can still extend it. That is the entire value proposition. It is why
@@ -388,7 +395,7 @@ difference and it is the strongest argument on the Lua side. It also matters
 more for scraped sites (AO3, FFN) than for API-backed ones (MangaDex), because
 APIs version and HTML does not.
 
-**Leaning: skip Lua for now.** Not "never" — the seam in §9 is designed so
+**Decision: no Lua.** Not "never" — the seam in §9 is designed so
 Lua can be added later without changing `Source` at all. A `LuaSource` is just
 another implementation of the same trait, and `SourceFactory` already exists to
 carry a non-`Send` VM to a worker thread. The decision can be deferred at
@@ -511,6 +518,39 @@ They should, however, **share the small vocabulary**: `SourceError`,
 actually hurt, and it is worth a small refactor when `Source` lands — moving
 `FetchError`'s network-message humanising (already written and tested in
 `src/metadata/mod.rs`) somewhere both can use.
+
+---
+
+## 12b. What "adding an extension" actually looks like
+
+Because "no plugin system" can sound like "not extensible", here is the whole
+cost, using the surface that already works today.
+
+**Adding a metadata provider** (`src/metadata/`, shipping since P5):
+
+1. Write `src/metadata/my_provider.rs` implementing `MetadataSource` — two
+   methods, `id()` and `search()`.
+2. Add a variant to `SourceId` and an arm to `enabled_sources()`.
+3. Done. It appears in Settings, is toggleable, and merges into the results
+   list with the others.
+
+That is one file and one match arm. Compare with what a Lua equivalent would
+have needed: a manifest format, a loader, a sandbox, host bindings for HTTP and
+HTML parsing, an error-reporting path from Lua back to a GTK toast, and a
+version-compatibility story. All of that is infrastructure for *distributing*
+extensions to people who cannot compile — which is the thing this project does
+not need.
+
+**A content source will look the same** once `Source` lands: one file
+implementing four methods, one line registering it.
+
+**The trade, stated plainly.** Adding an extension requires a rebuild
+(`cargo build --release`, minutes on the user's machine). In exchange: the
+compiler checks it, CI lints and tests it, there is no sandbox to get wrong,
+and the host API can be changed freely because every caller is in this repo.
+For two authors who compile the app anyway, that is a good trade. For a
+thousand users who do not, it would be a terrible one — which is exactly why
+Yazi and Tachiyomi made the opposite choice, correctly, for their situation.
 
 ---
 

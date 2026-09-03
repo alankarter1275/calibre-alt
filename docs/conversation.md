@@ -228,10 +228,14 @@ The missing pieces:
   tokio; we need `thread::spawn` + `async-channel` + `glib::idle_add` back to
   the UI — the pattern we already have. Adding tokio to a GTK app is a cost,
   not a feature.
-- **~~The plugin system~~** — rejected (initially). Yazi's Lua plugins work
+- **~~The plugin system~~** — rejected, then reversed, then **narrowed to
+  compiled-in Rust seams (final, 2026-09-03)**. Yazi's Lua plugins work
   because a file manager's verbs are tiny; an ebook reader's verbs are huge.
-  We wrote "no plugin API" in the roadmap. **User has since reversed this —
-  see section 5. We now want plugins, design TBD.**
+  That objection was half right: it holds for the *reader*, not for
+  *sources*, whose verbs are exactly four. The resolution is extensibility
+  only where the verbs are small — and **no scripting runtime**, because the
+  app has no user community to author scripts. See §5 and
+  [`source-seam.md`](./source-seam.md) §9a.
 - **The "blazing fast" bar itself.** A TUI renders text in microseconds and
   reads a directory listing. We render books. Even with perfect architecture,
   WebKitGTK dominates. That's why the renderer conversation is the other
@@ -428,11 +432,15 @@ surface — they become a second API you must keep stable forever.
 - **Custom text renderer:** 🔶 under discussion → **endgame: custom renderer
   for ALL reflowable text** (cosmic-text; fiction first, EPUB after
   normalization); WebKit = fallback only, may be cut (see §8).
-- **Plugin system:** 🔶 under discussion, user wants it, leaning Lua —
-  confirmed as the **source-adapter engine** for fiction + manga (see §7).
+- **Plugin system:** ✅ **settled 2026-09-03 — narrow compiled-in Rust seams,
+  no Lua.** The `Source` adapter is the engine for fiction + manga (see §7);
+  metadata providers and themes already work this way. A scripting runtime is
+  deferred indefinitely: it exists so non-compiling users can extend an app,
+  and this app has two authors who both compile it (§5,
+  [`source-seam.md`](./source-seam.md) §9a).
 - **Scope:** confirmed as a **content platform** — fiction sources
   (AO3/FFN/webnovel, tag search, downloads, auto-updates) + manga sources
-  (Suwayomi-class) + plugins + fast architecture (see §7).
+  (Suwayomi-class) + narrow extension seams + fast architecture (see §7).
 - **Perf work order:** measure → thumbnails/async decode → virtualize if
   numbers say so → reader. (✅ accepted)
 - **Docs discipline:** keep README.md and ROADMAP.md updated as work
@@ -458,8 +466,9 @@ sources.
   site and return structured data (Tachiyomi pattern).
 - **Manga:** same shape, but content is images — the reader is an image
   pager (P8), not a text engine.
-- **Plugins** are confirmed as the source-adapter engine (P12, Lua
-  leaning, built on the A0 service layer).
+- **Extension surfaces** are the source-adapter engine (P12), built on the
+  A0 service layer. **Compiled-in Rust, not Lua** — reversed 2026-09-03 once
+  the user confirmed this is a single-user app (§5).
 
 ### ~~Rewrite the Suwayomi server in Rust~~ — rejected
 
@@ -569,7 +578,12 @@ itself stays on WebKit until replaced.
    WebKit drops to fallback.
 3. PDF = MuPDF (P10); comics = image pager (P8) — never in this question.
 
-### Manga architecture confirmed (Tachiyomi shape, Lua plugins, no Kotlin)
+### Manga architecture confirmed (Tachiyomi shape, no Kotlin)
+
+> **Superseded in one detail (2026-09-03):** "Lua plugins" below is now
+> **compiled-in Rust modules**. The *shape* — one adapter per site, written by
+> us, Tachiyomi-like — is unchanged and still correct; only the language is.
+> See [`source-seam.md`](./source-seam.md) §9a.
 
 **User (2026-09-02):** "We could have a similar architecture… plugins which
 we will write. Also, no need for a bridge with the Kotlin extensions —
@@ -578,7 +592,8 @@ those are apk… too much work, maybe even impossible."
 **Agreed, fully:**
 
 - Manga reader uses the same `Source` adapter shape: `search / popular /
-  chapter list / pages`. Plugins are **Lua, written by us** — one per site.
+  chapter list / pages`. Adapters are **Rust modules, written by us** — one
+  per site (was "Lua plugins"; see the note above).
 - **No Kotlin extension bridge — confirmed.** Tachiyomi extensions are
   Android APKs calling Android APIs; running them needs an Android runtime
   or JVM emulation — fundamentally wrong shape for a desktop app. We lose
@@ -613,9 +628,9 @@ those are apk… too much work, maybe even impossible."
   (2) bridge to a user's existing Suwayomi instance via its API — cheap
   optional plugin later; (3) **reimplement the adapter pattern natively**
   — recommended. The scraping logic is "fetch URL, parse HTML/JSON, return
-  fields" — hours per source in Lua, and MangaDex/Komga/Kavita/OPDS need
+  fields" — hours per source, and MangaDex/Komga/Kavita/OPDS need
   **no scraping at all** (official APIs).
-- **Fiction side** needs no server concept: same plugin shape, plus
+- **Fiction side** needs no server concept: same adapter shape, plus
   FanFicFare (below).
 
 ### ~~Rewrite the Suwayomi server in Rust~~ — rejected (confirmed)
@@ -636,12 +651,12 @@ it; Poppler/GPL is the alternative if we ever want to avoid AGPL).
 
 | Project | License | What to take |
 |---|---|---|
-| **FanFicFare** | GPL-3, Python | **P7 already built**: site adapters for AO3, FFN, Royal Road, ScribbleHub, SpaceBattles, Wattpad… port adapter logic to Lua plugins, or shell out to its CLI as a "FanFicFare source" plugin |
-| **Tachiyomi extensions** | Apache-2.0 | The adapter pattern + per-site logic to port to Lua |
+| **FanFicFare** | GPL-3, Python | **P7 already built**: site adapters for AO3, FFN, Royal Road, ScribbleHub, SpaceBattles, Wattpad… port adapter logic to Rust `Source` modules, or shell out to its CLI as a "FanFicFare source" |
+| **Tachiyomi extensions** | Apache-2.0 | The adapter pattern + per-site logic to port to Rust |
 | **MangaDex API** | public API | First P9 source — zero scraping |
 | **Komga / Kavita** | GPL | Self-hosted manga servers; Kalam as a client via their REST APIs |
 | **Suwayomi** | MPL-2.0 | Mirror its extension-API shape |
-| **KOReader** | AGPL-3.0 | Proof of no-browser reading + Lua plugin architecture to study |
+| **KOReader** | AGPL-3.0 | Proof of no-browser reading; its Lua plugin architecture is worth *studying*, not copying (we chose no runtime — `source-seam.md` §9a) |
 | **crengine** | GPL-family | Ready-made EPUB/HTML rendering engine (Path B) — bind via FFI |
 | **cosmic-text** | MIT | Rust text layout/shaping (Path B, if we build our own) |
 | **swash / fontdb / ab_glyph** | MIT/Apache | Rust font loading/shaping |
