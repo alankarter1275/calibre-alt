@@ -70,6 +70,11 @@ export WLR_HEADLESS_OUTPUTS=1
 
 SWAY_CONF="$(mktemp)"
 cat > "$SWAY_CONF" <<'EOF'
+# `xwayland disable` is load-bearing, not tidiness. Without it sway tries to
+# start Xwayland, cannot find the binary on a runner, and treats that as fatal
+# -- which is exactly how the first two screenshot runs died. Kalam is a native
+# Wayland (GTK4) app and never needs X11, so there is nothing to lose here.
+xwayland disable
 output HEADLESS-1 resolution 1600x1000
 default_border none
 focus_follows_mouse no
@@ -89,6 +94,24 @@ if ! swaymsg -t get_version >/dev/null 2>&1; then
   exit 0
 fi
 say "sway up: $(swaymsg -t get_version -r | head -c 120)"
+
+# Find the socket sway just created and point clients at it. Without this the
+# app inherits no WAYLAND_DISPLAY, finds no compositor, and exits immediately
+# -- which would look identical to a rendering bug in the screenshots.
+if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+  SOCK="$(ls -t "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null \
+          | grep -v '\.lock$' | head -1)"
+  if [ -n "$SOCK" ]; then
+    export WAYLAND_DISPLAY="$(basename "$SOCK")"
+  fi
+fi
+say "WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-<unset>}"
+if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+  say "FATAL: sway is running but published no wayland socket in $XDG_RUNTIME_DIR"
+  ls -la "$XDG_RUNTIME_DIR" | sed 's/^/  /' | tee -a "$REPORT"
+  swaymsg exit >/dev/null 2>&1 || true
+  exit 0
+fi
 
 shot() { # shot <name>
   local name="$1"
