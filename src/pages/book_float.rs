@@ -13,6 +13,13 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
 
+/// Height of the tag row: one chip plus the horizontal scrollbar beneath it.
+/// Fixed on purpose — the row must never be what changes the float's height.
+const TAGS_ROW_H: i32 = 34;
+/// Height of the author line. One row of author links; extra authors are
+/// clipped rather than allowed to grow the panel.
+const AUTHOR_ROW_H: i32 = 22;
+
 const COVER_W: i32 = 120;
 const COVER_H: i32 = 176;
 const DESC_PREVIEW_CHARS: usize = 240;
@@ -247,15 +254,27 @@ impl Component for BookFloatModel {
                         set_spacing: 2,
                         set_hexpand: true,
 
+                        // One line, ellipsised. It used to wrap, so a long
+                        // title took two or three lines and pushed the whole
+                        // panel taller — the same "size varies by book" fault
+                        // as the tags. The full title is on the book page, and
+                        // the tooltip carries it here.
                         #[name = "header_title"]
                         gtk::Label {
                             add_css_class: "kalam-float-title",
                             add_css_class: "kalam-title-serif",
                             set_halign: gtk::Align::Start,
-                            set_wrap: true,
+                            set_wrap: false,
+                            set_single_line_mode: true,
+                            set_ellipsize: gtk::pango::EllipsizeMode::End,
                             set_xalign: 0.0,
                         },
 
+                        // `replace_author_links` fills this with a FlowBox,
+                        // which wraps — so three authors made the panel taller
+                        // than one. The helper is shared with the book page and
+                        // the reader, where wrapping is right, so the height is
+                        // pinned here instead of changing it for everyone.
                         #[name = "author_val"]
                         gtk::Box {
                             set_orientation: gtk::Orientation::Vertical,
@@ -263,13 +282,19 @@ impl Component for BookFloatModel {
                             set_spacing: 0,
                             set_margin_top: 1,
                             set_margin_bottom: 1,
+                            set_height_request: AUTHOR_ROW_H,
+                            set_valign: gtk::Align::Start,
+                            set_overflow: gtk::Overflow::Hidden,
                         },
 
+                        // Same reasoning as the title: one line, ellipsised.
                         #[name = "series_val"]
                         gtk::Label {
                             add_css_class: "kalam-float-series",
                             set_halign: gtk::Align::Start,
-                            set_wrap: true,
+                            set_wrap: false,
+                            set_single_line_mode: true,
+                            set_ellipsize: gtk::pango::EllipsizeMode::End,
                             set_xalign: 0.0,
                         },
                     },
@@ -333,14 +358,38 @@ impl Component for BookFloatModel {
                         },
                     },
 
-                    #[name = "tags"]
-                    gtk::FlowBox {
-                        add_css_class: "kalam-float-tags",
-                        set_selection_mode: gtk::SelectionMode::None,
-                        set_column_spacing: 6,
-                        set_row_spacing: 6,
-                        set_halign: gtk::Align::Start,
-                        set_max_children_per_line: 8,
+                    // Tags slide sideways on ONE line; they never wrap.
+                    //
+                    // This was a `gtk::FlowBox` with `max_children_per_line: 8`
+                    // and up to 12 chips, so a book with 9+ tags wrapped to a
+                    // second row and made the float taller than a book with 8.
+                    // `set_size_request(720, 420)` in `app.rs` is a *floor*, not
+                    // a fixed size, so the panel grew to fit and its height
+                    // visibly changed from book to book.
+                    //
+                    // A scroller with a fixed height and `hscrollbar_policy`
+                    // Automatic pins that: one row, always the same height,
+                    // overflow scrolls horizontally instead of reflowing.
+                    #[name = "tags_scroll"]
+                    gtk::ScrolledWindow {
+                        add_css_class: "kalam-float-tags-scroll",
+                        set_hscrollbar_policy: gtk::PolicyType::Automatic,
+                        set_vscrollbar_policy: gtk::PolicyType::Never,
+                        // Chip height plus the horizontal bar underneath it.
+                        // Fixed so the row cannot change the float's height.
+                        set_min_content_height: TAGS_ROW_H,
+                        set_max_content_height: TAGS_ROW_H,
+                        set_hexpand: true,
+                        set_vexpand: false,
+
+                        #[name = "tags"]
+                        gtk::Box {
+                            add_css_class: "kalam-float-tags",
+                            set_orientation: gtk::Orientation::Horizontal,
+                            set_spacing: 6,
+                            set_halign: gtk::Align::Start,
+                            set_valign: gtk::Align::Center,
+                        },
                     },
 
                     gtk::Box {
@@ -652,7 +701,7 @@ fn fill(
 ) {
     clear_box(&widgets.cover_host);
     clear_box(&widgets.author_val);
-    clear_flowbox(&widgets.tags);
+    clear_box(&widgets.tags);
     clear_box(&widgets.rating_host);
 
     let has_book = model.book.is_some();
@@ -668,6 +717,7 @@ fn fill(
     widgets.desc_section.set_visible(has_book);
     widgets.desc_scroll.set_visible(has_book);
     widgets.tags.set_visible(has_book);
+    widgets.tags_scroll.set_visible(has_book);
     widgets.desc_section_spacer.set_visible(false);
 
     let Some(book) = model.book.as_ref() else {
@@ -688,6 +738,8 @@ fn fill(
     };
 
     widgets.header_title.set_label(&book.title);
+    // The label ellipsises, so the full title has to stay reachable.
+    widgets.header_title.set_tooltip_text(Some(&book.title));
 
     let tx = sender.input_sender().clone();
     crate::widgets::author_links::replace_author_links(
@@ -701,6 +753,7 @@ fn fill(
 
     if let Some(series) = book.series_display() {
         widgets.series_val.set_label(&series);
+        widgets.series_val.set_tooltip_text(Some(&series));
         widgets.series_val.set_visible(true);
     } else {
         widgets.series_val.set_visible(false);
@@ -761,23 +814,35 @@ fn fill(
                 .set_vscrollbar_policy(gtk::PolicyType::Never);
         }
     } else {
-        widgets.desc_section.set_height_request(-1);
-        widgets.desc_section_spacer.set_visible(false);
+        // Short description — no "Read more". This branch used to leave the
+        // section unbounded (`height_request(-1)`, natural height, no max), so
+        // a one-line blurb produced a short panel and a nearly-long-enough one
+        // produced a tall panel. The section now reserves the same height it
+        // does in every other branch, so the float is one size for every book.
+        widgets.desc_section.set_height_request(DESC_SECTION_HEIGHT);
+        widgets.desc_section_spacer.set_visible(true);
         widgets.read_more_btn.set_visible(false);
-        widgets.desc_scroll.set_propagate_natural_height(true);
+        widgets.desc_scroll.set_propagate_natural_height(false);
         widgets.desc_scroll.set_min_content_height(-1);
-        widgets.desc_scroll.set_max_content_height(-1);
+        widgets
+            .desc_scroll
+            .set_max_content_height(DESC_PREVIEW_HEIGHT);
         widgets.desc_scroll.set_height_request(-1);
         widgets
             .desc_scroll
             .set_vscrollbar_policy(gtk::PolicyType::Never);
     }
 
-    for tag in book.tags.iter().take(12) {
-        let t = chip(tag, "kalam-chip");
-        widgets.tags.insert(&t, -1);
+    // No `.take(12)` any more: the row scrolls, so every tag can be shown
+    // without changing the panel's size. Truncating was only ever a way to
+    // limit how far the FlowBox could grow.
+    for tag in &book.tags {
+        widgets.tags.append(&chip(tag, "kalam-chip"));
     }
-    widgets.tags.set_visible(!book.tags.is_empty());
+    let has_tags = !book.tags.is_empty();
+    widgets.tags.set_visible(has_tags);
+    // Hide the scroller too, or an empty book still pays for the row height.
+    widgets.tags_scroll.set_visible(has_tags);
 
     let s = sender.clone();
     widgets
@@ -940,8 +1005,3 @@ fn clear_box(host: &gtk::Box) {
     }
 }
 
-fn clear_flowbox(host: &gtk::FlowBox) {
-    while let Some(child) = host.first_child() {
-        host.remove(&child);
-    }
-}

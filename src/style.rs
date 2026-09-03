@@ -944,9 +944,16 @@ button.kalam-float-read-more:hover {
     color: @kalam_text;
 }
 
-.kalam-float-tags {
+/* The tag row scrolls sideways on one line — see the note in book_float.rs.
+ * The scroller owns the margins now; the inner box just holds the chips. */
+.kalam-float-tags-scroll {
     margin-top: 0;
     margin-bottom: 2px;
+    background: transparent;
+}
+
+.kalam-float-tags {
+    background: transparent;
 }
 
 .kalam-float-actions {

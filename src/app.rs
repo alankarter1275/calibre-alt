@@ -214,6 +214,12 @@ impl AppModel {
             });
 
         let float = ctrl.widget().clone();
+        // 720x420 is a *floor*, not a size: GTK grows a widget past its size
+        // request whenever the content needs more room, which is why the panel
+        // used to change size from book to book. The content itself is now
+        // bounded (see the tag row, title, author line and description section
+        // in `book_float.rs`); pinning halign/valign to Center rather than Fill
+        // keeps the panel at its requested size instead of stretching it.
         float.set_size_request(720, 420);
         float.set_hexpand(false);
         float.set_vexpand(false);
