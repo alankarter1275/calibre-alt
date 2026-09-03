@@ -7,6 +7,4 @@ seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 FATAL: sway never came up. Its log:
-  00:00:01.528 [ERROR] [wlr] [xwayland/server.c:454] Cannot find Xwayland binary "/usr/bin/Xwayland"
-  00:00:01.528 [ERROR] [sway/server.c:363] Failed to start Xwayland
---- run 33763667071 ---
+--- run 33765695212 ---
