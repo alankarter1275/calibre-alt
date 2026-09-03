@@ -911,9 +911,12 @@ impl Component for AppModel {
             // floats, but it must never fire while a text box has focus:
             // the tags panel has an entry, and typing "q" in it used to
             // dismiss the panel instead of typing the letter.
-            let typing = key_root
-                .focus()
-                .map(|w| w.is::<gtk::Entry>() || w.is::<gtk::SearchEntry>() || w.is::<gtk::Text>())
+            // Spelled out because both `WidgetExt` and `GtkWindowExt` have a
+            // `focus`, and a bare call is ambiguous. `gtk::Text` is the inner
+            // widget of an Entry and is what actually holds focus.
+            let focused = gtk::prelude::GtkWindowExt::focus(&key_root);
+            let typing = focused
+                .map(|w| w.is::<gtk::Text>() || w.is::<gtk::Entry>() || w.is::<gtk::SearchEntry>())
                 .unwrap_or(false);
             let quit_key = keyval == Key::q || keyval == Key::Q;
             let close = keyval == Key::Escape || (!typing && quit_key);
