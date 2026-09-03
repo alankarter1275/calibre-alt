@@ -7,7 +7,7 @@ seed-library: 2000 books, 1882 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.9
-SWAYSOCK=/run/user/1001/sway-ipc.1001.4974.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.4383.sock
 sway up: {
   "human_readable": "1.9",
   "variant": "sway",
@@ -27,20 +27,20 @@ navigation: DID NOT REACH the grid -- every shot is probably Home.
   The keyboard route is brittle by design; see README-screenshots.md.
 
 === timing lines from the app ===
-  [timing] startup_db_open         0.8 ms
+  [timing] startup_db_open         1.0 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      7.1 ms
-  [timing] window_shown          105.4 ms
+  [timing] startup_first_page     13.7 ms
+  [timing] window_shown          165.0 ms
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       150
   [timing] thumbs_backfilled       200
   [timing] thumbs_backfilled       250
+  [timing] startup_dicts        3133.2 ms
   [timing] thumbs_backfilled       300
   [timing] thumbs_backfilled       350
   [timing] thumbs_backfilled       400
   [timing] thumbs_backfilled       450
-  [timing] startup_dicts        4005.0 ms
   [timing] thumbs_backfilled       500
   [timing] thumbs_backfilled       550
   [timing] thumbs_backfilled       600
@@ -85,23 +85,23 @@ navigation: DID NOT REACH the grid -- every shot is probably Home.
 
 === app stderr (non-timing lines) ===
   
-  (kalam:5007): Gtk-WARNING **: 16:45:55.889: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (kalam:4416): Gtk-WARNING **: 17:15:28.514: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
 
 === peak memory ===
-books=2000 peak_rss_kb=232444 peak_rss_mb=226
+books=2000 peak_rss_kb=252948 peak_rss_mb=247
 
 === shutting down ===
 
 === artifacts ===
   total 204
-  drwxr-xr-x  2 runner runner  4096 Sep  3 16:47 .
-  drwxr-xr-x 13 runner runner  4096 Sep  3 16:45 ..
-  -rw-r--r--  1 runner runner 58191 Sep  3 16:46 01-home.png
-  -rw-r--r--  1 runner runner 58191 Sep  3 16:47 02-after-nav.png
-  -rw-r--r--  1 runner runner 58191 Sep  3 16:47 03-after-nav-settled.png
-  -rw-r--r--  1 runner runner     0 Sep  3 16:46 grim.log
-  -rw-r--r--  1 runner runner  1949 Sep  3 16:46 kalam.log
-  -rw-r--r--  1 runner runner  3516 Sep  3 16:47 report.txt
-  -rw-r--r--  1 runner runner     0 Sep  3 16:45 sway.log
-  -rw-r--r--  1 runner runner  6548 Sep  3 16:46 tree.json
---- run 33779688240 ---
+  drwxr-xr-x  2 runner runner  4096 Sep  3 17:16 .
+  drwxr-xr-x 13 runner runner  4096 Sep  3 17:15 ..
+  -rw-r--r--  1 runner runner 58191 Sep  3 17:16 01-home.png
+  -rw-r--r--  1 runner runner 58191 Sep  3 17:16 02-after-nav.png
+  -rw-r--r--  1 runner runner 58191 Sep  3 17:16 03-after-nav-settled.png
+  -rw-r--r--  1 runner runner     0 Sep  3 17:16 grim.log
+  -rw-r--r--  1 runner runner  1949 Sep  3 17:15 kalam.log
+  -rw-r--r--  1 runner runner  3516 Sep  3 17:16 report.txt
+  -rw-r--r--  1 runner runner     0 Sep  3 17:15 sway.log
+  -rw-r--r--  1 runner runner  6548 Sep  3 17:16 tree.json
+--- run 33782615527 ---
