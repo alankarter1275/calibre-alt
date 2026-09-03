@@ -209,9 +209,18 @@ lost. A module whose entire purpose is "no failure goes unreported" was
 dropping reports on the floor.
 
 **Do instead:** make the entry point thread-safe rather than auditing every
-caller. `push` now checks `MainContext::default().is_owner()` and re-invokes
-itself on the main thread when it is on a worker. `invoke` runs the closure
-inline when already on the main thread, so the common path is unchanged.
+caller — but bounce only the part that actually needs the main thread. `push`
+records the history entry synchronously (plain data) and defers only the
+*display* via `MainContext::invoke`, which runs inline when already on the main
+thread.
+
+**The first attempt bounced the whole function, and that broke two tests.**
+Cargo's test harness runs each test on its own thread, so nothing under `cargo
+test` is the main-context owner: every `push` got deferred to a main loop that
+never runs, and the history stayed empty. Splitting data from display fixed it,
+and a regression test now pushes from a `thread::spawn` and asserts the entry
+is in the history. Lesson: "is this the main thread?" is false in unit tests
+too, so any bounce must leave the testable bookkeeping on the calling thread.
 
 The general rule: if a free function touches `thread_local!` state or GTK, it
 must either be documented main-thread-only *and* enforced, or it must bounce.

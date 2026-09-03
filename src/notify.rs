@@ -14,11 +14,12 @@
 //! Toasts are queued if the overlay is not mounted yet, so early-startup
 //! messages are not lost.
 //!
-//! **Thread safety.** The state here is `thread_local!` and the widgets are
-//! GTK, so all of it is main-thread-only. Callers do not have to care: `push`
-//! detects a worker thread and bounces the message to the main context. Before
-//! that, a toast raised from a worker vanished into that thread's own copy of
-//! the queue.
+//! **Thread safety.** Showing a toast builds GTK widgets and the queue is
+//! `thread_local!`, so that half is main-thread-only. Callers do not have to
+//! care: `push` records the history entry immediately (plain data, readable as
+//! soon as `push` returns) and bounces only the *display* to the main context.
+//! Before that, a toast raised from a worker vanished into that thread's own
+//! copy of the queue and was never shown.
 
 use gtk::prelude::*;
 use std::cell::RefCell;
@@ -204,23 +205,6 @@ pub fn outcome_info<T, E: std::fmt::Display>(
 }
 
 fn push(kind: Kind, title: &str, detail: &str, compact: bool) {
-    // Everything below is `thread_local!` and builds GTK widgets, so it is
-    // main-thread-only. Worker threads *do* call this — the import loop
-    // reports a bad file with `notify::error` from inside its worker — and
-    // when they did, the toast went into that thread's own empty HISTORY and
-    // PENDING and was never seen again. The message was silently lost: the
-    // exact failure mode `notify` exists to prevent.
-    //
-    // Rather than make every caller think about threads, bounce to the main
-    // thread here. `invoke` runs the closure immediately when we are already
-    // on the main thread, so the common path costs nothing extra.
-    let context = gtk::glib::MainContext::default();
-    if !context.is_owner() {
-        let (kind, title, detail) = (kind, title.to_string(), detail.to_string());
-        context.invoke(move || push(kind, &title, &detail, compact));
-        return;
-    }
-
     let entry = Entry {
         kind,
         title: title.to_string(),
@@ -237,6 +221,33 @@ fn push(kind: Kind, title: &str, detail: &str, compact: bool) {
         }
     });
 
+    // Showing the toast means building GTK widgets, and `HOST`/`PENDING` are
+    // `thread_local!`, so this half is main-thread-only. Worker threads *do*
+    // reach here — the import loop reports an unreadable file with
+    // `notify::error` from inside its worker — and when they did, the entry
+    // went into that thread's own empty PENDING and was never seen again. The
+    // message was silently lost: the exact failure mode this module exists to
+    // prevent.
+    //
+    // Bounce rather than make every caller think about threads. `invoke` runs
+    // the closure inline when we are already the main-context owner, so the
+    // common path costs nothing.
+    //
+    // The history write above is deliberately *not* bounced: it is plain data,
+    // callers (and tests) expect it to be readable the moment `push` returns,
+    // and deferring it would make `notify::history()` racy.
+    let context = gtk::glib::MainContext::default();
+    if context.is_owner() {
+        deliver(entry);
+    } else {
+        context.invoke(move || deliver(entry));
+    }
+}
+
+/// Put an entry on screen, or queue it until the overlay is mounted.
+///
+/// Main thread only — see the note in [`push`].
+fn deliver(entry: Entry) {
     let mounted = HOST.with(|h| h.borrow().is_some());
     if mounted {
         present(&entry);
@@ -457,6 +468,26 @@ mod tests {
         assert_eq!(h.len(), 1);
         assert_eq!(h[0].kind, Kind::Error);
         assert!(h[0].detail.contains("disk full"));
+        clear_history();
+    }
+
+    #[test]
+    fn a_message_from_a_worker_thread_still_reaches_the_history() {
+        // Regression guard. `push` bounces the *display* to the main thread,
+        // and an earlier version bounced the whole function -- which meant a
+        // toast raised off the main thread never reached the history at all,
+        // and every test here started failing because the test harness
+        // threads are not the main-context owner either.
+        clear_history();
+        std::thread::spawn(|| {
+            push(Kind::Error, "from a worker", "disk full", false);
+        })
+        .join()
+        .expect("worker thread finished");
+
+        let h = history();
+        assert_eq!(h.len(), 1, "the worker's message was recorded");
+        assert_eq!(h[0].title, "from a worker");
         clear_history();
     }
 
