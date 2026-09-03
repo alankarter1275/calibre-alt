@@ -866,17 +866,45 @@ impl Component for AppModel {
                 }
             },
         );
-        // First run decompresses and imports ~6.8 MB of gzipped TSV packs on
-        // this thread; later runs early-out on a pref. Timed to confirm which
-        // of the two a given start was.
-        crate::timing::span("startup_dicts");
-        if let Err(err) = crate::dict::install_bundled_dictionaries(&catalog) {
-            crate::notify::error(
-                "Could not install the bundled dictionaries",
-                &err.to_string(),
-            );
-        }
-        crate::timing::span_end("startup_dicts");
+        // A0 step 4 leftover, finished here: the first run decompresses and
+        // imports ~6.8 MB of gzipped TSV packs, and it used to do that on this
+        // thread — before the window existed. A new user waited on it with
+        // nothing on screen to explain why.
+        //
+        // Off the seam now. Nothing on screen depends on it: the dictionary is
+        // read when the user looks a word up in the reader, which cannot
+        // happen before the window is even drawn. Later runs still early-out
+        // on a pref, so this is a no-op after the first launch.
+        //
+        // Not merged into the thumbnail task above, deliberately: two
+        // independent jobs sharing one worker means the slower one delays the
+        // other for no reason, and a failure in one would be reported as a
+        // failure of both.
+        let dict_catalog = catalog.clone();
+        crate::tasks::spawn(
+            move |_reporter| {
+                // No cancel check inside: the unit of work is a whole pack,
+                // and abandoning one half-imported would leave the pref unset
+                // and the rows partly written. It is bounded work that ends on
+                // its own, so letting it finish is simpler and safer than
+                // making it interruptible.
+                crate::timing::span("startup_dicts");
+                let result = crate::dict::install_bundled_dictionaries(&dict_catalog);
+                crate::timing::span_end("startup_dicts");
+                // Send back a String rather than the error: anyhow::Error is
+                // not Send-safe to move across the seam here, and the message
+                // is all the UI needs.
+                result.err().map(|err| err.to_string())
+            },
+            |_update| {},
+            |failed: Option<String>| {
+                // Back on the main thread, so the toast is raised where the
+                // notification system can actually display it (pitfalls §4e).
+                if let Some(message) = failed {
+                    crate::notify::error("Could not install the bundled dictionaries", &message);
+                }
+            },
+        );
 
         let initial_route = Route::Module(NavItem::Home);
         crate::timing::span("startup_first_page");

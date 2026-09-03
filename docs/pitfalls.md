@@ -550,3 +550,54 @@ keeps the UI thread free without ever abandoning a cover.
 
 Both defects survived a green CI run and were found in ten seconds by a human
 looking at the actual screen. CI cannot see a placeholder.
+
+---
+
+## 17. "If it is too big, empty it" is not a cache bound
+
+`COVER_CACHE` had a bound. It was:
+
+```rust
+if cache.len() > 400 { cache.clear(); }
+```
+
+That is worse than it looks. It throws away *everything*, including the covers
+on screen right now — so the moment a library crosses the limit, the visible
+grid has to decode itself all over again. The cache stops helping at exactly
+the size where it starts to matter, and the user sees a stall they did not see
+at 399 covers.
+
+It also nearly escaped notice because of an unrelated bug. Before A0 step 5's
+fix the preloader stopped after 24 covers, so nothing ever approached 400.
+Removing that cap — correct on its own terms, the covers were not loading —
+quietly turned a dormant flaw into a live one. **When you remove a limit,
+check what else was relying on it.**
+
+The replacement drops only the least-recently-used entry, which keeps what the
+user is looking at. Two details that are easy to get wrong:
+
+1. **The order list has to be pruned everywhere the map is.** A key left behind
+   in the bookkeeping will evict a live entry later, and that bug would surface
+   as an occasional unexplained re-decode rather than anything obvious.
+2. **A probe is not a use.** `is_cover_cached` is the preloader asking whether
+   it needs to decode something — if that counted as a use, a background sweep
+   across a whole library would reorder the cache away from what is on screen,
+   which is precisely backwards.
+
+Both are covered by tests, which was only possible after making the cache
+generic over its value type: a `gdk::Texture` cannot be built without an
+initialised GTK display, and CI has none. Parameterising the type was cheaper
+than leaving the eviction logic untested.
+
+### The related reporting failure
+
+`install_bundled_dictionaries` ran on the UI thread for the whole of A0 step 4
+and was in neither the "converted" nor the "deliberately left alone" list I
+gave the user. The reason is the search method: I looked for `thread::spawn`
+call sites, because the task was "move the threads onto the seam". But the
+acceptance criterion was **"all slow work off the UI thread"**, and this is
+ordinary blocking code in the startup path with no thread anywhere near it.
+
+Searching for the mechanism instead of the requirement cannot find work that
+was never threaded in the first place. Same shape as §16: checking a
+convenient proxy rather than the actual property.
