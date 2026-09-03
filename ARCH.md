@@ -133,19 +133,22 @@ Road, MangaDex, Komga. Full design in
   the final step, which is a two-variant `Content` enum (`Text` / `Images`).
   Everything else — search, pagination, chapter lists, rate limits, the
   download queue, the follow scheduler — is shared and must not be duplicated.
-- **Sources are compiled-in Rust modules, not scripts.** The Lua runtime is
-  deferred, probably indefinitely: it exists to let people who cannot compile
-  the app extend it, and this app has two authors who both compile it. See
-  `docs/source-seam.md` §9a for the full cost/benefit.
+- **Scraped sources are Lua plugins; API-backed ones are built-in Rust.** The
+  split is *does this break when someone else changes their website* — AO3,
+  FFN and scraped manga rot, so they get a fix loop measured in seconds
+  (edit a selector, restart); MangaDex, Open Library and Google Books have
+  documented APIs, so they are compiled in and type-checked. Same for add-on
+  metadata providers: two built in, the long tail in Lua, which is Calibre's
+  model. `docs/source-seam.md` §9a has the reasoning and the evidence.
 - **`SourceFactory` is `Send`; `Source` is not.** The factory crosses to a
-  worker thread and builds the live source there. Kept even without Lua,
-  because it is also how a source holding a non-`Send` handle stays usable —
-  and it is what would let a `LuaSource` (VM is `!Send`) drop in later without
-  changing the trait.
+  worker thread and builds the live source there. This is what makes Lua
+  possible at all: `mlua`'s VM is `!Send`, so it is built on the worker and
+  born and dies on one thread, and `mlua`'s `send` feature (a reentrant mutex
+  on every VM access) stays off.
 - **A source is a pure function from a query to structured data.** No
   filesystem, no catalog, no widgets. The host decides what to store — the
-  same discipline that keeps `LibraryService` worker-callable. A compiled-in
-  source follows this voluntarily; no sandbox enforces it.
+  same discipline that keeps `LibraryService` worker-callable. For Lua this is
+  *enforced* by the sandbox; a built-in Rust source follows it voluntarily.
 - **Rate limits are declared by the source and enforced by the host**, so one
   careless source cannot get Kalam's User-Agent blocked.
 

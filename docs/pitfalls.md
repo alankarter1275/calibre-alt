@@ -693,3 +693,79 @@ Note the symmetry with §18. The thumbnail skip is the mirror image — it can
 never show it. Two fixes in the same commit, each provable in exactly the
 environment where the other is invisible. Neither environment is "the" test
 environment; the question is always which one can make the bug appear.
+
+---
+
+## 20. Answering a question the user did not ask
+
+**The mistake.** The user was asked how far extensibility should go, and
+answered about **scope**:
+
+> *"sources and metadata and maybe a few more, not an ecosystem, because it's
+> for personal use. plugin system makes sense if there is a community, which
+> isn't the case here."*
+
+I turned that into a decision about **implementation language**: removed Lua
+from the plan entirely, renamed the user's "P12 — Lua plugin system" to "P12 —
+Extension surfaces", wrote "deferred, probably indefinitely" and "No scripting
+runtime of any kind", and swept eleven documents to match.
+
+The user had said *no ecosystem*. I heard *no scripting runtime*. Those are
+different claims:
+
+| The user's claim | What I wrote |
+| --- | --- |
+| Do not court third-party authors, no marketplace, no API-stability promises | There will be no Lua |
+| About **who else** uses the extension points | About **what language** they are written in |
+
+An ecosystem is about *other people*. A scripting runtime is about *how fast
+you can fix something*. The second applies to one developer just as much as to
+a thousand — which is the whole argument I had thrown away.
+
+**The user's correction, which was checkable and correct:**
+
+> *"have you seen how metadata plugins in Calibre work?? there are many, many
+> plugins in Calibre just for metadata sources."*
+
+Calibre's index carries 20+ third-party metadata-source plugins — Goodreads,
+Amazon, Kobo, StoryGraph, ISFDB, Douban, DNB, moly.hu, databazeknih.cz, Skoob,
+Kitapyurdu, noosfere — mostly regional or niche, and almost all HTML scrapers.
+I had written in `source-seam.md` §12a that metadata was "already extensible,
+done" because we ship two providers. Two providers is not the same as
+extensible; Calibre ships several built in *and still* needed the plugin tail.
+
+### Three separate errors, worth naming individually
+
+1. **Under-weighted how often scrapers break.** Tachiyomi's entire extension
+   architecture exists for this: *"extensions are parsers; if a website
+   changes its structure, the extension breaks. The core app stays stable;
+   extensions change constantly."* I treated site changes as rare.
+2. **Asserted a cost without measuring it.** I said recompiling was "a few
+   minutes" without opening `Cargo.toml`. It is `lto = true` with
+   `codegen-units = 1` over 44k lines and 36 dependencies — the slowest
+   possible configuration, a full relink for a one-character change, and the
+   one most likely to be OOM-killed on the user's 4 GB machine. **A number I
+   have not measured is not evidence, and this repo has a measurement culture
+   precisely so I do not have to guess.**
+3. **Scope creep in reverse.** Deleting a feature is a change like any other.
+   Renaming a phase the user named, and writing "indefinitely" on their idea,
+   needed their agreement first.
+
+### The rule
+
+**When an answer settles one variable, change only that variable.** If a
+second decision seems to follow, say so and ask — do not ship it. Watch for
+the shape of this error: the user answers question A, and the next commit
+message explains a decision about question B.
+
+And the specific form it took here: **"no community" does not imply "no
+tooling for ourselves."** Ask who a constraint protects. If the answer is
+"strangers", it says nothing about what the maintainers should use.
+
+### Related
+
+§19's rule was "what would this print if the bug were still there?" The
+analogue: **what did the user actually say, and would their sentence still be
+true if I had decided the opposite?** Here it would — "not an ecosystem" is
+equally true with or without Lua, which is the tell that the sentence never
+settled the question.

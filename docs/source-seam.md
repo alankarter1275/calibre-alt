@@ -5,10 +5,13 @@
 interface. Designing it once, before either is built, is the whole point of the
 step — two phases inventing their own shape would mean rewriting one of them.
 
-**Scope note (2026-09-03):** this is a **single-user app, not an ecosystem**
-(§0). Sources are implemented as compiled-in Rust; the Lua runtime is
-**deferred, probably indefinitely** (§9a). The trait is designed so Lua can be
-added later without changing it, which is why deferring costs nothing.
+**Scope note (2026-09-03, revised twice — read §9a):** this is a **single-user
+app, not an ecosystem** (§0), but that does **not** rule out a scripting
+runtime. Lua is **in the plan** for content sources and add-on metadata
+providers, because those break when websites change and a rebuild of this crate
+is expensive (fat LTO, `codegen-units = 1`). It is **sequenced after** AO3
+proves the interface natively — an API designed against zero implementations is
+a guess.
 
 **Acceptance test for this document** (from the A0 acceptance criteria): *a
 fresh chat can add a source plugin from the documented API alone.* If you are
@@ -16,14 +19,15 @@ that fresh chat and something below is ambiguous, that is a bug in this file.
 
 ---
 
-## 0. Scale: personal use, no ecosystem (decided 2026-09-03)
+## 0. Scale: personal use, no ecosystem — but yes, a scripting runtime
 
 > **The short answer, because it is the question people ask first:**
-> **No, extension surfaces are NOT done through Lua.** There is no scripting
-> runtime and none is planned. A new source, metadata provider, export format
-> or theme is a **Rust file compiled into the app**, exactly like the two
-> metadata providers that ship today. §9a has the full reasoning; §12a lists
-> the surfaces.
+> **Yes — Lua, for the surfaces that break.** Content sources (AO3, FFN,
+> scraped manga) and *additional* metadata providers are Lua plugins. The
+> built-ins that ship with the app — Open Library, Google Books, themes,
+> export formats — stay compiled-in Rust. The dividing line is **does this
+> break when a website changes its HTML**, not "is this a source". §9a has the
+> reasoning; §12a lists the surfaces.
 
 The user settled the audience question:
 
@@ -31,17 +35,27 @@ The user settled the audience question:
 > for personal use. plugin system makes sense if there is a community, which
 > isn't the case here."*
 
-Two consequences, and the second one contradicts what §9–§12 below assume.
+One consequence, and one **non**-consequence that I got wrong on the first
+pass.
 
-**Surfaces are a short, deliberate list.** Sources (P7/P9) and metadata
-providers, plus possibly export formats, dictionaries and themes later. Not UI
-extension, not reader/renderer hooks, not anything that writes to the library.
-Each is added when it has a real consumer, never speculatively.
+**Consequence — surfaces are a short, deliberate list.** Sources (P7/P9) and
+metadata providers, plus possibly export formats, dictionaries and themes
+later. Not UI extension, not reader/renderer hooks, not anything that writes to
+the library. Each is added when it has a real consumer, never speculatively.
+**No plugin marketplace, no versioning story, no compatibility guarantees** —
+those are ecosystem problems and this is not an ecosystem.
 
-**The case for Lua is now much weaker — see §9a.** A scripting runtime exists
-so that people who cannot compile the app can extend it. If the only authors
-are the user and the agent, and both can compile, the runtime is cost without
-its benefit.
+**NOT a consequence — "no ecosystem" does not mean "no scripting."** I claimed
+it did, and that was wrong. Those are two separate questions:
+
+| Question | Answer |
+| --- | --- |
+| Should we court third-party plugin authors, run a repo, promise API stability? | **No** — no community, so no ecosystem |
+| Should *we* be able to fix a broken scraper without recompiling 44k lines under fat LTO? | **Yes** — and that is what a runtime buys |
+
+The second question is about **iteration speed on code that breaks often**, and
+it applies just as much to a single user as to a thousand. Conflating the two
+is what produced the wrong call; see §9a.
 
 ---
 
@@ -305,12 +319,9 @@ and is proven by the thumbnail backfill and the dictionary import.
 
 ## 9. The Lua problem, and how it resolves
 
-**Read §9a first — it argues Lua should not be adopted at all.** This section
-is kept because the `SourceFactory` / `Source` split it produced is worth
-having regardless, and because if Lua is ever revisited, this is the research
-that stops someone re-deriving it.
-
-This was the finding that most affected the original plan.
+§9a decides **whether** to use Lua (yes, for the surfaces that break). This
+section is the **how**, and it is load-bearing: the `SourceFactory` / `Source`
+split below is what makes a Lua-backed source possible at all.
 
 **`mlua` is `!Send` by default.** The Lua VM holds a raw pointer
 (`*mut lua_State`) and cannot move between threads. There is a `send` feature
@@ -358,64 +369,117 @@ and someone will propose it.
 
 ---
 
-## 9a. Does Lua earn its place at all? — **NO (decided 2026-09-03)**
+## 9a. Lua: yes, for the surfaces that break (decided 2026-09-03)
 
-§9 solves *how* to host Lua. It never asked *whether* to — and that was the
-mistake. The audience answer in §0 settles it: **no scripting runtime.**
+This section was written twice with the wrong answer. The record of why is kept
+because the mistake is instructive.
 
-**What a scripting runtime buys you:** people who cannot or will not compile
-the app can still extend it. That is the entire value proposition. It is why
-Yazi, Neovim and Tachiyomi all have one — thousands of users, a handful of
-maintainers, and no way for a user to ship a patch quickly.
+### What I got wrong
 
-**Kalam's situation is the opposite.** Two authors, both of whom compile the
-app routinely. A new source is a `.rs` file either of us can write, and CI
-already type-checks it, lints it under `-D warnings`, and runs its tests.
+The user said this is for personal use, with no community. I concluded "no
+community ⇒ no plugin system" and removed Lua from the plan.
 
-**What Lua costs, concretely, in this repo:**
+**That conflates two questions.** "Should we run an ecosystem?" and "should we
+be able to change a scraper without recompiling?" are unrelated. The first is
+about *other people*; the second is about *iteration speed on fragile code*,
+which matters to a solo user just as much.
 
-| Cost | Detail |
+The user's counter-example settled it:
+
+> *"have you seen how metadata plugins in Calibre work? there are many, many
+> plugins in Calibre just for metadata sources. I'd say, Open Library and
+> Google Books should be built in, but we can have option to add more sources
+> later with Lua."*
+
+That is exactly right, and it is checkable. Calibre's plugin index carries
+**~20+ third-party metadata-source plugins**: Goodreads, Amazon, Kobo,
+StoryGraph, FictionDB, ISFDB, Douban, DNB, Baen, Fantastic Fiction, Barnes &
+Noble, noosfere, Moly.hu, databazeknih.cz, Skoob, Bookline, Lira, Alexandra,
+Biblioman, Kitapyurdu, SF-Leihbuch… Calibre ships a handful built in and lets
+everything else be a plugin. The long tail is regional (Hungarian, Czech,
+Brazilian, German, Chinese, Turkish) and niche (science fiction, romance),
+which is precisely the tail a built-in list can never serve.
+
+And critically: **almost all of those are scrapers.** Goodreads, Amazon and
+Barnes & Noble have no public metadata API — the plugins parse HTML, and they
+carry changelogs full of "fixed for site change".
+
+### The real dividing line
+
+Not "source vs. everything else". It is:
+
+> **Does this break when somebody else changes their website?**
+
+| | Breaks? | Why | Implementation |
+| --- | --- | --- | --- |
+| Open Library | rarely | documented JSON API (`openlibrary.org/search.json`) | **built-in Rust** |
+| Google Books | rarely | documented JSON API (`googleapis.com/books/v1`) | **built-in Rust** |
+| MangaDex | rarely | official versioned API | **built-in Rust** |
+| Goodreads, Amazon, StoryGraph… | **often** | HTML scraping, no API | **Lua** |
+| AO3, FFN, Royal Road, Webnovel | **often** | HTML scraping, no API | **Lua** |
+| Scraped manga sites | **often** | HTML scraping | **Lua** |
+| Themes, export formats, dictionaries | never | pure data transforms, no remote dependency | **built-in Rust** |
+
+Tachiyomi's ecosystem says the same thing in one line:
+
+> *"Extensions are not just sources. They are **parsers**. If a website changes
+> its structure, the extension breaks. The core app stays stable. **Extensions
+> change constantly.**"*
+
+### Why the rebuild cost is not trivial here
+
+I previously waved this away as "a few minutes". It is worse than that, and the
+reason is in this repo's own `Cargo.toml`:
+
+```toml
+[profile.release]
+lto = true            # fat LTO: whole-program, all IR in memory at once
+codegen-units = 1     # no codegen parallelism
+```
+
+That is the slowest possible rebuild configuration, over 44k lines and 36
+dependencies. **A one-character change to a CSS selector re-links the entire
+binary.** On a 4 GB machine, fat LTO is also the configuration most likely to
+be OOM-killed (documented Rust issue; see `conversation.md`).
+
+So the honest comparison for fixing a broken scraper is:
+
+- **Lua:** edit a selector, restart the app. Seconds.
+- **Rust:** edit a selector, full fat-LTO rebuild, restart. Minutes, with a
+  memory-pressure risk.
+
+Multiply by "sites change often" and the difference stops being cosmetic.
+
+### What Lua still costs, honestly
+
+None of this disappears; it is simply outweighed for the breaking surfaces.
+
+| Cost | Mitigation |
 | --- | --- |
-| A second language | Every source exists in Lua; debugging means reading Lua *and* the Rust host |
-| No type checking | A typo in a Lua field name is a runtime error at 2 a.m., not a compile error in CI |
-| Sandbox surface | §10's table has to be *enforced*, and every hole is a security bug |
-| A frozen API | The moment a plugin exists, the host API cannot change freely — the exact "second API you must keep stable forever" objection in `conversation.md` §5 |
-| Build weight | `mlua` vendors and compiles a C Lua interpreter into every build |
-| The `!Send` dance | §9's whole factory/VM split exists *only* to accommodate Lua |
+| A second language in the debugging path | Confined to scrapers — parse-and-return, the simplest code in the app |
+| No compile-time checking | The host validates returned tables and reports a clear error; a bad plugin fails one source, not the app |
+| Sandbox surface | Small: HTTP through the host agent, an HTML selector, JSON. No filesystem, no catalog (§10) |
+| A frozen host API | Real, and the reason Lua is **sequenced after** AO3 native (§11) — freeze it once it is known to fit |
+| `mlua` vendors a C interpreter | ~200 KB of C; a rounding error next to WebKitGTK |
+| The `!Send` dance | Already designed and paid for (§9) |
 
-**What a compiled-in Rust source costs:** a `.rs` file and a line in a match
-statement. That is genuinely it — `src/metadata/mod.rs` shows the pattern
-working today with two providers.
+### The decision
 
-**The counter-argument, stated fairly.** Lua lets a source be fixed without a
-rebuild. When AO3 changes its HTML — and it will — a Lua fix is edit-and-
-restart, while a Rust fix is edit-and-recompile. On the user's machine that is
-a few minutes of `cargo build --release`, not a blocker, but it is a real
-difference and it is the strongest argument on the Lua side. It also matters
-more for scraped sites (AO3, FFN) than for API-backed ones (MangaDex), because
-APIs version and HTML does not.
+**Lua is in the plan, for content sources and add-on metadata providers.**
+Built-in Rust for Open Library, Google Books, MangaDex, themes, export formats
+and dictionaries — the things with stable APIs or no remote dependency at all.
 
-**Decision: no Lua.** Not "never" — the seam in §9 is designed so
-Lua can be added later without changing `Source` at all. A `LuaSource` is just
-another implementation of the same trait, and `SourceFactory` already exists to
-carry a non-`Send` VM to a worker thread. The decision can be deferred at
-almost zero cost, which is the strongest reason to defer it.
-
-**What would change the answer:** a source that breaks often enough that
-recompiling becomes annoying, or a second person wanting to add sources. Either
-one, and Lua earns its place. Until then it is a runtime, a sandbox and a
-frozen API bought for an audience of two people who can both compile.
-
----
+**Sequenced, not skipped:** AO3 native first (§11). An API designed against
+zero implementations is a guess; an API extracted from two working ones is a
+description.
 
 ## 10. What a plugin is allowed to touch
 
-These rules apply to any *scripted* plugin, if scripting ever lands (§9a says
-probably not). They are recorded because they also describe the discipline a
-compiled-in source should follow voluntarily — a Rust source that reaches into
-the catalog is just as wrong, it simply cannot be stopped by a sandbox.
+These rules govern Lua plugins, and they describe the discipline a built-in
+Rust source should follow voluntarily too — a Rust source that reaches into the
+catalog is just as wrong, it simply cannot be stopped by a sandbox.
 
-The host would give a plugin exactly four things:
+The host gives a plugin exactly four things:
 
 | Given | Not given |
 | --- | --- |
@@ -448,14 +512,17 @@ interface.
    flavour, HTML parsing, and pagination.
 3. **MangaDex as a native Rust source.** Official API, no scraping, so it tests
    the image flavour without also testing a scraper.
-4. **Lua host — only if §9a's conditions are met**, with AO3 ported as the
-   proof. If the ported plugin behaves identically to the native one, the API
-   is right. Currently **not planned**: see §9a. Steps 1–3 are worth doing
-   regardless, and none of them depends on this.
+4. **The Lua host**, with AO3 ported to Lua as the proof. If the ported plugin
+   behaves identically to the native one, the API is right. This is the step
+   that unlocks add-on metadata providers too, since they share the host,
+   the sandbox and the loader.
+5. **Move scrapers out to Lua as they prove annoying.** AO3 can stay native and
+   act as the reference implementation; the ones that break most often are the
+   ones worth converting first.
 
-This matches the lean already recorded in `docs/conversation.md` §5: *"define
-the seams as stable APIs now, add scripting later."* — with §9a noting that
-"later" may reasonably be "never" for a single-user app.
+This matches `docs/conversation.md` §5's lean — *"define the seams as stable
+APIs now, add scripting later"* — with "later" now having a concrete trigger:
+once two native sources exist.
 
 ---
 
@@ -476,28 +543,44 @@ half-day of typing instead of a week of design.
 
 ---
 
-## 12a. The surface list (what may ever become extensible)
+## 12a. The surface list
 
-From §0: a short list, each added only when it has a real consumer. Every one
-shares the property that makes it safe — **a pure function from data to data**,
-touching no widgets, no catalog, no reader state.
+From §0 a short list; from §9a each entry is **built-in Rust or Lua depending
+on whether it breaks**. Every one shares the property that makes it safe — a
+pure function from data to data, touching no widgets, no catalog, no reader
+state.
 
-| Surface | Status | Existing seam | Notes |
+| Surface | How | Status | Existing seam |
 | --- | --- | --- | --- |
-| **Content sources** | designing (this doc) | none yet | P7/P9 depend on it. AO3 → MangaDex → more |
-| **Metadata providers** | **already exists** | `MetadataSource` in `src/metadata/mod.rs` | Open Library + Google Books ship today. Adding one is a `.rs` file and a match arm |
-| **Export formats** | possible later | `export_quotes_markdown` in `src/pages/saved_quotes.rs` | Already a pure `&[Quote] -> String`. Obsidian/Anki/Notion would be siblings |
-| **Dictionaries** | possible later | `Catalog::search_dict` / `lookup_entry` | Already clean. A Wiktionary or JMdict provider fits |
-| **Themes** | **already exists, no code needed** | `Theme` struct in `src/theme.rs` | One struct of colour literals; 13 themes ship. Arguably a plugin surface with zero runtime |
-| UI extension | **out** | — | GTK widget tree; exposing it freezes every layout decision |
-| Reader / renderer hooks | **out** | — | The custom renderer is the endgame; scripting it before it exists would freeze a design that does not exist |
-| Anything that writes | **out** | — | A bad extension should produce wrong results, never a corrupted library |
+| **Content sources** — AO3, FFN, Royal Road, scraped manga | **Lua** | designing (this doc) | none yet; P7/P9 depend on it |
+| **Content sources** — MangaDex, Komga, Kavita, OPDS | built-in Rust | planned | official APIs, so they do not rot |
+| **Metadata — Open Library, Google Books** | built-in Rust | **shipping** | `MetadataSource`, `src/metadata/` |
+| **Metadata — add-on providers** (Goodreads, StoryGraph, regional sites…) | **Lua** | after the host lands | same trait, Lua-backed impl |
+| **Themes** | built-in Rust | **shipping** | `Theme` in `src/theme.rs`; 13 of them |
+| **Export formats** | built-in Rust | possible later | `export_quotes_markdown` is already a pure `&[Quote] -> String` |
+| **Dictionaries** | built-in Rust | possible later | `Catalog::search_dict` / `lookup_entry` |
+| UI extension | — | **out** | GTK widget tree; exposing it freezes every layout decision |
+| Reader / renderer hooks | — | **out** | the custom renderer is the endgame; scripting it now freezes a design that does not exist |
+| Anything that writes to the library | — | **out** | a bad extension should give wrong results, never a corrupted catalog |
 
-**Two of these are already done.** Metadata providers and themes are extensible
-today, in the only sense that matters for a single-user app: adding one is a
-small, isolated, type-checked change. That is worth stating plainly because it
-reframes the question — the app is *already* extensible along the axes the user
-named. What is missing is content sources, which is precisely A0 step 8.
+### Why metadata splits down the middle
+
+This is the Calibre model, and it is the right one.
+
+Open Library and Google Books are **documented JSON APIs** — they version, they
+deprecate on notice, they do not rearrange their HTML on a Tuesday. Two
+built-in providers cover the common case with compile-time checking, and they
+are already written.
+
+Everything past that is a long tail that a built-in list can never serve:
+Goodreads, Amazon, StoryGraph, Kobo, plus the regional databases (moly.hu,
+databazeknih.cz, Skoob, DNB, Douban) and the niche ones (ISFDB for science
+fiction, FictionDB for romance). Calibre's index carries 20+ of these. **Almost
+all are HTML scrapers** — Goodreads and Amazon have no public metadata API —
+so they break, and they need a fix loop measured in seconds.
+
+Shipping two solid built-ins and letting the tail be plugins is exactly what
+Calibre does, and the reason it has the metadata coverage it does.
 
 ### Should `MetadataSource` merge into `Source`?
 
@@ -514,43 +597,53 @@ and manga differ in *one* step out of four; metadata and content sources differ
 in three out of four.
 
 They should, however, **share the small vocabulary**: `SourceError`,
-`RateLimit`, and the host's HTTP agent. That is where the duplication would
-actually hurt, and it is worth a small refactor when `Source` lands — moving
-`FetchError`'s network-message humanising (already written and tested in
-`src/metadata/mod.rs`) somewhere both can use.
+`RateLimit`, the host's HTTP agent — and, once it exists, **the Lua host
+itself**. One runtime, one sandbox, one loader, two traits exposed to it. That
+is where the duplication would actually hurt, and it is worth a small refactor
+when `Source` lands: `FetchError`'s network-message humanising is already
+written and tested in `src/metadata/mod.rs` and both should use it.
 
 ---
 
 ## 12b. What "adding an extension" actually looks like
 
-Because "no plugin system" can sound like "not extensible", here is the whole
-cost, using the surface that already works today.
+Two routes, because there are two kinds of extension.
 
-**Adding a metadata provider** (`src/metadata/`, shipping since P5):
+### A built-in (stable APIs): a Rust file and a match arm
+
+This works today — `src/metadata/` has shipped since P5:
 
 1. Write `src/metadata/my_provider.rs` implementing `MetadataSource` — two
    methods, `id()` and `search()`.
 2. Add a variant to `SourceId` and an arm to `enabled_sources()`.
-3. Done. It appears in Settings, is toggleable, and merges into the results
+3. Rebuild. It appears in Settings, is toggleable, and merges into the results
    list with the others.
 
-That is one file and one match arm. Compare with what a Lua equivalent would
-have needed: a manifest format, a loader, a sandbox, host bindings for HTTP and
-HTML parsing, an error-reporting path from Lua back to a GTK toast, and a
-version-compatibility story. All of that is infrastructure for *distributing*
-extensions to people who cannot compile — which is the thing this project does
-not need.
+Cost: one file, one line, one rebuild. Benefit: the compiler checks it, CI
+lints and tests it, no sandbox to get wrong. Correct for Open Library and
+Google Books, which do not break.
 
-**A content source will look the same** once `Source` lands: one file
-implementing four methods, one line registering it.
+### A plugin (scrapers): a Lua file, no rebuild
 
-**The trade, stated plainly.** Adding an extension requires a rebuild
-(`cargo build --release`, minutes on the user's machine). In exchange: the
-compiler checks it, CI lints and tests it, there is no sandbox to get wrong,
-and the host API can be changed freely because every caller is in this repo.
-For two authors who compile the app anyway, that is a good trade. For a
-thousand users who do not, it would be a terrible one — which is exactly why
-Yazi and Tachiyomi made the opposite choice, correctly, for their situation.
+Once the host lands:
+
+1. Drop `~/.local/share/kalam/plugins/goodreads/main.lua` with a small
+   manifest (id, name, kind, rate limit).
+2. Implement the same four verbs — `search`, `detail`, `chapters`, `content`
+   — for a source, or `search` alone for a metadata provider.
+3. Restart the app. No rebuild.
+
+When Goodreads moves a `<div>`, the fix is one line and a restart.
+
+### Why the rebuild route is wrong for scrapers
+
+`[profile.release]` in this repo is `lto = true` with `codegen-units = 1` —
+whole-program optimisation with no codegen parallelism, over 44k lines and 36
+dependencies. A one-character selector change re-links the whole binary, and on
+a 4 GB machine fat LTO carries a real OOM risk.
+
+That is a fine price to pay once for a stable API provider. It is the wrong
+price to pay every few weeks for a scraper.
 
 ---
 

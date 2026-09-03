@@ -228,13 +228,14 @@ The missing pieces:
   tokio; we need `thread::spawn` + `async-channel` + `glib::idle_add` back to
   the UI — the pattern we already have. Adding tokio to a GTK app is a cost,
   not a feature.
-- **~~The plugin system~~** — rejected, then reversed, then **narrowed to
-  compiled-in Rust seams (final, 2026-09-03)**. Yazi's Lua plugins work
-  because a file manager's verbs are tiny; an ebook reader's verbs are huge.
-  That objection was half right: it holds for the *reader*, not for
-  *sources*, whose verbs are exactly four. The resolution is extensibility
-  only where the verbs are small — and **no scripting runtime**, because the
-  app has no user community to author scripts. See §5 and
+- **~~The plugin system~~** — rejected, reversed, narrowed, then **settled
+  2026-09-03: Lua for the surfaces that rot, Rust for the rest.** Yazi's Lua
+  plugins work because a file manager's verbs are tiny; an ebook reader's
+  verbs are huge. That objection was half right: it holds for the *reader*,
+  not for *sources*, whose verbs are exactly four. So extensibility only
+  where the verbs are small — and within that, **Lua where the code breaks
+  when a website changes** (scrapers), **compiled Rust where it does not**
+  (documented APIs, themes, export). See §5 and
   [`source-seam.md`](./source-seam.md) §9a.
 - **The "blazing fast" bar itself.** A TUI renders text in microseconds and
   reads a directory listing. We render books. Even with perfect architecture,
@@ -336,31 +337,49 @@ it requires throwing nothing away.
 
 ---
 
-## 5. Plugin system — decision reversed
+## 5. Plugin system — settled (after two wrong turns)
 
-**Status: ✅ seam designed 2026-09-03, and the Lua decision is now REVERSED —
-[`source-seam.md`](./source-seam.md) §0, §9a, §12a.**
+**Status: ✅ seam designed 2026-09-03; Lua removed, then restored the same day
+on the user's Calibre argument. Final answer: **Lua for the surfaces that rot,
+compiled Rust for the ones that do not** — [`source-seam.md`](./source-seam.md)
+§0, §9a, §12a.**
 
 The user settled the audience question, which is what the whole thing turned
 on: *"sources and metadata and maybe a few more, not an ecosystem, because
 it's for personal use. plugin system makes sense if there is a community,
 which isn't the case here."*
 
-- **Q1 (Lua vs alternatives) → compiled-in Rust traits.** That option was
-  listed below and rejected for one reason: "no user-authored scripts". With
-  no user community, that is not a drawback. A scripting runtime exists so
-  that people who cannot compile the app can extend it; both authors here
-  compile it routinely, so Lua would be a second language, a lost type
-  checker, a sandbox to enforce, a permanently frozen host API and a vendored
-  C interpreter — bought for nobody. **Deferred, not refused**: a `LuaSource`
-  is one more impl of the same trait, so the cost of changing our mind later
-  is near zero. What would flip it: a scraped source breaking often enough
-  that recompiling annoys, or a second person writing sources.
-- **Q2 (scope) → a short list, two of which already exist.** Content sources
-  (missing, = A0 step 8), metadata providers (`MetadataSource`, shipping),
-  themes (`Theme`, shipping), and possibly export formats and dictionaries
-  later. UI extension, reader/renderer hooks and anything that writes to the
-  library are out.
+- **Q1 (Lua vs alternatives) → Lua stays, for the surfaces that rot.** My
+  first answer was "compiled-in Rust everywhere", reasoning that a scripting
+  runtime exists so non-compiling users can extend an app and both authors
+  here compile routinely. **That was wrong, and the user's counter settled
+  it** (2026-09-03): *"there are many, many plugins in Calibre just for
+  metadata sources. I'd say, Open Library and Google Books should be built
+  in, but we can have option to add more sources later with Lua."* Calibre's
+  index carries 20+ third-party metadata-source plugins — Goodreads, Amazon,
+  Kobo, StoryGraph, ISFDB, Douban, DNB, moly.hu, databazeknih.cz, Skoob,
+  Kitapyurdu — heavily regional and niche, and almost all **scrapers**. The
+  mistake was conflating *audience size* with *iteration speed*: a runtime is
+  not only for strangers, it is for anyone who has to fix a parser often.
+  Sharpened by this repo's `[profile.release]` (`lto = true`,
+  `codegen-units = 1`, 44k lines) — a one-character selector change re-links
+  the entire binary, with OOM risk on a 4 GB box. **The real line is "does
+  this break when someone else changes their website"**, not "is it a
+  source".
+- **Q2 (scope) → a short list, split by whether it rots.** Content sources
+  (missing, = A0 step 8) → **Lua** when scraped, Rust when API-backed.
+  Metadata providers → **two built-in Rust** (Open Library, Google Books,
+  both shipping) **plus a Lua long tail**; I first wrote this one off as
+  "already extensible, done", which the Calibre evidence disproves — 20+
+  third-party metadata plugins exist there precisely because the tail is
+  regional and endless. Themes (`Theme`, shipping) and possibly export
+  formats and dictionaries stay Rust: pure data, nothing to rot. UI
+  extension, reader/renderer hooks and anything that writes to the library
+  are out.
+- **Q2a (no ecosystem) → still true, and unrelated.** No marketplace, no
+  third-party repo, no API-stability promises. That is about *other people*;
+  Lua is about *fix speed*. Conflating the two is what produced the wrong
+  answer above.
 - **Q3 (when) → answered.** The architecture track is done, so the seam was
   safe to design now.
 
@@ -370,9 +389,10 @@ is true of the reader; it is false of *sources*, whose verbs are exactly four.
 The resolution is not "no extensibility", it is "extensibility only where the
 verbs are small", which is what §12a lists.
 
-The roadmap listed **Plugin API** as a non-goal. The user has **changed their
-mind**: plugins are wanted — "it will help in the future phases" — and the
-user defers to deeper discussion before final design.
+The roadmap listed **Plugin API** as a non-goal. The user changed their mind
+— "it will help in the future phases" — and the final shape, after the detour
+recorded above, is: **a Lua plugin host for scrapers, built-in Rust for stable
+APIs, sequenced after AO3 proves the trait natively.**
 
 ### Initial rejection (context)
 
@@ -432,15 +452,16 @@ surface — they become a second API you must keep stable forever.
 - **Custom text renderer:** 🔶 under discussion → **endgame: custom renderer
   for ALL reflowable text** (cosmic-text; fiction first, EPUB after
   normalization); WebKit = fallback only, may be cut (see §8).
-- **Plugin system:** ✅ **settled 2026-09-03 — narrow compiled-in Rust seams,
-  no Lua.** The `Source` adapter is the engine for fiction + manga (see §7);
-  metadata providers and themes already work this way. A scripting runtime is
-  deferred indefinitely: it exists so non-compiling users can extend an app,
-  and this app has two authors who both compile it (§5,
-  [`source-seam.md`](./source-seam.md) §9a).
+- **Plugin system:** ✅ **settled 2026-09-03 — Lua for scrapers, Rust for
+  stable APIs.** The `Source` adapter is the engine for fiction + manga (see
+  §7). Built in: Open Library, Google Books, MangaDex, themes, export
+  formats. Lua: AO3, FFN, scraped manga, and add-on metadata providers —
+  Calibre's model, and the surfaces that break. Sequenced after AO3 lands
+  natively so the API is extracted, not guessed (§5,
+  [`source-seam.md`](./source-seam.md) §9a, §11).
 - **Scope:** confirmed as a **content platform** — fiction sources
   (AO3/FFN/webnovel, tag search, downloads, auto-updates) + manga sources
-  (Suwayomi-class) + narrow extension seams + fast architecture (see §7).
+  (Suwayomi-class) + a Lua plugin seam for scrapers + fast architecture (§7).
 - **Perf work order:** measure → thumbnails/async decode → virtualize if
   numbers say so → reader. (✅ accepted)
 - **Docs discipline:** keep README.md and ROADMAP.md updated as work
@@ -467,8 +488,9 @@ sources.
 - **Manga:** same shape, but content is images — the reader is an image
   pager (P8), not a text engine.
 - **Extension surfaces** are the source-adapter engine (P12), built on the
-  A0 service layer. **Compiled-in Rust, not Lua** — reversed 2026-09-03 once
-  the user confirmed this is a single-user app (§5).
+  A0 service layer. **Lua plugins for scraped sources and add-on metadata
+  providers; compiled-in Rust for API-backed ones** — settled 2026-09-03
+  (§5).
 
 ### ~~Rewrite the Suwayomi server in Rust~~ — rejected
 
@@ -580,10 +602,12 @@ itself stays on WebKit until replaced.
 
 ### Manga architecture confirmed (Tachiyomi shape, no Kotlin)
 
-> **Superseded in one detail (2026-09-03):** "Lua plugins" below is now
-> **compiled-in Rust modules**. The *shape* — one adapter per site, written by
-> us, Tachiyomi-like — is unchanged and still correct; only the language is.
-> See [`source-seam.md`](./source-seam.md) §9a.
+> **Note (2026-09-03):** "Lua plugins" below is correct, after a detour. It
+> was briefly changed to "compiled-in Rust modules" and then changed back. The
+> *shape* — one adapter per site, written by us, Tachiyomi-like — was never in
+> doubt. The final split: **scraped sites are Lua, API-backed sites
+> (MangaDex, Komga, Kavita, OPDS) are built-in Rust.** See
+> [`source-seam.md`](./source-seam.md) §9a.
 
 **User (2026-09-02):** "We could have a similar architecture… plugins which
 we will write. Also, no need for a bridge with the Kotlin extensions —
@@ -592,8 +616,9 @@ those are apk… too much work, maybe even impossible."
 **Agreed, fully:**
 
 - Manga reader uses the same `Source` adapter shape: `search / popular /
-  chapter list / pages`. Adapters are **Rust modules, written by us** — one
-  per site (was "Lua plugins"; see the note above).
+  chapter list / pages`. Adapters are **written by us**, one per site —
+  **Lua** for scraped sites, **Rust** for API-backed ones (see the note
+  above).
 - **No Kotlin extension bridge — confirmed.** Tachiyomi extensions are
   Android APKs calling Android APIs; running them needs an Android runtime
   or JVM emulation — fundamentally wrong shape for a desktop app. We lose
@@ -651,12 +676,12 @@ it; Poppler/GPL is the alternative if we ever want to avoid AGPL).
 
 | Project | License | What to take |
 |---|---|---|
-| **FanFicFare** | GPL-3, Python | **P7 already built**: site adapters for AO3, FFN, Royal Road, ScribbleHub, SpaceBattles, Wattpad… port adapter logic to Rust `Source` modules, or shell out to its CLI as a "FanFicFare source" |
-| **Tachiyomi extensions** | Apache-2.0 | The adapter pattern + per-site logic to port to Rust |
+| **FanFicFare** | GPL-3, Python | **P7 already built**: site adapters for AO3, FFN, Royal Road, ScribbleHub, SpaceBattles, Wattpad… port adapter logic to Lua source plugins (AO3 native first as the reference), or shell out to its CLI as a "FanFicFare source" |
+| **Tachiyomi extensions** | Apache-2.0 | The adapter pattern + per-site logic to port to Lua plugins |
 | **MangaDex API** | public API | First P9 source — zero scraping |
 | **Komga / Kavita** | GPL | Self-hosted manga servers; Kalam as a client via their REST APIs |
 | **Suwayomi** | MPL-2.0 | Mirror its extension-API shape |
-| **KOReader** | AGPL-3.0 | Proof of no-browser reading; its Lua plugin architecture is worth *studying*, not copying (we chose no runtime — `source-seam.md` §9a) |
+| **KOReader** | AGPL-3.0 | Proof of no-browser reading; its Lua plugin architecture is worth **studying** — same language, same embedding problem (`source-seam.md` §9a) |
 | **crengine** | GPL-family | Ready-made EPUB/HTML rendering engine (Path B) — bind via FFI |
 | **cosmic-text** | MIT | Rust text layout/shaping (Path B, if we build our own) |
 | **swash / fontdb / ab_glyph** | MIT/Apache | Rust font loading/shaping |
