@@ -225,7 +225,13 @@ fn extract_zip(epub: &Path, dest: &Path) -> Result<()> {
 
         // `copied == remaining` means we stopped because we hit the cap, not
         // because the entry ended, so the file on disk is truncated garbage.
-        if copied == remaining && entry.by_ref().bytes().next().is_some() {
+        // One more `read` distinguishes the two. Not `bytes()`: that yields a
+        // `Result` per byte through an unbuffered decompressor, and clippy
+        // rejects it — we only need to know whether a single further byte
+        // exists.
+        let mut probe = [0u8; 1];
+        let overflowed = copied == remaining && entry.read(&mut probe)? > 0;
+        if overflowed {
             drop(out);
             let _ = fs::remove_file(&out_path);
             return Err(anyhow!(
