@@ -3433,8 +3433,7 @@ mod tests {
 
     impl Scratch {
         fn new(tag: &str) -> Self {
-            let p = std::env::temp_dir()
-                .join(format!("kalam-{tag}-{}", uuid::Uuid::new_v4()));
+            let p = std::env::temp_dir().join(format!("kalam-{tag}-{}", uuid::Uuid::new_v4()));
             fs::create_dir_all(&p).expect("scratch dir");
             Self(p)
         }
@@ -3566,8 +3565,8 @@ mod tests {
             .collect();
         write_zip(&epub, &refs);
 
-        let err = extract_zip(&epub, &dest)
-            .expect_err("600 MB of payload must trip the 512 MB ceiling");
+        let err =
+            extract_zip(&epub, &dest).expect_err("600 MB of payload must trip the 512 MB ceiling");
         assert!(
             err.to_string().contains("refusing to extract"),
             "unexpected error: {err}"
@@ -3584,8 +3583,7 @@ mod tests {
         let names: Vec<String> = (0..MAX_EXTRACT_ENTRIES + 1)
             .map(|i| format!("f{i}.txt"))
             .collect();
-        let refs: Vec<(&str, &[u8])> =
-            names.iter().map(|n| (n.as_str(), b"x" as &[u8])).collect();
+        let refs: Vec<(&str, &[u8])> = names.iter().map(|n| (n.as_str(), b"x" as &[u8])).collect();
         write_zip(&epub, &refs);
 
         let err = extract_zip(&epub, &dest).expect_err("entry count must be capped");

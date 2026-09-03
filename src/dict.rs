@@ -426,7 +426,10 @@ fn import_tsv(catalog: &Catalog, path: &Path, progress: &dyn Fn(usize)) -> Resul
         let split = line
             .find('\t')
             .map(|tab| (&line[..tab], line[tab + 1..].trim()))
-            .or_else(|| line.find("  ").map(|sep| (&line[..sep], line[sep..].trim())));
+            .or_else(|| {
+                line.find("  ")
+                    .map(|sep| (&line[..sep], line[sep..].trim()))
+            });
         if let Some((w, d)) = split {
             let w = w.trim();
             if !w.is_empty() && !d.is_empty() {

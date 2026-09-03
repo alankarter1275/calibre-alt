@@ -2408,11 +2408,7 @@ mod tests {
     fn streaks_use_local_days() {
         // Three consecutive local days, newest first, as `local_day_sql`
         // would return them.
-        let days = vec![
-            local_day_ago(0),
-            local_day_ago(1),
-            local_day_ago(2),
-        ];
+        let days = vec![local_day_ago(0), local_day_ago(1), local_day_ago(2)];
         let (current, longest) = streaks(&days);
         assert_eq!(current, 3, "three consecutive days read is a 3-day streak");
         assert_eq!(longest, 3);

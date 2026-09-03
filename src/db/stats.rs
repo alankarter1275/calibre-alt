@@ -229,11 +229,9 @@ impl Catalog {
                 crate::db::local_day_sql("started_at")
             );
             let (total, days): (i64, i64) = conn
-                .query_row(
-                    &active_days_sql,
-                    params![cutoff_30],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
+                .query_row(&active_days_sql, params![cutoff_30], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
                 .unwrap_or((0, 0));
             s.avg_minutes_per_active_day = if days > 0 { total / days / 60 } else { 0 };
         }

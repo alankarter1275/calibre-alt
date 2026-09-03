@@ -294,7 +294,12 @@ impl Catalog {
     ///
     /// `ended_at` stays NULL: the session is still open, and leaving it NULL
     /// is what lets [`close_orphaned_sessions`] recognise it after a crash.
-    pub fn checkpoint_reading_session(&self, session_id: i64, seconds: i64, pct: i64) -> Result<()> {
+    pub fn checkpoint_reading_session(
+        &self,
+        session_id: i64,
+        seconds: i64,
+        pct: i64,
+    ) -> Result<()> {
         let conn = self.conn();
         let clamped = seconds.clamp(0, MAX_SESSION_SECONDS);
         conn.execute(

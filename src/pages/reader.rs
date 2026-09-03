@@ -4421,11 +4421,11 @@ mod tests {
         // a UTF-8 continuation byte -- the exact condition that aborted the
         // process.
         let cases = [
-            "café — a small restaurant serving coffee",   // em-dash, accent
-            "\u{2018}bank\u{2019} the side of a river",   // curly quotes
-            "/ˈbæŋk/ pronunciation of the headword",     // IPA
-            "銀行 — a financial institution",             // CJK
-            "ααααααααααααααααααααααααααααα",              // all 2-byte
+            "café — a small restaurant serving coffee", // em-dash, accent
+            "\u{2018}bank\u{2019} the side of a river", // curly quotes
+            "/ˈbæŋk/ pronunciation of the headword",    // IPA
+            "銀行 — a financial institution",           // CJK
+            "ααααααααααααααααααααααααααααα",            // all 2-byte
         ];
         for case in cases {
             for n in 0..12 {

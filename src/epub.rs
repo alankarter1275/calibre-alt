@@ -620,15 +620,24 @@ mod tests {
     fn join_zip_path_resolves_relative_hrefs() {
         // Content documents are addressed relative to the OPF's directory,
         // and hrefs routinely climb out of it with `..`.
-        assert_eq!(join_zip_path("OEBPS", "text/ch1.xhtml"), "OEBPS/text/ch1.xhtml");
-        assert_eq!(join_zip_path("OEBPS/text", "../images/c.jpg"), "OEBPS/images/c.jpg");
+        assert_eq!(
+            join_zip_path("OEBPS", "text/ch1.xhtml"),
+            "OEBPS/text/ch1.xhtml"
+        );
+        assert_eq!(
+            join_zip_path("OEBPS/text", "../images/c.jpg"),
+            "OEBPS/images/c.jpg"
+        );
         assert_eq!(join_zip_path("OEBPS", "./cover.jpg"), "OEBPS/cover.jpg");
         // An absolute href is taken from the archive root, not the OPF dir.
         assert_eq!(join_zip_path("OEBPS", "/images/c.jpg"), "images/c.jpg");
         // No OPF directory: the href stands alone.
         assert_eq!(join_zip_path("", "cover.jpg"), "cover.jpg");
         // Windows separators appear in archives written on Windows.
-        assert_eq!(join_zip_path("OEBPS", "text\\ch1.xhtml"), "OEBPS/text/ch1.xhtml");
+        assert_eq!(
+            join_zip_path("OEBPS", "text\\ch1.xhtml"),
+            "OEBPS/text/ch1.xhtml"
+        );
     }
 
     #[test]
@@ -642,7 +651,10 @@ mod tests {
     #[test]
     fn percent_decode_handles_escapes_and_leaves_junk_alone() {
         // Hrefs in the OPF are URL-escaped, but zip entry names are not.
-        assert_eq!(percent_decode("images/my%20cover.jpg"), "images/my cover.jpg");
+        assert_eq!(
+            percent_decode("images/my%20cover.jpg"),
+            "images/my cover.jpg"
+        );
         assert_eq!(percent_decode("caf%C3%A9.xhtml"), "café.xhtml");
         // Lowercase hex is equally valid.
         assert_eq!(percent_decode("a%c3%a9b"), "aéb");
@@ -656,7 +668,10 @@ mod tests {
 
     #[test]
     fn normalize_zip_name_is_forgiving_about_spelling() {
-        assert_eq!(normalize_zip_name("OEBPS\\Text\\Ch1.xhtml"), "oebps/text/ch1.xhtml");
+        assert_eq!(
+            normalize_zip_name("OEBPS\\Text\\Ch1.xhtml"),
+            "oebps/text/ch1.xhtml"
+        );
         assert_eq!(normalize_zip_name("./content.opf"), "content.opf");
         // Only a *leading* "./" is stripped.
         assert_eq!(normalize_zip_name("a/./b"), "a/./b");
@@ -675,7 +690,10 @@ mod tests {
             "A great book.Really."
         );
         assert_eq!(strip_html("Tom &amp; Jerry"), "Tom & Jerry");
-        assert_eq!(strip_html("&quot;quoted&quot; &apos;and&apos;"), "\"quoted\" 'and'");
+        assert_eq!(
+            strip_html("&quot;quoted&quot; &apos;and&apos;"),
+            "\"quoted\" 'and'"
+        );
         assert_eq!(strip_html("a&nbsp;&nbsp;b"), "a b");
         // Whitespace from the source markup's indentation is collapsed.
         assert_eq!(strip_html("<div>\n   spaced\n   out\n</div>"), "spaced out");
