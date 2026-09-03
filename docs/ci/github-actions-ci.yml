@@ -138,3 +138,130 @@ jobs:
 
       - name: build (release)
         run: cargo build --release
+
+  # ---------------------------------------------------------------------------
+  # Screenshots on a headless display.
+  #
+  # Why: the build job proves the code compiles. It has now been green through
+  # two bugs that were obvious on screen -- Home's covers never loaded, and only
+  # the first two rows of the grid ever filled. Neither is detectable without
+  # looking at pixels.
+  #
+  # A SEPARATE job, on purpose:
+  #   * `continue-on-error` so a flaky compositor can never block a correct
+  #     change. This is a diagnostic, not a gate. CI remains the gate for
+  #     compile/clippy/test only.
+  #   * it needs `build` to pass first, so we never screenshot a broken tree.
+  #
+  # Read docs/ci/README-screenshots.md before trusting these images. Summary of
+  # the caveats: the software (Cairo) renderer is NOT the renderer on a real
+  # desktop, headless sway is one virtual output rather than a tiling session,
+  # and the reader (WebKit) may not render at all here.
+  # ---------------------------------------------------------------------------
+  screenshots:
+    name: screenshots (headless sway)
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
+            libpango1.0-dev libgdk-pixbuf-2.0-dev \
+            libgraphene-1.0-dev \
+            libwebkitgtk-6.0-dev libsoup-3.0-dev \
+            sway grim wtype \
+            fonts-dejavu-core
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: build (release)
+        run: cargo build --release
+
+      # 139 books: matches the library the user actually measured on, so the
+      # screenshots and the numbers describe the same thing.
+      - name: screenshots
+        run: |
+          chmod +x docs/ci/screenshot.sh
+          BOOKS=139 OUT=ci-shots docs/ci/screenshot.sh
+
+      - name: upload screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: ci-shots/
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # Scale check: 2,000 books.
+  #
+  # The A0 acceptance criterion is "the grid stays smooth at 2,000+ books" and
+  # nobody has ever run this app at that size -- every decision about grid
+  # virtualization so far has been extrapolated from a 139-book library, and
+  # those extrapolations have been wrong repeatedly.
+  #
+  # Runner *timing* is noise (shared, throttled VMs), so this does not assert on
+  # milliseconds. Peak RSS is far more stable and is the number that actually
+  # decides whether the unbounded cover cache is a problem: at 128x204xRGBA,
+  # 2,000 cached covers is ~200 MB that nothing ever evicts.
+  # ---------------------------------------------------------------------------
+  scale:
+    name: scale check (2000 books)
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential pkg-config \
+            libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
+            libpango1.0-dev libgdk-pixbuf-2.0-dev \
+            libgraphene-1.0-dev \
+            libwebkitgtk-6.0-dev libsoup-3.0-dev \
+            sway grim wtype \
+            fonts-dejavu-core
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: build (release)
+        run: cargo build --release
+
+      # The script samples the app's own RSS and writes peak-rss.txt; see the
+      # comment in screenshot.sh for why /usr/bin/time cannot do this (sway is
+      # the parent, not us). Longer settle: 2,000 covers take a while to warm.
+      - name: run at 2000 books and record peak memory
+        run: |
+          chmod +x docs/ci/screenshot.sh
+          BOOKS=2000 OUT=ci-shots-2000 SETTLE=60 docs/ci/screenshot.sh
+          echo "--- headline ---"
+          cat ci-shots-2000/peak-rss.txt || echo "(no measurement captured)"
+
+      - name: upload scale artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scale-2000
+          path: ci-shots-2000/
+          retention-days: 14
+          if-no-files-found: warn
