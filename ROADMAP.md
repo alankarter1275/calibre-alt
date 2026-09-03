@@ -1279,9 +1279,10 @@ runs — the constant that keeps appearing is the answer.
 
 ## A0 — Architecture & performance track  ◀ NEXT
 
-**Status:** decided 2026-09-02 (design in `docs/conversation.md` §§1–3);
-**steps 1 and 3 are done; CI green.** A track, not a phase — interleaves with
-P6–P11.
+**Status:** decided 2026-09-02 (design in `docs/conversation.md` §§1–3).
+**Steps 1–5 are done and CI-green; step 6 is closed on measured evidence.
+Only steps 7 (perf-budget CI test) and 8 (plugin-host seam design) remain.**
+A track, not a phase — interleaves with P6–P11.
 - **Step 1 (measure) — done.** Data layer (headless `src/perf.rs`) confirmed all
   list-page queries < ~20 ms for 2,000 books; GUI (`src/timing.rs`,
   `KALAM_TIMING=1`) confirmed cold start ~0.9 s warm, book open 3.5 ms revisit,
@@ -1345,9 +1346,20 @@ P6–P11.
   so both styles coexist; converting the next page is: add a snapshot method,
   swap the field, delete its `unwrap_or_default()`s. Writes (import) still go
   straight to the catalog — they belong to step 4.
-- **Step 4 (task manager), step 5 (preloaders)** not started. **Step 6 (grid
-  virtualization) is not planned** — the data layer is <20 ms and there is no
-  measured grid lag, so it would add risk for no win.
+- **Step 4 (task manager) — done.** `src/tasks.rs`; every slow job listed in
+  the scope entry below is on the seam, including `install_bundled_dictionaries`
+  at startup, which was the last leftover.
+- **Step 5 (preloaders) — done.** `src/preload.rs` + `tasks::spawn_stream`;
+  covers decode off the UI thread and swap in per card, chapters are warmed on
+  open and on every turn.
+- **Step 6 (grid virtualization) — CLOSED on evidence, 2026-09-03.** Both
+  things it would have fixed were measured and neither scales badly: build cost
+  is ~0.17 ms/card (~0.33 s at 2,000 books, and `grid_build` turned out to be
+  measuring widget construction, not cover work), and peak memory is **flat** —
+  233 MB at 139 books vs 252 MB at 2,000 — because the cover cache is a bounded
+  300-entry LRU. Reopen only if a real complaint arrives.
+- **Steps 7 and 8 are the only A0 items still open** (perf-budget CI test;
+  plugin-host seam design).
 - **WebView reuse — done.** The cheap win the timing surfaced: the reader used
   to call `webkit6::WebView::new()` in `init()`, so every book open spawned a
   WebKit process (~400 ms). `src/webview_pool.rs` now parks exactly one view
@@ -1412,9 +1424,10 @@ fast — make it never wait"*) and lay the seams the source platform needs.
    `chapter_html`'s read is served from the page cache. Only the read is
    preloadable — the render needs a main-thread `WebView`, and the HTML
    depends on live theme/font settings, so a cached string would go stale.
-6. **Grid virtualization** — *only if the numbers earn it*: `GtkGridView` +
-   `GListModel` replacing the 400-widget `build_book_grid` and the
-   teardown-and-rebuild `rebuild_list`.
+6. **Grid virtualization** — ❌ **closed 2026-09-03, the numbers did not earn
+   it.** ~0.17 ms/card build cost and flat peak memory (233 MB at 139 books,
+   252 MB at 2,000) because the cover cache is a bounded LRU. Reopen only on a
+   real complaint.
 7. **Perf-budget CI test.** Seed 2,000 books; assert grid build under N ms.
    Catches regressions like a new `for book in books` loop.
 8. **Plugin-host seam design** (the dependency for P7/P9): define the
@@ -2013,3 +2026,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-03 | **Thumbnail backfill: stop doing 2,000 stat calls per launch to achieve nothing.** Spotted in the CI report, not by reading the code — `thumbs_backfilled 50/100/…/2000` scrolling past on a library where every thumbnail already existed. The backfill's own comment said "only missing files are generated, so it is cheap after the first pass", which was true about the *generating* and hid everything else: it called `list_books()` (every column of every book **plus** a second query joining `tags`, building a full `Book` per row) and then ran one `is_file()` per book — to read exactly two fields, `uuid` and `cover_path`. Two fixes. New `Catalog::books_with_covers()` returns just those two columns and filters cover-less books in SQL rather than carrying them out of the database to skip them in the loop. More importantly, a skip marker: the book count at the last *complete* pass, so a settled library does nothing at all. A plain "done" flag would have been wrong — an import must re-run — and the count gives that for free. Three cases reasoned through rather than assumed: a **cancelled** pass does not record the marker (it has not verified the rest of the library), a cover that **fails** to thumbnail does not count as covered (or the marker promises a completeness it does not have), and **delete-then-import nets to the same count**, so `delete_book` clears the marker explicitly. Every ambiguous case re-runs: an unnecessary pass costs one query, a wrongly-skipped one costs a book its thumbnail for good. 4 new pure tests on the decision function. New pitfall §18 |
 | 2026-09-03 | **Thumbnail backfill skip confirmed on a real library — the one fix CI structurally cannot prove.** The user relaunched a settled 139-book library and the `thumbs_backfilled 50/100/139` ladder was **gone**. Worth stating why this needed a human: every CI run seeds a fresh library, so it is always a first launch and always does the full pass — the ladder appears there and *should*, which means a green CI run says nothing at all about whether the skip works. The evidence for a fix whose entire purpose is that nothing happens can only come from a library that has already settled, and CI does not have one. Same shape as the dictionary move in reverse: that one is invisible on the user's box (0.1 ms, packs installed months ago) and only CI's genuine first run could demonstrate it. Two fixes, two environments, neither able to check the other's. Remaining parts of Test 1c still unrun: that a re-import brings the ladder back exactly once, and that `startup_dicts` now prints after `window_shown` |
 | 2026-09-03 | **Backfill re-arm confirmed; the dictionary check turned out to be a test that could not fail.** The user imported five books and the `thumbs_backfilled` ladder returned exactly once, running to `144` — the marker noticing the count changed and re-verifying. No `thumbs_backfill_done` line came with it, which is correct and worth recording: the importer already writes a thumbnail per book, so the pass found all 144 present and generated nothing. Both halves of the skip are now proven on a real library. The same output also showed `startup_dicts 0.6 ms` printing *before* `window_shown 711.6 ms`, which my own test doc had called a failure. The build is fine; the instruction was broken. The line prints when the work finishes, and on a settled machine the packs installed months ago so it early-outs on a pref in under a millisecond — before the window at ~700 ms. Critically **it would have printed before `window_shown` on the unfixed build too**, because sub-millisecond work delays nothing wherever it runs; the check emitted identical output for a correct and an incorrect build, so it never had the power to distinguish them. Rewritten to use a throwaway `XDG_DATA_HOME`, which forces a genuine ~2–3 s install and makes the ordering mean something. New pitfall §19, whose rule is: before writing a manual check, ask what it would print if the bug were still present — if the answer is "the same thing", it is not a test |
+| 2026-09-03 | **A0 status corrected in the roadmap — it still said steps 4 and 5 were "not started".** Both shipped days ago, and step 6 was closed on measured evidence, but the summary bullet at the top of the A0 section had never been updated to match the per-step entries below it. This matters more than a normal stale line: the file's own first section orders every new agent to read the roadmap before touching code, and "Current trajectory" is named there as *the* single summary of where the project is. A fresh chat reading it would have set out to build a task manager that already exists. Now states plainly that steps 1–5 are done and CI-green, step 6 is closed with the numbers that closed it (~0.17 ms/card, 233 MB at 139 books vs 252 MB at 2,000), and **only steps 7 (perf-budget CI test) and 8 (plugin-host seam design) remain**. No code changed. Recorded because the failure mode is the same one §15–§19 keep describing: trusting a convenient summary instead of checking the thing it summarises |
