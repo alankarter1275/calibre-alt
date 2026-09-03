@@ -975,6 +975,9 @@ impl Component for ReaderModel {
 
         if model.open.chapter_count() > 0 {
             load_chapter(&model);
+            // Opening a book is followed by reading forward, so start warming
+            // the next chapter now rather than at the first page turn.
+            model.preload_next_chapter();
         }
 
         let key = gtk::EventControllerKey::new();
@@ -1746,6 +1749,20 @@ impl ReaderModel {
         self.reload_saved_words();
         load_chapter(self);
         self.loading = false;
+        self.preload_next_chapter();
+    }
+
+    /// A0 step 5: warm the *next* chapter's file while this one is being read.
+    ///
+    /// Reading forward is the overwhelmingly common case, so by the time the
+    /// user turns the page the file is already in the OS page cache and
+    /// `chapter_html`'s read is served from RAM instead of disk. See
+    /// `crate::preload` for why only the read, and not the render, can be
+    /// prepared ahead of time.
+    fn preload_next_chapter(&self) {
+        if let Some(path) = crate::preload::next_chapter_file(&self.open.spine, self.chapter) {
+            crate::preload::warm_chapter_file(path);
+        }
     }
 
     fn reload_annotations(&mut self) {

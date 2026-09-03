@@ -276,6 +276,35 @@ arm — it skips that tail, which is sometimes deliberate (`all_books.rs` return
 early per file so a 300-book import does not rebuild the grid 300 times) but is
 easy to do by accident.
 
+## 4h. A GObject cannot cross a thread — its raw bytes can
+
+The obvious way to preload covers is "decode on a worker, return the texture".
+It does not compile, and that is the seam doing its job: `gdk::Texture` is a
+GObject owned by the main thread, so `tasks::spawn`'s `T: Send` bound rejects
+it.
+
+The fix is to move the boundary rather than fight it. Split the job at the
+last point where the data is still plain:
+
+- **worker** — read the file, decode it, resize it, hand back `Vec<u8>` of RGBA
+- **main thread** — wrap those bytes in a `gdk::MemoryTexture`
+
+The expensive part is all on the left. The wrap is a pointer copy.
+
+Two things to get right when doing this:
+
+- **The buffer must match the dimensions exactly.** `MemoryTexture::new` takes
+  a stride and trusts it; a short buffer is a garbled image or a crash inside
+  GDK, not a Rust panic. Check `len() == w * h * 4` before wrapping.
+- **Hold widget references weakly.** A page can be destroyed long before its
+  covers finish decoding. A strong reference leaks the widget *and* lets a
+  finished preload write into a dead page.
+
+Related: anything you park in a list waiting for an async result needs a way to
+be reaped when the result never comes. A cover with a missing or corrupt file
+is never swapped in, so its entry is only removed by the periodic sweep — not
+by the success path, which is the one that is easy to remember.
+
 ## 5. Never use `opacity` on a scrollbar
 
 `src/style.rs` opens with a warning block explaining that `opacity` below 1

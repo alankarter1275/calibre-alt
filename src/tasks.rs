@@ -158,6 +158,69 @@ where
     });
 }
 
+/// Run `work` on a worker thread, delivering each item it produces to the main
+/// thread as it is produced.
+///
+/// [`spawn`] answers "do this, tell me when it is finished". This answers
+/// "keep producing things until you run out". A preloader is the second shape:
+/// it decodes twenty covers and each one should appear the moment it is ready,
+/// not twenty covers later.
+///
+/// `work` gets an [`Emit`] as well as a [`Reporter`]. `on_item` runs on the
+/// main thread once per emitted value, so it may touch widgets; like `spawn`,
+/// it is deliberately not `Send`.
+pub fn spawn_stream<T, W, F>(work: W, on_item: F)
+where
+    T: Send + 'static,
+    W: FnOnce(Reporter, Emit<T>) + Send + 'static,
+    F: Fn(T) + 'static,
+{
+    // A stream reports by emitting items, so there is no separate progress
+    // channel to listen on. The `Reporter` still exists for `cancelled()`;
+    // its sender goes nowhere, which is fine because `step` ignores send
+    // failures by design.
+    let (progress_tx, progress_rx) = async_channel::unbounded::<Update>();
+    drop(progress_rx);
+    let (item_tx, item_rx) = async_channel::unbounded::<T>();
+
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let cancelled = Arc::new(AtomicBool::new(false));
+    locked(|running| running.push((id, cancelled.clone())));
+
+    std::thread::spawn(move || {
+        let reporter = Reporter {
+            tx: progress_tx,
+            cancelled,
+        };
+        work(reporter, Emit { tx: item_tx });
+    });
+
+    gtk::glib::spawn_future_local(async move {
+        // Ends when the worker drops its `Emit`, which closes the channel.
+        while let Ok(item) = item_rx.recv().await {
+            on_item(item);
+        }
+        locked(|running| running.retain(|(other, _)| *other != id));
+    });
+}
+
+/// The worker half of [`spawn_stream`]: hands finished items back one at a
+/// time.
+pub struct Emit<T> {
+    tx: async_channel::Sender<T>,
+}
+
+impl<T> Emit<T> {
+    /// Deliver one finished item to the main thread.
+    ///
+    /// Returns `false` once the UI side has gone away, which is a worker's cue
+    /// to stop early — a preloader has no reason to keep decoding for a page
+    /// that has been closed.
+    pub fn send(&self, item: T) -> bool {
+        self.tx.send_blocking(item).is_ok()
+    }
+}
+
 /// Ask every running task to stop.
 ///
 /// Called when the window is closing. Cancellation is cooperative, so this
@@ -221,6 +284,18 @@ mod tests {
         drop(rx);
         reporter.step(1, 2, "still going");
         assert!(!reporter.cancelled());
+    }
+
+    #[test]
+    fn emit_reports_when_the_ui_side_has_gone() {
+        // A preloader uses this as its stop signal: once the page is torn
+        // down there is nothing to decode for, so `send` must say so rather
+        // than fail silently and let the worker grind on.
+        let (tx, rx) = async_channel::unbounded::<u8>();
+        let emit = Emit { tx };
+        assert!(emit.send(1), "delivers while the receiver lives");
+        drop(rx);
+        assert!(!emit.send(2), "reports the receiver being gone");
     }
 
     #[test]

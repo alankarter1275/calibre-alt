@@ -21,12 +21,81 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
+/// A cover frame showing a placeholder, waiting for its texture.
+struct PendingFrame {
+    key: (String, i32, i32),
+    /// Weak: the page can be destroyed before the decode finishes.
+    frame: gtk::glib::WeakRef<gtk::Box>,
+}
+
+thread_local! {
+    /// Frames waiting on a decode. UI-owned and only ever touched on the main
+    /// thread, which is exactly what `thread_local!` is for
+    /// (`docs/pitfalls.md` §4e).
+    static PENDING_FRAMES: RefCell<Vec<PendingFrame>> = const { RefCell::new(Vec::new()) };
+}
+
 /// Drop cached textures for a cover that changed or was deleted.
 pub fn invalidate_cover_cache(path: &Path) {
     let key = path.to_string_lossy().to_string();
     COVER_CACHE.with(|c| {
         c.borrow_mut().retain(|(p, _, _), _| *p != key);
     });
+}
+
+/// Whether a cover is already decoded at this size.
+///
+/// Lets the preloader (A0 step 5) skip work the grid has already done, so
+/// re-running it after a small scroll costs almost nothing.
+pub fn is_cover_cached(path: &Path, w: i32, h: i32) -> bool {
+    let key = (path.to_string_lossy().to_string(), w, h);
+    COVER_CACHE.with(|c| c.borrow().contains_key(&key))
+}
+
+/// Store a cover decoded off the UI thread by the preloader.
+///
+/// The worker cannot build the texture — `gdk::Texture` is a GObject and
+/// belongs to the main thread — so it sends raw RGBA and the wrap happens
+/// here. That wrap is a pointer copy, not a decode, which is the whole point:
+/// the expensive part already happened on the worker.
+///
+/// Ignores anything already cached so a preload can never replace a texture
+/// the grid is currently showing.
+pub fn cache_decoded_cover(decoded: &crate::preload::DecodedCover) {
+    let (w, h) = (decoded.width, decoded.height);
+    let expected = (w as usize) * (h as usize) * 4;
+    // A mismatch here would be a garbled image or a crash inside GDK rather
+    // than a visible bug, so refuse instead of trusting the buffer.
+    if w <= 0 || h <= 0 || decoded.rgba.len() != expected {
+        return;
+    }
+    let key = (decoded.cover.to_string_lossy().to_string(), w, h);
+    let inserted = COVER_CACHE.with(|c| {
+        let mut cache = c.borrow_mut();
+        if cache.contains_key(&key) {
+            return None;
+        }
+        if cache.len() > 400 {
+            cache.clear();
+        }
+        let bytes = gtk::glib::Bytes::from(&decoded.rgba[..]);
+        let texture: gtk::gdk::Texture = gtk::gdk::MemoryTexture::new(
+            w,
+            h,
+            gtk::gdk::MemoryFormat::R8g8b8a8,
+            &bytes,
+            (w as usize) * 4,
+        )
+        .upcast();
+        cache.insert(key.clone(), texture.clone());
+        Some((key, texture))
+    });
+
+    // Outside the cache borrow: the swap re-enters nothing, but holding a
+    // RefCell borrow across widget work is how re-entrancy panics start.
+    if let Some((key, texture)) = inserted {
+        swap_in_cover(&key, &texture);
+    }
 }
 
 /// Cover width (px). Height = width × 1.6 (standard ebook portrait).
@@ -63,7 +132,9 @@ pub fn build_book_card(
     card.set_size_request(CARD_W, CARD_H);
     card.set_overflow(gtk::Overflow::Hidden);
 
-    let cover = cover_widget(book.cover_path.as_deref(), COVER_W, COVER_H);
+    // Deferred: a grid builds hundreds of these at once, so decoding here
+    // would be the stall the preloader exists to remove.
+    let cover = cover_widget_deferred(book.cover_path.as_deref(), COVER_W, COVER_H);
     cover.add_css_class("kalam-book-card-cover");
     cover.set_halign(gtk::Align::Center);
 
@@ -178,19 +249,32 @@ pub fn build_book_grid(
     }
 
     shell.append(&grid);
+
+    // Frames from pages that have since been destroyed. Covers that never
+    // decode -- a missing or corrupt file -- are never swapped, so without
+    // this their entries would accumulate for the life of the process.
+    drop_dead_pending_frames();
+
+    // Every card above is showing a placeholder. Start decoding, nearest
+    // first, so the top of the grid fills in while the user is still looking
+    // at it. `warm_covers` calls back into `cache_decoded_cover`, which swaps
+    // each image into its frame as it lands.
+    crate::preload::warm_covers(
+        crate::preload::ahead_of(books, 0, COVER_W, COVER_H),
+        COVER_W,
+        COVER_H,
+    );
+
     shell
 }
 
 /// Fixed `w`×`h` cover (always the same size — with or without an image).
+///
+/// Decodes on the spot. Right for the one-or-two covers on a detail page,
+/// where a placeholder that fills in a moment later would just look like a
+/// flicker. Grids want [`cover_widget_deferred`] instead.
 pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
-    let frame = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    frame.add_css_class("kalam-cover-frame");
-    frame.set_size_request(w, h);
-    frame.set_hexpand(false);
-    frame.set_vexpand(false);
-    frame.set_halign(gtk::Align::Center);
-    frame.set_valign(gtk::Align::Start);
-    frame.set_overflow(gtk::Overflow::Hidden);
+    let frame = new_cover_frame(w, h);
 
     if let Some(path) = path {
         if path.is_file() {
@@ -201,13 +285,98 @@ pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
         }
     }
 
+    frame.append(&placeholder_for(w, h));
+    frame.upcast()
+}
+
+/// Like [`cover_widget`], but never decodes on the UI thread.
+///
+/// A0 step 5, and the half of step 3 that was deferred to here: an uncached
+/// cover gets a placeholder **immediately** and the frame is recorded, so
+/// [`swap_in_cover`] can fill it once a worker has decoded the image.
+///
+/// This is what makes a big grid cheap. A 400-book page used to decode 400
+/// covers on the UI thread before it could show anything; now it shows
+/// straight away and the images arrive as they are ready.
+pub fn cover_widget_deferred(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
+    let frame = new_cover_frame(w, h);
+
+    if let Some(path) = path {
+        if path.is_file() {
+            let key = (path.to_string_lossy().to_string(), w, h);
+            // Already decoded: use it now, no placeholder flash.
+            if let Some(texture) = COVER_CACHE.with(|c| c.borrow().get(&key).cloned()) {
+                frame.append(&build_picture(&texture, w, h));
+                return frame.upcast();
+            }
+            frame.append(&placeholder_for(w, h));
+            PENDING_FRAMES.with(|p| {
+                p.borrow_mut().push(PendingFrame {
+                    key,
+                    frame: frame.downgrade(),
+                });
+            });
+            return frame.upcast();
+        }
+    }
+
+    frame.append(&placeholder_for(w, h));
+    frame.upcast()
+}
+
+/// Forget frames whose widgets have been destroyed.
+fn drop_dead_pending_frames() {
+    PENDING_FRAMES.with(|p| {
+        p.borrow_mut().retain(|entry| entry.frame.upgrade().is_some());
+    });
+}
+
+fn new_cover_frame(w: i32, h: i32) -> gtk::Box {
+    let frame = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    frame.add_css_class("kalam-cover-frame");
+    frame.set_size_request(w, h);
+    frame.set_hexpand(false);
+    frame.set_vexpand(false);
+    frame.set_halign(gtk::Align::Center);
+    frame.set_valign(gtk::Align::Start);
+    frame.set_overflow(gtk::Overflow::Hidden);
+    frame
+}
+
+fn placeholder_for(w: i32, h: i32) -> gtk::Box {
     let placeholder = gtk::Box::new(gtk::Orientation::Vertical, 0);
     placeholder.add_css_class("kalam-cover-placeholder");
     placeholder.set_size_request(w, h);
     placeholder.set_hexpand(false);
     placeholder.set_vexpand(false);
-    frame.append(&placeholder);
-    frame.upcast()
+    placeholder
+}
+
+/// Replace the placeholder in every frame waiting on this cover.
+///
+/// Frames are held **weakly**: a page can be torn down long before its covers
+/// finish decoding, and a strong reference here would both leak the widget and
+/// let a preload write into a dead page. Dead entries are dropped on the way
+/// past, which is what keeps the list from growing across navigations —
+/// covers that never decode (a missing or corrupt file) are only reaped this
+/// way, since nothing else will ever come back for them.
+fn swap_in_cover(key: &(String, i32, i32), texture: &gtk::gdk::Texture) {
+    PENDING_FRAMES.with(|p| {
+        let mut pending = p.borrow_mut();
+        pending.retain(|entry| {
+            let Some(frame) = entry.frame.upgrade() else {
+                return false; // page is gone
+            };
+            if &entry.key != key {
+                return true; // waiting on a different cover
+            }
+            while let Some(child) = frame.first_child() {
+                frame.remove(&child);
+            }
+            frame.append(&build_picture(texture, key.1, key.2));
+            false
+        });
+    });
 }
 
 fn scaled_cover_picture(path: &Path, w: i32, h: i32) -> Option<gtk::Picture> {

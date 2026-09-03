@@ -17,6 +17,7 @@ mod notify;
 mod pages;
 mod paths;
 mod perf;
+mod preload;
 mod service;
 mod shelf_rules;
 mod style;
