@@ -41,6 +41,28 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      # Cargo.lock is committed (see the ROADMAP entry for 2026-09-04). The
+      # Arena sandbox has no network route to crates.io, so the agent cannot
+      # generate or refresh it there; this step is how the lockfile gets
+      # created and how a legitimate dependency change gets recorded.
+      #
+      # `cargo generate-lockfile` only writes when the manifest and the lock
+      # disagree, so on a normal run this is a no-op and commits nothing.
+      - name: Cargo.lock (generate and push if missing or stale)
+        run: |
+          cargo generate-lockfile
+          if git diff --quiet -- Cargo.lock && [ -z "$(git status --porcelain Cargo.lock)" ]; then
+            echo "Cargo.lock: unchanged"
+          else
+            echo "Cargo.lock: updating and pushing"
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git add -f Cargo.lock
+            git commit -m "ci: update Cargo.lock [skip ci]"
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+            git push origin "HEAD:$GITHUB_REF_NAME" || true
+          fi
+
       - name: rustfmt (auto-fix and push if needed)
         run: |
           cargo fmt --all

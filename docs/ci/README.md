@@ -5,6 +5,44 @@ GitHub App has the `workflows` permission. The workflow body lives here instead:
 
 **Canonical file:** [`github-actions-ci.yml`](./github-actions-ci.yml)
 
+## ACTION NEEDED (2026-09-04): one new step, to commit `Cargo.lock`
+
+`Cargo.lock` has been removed from `.gitignore`, but the lockfile itself does
+not exist yet and the agent cannot create it: the Arena sandbox has no network
+route to crates.io, so `cargo generate-lockfile` cannot run there. **Until this
+step is applied, nothing has actually changed** — CI keeps re-resolving every
+dependency on every run, which is what put `tinyvec 1.13.0` into a build that
+never asked for it and turned a green branch red.
+
+Copy [`github-actions-ci.yml`](./github-actions-ci.yml) over
+`.github/workflows/ci.yml` and push. The new step sits between *Cache cargo*
+and *rustfmt*, and mirrors the auto-push pattern rustfmt already uses:
+
+```yaml
+      - name: Cargo.lock (generate and push if missing or stale)
+        run: |
+          cargo generate-lockfile
+          if git diff --quiet -- Cargo.lock && [ -z "$(git status --porcelain Cargo.lock)" ]; then
+            echo "Cargo.lock: unchanged"
+          else
+            echo "Cargo.lock: updating and pushing"
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git add -f Cargo.lock
+            git commit -m "ci: update Cargo.lock [skip ci]"
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+            git push origin "HEAD:$GITHUB_REF_NAME" || true
+          fi
+```
+
+It commits on the first run and is silent on every run after that
+(`generate-lockfile` only writes when the manifest and the lock disagree), so
+it is not a permanent source of noise commits.
+
+Once the lockfile is committed, the `tinyvec = ">=1.6, <1.13"` pin in
+`Cargo.toml` can come out: the lock is what holds the version, and the pin was
+only ever a stand-in for it.
+
 ## Working agreement (manual CI handoff)
 
 The Arena agent **cannot** create or update `.github/workflows/*` (GitHub App
