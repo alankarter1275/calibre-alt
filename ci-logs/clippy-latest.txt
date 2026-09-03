@@ -1,5 +1,4 @@
-src/pages/book.rs:1323:10: [1m[91merror[E0609][0m: no field `catalog` on type `&pages::book::BookPageModel`: unknown field
-src/pages/book.rs:1505:10: [1m[91merror[E0609][0m: no field `catalog` on type `&pages::book::BookPageModel`: unknown field
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 2 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 2 previous errors
---- run 33667084621 ---
+src/app.rs:915:18: [1m[91merror[E0034][0m: multiple applicable items in scope: multiple `focus` found
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+--- run 33697691643 ---
