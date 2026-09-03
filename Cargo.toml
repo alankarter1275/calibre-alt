@@ -32,6 +32,16 @@ sha2 = "0.10"
 hex = "0.4"
 # Text normalization: NFD for dictionary headword keys (diacritic-insensitive lookup)
 unicode-normalization = "0.1"
+# Not used directly — pinned to keep a broken upstream release out of the
+# build. `unicode-normalization` pulls in `tinyvec`, and 1.13.0 fails to
+# compile ("cannot find macro `vec` in this scope" at tinyvec.rs:710), which
+# took CI red on a commit that touched none of this. It bit us because
+# `Cargo.lock` is gitignored, so every CI run re-resolves against whatever
+# crates.io published most recently — the build is a lottery against the whole
+# ecosystem, and a bad release anywhere in the tree reads as "your change
+# broke it". Remove this line once 1.13.x is fixed; the real fix is to commit
+# the lockfile, which is Cargo's own advice for a binary crate.
+tinyvec = ">=1.6, <1.13"
 thiserror = "2"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
