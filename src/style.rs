@@ -945,11 +945,31 @@ button.kalam-float-read-more:hover {
 }
 
 /* The tag row scrolls sideways on one line — see the note in book_float.rs.
- * The scroller owns the margins now; the inner box just holds the chips. */
+ * The scroller owns the margins now; the inner box just holds the chips.
+ *
+ * No visible scrollbar, by request. `PolicyType::External` already stops GTK
+ * allocating one; the rule below makes certain nothing is painted if a theme
+ * puts one back. The row still scrolls by wheel, touchpad and drag.
+ *
+ * Note it hides by making the slider's BACKGROUND transparent, NOT with
+ * `opacity: 0` — see the scrollbar block at the top of this file: opacity
+ * renders through an offscreen surface, and a collapsed scrollbar's surface
+ * is zero-sized, which trips `pixman_region32_init_rect: Invalid rectangle`. */
 .kalam-float-tags-scroll {
     margin-top: 0;
     margin-bottom: 2px;
     background: transparent;
+}
+
+.kalam-float-tags-scroll > scrollbar,
+.kalam-float-tags-scroll > scrollbar slider {
+    background: transparent;
+    background-color: transparent;
+    border: none;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
 }
 
 .kalam-float-tags {

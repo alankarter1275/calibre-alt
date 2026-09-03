@@ -13,9 +13,11 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
 
-/// Height of the tag row: one chip plus the horizontal scrollbar beneath it.
-/// Fixed on purpose — the row must never be what changes the float's height.
-const TAGS_ROW_H: i32 = 34;
+/// Height of the tag row. No scrollbar is drawn (the scroller uses
+/// `PolicyType::External`), so this is just chip height plus breathing room.
+/// Fixed on purpose, and the row is never hidden: it reserves the space that
+/// keeps the action buttons below it in the same place for every book.
+const TAGS_ROW_H: i32 = 26;
 /// Height of the author line. One row of author links; extra authors are
 /// clipped rather than allowed to grow the panel.
 const AUTHOR_ROW_H: i32 = 22;
@@ -367,15 +369,24 @@ impl Component for BookFloatModel {
                     // a fixed size, so the panel grew to fit and its height
                     // visibly changed from book to book.
                     //
-                    // A scroller with a fixed height and `hscrollbar_policy`
-                    // Automatic pins that: one row, always the same height,
-                    // overflow scrolls horizontally instead of reflowing.
+                    // A scroller with a fixed height pins that: one row,
+                    // always the same height, overflow slides horizontally
+                    // instead of reflowing.
+                    //
+                    // `External`, not `Automatic`: the row still scrolls by
+                    // wheel, touchpad and drag, but GTK draws no scrollbar at
+                    // all. `Automatic` reserved space for a bar that appeared
+                    // only for heavily-tagged books, which is another way for
+                    // the panel to change shape.
+                    //
+                    // This is never hidden — see `fill()`. An empty tag row
+                    // still occupies its height so the action buttons below
+                    // sit in the same place for every book.
                     #[name = "tags_scroll"]
                     gtk::ScrolledWindow {
                         add_css_class: "kalam-float-tags-scroll",
-                        set_hscrollbar_policy: gtk::PolicyType::Automatic,
+                        set_hscrollbar_policy: gtk::PolicyType::External,
                         set_vscrollbar_policy: gtk::PolicyType::Never,
-                        // Chip height plus the horizontal bar underneath it.
                         // Fixed so the row cannot change the float's height.
                         set_min_content_height: TAGS_ROW_H,
                         set_max_content_height: TAGS_ROW_H,
@@ -716,8 +727,11 @@ fn fill(
     widgets.rating_host.set_visible(has_book);
     widgets.desc_section.set_visible(has_book);
     widgets.desc_scroll.set_visible(has_book);
-    widgets.tags.set_visible(has_book);
-    widgets.tags_scroll.set_visible(has_book);
+    // Always visible, tags or not, and note it does NOT follow `has_book`:
+    // this row reserves the space that keeps the action buttons below it in a
+    // fixed position. Hiding it collapsed that space and moved the buttons.
+    widgets.tags.set_visible(true);
+    widgets.tags_scroll.set_visible(true);
     widgets.desc_section_spacer.set_visible(false);
 
     let Some(book) = model.book.as_ref() else {
@@ -839,10 +853,10 @@ fn fill(
     for tag in &book.tags {
         widgets.tags.append(&chip(tag, "kalam-chip"));
     }
-    let has_tags = !book.tags.is_empty();
-    widgets.tags.set_visible(has_tags);
-    // Hide the scroller too, or an empty book still pays for the row height.
-    widgets.tags_scroll.set_visible(has_tags);
+    // No visibility toggle here on purpose: the row is already shown
+    // unconditionally above, tags or not. Hiding it when a book had none
+    // collapsed its height and pulled the action buttons up, so the buttons
+    // moved depending on whether the book happened to be tagged.
 
     let s = sender.clone();
     widgets
