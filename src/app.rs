@@ -239,7 +239,6 @@ impl AppModel {
         let ctrl = SeriesFloatModel::builder()
             .launch((self.catalog.clone(), series, first_author))
             .forward(sender.input_sender(), |out| match out {
-                SeriesFloatOut::Close => AppMsg::CloseBookDialog,
                 SeriesFloatOut::OpenBook { book_id } => AppMsg::FloatOpenFull { book_id },
             });
 
@@ -902,11 +901,23 @@ impl Component for AppModel {
 
         let close_float_key = gtk::EventControllerKey::new();
         let s_key = sender.clone();
+        let key_root = root.clone();
         close_float_key.connect_key_pressed(move |_, keyval, _, _| {
             use gtk::gdk::Key;
-            if float_host.is_visible()
-                && (keyval == Key::q || keyval == Key::Q || keyval == Key::Escape)
-            {
+            if !float_host.is_visible() {
+                return gtk::glib::Propagation::Proceed;
+            }
+            // Esc always closes. `q` is a convenience for the read-only
+            // floats, but it must never fire while a text box has focus:
+            // the tags panel has an entry, and typing "q" in it used to
+            // dismiss the panel instead of typing the letter.
+            let typing = key_root
+                .focus()
+                .map(|w| w.is::<gtk::Entry>() || w.is::<gtk::SearchEntry>() || w.is::<gtk::Text>())
+                .unwrap_or(false);
+            let quit_key = keyval == Key::q || keyval == Key::Q;
+            let close = keyval == Key::Escape || (!typing && quit_key);
+            if close {
                 s_key.input(AppMsg::CloseBookDialog);
                 return gtk::glib::Propagation::Stop;
             }

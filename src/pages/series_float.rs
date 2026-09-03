@@ -18,13 +18,11 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum SeriesFloatOut {
-    Close,
     OpenBook { book_id: i64 },
 }
 
 #[derive(Debug)]
 pub enum SeriesFloatMsg {
-    Close,
     /// Manual re-fetch (the ⟳ button, or the retry button after an error).
     Refresh,
     /// A background fetch finished. `works` is `Some` on success — possibly
@@ -86,7 +84,7 @@ impl Component for SeriesFloatModel {
             set_hexpand: true,
             set_vexpand: true,
 
-            // Header: title, refresh, close.
+            // Header: title and refresh. Dismissal is backdrop-click or Esc.
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_spacing: 10,
@@ -111,13 +109,9 @@ impl Component for SeriesFloatModel {
                     connect_clicked => SeriesFloatMsg::Refresh,
                 },
 
-                gtk::Button {
-                    add_css_class: "kalam-icon-btn",
-                    set_focus_on_click: false,
-                    set_tooltip_text: Some("Close (Esc)"),
-                    set_child: Some(&crate::icons::symbolic("window-close-symbolic", 16)),
-                    connect_clicked => SeriesFloatMsg::Close,
-                },
+                // No close button by user request (2026-09-03): the backdrop
+                // and Esc both dismiss this, and it is a read-only listing, so
+                // a misclick outside costs nothing.
             },
 
             // Swapped between loading / list / error.
@@ -192,9 +186,6 @@ impl Component for SeriesFloatModel {
         _root: &Self::Root,
     ) {
         match msg {
-            SeriesFloatMsg::Close => {
-                sender.output(SeriesFloatOut::Close).ok();
-            }
             SeriesFloatMsg::Refresh => {
                 if self.fetching {
                     return;

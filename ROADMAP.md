@@ -1679,9 +1679,9 @@ another workspace". **The conversion was simply never finished.**
 **Current state (audited 2026-09-02):**
 
 *Already in-app (5):* book float, series float, annotations panel, shelves
-panel, tags panel. All five have a visible close affordance — a ✕ button on
-the two component floats, a **Done** button on the three panels — plus a
-global Esc/Q handler in `app.rs`, so none of them can trap the user.
+panel, tags panel. **Audited and brought in line 2026-09-03** — see "Making
+the older dialogs match" below; they were not consistent with each other, let
+alone with the five new ones.
 
 *Still separate `gtk::Window`s: **none**. All five converted 2026-09-03.*
 
@@ -1782,6 +1782,39 @@ be replaced by hand:
 Also removed: three copies of a `window_of()` helper that existed only to find
 a parent window for these dialogs, and `shelf_editor`'s and `metadata_editor`'s
 hand-rolled Esc handlers, now that the helper provides Esc for all of them.
+
+### Making the older dialogs match (2026-09-03)
+
+The user asked whether the five dialogs that were *already* in-app matched the
+five new ones. They did not, and they did not match each other either. Four
+differences found, all fixed:
+
+1. **Two floats taught different shortcuts for the same keys.** The book
+   float's ✕ was tooltipped "Close (Q)", the series float's "Close (Esc)" —
+   both keys worked on both.
+2. **`q` closed a float while you were typing in it.** The handler in
+   `app.rs` fired on `q`/`Q`/Esc whenever a float was visible, without asking
+   whether a text box had focus. The tags panel has an entry, so typing the
+   letter `q` into it dismissed the panel. Esc now always closes; `q` is
+   ignored while a `gtk::Entry`, `SearchEntry` or `Text` has focus.
+3. **The two floats had a ✕ that the user did not want.** Decision
+   (2026-09-03): **remove it, and do not replace it with ‹ Back.** Both floats
+   are read-only detours, so a misclick on the backdrop costs nothing — "I
+   won't lose anything if I accidentally misclicked on the outside". This is
+   the one case where the "keep one visible control" rule is waived, and
+   deliberately: the rule exists to protect against *losing something*, and
+   there is nothing here to lose. `SeriesFloatMsg::Close` and
+   `SeriesFloatOut::Close` became unreachable and were deleted with it.
+4. **Three panels had no title, and a different shell.** The annotations,
+   shelves and tags panels rendered with no heading at all, and with their own
+   14px-corner CSS (three byte-identical copies) against the dialogs' 20px.
+   They now use a shared `panel_title()` helper with the same markup and CSS
+   class as the A1 dialog header, and one merged CSS rule.
+
+Note the corrected finding: the series float opens from the **book page**
+(`book.rs:695`), not from the book float — the book float's series line is a
+plain label. So closing it to the page was always right; an earlier reading
+that it "skipped a step" was wrong.
 
 ## Immediate next steps
 
@@ -1915,3 +1948,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-03 | **Crash fixed: a corrupt catalog aborted the process with a core dump.** The user ran the corrupt-database test from `docs/testing-a0-step2.md` and it did not toast — it died. Cause was a fallback in `AppModel::init` that "handled" a failed `Catalog::open()` by **calling the same function again and `.expect()`ing it**, which is a guaranteed panic; and because `init()` runs inside a GTK signal callback, that panic **cannot unwind**, so it escalated to `panic in a function that cannot unwind` → abort → core dump, printing a raw backtrace instead of saying what was wrong. Fixed in two places: `main()` now opens the catalog **before** `app.run()` and, on failure, prints the error, the database path, and the exact `mv` command to move the broken file aside (noting book files live elsewhere and are safe), then exits 1; and the `init()` arm no longer retries — it reports and exits cleanly, since reaching it means the database broke between the pre-flight check and startup. **This is the second real bug the step-2 pass has surfaced**, and again the pattern is the same: the error path had never been executed, so nobody noticed it was nonsense |
 | 2026-09-03 | **Backdrop-click now closes in-app dialogs, and the A1 close-button rule is revised.** The user asked for click-outside-to-close and questioned whether the ✕ could then go away. Implementation turned out to be two lines: the scrim already had a `GestureClick` whose handler was **empty** — it existed only to stop clicks reaching the page behind it, so the dimmed area looked interactive and did nothing. It now sends `CloseBookDialog`, the same message Esc sends. Z-order was already correct (scrim added to the overlay before `float_host`), so clicks *inside* the dialog are unaffected. On the button question the user made the sharper point that **the dialogs exist for different reasons and should not all be dismissed identically**; the roadmap now carries a table mapping dialog *kind* to affordance — **‹ Back** for detours you navigated into, **✕** for transient overlays, **Cancel + Save** for forms with unsaved input, **Cancel / Delete** for confirmations. Recorded decision on dropping the button entirely: **no** — backdrop-click and Esc are both invisible affordances, so a dialog whose only exits are invisible is still a trap; keep one visible control, but the right one rather than a reflexive ✕ |
 | 2026-09-03 | **A1 done: all five remaining `gtk::Window` dialogs now draw inside the app.** `gtk::Window::builder` no longer appears anywhere in `src/`. One new helper, `src/widgets/in_app_dialog.rs`, walks up from any widget to the app's root `gtk::Overlay` and adds its own scrim + centred panel; it deliberately does **not** reuse the `AppMsg` float layer, because these dialogs are plain functions taking an `on_confirm: impl Fn()` closure and a closure cannot travel through a `#[derive(Debug)]` message enum. `DialogExit` ended up with two variants, not the table's four: both converted kinds already bring their own named buttons, so the header adds none — `OwnButtons` (pickers, delete confirmation) closes on a backdrop click, `UnsavedInput` (metadata editor, shelf editor) **does not**, because silently discarding a half-typed description over a slightly-off click is a bad trade. The ‹ Back and ✕ rows still describe the book/series floats, which have their own headers in `app.rs`. The interesting part was **what a `gtk::Window` had quietly been doing for free**: (1) `close()` destroys the widget tree and so breaks the reference loop between a widget and the callback capturing it — removing an overlay child does not, so `teardown()` empties the host too, otherwise every dialog ever opened would leak; (2) a window has a default height, while a panel centred in an overlay is sized by its content, so the metadata form and the smart-shelf rule list needed `max_content_height` + `propagate_natural_height` or a long description would push Save off a 768px screen; (3) the cover `gtk::FileDialog` is portal-backed and needs a genuine top-level parent, now resolved from the anchor's root. Also deleted three copies of a `window_of()` helper that existed only to parent these dialogs, and two hand-rolled Esc handlers now that the helper gives Esc to all of them. 1 new test |
+| 2026-09-03 | **Audited the five dialogs that were already in-app; they did not match the five new ones, or each other.** Four fixes. (1) The book float's ✕ was tooltipped "Close (Q)" and the series float's "Close (Esc)" — same layer, same keys, two different lessons. (2) A real bug: the global float key handler in `app.rs` closed on `q` whenever a float was visible **without checking whether a text box had focus**, so typing the letter `q` into the tags panel's entry dismissed the panel instead of typing. Esc now always closes; `q` is ignored while an entry has focus. (3) On the user's instruction the ✕ came off **both** floats with **no ‹ Back replacement** — they are read-only detours, so a stray backdrop click costs nothing ("I won't lose anything if I accidentally misclicked"). This deliberately waives the "keep one visible control" rule for exactly the case the rule was never meant to cover: there is nothing to lose. Removing the button made `SeriesFloatMsg::Close` and `SeriesFloatOut::Close` unreachable, so they were deleted, along with four now-dead `.kalam-float-close` CSS rules. (4) The annotations, shelves and tags panels had **no title bar at all** while the new dialogs do, and used three byte-identical copies of a 14px-corner shell against the dialogs' 20px; they now share a `panel_title()` helper using the dialog header's own markup and CSS class, and one merged CSS rule. Also corrected an earlier misreading of my own: the series float opens from the **book page**, not the book float, so closing it to the page was always correct |

@@ -274,20 +274,9 @@ impl Component for BookFloatModel {
                         },
                     },
 
-                    gtk::Button {
-                        set_child: Some(&crate::icons::symbolic_with_classes(
-                            "window-close-symbolic",
-                            12,
-                            &["kalam-inline-icon"],
-                        )),
-                        set_has_frame: false,
-                        add_css_class: "kalam-float-close",
-                        set_halign: gtk::Align::End,
-                        set_valign: gtk::Align::Start,
-                        set_vexpand: false,
-                        set_tooltip_text: Some("Close (Q)"),
-                        connect_clicked => BookFloatMsg::Close,
-                    },
+                    // No close button by user request (2026-09-03): clicking
+                    // the dimmed backdrop or pressing Esc dismisses this, and
+                    // nothing is lost either way — it is a read-only detour.
                 },
 
                 gtk::Box {

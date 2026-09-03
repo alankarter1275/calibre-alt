@@ -1639,6 +1639,28 @@ fn open_in_file_manager(file: &std::path::Path) {
 // Dialogs
 // ---------------------------------------------------------------------------
 
+/// Title bar for the three in-app panels (annotations, shelves, tags).
+///
+/// They had no titles at all, while the A1 dialogs in
+/// `crate::widgets::in_app_dialog` do — so the same app showed two different
+/// kinds of panel. Same markup and CSS class as that helper's header, so the
+/// whole family matches.
+///
+/// No close button here on purpose: these panels are dismissed by clicking
+/// the dimmed backdrop or pressing Esc, and each already ends in a Done
+/// button.
+fn panel_title(text: &str) -> gtk::Box {
+    let head = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    head.add_css_class("kalam-in-app-dialog-head");
+    let label = gtk::Label::new(Some(text));
+    label.add_css_class("kalam-card-title");
+    label.set_halign(gtk::Align::Start);
+    label.set_hexpand(true);
+    label.set_xalign(0.0);
+    head.append(&label);
+    head
+}
+
 /// Full list of a book's highlights/quotes, with per-row delete.
 /// The highlights & quotes panel, hosted in the app's in-app float layer
 /// (see AppModel::open_annotations_floating) instead of a separate window,
@@ -1653,6 +1675,7 @@ pub fn build_annotations_panel(
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("kalam-annotations-float");
     root.set_overflow(gtk::Overflow::Hidden);
+    root.append(&panel_title("Highlights & quotes"));
 
     let list_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
     list_host.set_margin_all(16);
@@ -1765,6 +1788,7 @@ pub fn build_shelves_panel(
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("kalam-shelves-float");
     root.set_overflow(gtk::Overflow::Hidden);
+    root.append(&panel_title("Shelves"));
 
     let list_host = gtk::Box::new(gtk::Orientation::Vertical, 0);
     list_host.set_margin_all(16);
@@ -1864,9 +1888,10 @@ pub fn build_tags_panel(
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("kalam-tags-float");
     root.set_overflow(gtk::Overflow::Hidden);
+    root.append(&panel_title("Tags"));
 
     let add_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    add_row.set_margin_top(16);
+    add_row.set_margin_top(4);
     add_row.set_margin_start(16);
     add_row.set_margin_end(16);
     add_row.set_margin_bottom(4);

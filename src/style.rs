@@ -899,31 +899,6 @@ progressbar.kalam-float-progress progress {
     margin-top: 2px;
 }
 
-button.kalam-float-close {
-    min-width: 28px;
-    min-height: 28px;
-    margin-top: 2px;
-    margin-right: 2px;
-    margin-bottom: 0;
-    margin-left: 0;
-    padding: 0px;
-    border-radius: 14px;
-    background: @kalam_surface_2;
-    border: 1px solid @kalam_border;
-    box-shadow: none;
-    color: @kalam_text_dim;
-}
-
-button.kalam-float-close > box {
-    min-width: 0;
-    min-height: 0;
-}
-
-button.kalam-float-close:hover {
-    background: @kalam_border;
-    color: @kalam_text;
-}
-
 .kalam-float-body {
     padding-top: 10px;
     padding-right: 22px;
@@ -1004,8 +979,7 @@ button.kalam-float-icon-btn.done-active {
     color: @kalam_success;
 }
 
-button.kalam-float-icon-btn:focus,
-button.kalam-float-close:focus {
+button.kalam-float-icon-btn:focus {
     box-shadow: none;
 }
 
@@ -3224,27 +3198,17 @@ button.kalam-journey-more:hover {
 }
 
 /* ── in-app highlights & quotes panel ─────────────────── */
-.kalam-annotations-float {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 14px;
-    box-shadow: 0 18px 44px alpha(#000, 0.40);
-}
-
-/* In-app shelves checklist float (book page's Shelves button) */
-.kalam-shelves-float {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 14px;
-    box-shadow: 0 18px 44px alpha(#000, 0.40);
-}
-
-/* In-app tags panel float (book page's "+" chip) */
+/* The three book-page panels: highlights, shelves checklist, tags. One rule
+ * for all three — they were three byte-identical copies, and they now match
+ * the A1 dialog shell (.kalam-float) so the app has one panel look, not two.
+ * Kept as separate selectors because each is addressed elsewhere by name. */
+.kalam-annotations-float,
+.kalam-shelves-float,
 .kalam-tags-float {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
-    border-radius: 14px;
-    box-shadow: 0 18px 44px alpha(#000, 0.40);
+    border-radius: 20px;
+    box-shadow: 0 30px 80px alpha(#000, 0.46), 0 8px 24px alpha(#000, 0.26);
 }
 
 .kalam-series-float-title {
