@@ -248,6 +248,29 @@ update is still queued, so the finished toast appeared and *then* a stale
 the `Reporter` closes the progress channel, so the loop ends on its own and the
 ordering is guaranteed rather than lucky.
 
+## 4f2. Making state process-wide makes its tests racy
+
+A follow-on from §4e, and it took a CI failure two commits later to show up.
+
+`HISTORY` moved from `thread_local!` to a process-wide `Mutex` so a worker's
+message would be readable from the main thread. That was right. But `cargo
+test` runs tests on **parallel threads of one process**, so four tests that had
+each been working on their own private copy were suddenly sharing one.
+
+`clear_history()` at the top of a test is not isolation. Another test can push
+between that call and the assertion, and
+`report_passes_ok_through_and_flags_errors` failed on exactly that: it asserted
+the history was empty, and it was not.
+
+**Do instead:** give the shared state a test-only `Mutex<()>` and take it at
+the top of every test that touches it. Poison-tolerant, so one failing test
+reports its own failure instead of turning every later test into a mutex panic
+that hides it.
+
+**The general rule:** whenever you widen the scope of some state — thread-local
+to global, per-instance to shared — re-read its tests. They were written under
+the old scope and may have been relying on it for isolation without saying so.
+
 ## 4g. Overriding `update_with_view` turns off every `#[watch]`
 
 Found while migrating the import loops, not while looking for it.

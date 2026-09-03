@@ -455,8 +455,30 @@ mod tests {
     // These exercise the non-GTK bookkeeping only; presenting a toast needs a
     // display, which CI does not have.
 
+    /// Serialises the tests that touch the history.
+    ///
+    /// `HISTORY` is process-wide (it has to be -- a worker's message must be
+    /// readable from the main thread), and `cargo test` runs these on
+    /// parallel threads of one process. So `clear_history()` at the top of a
+    /// test is not isolation: another test can push between that call and the
+    /// assertion. Every test that reads or writes the history takes this lock
+    /// first.
+    ///
+    /// Poison-tolerant for the same reason as the rest of the module: one
+    /// failing test should report its own failure, not turn every later test
+    /// into a mutex panic that hides it.
+    static HISTORY_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn history_guard() -> std::sync::MutexGuard<'static, ()> {
+        match HISTORY_TEST_LOCK.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
     #[test]
     fn history_keeps_newest_first() {
+        let _guard = history_guard();
         clear_history();
         push(Kind::Info, "first", "", false);
         push(Kind::Info, "second", "", false);
@@ -468,6 +490,7 @@ mod tests {
 
     #[test]
     fn history_is_bounded() {
+        let _guard = history_guard();
         clear_history();
         for i in 0..(MAX_HISTORY + 25) {
             push(Kind::Info, &format!("n{i}"), "", false);
@@ -478,6 +501,7 @@ mod tests {
 
     #[test]
     fn report_passes_ok_through_and_flags_errors() {
+        let _guard = history_guard();
         clear_history();
         let ok: Result<(), String> = Ok(());
         assert!(report(ok, "should not appear"));
@@ -494,6 +518,7 @@ mod tests {
 
     #[test]
     fn a_message_from_a_worker_thread_is_visible_from_the_main_thread() {
+        let _guard = history_guard();
         // The real bug this guards. Background work is exactly where
         // unattended failures happen -- a failed import, a bad dictionary
         // pack -- and Settings reads `history()` on the main thread. While
