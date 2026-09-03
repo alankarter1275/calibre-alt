@@ -263,11 +263,9 @@ pub fn build_book_grid(
 
     // Every card above is showing a placeholder. Start decoding, nearest
     // first, so the top of the grid fills in while the user is still looking
-    // at it. `warm_covers` calls back into `cache_decoded_cover`, which swaps
-    // each image into its frame as it lands.
-    let queued = crate::preload::ahead_of(books, 0, COVER_W, COVER_H);
-    crate::timing::note("covers_queued", queued.len());
-    crate::preload::warm_covers(queued, COVER_W, COVER_H);
+    // at it. This calls back into `cache_decoded_cover`, which swaps each
+    // image into its frame as it lands.
+    crate::preload::warm_books(books, 0, COVER_W, COVER_H);
 
     shell
 }

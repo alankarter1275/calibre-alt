@@ -1,7 +1,7 @@
 use crate::db::Catalog;
 use crate::pages::all_books::{import_summary, spawn_import, ImportTally};
 use crate::service::LibraryService;
-use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W};
+use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W, COVER_H, COVER_W};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::path::PathBuf;
@@ -326,6 +326,12 @@ fn rebuild(
     clear_box(&widgets.tbr_host);
     clear_box(&widgets.recent_host);
 
+    // Home builds its cards by hand rather than through `build_book_grid`, so
+    // it has to warm its own covers -- the cards defer their decode and would
+    // otherwise sit on placeholders for ever. Every strip is warmed together
+    // below, once the snapshot is in hand.
+    let mut on_screen: Vec<crate::models::Book> = Vec::new();
+
     // ── counts strip ────────────────────────────────────────────────
     let stats = &snap.stats;
     for (label, value) in [
@@ -375,6 +381,7 @@ fn rebuild(
                 },
             );
             widgets.continue_host.append(&card);
+            on_screen.push(book.clone());
         }
     }
 
@@ -471,7 +478,13 @@ fn rebuild(
             cell.set_valign(gtk::Align::Start);
             cell.append(&card);
             flow.insert(&cell, -1);
+            on_screen.push(book.clone());
         }
         widgets.recent_host.append(&flow);
     }
+
+    // Both strips are showing placeholders until this runs. The size must be
+    // exactly what `build_book_card` asked for -- the cache is keyed on it, so
+    // a mismatch decodes into an entry nothing ever reads.
+    crate::preload::warm_books(&on_screen, 0, COVER_W, COVER_H);
 }

@@ -509,3 +509,44 @@ basis and had to be revisited.
 If a file genuinely needs nothing, say **why** precisely. `author.rs` is the
 model: it makes no database reads at all, it only passes the `Arc` to its
 children, and its one `unwrap_or_default()` is on a local helper.
+
+---
+
+## 16. A preloader wired into one call site leaves every other page blank
+
+Step 5 added `cover_widget_deferred`: a card draws a placeholder immediately
+and a worker fills it in later. The thing that starts that worker,
+`warm_covers`, was called from exactly **one** place — `build_book_grid`.
+
+But cards are not only built by the grid. `home.rs` and `author.rs` call
+`build_book_card` directly to lay out their own strips. Those cards happily
+drew placeholders and then waited for a decode that nobody had asked for, so
+**Home's covers never appeared at all** — not slowly, never. It looked like a
+loading bug and was really a missing function call.
+
+Two rules came out of it:
+
+1. **Pair the deferral with the warm-up in one function.** `preload::warm_books`
+   is now the only thing a page calls; it cannot be given the list without also
+   queueing it. A page that builds deferred cards and does not call it is the
+   bug, and the fix is one line rather than three.
+2. **When you make something lazy, grep for every builder of the lazy thing**,
+   not every caller of the function you edited. The grid was the obvious
+   caller; the two that mattered were the ones that had quietly bypassed it.
+
+### The sibling mistake: a budget that was never topped up
+
+`ahead_of` ended in `.take(PRELOAD_AHEAD)` — 24 covers. The intent was "decode
+what is visible first". The missing half was anything to request the other 115,
+because scroll-driven re-queueing was never wired up. On a 139-book library the
+first two rows filled in and the rest kept placeholders for good, which is
+worse than the slow-but-complete behaviour it replaced.
+
+An optimisation that drops work must say **who picks the work back up**. If the
+answer is "nothing", it is not a budget, it is a cap, and the feature is
+half-finished. `ahead_of` now returns everything, nearest-first, and the
+batching moved into `warm_covers`, where the yield between off-screen covers
+keeps the UI thread free without ever abandoning a cover.
+
+Both defects survived a green CI run and were found in ten seconds by a human
+looking at the actual screen. CI cannot see a placeholder.

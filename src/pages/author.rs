@@ -356,12 +356,12 @@ fn rebuild_owned_books(host: &gtk::Box, books: &[Book], sender: &ComponentSender
     row.add_css_class("kalam-author-books-strip");
     row.set_halign(gtk::Align::Start);
 
-    for book in books {
+    for book in &books {
         let book_id = book.id;
         let full_sender = sender.clone();
         let float_sender = sender.clone();
         row.append(&build_book_card(
-            &book,
+            book,
             move || {
                 full_sender.output(AuthorPageOut::OpenBook { book_id }).ok();
             },
@@ -372,6 +372,16 @@ fn rebuild_owned_books(host: &gtk::Box, books: &[Book], sender: &ComponentSender
             },
         ));
     }
+
+    // These cards defer their cover decode, so nothing fills them without
+    // this. (`build_book_grid` does it for pages that use the grid; this page
+    // builds its strip by hand.)
+    crate::preload::warm_books(
+        &books,
+        0,
+        crate::widgets::book_row::COVER_W,
+        crate::widgets::book_row::COVER_H,
+    );
 
     let rail = gtk::ScrolledWindow::new();
     rail.add_css_class("kalam-author-books-rail");

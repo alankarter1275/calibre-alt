@@ -58,9 +58,13 @@ fn preload_enabled_for(value: Option<&std::ffi::OsStr>) -> bool {
     }
 }
 
-/// How many covers to decode ahead. The grid shows six columns, so this is
-/// roughly the next three to four rows — enough to stay ahead of a scroll
-/// without spending the session decoding a 2,000-book library nobody scrolls.
+/// How many covers to decode in the first batch — roughly the first four rows
+/// of a six-column grid, i.e. what the user can actually see.
+///
+/// This is a *batch* size, not a budget. [`warm_covers`] keeps going after the
+/// first batch until the list is exhausted; the split exists so the visible
+/// rows are decoded and swapped in first, rather than the user watching a
+/// whole library decode in book order before the top of the screen fills.
 pub const PRELOAD_AHEAD: usize = 24;
 
 /// A decoded cover on its way back to the main thread.
@@ -116,19 +120,31 @@ fn source_for(cover: &Path, w: i32, h: i32) -> PathBuf {
 /// Decode the covers in `covers` on a worker thread and warm the texture cache
 /// as each one lands.
 ///
-/// `covers` should already be trimmed to what is worth preloading — see
-/// [`ahead_of`]. Call this from the main thread.
+/// Call this from the main thread, after building any page whose cards use
+/// `cover_widget_deferred` — those cards are showing placeholders and this is
+/// the only thing that fills them.
+///
+/// Order matters: the list is decoded front to back, so pass it nearest-first
+/// (which is what [`ahead_of`] returns).
 pub fn warm_covers(covers: Vec<PathBuf>, w: i32, h: i32) {
     if covers.is_empty() || !preload_enabled() {
         return;
     }
     crate::tasks::spawn_stream(
         move |reporter, emit| {
-            for cover in covers {
+            for (i, cover) in covers.into_iter().enumerate() {
                 // Cheap to check and worth checking: closing the page should
                 // not leave a thread decoding covers nobody will see.
                 if reporter.cancelled() {
                     return;
+                }
+                // After the visible batch, yield briefly between covers. The
+                // decode itself is off the UI thread, but each finished cover
+                // swaps a widget *on* it, and a few hundred of those back to
+                // back is its own stutter. Off-screen covers have no deadline,
+                // so spending a little longer on them costs nothing visible.
+                if i >= PRELOAD_AHEAD {
+                    std::thread::sleep(std::time::Duration::from_millis(4));
                 }
                 let src = source_for(&cover, w, h);
                 let Some(mut decoded) = decode_rgba(&src, w, h) else {
@@ -150,6 +166,18 @@ pub fn warm_covers(covers: Vec<PathBuf>, w: i32, h: i32) {
     );
 }
 
+/// Warm every cover in `books`, nearest-first from `visible_from`.
+///
+/// The one call a page needs after building cards with
+/// `cover_widget_deferred`. Wraps [`ahead_of`] + [`warm_covers`] so the two
+/// cannot be separated by accident — Home originally built deferred cards and
+/// never warmed them, which left its covers blank for the life of the page.
+pub fn warm_books(books: &[crate::models::Book], visible_from: usize, w: i32, h: i32) {
+    let queued = ahead_of(books, visible_from, w, h);
+    crate::timing::note("covers_queued", queued.len());
+    warm_covers(queued, w, h);
+}
+
 /// The covers worth preloading, given what is already on screen.
 ///
 /// Skips books with no cover and anything already cached, so a second call
@@ -164,12 +192,22 @@ pub fn ahead_of(
     h: i32,
 ) -> Vec<PathBuf> {
     let start = visible_from.min(books.len());
+    // Nearest-first, but *all* of them: every card on the page is showing a
+    // placeholder, so anything left out of this list would keep showing one
+    // for ever. `warm_covers` decodes the first `PRELOAD_AHEAD` as one batch
+    // and the remainder after, so the visible rows still come first.
+    //
+    // Deduplicated because a page can show the same book twice -- Home lists
+    // one in both "continue reading" and "recently added" -- and decoding a
+    // cover a second time is pure waste.
+    let mut seen = std::collections::HashSet::new();
     books
         .iter()
         .skip(start)
-        .take(PRELOAD_AHEAD)
+        .chain(books.iter().take(start))
         .filter_map(|b| b.cover_path.clone())
         .filter(|p| !crate::widgets::book_row::is_cover_cached(p, w, h))
+        .filter(|p| seen.insert(p.clone()))
         .collect()
 }
 
@@ -328,31 +366,40 @@ mod tests {
     }
 
     #[test]
-    fn the_window_starts_after_what_is_visible_and_is_bounded() {
+    fn every_cover_is_queued_nearest_first() {
+        // The bug this guards: `ahead_of` used to `.take(PRELOAD_AHEAD)`, so
+        // on a 139-book library only the first 24 covers were ever decoded and
+        // every card past the fourth row kept its placeholder for good.
+        // Nothing is in the cache in a headless test, so every candidate
+        // survives the filter and this measures the ordering alone.
         let books: Vec<crate::models::Book> = (0..100)
             .map(|i| book_with_cover(i, Some(PathBuf::from(format!("/covers/{i}.png")))))
             .collect();
 
-        // Nothing is in the cache in a headless test, so every candidate
-        // survives the filter and this measures the windowing alone.
         let got = ahead_of(&books, 30, 128, 204);
-        assert_eq!(got.len(), PRELOAD_AHEAD, "capped at PRELOAD_AHEAD");
+        assert_eq!(got.len(), 100, "every cover, not just the first batch");
         assert_eq!(
             got[0],
             PathBuf::from("/covers/30.png"),
-            "starts at the mark"
+            "starts at what is on screen"
         );
-        assert_eq!(got[PRELOAD_AHEAD - 1], PathBuf::from("/covers/53.png"));
+        // Having run to the end, it wraps to pick up what was skipped.
+        assert_eq!(got[69], PathBuf::from("/covers/99.png"), "last one forward");
+        assert_eq!(got[70], PathBuf::from("/covers/0.png"), "then wraps");
+        assert_eq!(got[99], PathBuf::from("/covers/29.png"));
     }
 
     #[test]
-    fn a_mark_past_the_end_asks_for_nothing() {
+    fn a_mark_past_the_end_still_queues_everything() {
         // Reachable: the grid can shrink under a search while a scroll
-        // position from the longer list is still around.
+        // position from the longer list is still around. Clamping to the end
+        // must not mean "give up" -- those cards are on screen too.
         let books: Vec<crate::models::Book> = (0..3)
             .map(|i| book_with_cover(i, Some(PathBuf::from(format!("/covers/{i}.png")))))
             .collect();
-        assert!(ahead_of(&books, 99, 128, 204).is_empty());
+        let got = ahead_of(&books, 99, 128, 204);
+        assert_eq!(got.len(), 3, "clamped to the end, then wrapped");
+        assert_eq!(got[0], PathBuf::from("/covers/0.png"));
     }
 
     fn spine_item(path: &str) -> crate::epub_book::SpineItem {
@@ -381,6 +428,19 @@ mod tests {
         assert_eq!(next_chapter_file(&spine, 1), None);
         assert_eq!(next_chapter_file(&spine, 99), None, "out of range");
         assert_eq!(next_chapter_file(&[], 0), None, "empty spine");
+    }
+
+    #[test]
+    fn the_same_cover_is_never_queued_twice() {
+        // Home shows a book in both "continue reading" and "recently added",
+        // so the list it passes really can contain duplicates.
+        let books = vec![
+            book_with_cover(1, Some(PathBuf::from("/covers/a.png"))),
+            book_with_cover(2, Some(PathBuf::from("/covers/b.png"))),
+            book_with_cover(3, Some(PathBuf::from("/covers/a.png"))),
+        ];
+        let got = ahead_of(&books, 0, 128, 204);
+        assert_eq!(got.len(), 2, "the repeat is dropped");
     }
 
     #[test]

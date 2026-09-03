@@ -51,8 +51,13 @@ Then, in the app: **Home → All books**. Watch the terminal.
 ```text
 [timing] grid_build            12.4 ms
 [timing] grid_cards                 312
-[timing] covers_queued               24
+[timing] covers_queued              312
 ```
+
+`covers_queued` should match `grid_cards` on a first visit and drop to `0` when
+you come back to the page — everything is cached by then. If it stops at some
+round number well below `grid_cards`, that is the capping bug from
+2026-09-03 come back; see `docs/pitfalls.md` §16.
 
 Now do the same thing with the preloader switched off — this is the old
 behaviour, in the same session, for a fair comparison:
@@ -68,6 +73,10 @@ is the decoding that no longer blocks the window. With the preloader off you
 should also see `grid_build` grow with library size; with it on, it should
 barely move.
 
+**Every** card must end up with a real cover, not just the top rows. Scroll to
+the bottom of All books and check the last row — the covers there arrive later
+than the first ones, by design, but they must arrive.
+
 **Also watch the window itself**, not just the numbers:
 
 - Preloader **on**: the grid appears at once, covers arrive over the next
@@ -82,6 +91,22 @@ Paste both sets of numbers to me and tell me your library size.
 > it is evidence against bothering with grid virtualization (A0 step 6).
 
 ---
+
+## Test 1b — Home and author covers
+
+Deferred cards are not only built by the grid. Home builds its own "continue
+reading" and "recently added" strips, and an author page builds a strip of that
+author's books. Each of those had to be wired to the preloader separately, and
+Home's was missed the first time — its covers never loaded at all.
+
+1. Open **Home**. The covers in both strips must fill in.
+2. Open any **author** page. Same for the strip of their books.
+3. Go to Home, then away, then back. Covers should be there instantly the
+   second time (they are cached), with no grey flash.
+
+**What should happen:** no strip is left showing grey boxes. If one is, the
+page is building cards without calling `preload::warm_books` — that is the bug
+in `docs/pitfalls.md` §16, not a slow disk.
 
 ## Test 2 — chapter turns
 
