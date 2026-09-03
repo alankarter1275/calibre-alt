@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=139 out=ci-shots settle=25
-binary: 16012632 bytes
+binary: 16022968 bytes
 
 === seeding 139 books ===
 seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.9
-SWAYSOCK=/run/user/1001/sway-ipc.1001.7096.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.4342.sock
 sway up: {
   "human_readable": "1.9",
   "variant": "sway",
@@ -27,15 +27,15 @@ navigation: DID NOT REACH the grid -- every shot is probably Home.
   The keyboard route is brittle by design; see README-screenshots.md.
 
 === timing lines from the app ===
-  [timing] startup_db_open         1.0 ms
+  [timing] startup_db_open        44.7 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      3.9 ms
-  [timing] window_shown          167.7 ms
+  [timing] startup_first_page      4.8 ms
+  [timing] window_shown          184.4 ms
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
   [timing] thumbs_backfill_done      130
-  [timing] startup_dicts        2732.7 ms
+  [timing] startup_dicts        6366.5 ms
 
 === did the covers actually load? ===
   01-home.png: 1600x1000  coloured=18.9%  lit=100.0%
@@ -50,23 +50,23 @@ navigation: DID NOT REACH the grid -- every shot is probably Home.
 
 === app stderr (non-timing lines) ===
   
-  (kalam:7128): Gtk-WARNING **: 21:08:03.476: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (kalam:4374): Gtk-WARNING **: 22:27:40.643: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
 
 === peak memory ===
-books=139 peak_rss_kb=236616 peak_rss_mb=231
+books=139 peak_rss_kb=252176 peak_rss_mb=246
 
 === shutting down ===
 
 === artifacts ===
   total 204
-  drwxr-xr-x  2 runner runner  4096 Sep  3 21:08 .
-  drwxr-xr-x 13 runner runner  4096 Sep  3 21:08 ..
-  -rw-r--r--  1 runner runner 58165 Sep  3 21:08 01-home.png
-  -rw-r--r--  1 runner runner 58165 Sep  3 21:08 02-after-nav.png
-  -rw-r--r--  1 runner runner 58165 Sep  3 21:08 03-after-nav-settled.png
-  -rw-r--r--  1 runner runner     0 Sep  3 21:08 grim.log
-  -rw-r--r--  1 runner runner   654 Sep  3 21:08 kalam.log
-  -rw-r--r--  1 runner runner  2126 Sep  3 21:08 report.txt
-  -rw-r--r--  1 runner runner     0 Sep  3 21:08 sway.log
-  -rw-r--r--  1 runner runner  6548 Sep  3 21:08 tree.json
---- run 33804925351 ---
+  drwxr-xr-x  2 runner runner  4096 Sep  3 22:28 .
+  drwxr-xr-x 13 runner runner  4096 Sep  3 22:27 ..
+  -rw-r--r--  1 runner runner 58165 Sep  3 22:28 01-home.png
+  -rw-r--r--  1 runner runner 58165 Sep  3 22:28 02-after-nav.png
+  -rw-r--r--  1 runner runner 58165 Sep  3 22:28 03-after-nav-settled.png
+  -rw-r--r--  1 runner runner     0 Sep  3 22:28 grim.log
+  -rw-r--r--  1 runner runner   654 Sep  3 22:27 kalam.log
+  -rw-r--r--  1 runner runner  2126 Sep  3 22:28 report.txt
+  -rw-r--r--  1 runner runner     0 Sep  3 22:27 sway.log
+  -rw-r--r--  1 runner runner  6548 Sep  3 22:28 tree.json
+--- run 33812665376 ---
