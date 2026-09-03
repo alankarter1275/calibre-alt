@@ -133,16 +133,21 @@ Road, MangaDex, Komga. Full design in
   the final step, which is a two-variant `Content` enum (`Text` / `Images`).
   Everything else — search, pagination, chapter lists, rate limits, the
   download queue, the follow scheduler — is shared and must not be duplicated.
-- **`SourceFactory` is `Send`; `Source` is not.** The factory (a path plus a
-  manifest) crosses to a worker thread, which then builds the live source
-  there. This is what lets a future Lua-backed source work at all: `mlua`'s VM
-  is `!Send` and must be born and destroyed on one thread.
-- **Plugins are pure functions from a query to structured data.** They get
-  HTTP (through the host's rate-limited agent), an HTML selector and a JSON
-  decoder. No filesystem, no catalog, no sockets. The host decides what to
-  store — the same discipline that keeps `LibraryService` worker-callable.
-- **Rate limits are declared by the source and enforced by the host**, because
-  a user-written plugin cannot be trusted to sleep.
+- **Sources are compiled-in Rust modules, not scripts.** The Lua runtime is
+  deferred, probably indefinitely: it exists to let people who cannot compile
+  the app extend it, and this app has two authors who both compile it. See
+  `docs/source-seam.md` §9a for the full cost/benefit.
+- **`SourceFactory` is `Send`; `Source` is not.** The factory crosses to a
+  worker thread and builds the live source there. Kept even without Lua,
+  because it is also how a source holding a non-`Send` handle stays usable —
+  and it is what would let a `LuaSource` (VM is `!Send`) drop in later without
+  changing the trait.
+- **A source is a pure function from a query to structured data.** No
+  filesystem, no catalog, no widgets. The host decides what to store — the
+  same discipline that keeps `LibraryService` worker-callable. A compiled-in
+  source follows this voluntarily; no sandbox enforces it.
+- **Rate limits are declared by the source and enforced by the host**, so one
+  careless source cannot get Kalam's User-Agent blocked.
 
 Lands as code with AO3 in P7, its first implementation and first caller — a
 trait with no implementation would fail `-D warnings` in a binary crate.

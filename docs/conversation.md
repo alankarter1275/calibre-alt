@@ -334,13 +334,37 @@ it requires throwing nothing away.
 
 ## 5. Plugin system — decision reversed
 
-**Status: ✅ seam designed 2026-09-03 — [`source-seam.md`](./source-seam.md).
-The author's lean below ("define the seams now, add scripting later") is what
-was built.** Open question 1 (Lua vs alternatives) resolves as: the *seam* is a
-Rust trait, landing with AO3; `mlua` comes after two native sources prove the
-shape. Open question 3 (when) is answered — the architecture track is done, so
-the design was safe to do now. Question 2 (scope) is narrowed to source
-adapters only for the moment.
+**Status: ✅ seam designed 2026-09-03, and the Lua decision is now REVERSED —
+[`source-seam.md`](./source-seam.md) §0, §9a, §12a.**
+
+The user settled the audience question, which is what the whole thing turned
+on: *"sources and metadata and maybe a few more, not an ecosystem, because
+it's for personal use. plugin system makes sense if there is a community,
+which isn't the case here."*
+
+- **Q1 (Lua vs alternatives) → compiled-in Rust traits.** That option was
+  listed below and rejected for one reason: "no user-authored scripts". With
+  no user community, that is not a drawback. A scripting runtime exists so
+  that people who cannot compile the app can extend it; both authors here
+  compile it routinely, so Lua would be a second language, a lost type
+  checker, a sandbox to enforce, a permanently frozen host API and a vendored
+  C interpreter — bought for nobody. **Deferred, not refused**: a `LuaSource`
+  is one more impl of the same trait, so the cost of changing our mind later
+  is near zero. What would flip it: a scraped source breaking often enough
+  that recompiling annoys, or a second person writing sources.
+- **Q2 (scope) → a short list, two of which already exist.** Content sources
+  (missing, = A0 step 8), metadata providers (`MetadataSource`, shipping),
+  themes (`Theme`, shipping), and possibly export formats and dictionaries
+  later. UI extension, reader/renderer hooks and anything that writes to the
+  library are out.
+- **Q3 (when) → answered.** The architecture track is done, so the seam was
+  safe to design now.
+
+The original objection at the top of this section — that an ebook reader's
+verbs are too big for a plugin system — turns out to have been half right. It
+is true of the reader; it is false of *sources*, whose verbs are exactly four.
+The resolution is not "no extensibility", it is "extensibility only where the
+verbs are small", which is what §12a lists.
 
 The roadmap listed **Plugin API** as a non-goal. The user has **changed their
 mind**: plugins are wanted — "it will help in the future phases" — and the

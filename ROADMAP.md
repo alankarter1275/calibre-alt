@@ -126,7 +126,8 @@ architecture.
    design** (the `Source` adapter API that P7/P9 depend on).
 2. **P6 — Downloads hub** (queue + folder watch; prerequisite for P7).
 4. **P7 — Fiction platform** (AO3 first, then FFN / Royal Road / ScribbleHub /
-   Webnovel) via **Lua source plugins**; native tag search (fandom, tags,
+   Webnovel) via **compiled-in Rust source modules** (Lua deferred — see
+   `docs/source-seam.md` §9a); native tag search (fandom, tags,
    characters, ships, rating, status); download + offline reading; follow +
    **auto-updater** (background scheduler; FFN-app-class).
 5. **Renderer vertical slice** — starts *alongside* P7, not after: custom
@@ -134,7 +135,8 @@ architecture.
    This is the **calibration milestone**: 2–4 weeks of sessions; if it takes
    longer, stop and reassess before sinking months in.
 6. **P8 — Comics local** (image pager — decode + paint, no engine) and
-   **P9 — Manga platform** (Lua source plugins; MangaDex official API first,
+   **P9 — Manga platform** (same `Source` trait, `ContentKind::Images`;
+   MangaDex official API first,
    then Komga/Kavita/OPDS clients, scraped sites later).
 6. **EPUB path** → custom renderer takes EPUBs: either a normalization
    pipeline (lol_html + rules) or **stylo** (Firefox's CSS engine, via
@@ -142,8 +144,9 @@ architecture.
    exotic EPUBs (may be cut later). **Adopt quote-anchored locators
    (LayeredLocator, chapbook's model) for annotations regardless** — it
    fixes the auto-updater anchor risk (§11).
-7. **P10 — PDF** (MuPDF) · **P11 — Tools** · **P12 — Lua plugin system**
-   matures into a user-facing plugin surface.
+7. **P10 — PDF** (MuPDF) · **P11 — Tools** · **P12 — Extension surfaces**
+   (a short list of narrow seams; **not** a user-facing plugin marketplace —
+   scoped down 2026-09-03, `docs/source-seam.md` §0).
 
 **Locked decisions (full reasoning in `docs/conversation.md`):**
 
@@ -159,7 +162,9 @@ architecture.
   exact architecture, already built (stylo + cosmic-text + tiny-skia/vello,
   no webview, GTK4 viewer, quote-anchored locators). Re-evaluate at
   vertical-slice time (§11).
-- **Manga = Tachiyomi-shaped `Source` adapter API, Lua plugins we write.**
+- **Manga = Tachiyomi-shaped `Source` adapter API, compiled-in Rust modules
+  we write** (was "Lua plugins"; reversed 2026-09-03 — no community, so a
+  scripting runtime is cost without benefit).
   No Kotlin extension bridge (Android APKs — wrong shape); no Suwayomi server
   rewrite; optional Suwayomi-server *client* adapter later (§7–8).
 - **PDF = MuPDF** (fixed-layout, AGPL — acceptable; Poppler/GPL the
@@ -225,17 +230,17 @@ P3  Annotations ─────── highlights, quotes, offline dictionary    
 P4  Library depth ───── shelves engine, lists, tags, analytics    ✅ done
 P5  Metadata ────────── edit metadata, cover pick, Open Library      ✅ done
 P6  Downloads hub ───── unified queue + folder watch
-P7  Fiction platform ── AO3 first → FFN/RoyalRoad/etc.; Lua source
-                        plugins; tag search; downloads; auto-updater
+P7  Fiction platform ── AO3 first → FFN/RoyalRoad/etc.; Rust source
+                        modules; tag search; downloads; auto-updater
 P8  Comics local ────── CBZ/CBR + Moku-style comics reader (image pager)
-P9  Manga platform ──── Suwayomi-class sources via Lua plugins
+P9  Manga platform ──── Suwayomi-class sources, same Source trait
                         (MangaDex API first; legal/self-hosted)
 P10 PDF ─────────────── MuPDF in text-reader family + basic marks
 P11 Tools ───────────── convert (external), polish, Calibre import
 A0  Architecture track ─ service layer + task manager + preloaders +
-                        thumbnails + virtualization + plugin-host seam
-P12 Plugins ──────────── Lua plugin system (source adapters first;
-                        matures after A0)
+                        thumbnails + source seam (virtualization closed)
+P12 Extension surfaces ─ narrow seams (sources, metadata, maybe export
+                        and dictionaries); no scripting runtime
 ```
 
 **Order lock:** P0→P5 stay sequential. P6–P11 may reorder after P3 if priorities shift.
@@ -1488,7 +1493,8 @@ across sources with tag filters, download fics, read offline, and
   only in the final step (text vs image URLs), which is a two-variant
   `Content` enum; searching, pagination, chapter lists, rate limits, the
   download queue and the follow scheduler are identical and must not be
-  written twice. Implemented natively first (AO3), by Lua plugins later (P12)
+  written twice. Implemented as compiled-in Rust modules (AO3 first); a Lua
+  runtime is deferred, probably indefinitely — `source-seam.md` §9a
 - Sources: AO3 first, then FFN, Royal Road, Webnovel, Scribble Hub, … each
   exposes search / detail / chapter list / chapter content (sanitized)
 - **Structured search UI** (native): fandom, tags, characters, ships,
@@ -1588,24 +1594,51 @@ Only sources you’re allowed to use. No unauthorized scraper assistance.
 
 ---
 
-## P12 — Lua plugin system
+## P12 — Extension surfaces (was "Lua plugin system")
 
-**Status:** wanted (reversed 2026-09-02 from "no plugin API"). **The seam is
-now designed — read [`docs/source-seam.md`](./docs/source-seam.md) before
-touching this phase.** **Dependency:** that seam ships as code with AO3 in P7;
-the Lua host comes after two native sources exist, so the API is validated by
-use rather than guessed.
+**Status: scoped down 2026-09-03 — the Lua runtime is deferred, probably
+indefinitely.** Read [`docs/source-seam.md`](./docs/source-seam.md) §0, §9a and
+§12a before touching this phase.
 
-**Goal:** a user-facing plugin surface. First-class consumers: **fiction
-source plugins** (P7) and **manga source plugins** (P9) — one Lua plugin per
-site, written by us (and later by users).
+The user settled the audience question: *"sources and metadata and maybe a few
+more, not an ecosystem, because it's for personal use. plugin system makes
+sense if there is a community, which isn't the case here."*
+
+That removes the reason a scripting runtime exists. Lua, wasm and friends all
+solve **"people who cannot compile the app want to extend it"**. Kalam has two
+authors and both compile it routinely, so the runtime would be pure cost: a
+second language, no type checking, a sandbox to enforce, a permanently frozen
+host API, a vendored C interpreter in every build, and the whole `!Send`
+factory dance in `source-seam.md` §9 that exists *only* to accommodate Lua.
+A compiled-in Rust source costs a `.rs` file and a match arm —
+`src/metadata/mod.rs` has been doing exactly that with two providers for
+several phases.
+
+**What this phase becomes:** a short list of narrow, pure-function extension
+points, each added when it has a real consumer (`source-seam.md` §12a).
+**Two already exist** — metadata providers (`MetadataSource`) and themes
+(`Theme`) — which is worth stating plainly: the app is already extensible along
+the axes the user named. Content sources are the missing one, and that is A0
+step 8. Export formats and dictionaries are plausible later; UI extension,
+reader/renderer hooks and anything that writes to the library are **out**.
+
+**Reversible by design.** A `LuaSource` would be one more implementation of the
+same `Source` trait, and `SourceFactory` already exists to carry a non-`Send`
+VM to a worker. **What would change the answer:** a scraped source that breaks
+often enough for recompiling to be annoying, or a second person wanting to add
+sources.
+
+**Goal:** a small set of extension points for a single-user app. First-class
+consumers: **fiction sources** (P7) and **manga sources** (P9) — one Rust
+module per site, written by us. Not a user-facing plugin marketplace.
 
 ### Scope (design points, refine in conversation)
 
-- **Language: Lua** via `mlua` — tiny, embeddable, battle-tested (Yazi,
-  Neovim, AwesomeWM). (WebAssembly and compiled-in Rust traits were
-  considered and set aside: wasm = heavy tooling, compiled-in = no
-  user-authored scripts.)
+- ~~**Language: Lua** via `mlua`~~ **— reversed 2026-09-03.** The option set
+  aside back then was *compiled-in Rust traits*, rejected because they mean
+  "no user-authored scripts". With no user community that is not a drawback,
+  and it is now the chosen design. Compiled-in Rust: type-checked by CI,
+  no sandbox to enforce, no second language, no frozen host API.
 - Plugin API surface: `search(query, filters) → results`, `details(url)`,
   `chapters(url) → list`, `content(chapter) → clean text` (fiction) or
   `pages(chapter) → image URLs` (manga).
@@ -1898,12 +1931,12 @@ that it "skipped a step" was wrong.
    they are Relm4 components hosted by `app.rs` rather than users of the
    helper. The two systems share behaviour, not types.
 3. **P6 — Downloads hub** (unified queue + folder watch).
-3. **P7 — Fiction platform** (AO3 first) via Lua source plugins; native tag
+3. **P7 — Fiction platform** (AO3 first) via Rust source modules; native tag
    search; download; follow + auto-updater.
 4. **Renderer vertical slice** (alongside P7) — cosmic-text fiction renderer;
    the 2–4 week calibration milestone.
 5. **P8 — Comics local** → **P9 — Manga platform** → **P10 — PDF (MuPDF)** →
-   **P11 — Tools** → **P12 — Lua plugin system matures.**
+   **P11 — Tools** → **P12 — Extension surfaces.**
 
 **Recently completed (do not redo):** dictionary track Phases 8–10 (shipped,
 CI-green: POS dividers `be11c07`, priority reorder `d12c905`, lookup history
@@ -2053,3 +2086,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-03 | **Backfill re-arm confirmed; the dictionary check turned out to be a test that could not fail.** The user imported five books and the `thumbs_backfilled` ladder returned exactly once, running to `144` — the marker noticing the count changed and re-verifying. No `thumbs_backfill_done` line came with it, which is correct and worth recording: the importer already writes a thumbnail per book, so the pass found all 144 present and generated nothing. Both halves of the skip are now proven on a real library. The same output also showed `startup_dicts 0.6 ms` printing *before* `window_shown 711.6 ms`, which my own test doc had called a failure. The build is fine; the instruction was broken. The line prints when the work finishes, and on a settled machine the packs installed months ago so it early-outs on a pref in under a millisecond — before the window at ~700 ms. Critically **it would have printed before `window_shown` on the unfixed build too**, because sub-millisecond work delays nothing wherever it runs; the check emitted identical output for a correct and an incorrect build, so it never had the power to distinguish them. Rewritten to use a throwaway `XDG_DATA_HOME`, which forces a genuine ~2–3 s install and makes the ordering mean something. New pitfall §19, whose rule is: before writing a manual check, ask what it would print if the bug were still present — if the answer is "the same thing", it is not a test |
 | 2026-09-03 | **A0 status corrected in the roadmap — it still said steps 4 and 5 were "not started".** Both shipped days ago, and step 6 was closed on measured evidence, but the summary bullet at the top of the A0 section had never been updated to match the per-step entries below it. This matters more than a normal stale line: the file's own first section orders every new agent to read the roadmap before touching code, and "Current trajectory" is named there as *the* single summary of where the project is. A fresh chat reading it would have set out to build a task manager that already exists. Now states plainly that steps 1–5 are done and CI-green, step 6 is closed with the numbers that closed it (~0.17 ms/card, 233 MB at 139 books vs 252 MB at 2,000), and **only steps 7 (perf-budget CI test) and 8 (plugin-host seam design) remain**. No code changed. Recorded because the failure mode is the same one §15–§19 keep describing: trusting a convenient summary instead of checking the thing it summarises |
 | 2026-09-03 | **A0 step 8: the source seam is designed — [`docs/source-seam.md`](./docs/source-seam.md).** P7 (fiction) and P9 (manga) both depend on it, so designing it once beforehand is the entire point; two phases inventing their own shape would mean rewriting one. **The biggest call is one trait, not two.** The roadmap listed `FictionSource` and `MangaSource` separately, but they differ in exactly one place — the last step returns text or image URLs — while searching, pagination, chapter lists, rate limits, the download queue and the follow scheduler are identical. Two traits means writing all of that twice and watching it drift; one trait with a two-variant `Content` enum writes it once, and a future third flavour breaks every `match` until handled, which is the good failure. Three things are load-bearing and are argued rather than asserted. **`ResultPage.has_more` from day one** — without it a search can never reach hit 21, and adding it later changes the return type of the most-used method in the API. **`WorkRef` must be complete enough to draw a result card**, because Tachiyomi's own docs warn that a missing thumbnail triggers an immediate per-row detail fetch — an N+1 over the network, the same bug this repo has now fixed three times in SQL (§16, §18). **`remote_id` must be the site's permanent id, never a URL or title slug**, because the auto-updater re-fetches by it and annotations anchor into what it returns. Also settled: rate limits are declared by the source but **enforced by the host**, since a user-written plugin cannot be trusted to sleep and one bad script gets Kalam's User-Agent blocked for everyone. **Research finding that changed the shape:** `mlua` is `!Send` (raw `*mut lua_State`), and its `send` feature buys thread-safety with a reentrant mutex on every VM access — permanent cost for a problem we do not have. Since `tasks::spawn` demands `Send`, the design sends a `SourceFactory` (path + manifest) to the worker and builds the VM *there*, born and dying on one thread; the feature stays off. Build order is deliberate: **not the Lua host first** — a plugin API with zero implementations is a guess. AO3 native, then MangaDex native, then Lua with AO3 ported as the proof. And the trait **does not land as code yet**: this is a binary crate with no `lib.rs`, so an unimplemented trait either fails `-D warnings` or adds to the 28 existing `#[allow(dead_code)]` escapes; it ships in the same commit as AO3, its first caller |
+| 2026-09-03 | **Lua reversed out of the plan: the user's scale answer removed the reason it existed.** Asked how far extensibility should go, the user said *"sources and metadata and maybe a few more, not an ecosystem, because it's for personal use. plugin system makes sense if there is a community, which isn't the case here."* That is decisive rather than a preference. A scripting runtime solves exactly one problem — **people who cannot compile the app want to extend it** — which is why Yazi, Neovim and Tachiyomi all have one and why Kalam does not need one: two authors, both of whom compile it routinely. Against that non-benefit, `mlua` costs a second language in the debugging path, the loss of type checking (a mistyped field is a 2 a.m. runtime error instead of a CI failure), a sandbox that has to be *enforced* with every hole a security bug, a host API frozen the moment a plugin exists — the exact "second API you must keep stable forever" objection recorded in `conversation.md` §5 — a vendored C interpreter in every build, and the whole `!Send` factory/VM dance in `source-seam.md` §9 that exists *only* to accommodate it. A compiled-in Rust source costs a `.rs` file and a match arm; `src/metadata/mod.rs` has been demonstrating that with two providers for several phases. **Deferred rather than refused**, and the design makes that nearly free: a `LuaSource` would be one more impl of the same `Source` trait, and `SourceFactory` already exists to carry a non-`Send` VM to a worker. Flip conditions written down: a scraped source breaking often enough that recompiling annoys, or a second person writing sources. The honest counter-argument is recorded too — when AO3 changes its HTML, a Lua fix is edit-and-restart while a Rust fix is edit-and-recompile. Also surfaced while listing the surfaces: **two of the four the user named already exist.** Metadata providers (`MetadataSource`) and themes (`Theme`) are extensible today in the only sense that matters here — adding one is a small, isolated, type-checked change. The app is already extensible along the named axes; content sources are the genuine gap, which is A0 step 8. Decided against merging `MetadataSource` into `Source`: they differ in three of four verbs (proposed edits to books you own, vs works you do not have yet), so merging would produce a trait half-full of `Unsupported`; they share the vocabulary (`SourceError`, `RateLimit`, the HTTP agent) instead. P12 renamed from "Lua plugin system" to "Extension surfaces" |
