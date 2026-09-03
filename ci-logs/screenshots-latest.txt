@@ -7,7 +7,7 @@ seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.9
-SWAYSOCK=/run/user/1001/sway-ipc.1001.5038.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.4387.sock
 sway up: {
   "human_readable": "1.9",
   "variant": "sway",
@@ -19,23 +19,23 @@ WAYLAND_DISPLAY=wayland-1
 
 === launching kalam ===
 toplevel windows seen: 1
-  shot: 01-home (58165 bytes)
+  shot: 01-home (58830 bytes)
 focused: 1
-  shot: 02-after-nav (58165 bytes)
-  shot: 03-after-nav-settled (58165 bytes)
+  shot: 02-after-nav (58830 bytes)
+  shot: 03-after-nav-settled (58830 bytes)
 navigation: DID NOT REACH the grid -- every shot is probably Home.
   The keyboard route is brittle by design; see README-screenshots.md.
 
 === timing lines from the app ===
-  [timing] startup_db_open         1.1 ms
+  [timing] startup_db_open         0.9 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      8.0 ms
-  [timing] window_shown          148.0 ms
+  [timing] startup_first_page      6.7 ms
+  [timing] window_shown          164.1 ms
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
   [timing] thumbs_backfill_done      130
-  [timing] startup_dicts        2753.5 ms
+  [timing] startup_dicts        3128.9 ms
 
 === did the covers actually load? ===
   01-home.png: 1600x1000  coloured=18.9%  lit=100.0%
@@ -44,29 +44,29 @@ navigation: DID NOT REACH the grid -- every shot is probably Home.
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  67ed9bc71036de1406125b5ac5b32b7d  ci-shots/01-home.png
-  67ed9bc71036de1406125b5ac5b32b7d  ci-shots/02-after-nav.png
-  67ed9bc71036de1406125b5ac5b32b7d  ci-shots/03-after-nav-settled.png
+  074d9c09a7664a1c5e6ebf9d18d3e9af  ci-shots/01-home.png
+  074d9c09a7664a1c5e6ebf9d18d3e9af  ci-shots/02-after-nav.png
+  074d9c09a7664a1c5e6ebf9d18d3e9af  ci-shots/03-after-nav-settled.png
 
 === app stderr (non-timing lines) ===
   
-  (kalam:5070): Gtk-WARNING **: 19:42:32.177: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (kalam:4419): Gtk-WARNING **: 19:50:37.807: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
 
 === peak memory ===
-books=139 peak_rss_kb=236756 peak_rss_mb=231
+books=139 peak_rss_kb=251196 peak_rss_mb=245
 
 === shutting down ===
 
 === artifacts ===
   total 204
-  drwxr-xr-x  2 runner runner  4096 Sep  3 19:43 .
-  drwxr-xr-x 13 runner runner  4096 Sep  3 19:42 ..
-  -rw-r--r--  1 runner runner 58165 Sep  3 19:42 01-home.png
-  -rw-r--r--  1 runner runner 58165 Sep  3 19:43 02-after-nav.png
-  -rw-r--r--  1 runner runner 58165 Sep  3 19:43 03-after-nav-settled.png
-  -rw-r--r--  1 runner runner     0 Sep  3 19:42 grim.log
-  -rw-r--r--  1 runner runner   654 Sep  3 19:42 kalam.log
-  -rw-r--r--  1 runner runner  2126 Sep  3 19:43 report.txt
-  -rw-r--r--  1 runner runner     0 Sep  3 19:42 sway.log
-  -rw-r--r--  1 runner runner  6548 Sep  3 19:42 tree.json
---- run 33797475794 ---
+  drwxr-xr-x  2 runner runner  4096 Sep  3 19:51 .
+  drwxr-xr-x 13 runner runner  4096 Sep  3 19:50 ..
+  -rw-r--r--  1 runner runner 58830 Sep  3 19:51 01-home.png
+  -rw-r--r--  1 runner runner 58830 Sep  3 19:51 02-after-nav.png
+  -rw-r--r--  1 runner runner 58830 Sep  3 19:51 03-after-nav-settled.png
+  -rw-r--r--  1 runner runner     0 Sep  3 19:51 grim.log
+  -rw-r--r--  1 runner runner   654 Sep  3 19:50 kalam.log
+  -rw-r--r--  1 runner runner  2126 Sep  3 19:51 report.txt
+  -rw-r--r--  1 runner runner     0 Sep  3 19:50 sway.log
+  -rw-r--r--  1 runner runner  6548 Sep  3 19:51 tree.json
+--- run 33798187465 ---
