@@ -8,6 +8,23 @@ one, do that.
 
 ---
 
+## Status
+
+Confirmed on the user's machine (Arch, 139 books, release build):
+
+| Test | State |
+| --- | --- |
+| 1 — the grid got lazy | **passed** |
+| 1b — Home and author covers | **passed** |
+| 1c(a) — thumbnail backfill goes quiet | **passed** — the `thumbs_backfilled` ladder was gone on a second launch |
+| 1c(a) — re-import brings it back once | not yet run |
+| 1c(b) — `startup_dicts` after `window_shown` | not yet run |
+| 2 — chapter turns | not yet run |
+| 3 — background work does not freeze the window | not yet run |
+| 4 — imports still behave | not yet run |
+
+---
+
 ## Setup (once)
 
 ```bash
@@ -131,6 +148,11 @@ and checking each file, to do nothing.
 
 **What should happen now:** on a settled library those lines are **gone**.
 Nothing about thumbnails should be printed at all.
+
+> **Confirmed.** On a second launch of a settled 139-book library the ladder
+> was gone. This is the only evidence there will be for this fix — CI seeds a
+> fresh library on every run, so it always does the real work and the ladder
+> always appears there, correctly.
 
 Then import one book and restart. The ladder should come back once (the pass
 re-runs because the book count changed), and then go quiet again on the launch
