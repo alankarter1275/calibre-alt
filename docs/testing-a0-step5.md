@@ -108,6 +108,46 @@ Home's was missed the first time — its covers never loaded at all.
 page is building cards without calling `preload::warm_books` — that is the bug
 in `docs/pitfalls.md` §16, not a slow disk.
 
+## Test 1c — the startup work that should now be invisible
+
+Two startup fixes only show themselves in the `KALAM_TIMING=1` output, and one
+of them **cannot be verified in CI at all** — every CI run starts from a freshly
+seeded library, so it is always a first launch.
+
+Run the app twice with timing on and compare.
+
+**a) The thumbnail backfill should go quiet.**
+
+Before this change, every launch printed a ladder of lines like:
+
+```text
+[timing] thumbs_backfilled        50
+[timing] thumbs_backfilled       100
+[timing] thumbs_backfilled       139
+```
+
+even though every thumbnail already existed. It was listing your whole library
+and checking each file, to do nothing.
+
+**What should happen now:** on a settled library those lines are **gone**.
+Nothing about thumbnails should be printed at all.
+
+Then import one book and restart. The ladder should come back once (the pass
+re-runs because the book count changed), and then go quiet again on the launch
+after that.
+
+If the lines never stop appearing, the skip marker is not being written — the
+likely cause is a cover that cannot be thumbnailed, which deliberately prevents
+the marker being recorded.
+
+**b) `startup_dicts` should be after `window_shown`, not before.**
+
+On your machine this reads `0.1 ms` because the dictionaries installed long
+ago, so there is nothing to feel. The line's *position* is the thing to check:
+it should now appear after `window_shown`, because the import moved to a
+background thread. CI proves the payoff on a genuine first run — 2.7 s of
+dictionary import that now lands behind the window instead of in front of it.
+
 ## Test 2 — chapter turns
 
 ```bash
