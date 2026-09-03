@@ -80,17 +80,53 @@ default_border none
 focus_follows_mouse no
 EOF
 
+say "sway binary: $(command -v sway || echo MISSING) $(sway --version 2>&1 | head -1)"
+
 sway --config "$SWAY_CONF" > "$OUT/sway.log" 2>&1 &
 SWAY_PID=$!
 
-# Wait for the compositor to publish a socket rather than sleeping blindly.
+# Find sway's IPC socket and export SWAYSOCK ourselves.
+#
+# This is not belt-and-braces, it is the fix for the second failure: sway
+# names its socket after its own pid and exports SWAYSOCK to processes *it*
+# launches. This script is sway's parent, not its child, so it inherits
+# nothing -- swaymsg then has no idea where to connect and reports the same
+# "cannot connect" whether sway is healthy or dead. The first run showed
+# exactly that: an empty sway.log (no errors at all) next to "sway never came
+# up", which is the signature of a running compositor we simply could not
+# talk to.
 for _ in $(seq 1 30); do
-  if swaymsg -t get_version >/dev/null 2>&1; then break; fi
+  if [ -z "${SWAYSOCK:-}" ]; then
+    CANDIDATE="$(ls -t "$XDG_RUNTIME_DIR"/sway-ipc.*.sock 2>/dev/null | head -1)"
+    [ -n "$CANDIDATE" ] && export SWAYSOCK="$CANDIDATE"
+  fi
+  if [ -n "${SWAYSOCK:-}" ] && swaymsg -t get_version >/dev/null 2>&1; then
+    break
+  fi
+  # A dead compositor will never produce a socket; stop waiting 30s for it.
+  if ! kill -0 "$SWAY_PID" 2>/dev/null; then
+    break
+  fi
   sleep 1
 done
+
+say "SWAYSOCK=${SWAYSOCK:-<none found>}"
 if ! swaymsg -t get_version >/dev/null 2>&1; then
-  say "FATAL: sway never came up. Its log:"
-  sed 's/^/  /' "$OUT/sway.log" | tee -a "$REPORT"
+  # Distinguish the two cases explicitly. Reporting "sway never came up" for
+  # a sway that is alive and well cost a whole round-trip.
+  if kill -0 "$SWAY_PID" 2>/dev/null; then
+    say "FATAL: sway IS RUNNING but its IPC socket was unreachable."
+    say "sockets present in $XDG_RUNTIME_DIR:"
+    ls -la "$XDG_RUNTIME_DIR" 2>&1 | sed 's/^/  /' | tee -a "$REPORT"
+  else
+    say "FATAL: the sway process exited."
+  fi
+  say "sway log (${OUT}/sway.log):"
+  if [ -s "$OUT/sway.log" ]; then
+    sed 's/^/  /' "$OUT/sway.log" | tee -a "$REPORT"
+  else
+    say "  (empty -- sway logged nothing, which usually means it started fine)"
+  fi
   exit 0
 fi
 say "sway up: $(swaymsg -t get_version -r | head -c 120)"
