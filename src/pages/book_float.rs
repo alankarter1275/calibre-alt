@@ -362,6 +362,11 @@ impl Component for BookFloatModel {
                             connect_clicked => BookFloatMsg::ToggleDescription,
                         },
 
+                        // Inert: `desc_section` is `vexpand: false` with a
+                        // fixed height, so this never actually claims slack.
+                        // The real bottom-anchoring is the spacer below, just
+                        // before the action row. Kept only because `fill()`
+                        // still toggles it per description state.
                         #[name = "desc_section_spacer"]
                         gtk::Box {
                             set_vexpand: true,
@@ -394,12 +399,24 @@ impl Component for BookFloatModel {
                     gtk::ScrolledWindow {
                         add_css_class: "kalam-float-tags-scroll",
                         set_hscrollbar_policy: gtk::PolicyType::External,
-                        set_vscrollbar_policy: gtk::PolicyType::Never,
-                        // Fixed so the row cannot change the float's height.
+                        // `External`, NOT `Never`. This is the bug that made
+                        // the action buttons keep moving: with `Never`, GTK
+                        // guarantees the content is fully visible in that
+                        // direction, so it propagates the child's *whole*
+                        // minimum height and `min/max_content_height` cannot
+                        // shrink it. A chip taller than TAGS_ROW_H therefore
+                        // still grew the row, and the buttons below moved.
+                        // `External` keeps scrolling but lets the row be the
+                        // exact height asked for.
+                        set_vscrollbar_policy: gtk::PolicyType::External,
+                        // Belt and braces: request, min and max all the same,
+                        // so the row is one height, always.
+                        set_height_request: TAGS_ROW_H,
                         set_min_content_height: TAGS_ROW_H,
                         set_max_content_height: TAGS_ROW_H,
                         set_hexpand: true,
                         set_vexpand: false,
+                        set_valign: gtk::Align::Start,
 
                         #[name = "tags"]
                         gtk::Box {
@@ -411,11 +428,25 @@ impl Component for BookFloatModel {
                         },
                     },
 
+                    // Anchors the action row to the bottom of the panel.
+                    //
+                    // Nothing else in the body expands, so any leftover height
+                    // used to sit *below* the buttons and their position
+                    // followed whatever was above them. This spacer soaks up
+                    // that slack instead, and since the float itself is a fixed
+                    // 420px tall, the buttons now land at the same place for
+                    // every book — tags or no tags, long description or short.
+                    gtk::Box {
+                        set_vexpand: true,
+                    },
+
                     gtk::Box {
                         add_css_class: "kalam-float-actions",
                         set_orientation: gtk::Orientation::Horizontal,
                         set_spacing: 8,
                         set_halign: gtk::Align::Fill,
+                        set_valign: gtk::Align::End,
+                        set_vexpand: false,
 
                         #[name = "read_btn"]
                         gtk::Button {

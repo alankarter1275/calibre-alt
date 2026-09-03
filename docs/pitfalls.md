@@ -96,6 +96,29 @@ shifted up on untagged books.
 **Do instead:** when a widget's job is to reserve space, show it
 unconditionally. An empty row is invisible anyway.
 
+## 4b. Reserving space is not the same as anchoring
+
+Fixing (4) by keeping the tag row permanently visible **did not work** — the
+user reported the buttons still moving. Two reasons, and the second is the
+general lesson.
+
+**`ScrolledWindow` + `PolicyType::Never` ignores your height.** `Never` is a
+promise to GTK that the content is fully visible in that direction, so GTK
+propagates the child's *whole* minimum height and `min_content_height` /
+`max_content_height` cannot shrink it. A chip taller than the requested row
+height still grew the row. Use `External` when you want a hard height *and*
+scrolling; `Never` is only safe when the content genuinely cannot overflow.
+
+**Reserving space for one child only fixes that child.** Nothing in the float
+body had `vexpand: true`, so all leftover height pooled *below* the action row
+and its position tracked whatever happened to sit above it. Every variable
+child would have needed its own bound, forever.
+
+**Do instead: anchor the thing that must not move.** One `vexpand: true` spacer
+immediately before the action row, plus `valign: End` on the row itself, makes
+the slack collect *above* the buttons. In a fixed-height panel that pins them
+absolutely, regardless of what changes higher up.
+
 ## 5. Never use `opacity` on a scrollbar
 
 `src/style.rs` opens with a warning block explaining that `opacity` below 1
