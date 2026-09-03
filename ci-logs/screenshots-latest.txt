@@ -7,7 +7,7 @@ seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.9
-SWAYSOCK=/run/user/1001/sway-ipc.1001.5044.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.7096.sock
 sway up: {
   "human_readable": "1.9",
   "variant": "sway",
@@ -27,15 +27,15 @@ navigation: DID NOT REACH the grid -- every shot is probably Home.
   The keyboard route is brittle by design; see README-screenshots.md.
 
 === timing lines from the app ===
-  [timing] startup_db_open         0.9 ms
+  [timing] startup_db_open         1.0 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      4.3 ms
-  [timing] window_shown          154.5 ms
+  [timing] startup_first_page      3.9 ms
+  [timing] window_shown          167.7 ms
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
   [timing] thumbs_backfill_done      130
-  [timing] startup_dicts        2699.8 ms
+  [timing] startup_dicts        2732.7 ms
 
 === did the covers actually load? ===
   01-home.png: 1600x1000  coloured=18.9%  lit=100.0%
@@ -50,23 +50,23 @@ navigation: DID NOT REACH the grid -- every shot is probably Home.
 
 === app stderr (non-timing lines) ===
   
-  (kalam:5076): Gtk-WARNING **: 20:27:05.796: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (kalam:7128): Gtk-WARNING **: 21:08:03.476: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
 
 === peak memory ===
-books=139 peak_rss_kb=237144 peak_rss_mb=231
+books=139 peak_rss_kb=236616 peak_rss_mb=231
 
 === shutting down ===
 
 === artifacts ===
   total 204
-  drwxr-xr-x  2 runner runner  4096 Sep  3 20:27 .
-  drwxr-xr-x 13 runner runner  4096 Sep  3 20:27 ..
-  -rw-r--r--  1 runner runner 58165 Sep  3 20:27 01-home.png
-  -rw-r--r--  1 runner runner 58165 Sep  3 20:27 02-after-nav.png
-  -rw-r--r--  1 runner runner 58165 Sep  3 20:27 03-after-nav-settled.png
-  -rw-r--r--  1 runner runner     0 Sep  3 20:27 grim.log
-  -rw-r--r--  1 runner runner   654 Sep  3 20:27 kalam.log
-  -rw-r--r--  1 runner runner  2126 Sep  3 20:27 report.txt
-  -rw-r--r--  1 runner runner     0 Sep  3 20:27 sway.log
-  -rw-r--r--  1 runner runner  6548 Sep  3 20:27 tree.json
---- run 33801791670 ---
+  drwxr-xr-x  2 runner runner  4096 Sep  3 21:08 .
+  drwxr-xr-x 13 runner runner  4096 Sep  3 21:08 ..
+  -rw-r--r--  1 runner runner 58165 Sep  3 21:08 01-home.png
+  -rw-r--r--  1 runner runner 58165 Sep  3 21:08 02-after-nav.png
+  -rw-r--r--  1 runner runner 58165 Sep  3 21:08 03-after-nav-settled.png
+  -rw-r--r--  1 runner runner     0 Sep  3 21:08 grim.log
+  -rw-r--r--  1 runner runner   654 Sep  3 21:08 kalam.log
+  -rw-r--r--  1 runner runner  2126 Sep  3 21:08 report.txt
+  -rw-r--r--  1 runner runner     0 Sep  3 21:08 sway.log
+  -rw-r--r--  1 runner runner  6548 Sep  3 21:08 tree.json
+--- run 33804925351 ---
