@@ -1,4 +1,3 @@
-src/app.rs:915:18: [1m[91merror[E0034][0m: multiple applicable items in scope: multiple `focus` found
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
+src/tasks.rs:76:9: [1m[91merror[0m: fields `done`, `total`, and `detail` are never read
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
---- run 33697691643 ---
+--- run 33731854149 ---
