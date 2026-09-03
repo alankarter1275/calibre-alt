@@ -6,5 +6,88 @@ binary: 16004696 bytes
 seed-library: 2000 books, 1882 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
-FATAL: sway never came up. Its log:
---- run 33766763115 ---
+sway binary: /usr/bin/sway sway version 1.9
+SWAYSOCK=/run/user/1001/sway-ipc.1001.5048.sock
+sway up: {
+  "human_readable": "1.9",
+  "variant": "sway",
+  "major": 1,
+  "minor": 9,
+  "patch": 0,
+  "loaded_config_file_name":
+WAYLAND_DISPLAY=wayland-1
+
+=== launching kalam ===
+toplevel windows seen: 1
+  shot: 01-home (58191 bytes)
+  shot: 02-after-nav (58191 bytes)
+  shot: 03-after-nav-settled (58191 bytes)
+
+=== timing lines from the app ===
+  [timing] startup_db_open         1.0 ms
+  [timing] covers_queued            11
+  [timing] startup_first_page     22.7 ms
+  [timing] window_shown          156.0 ms
+  [timing] thumbs_backfilled        50
+  [timing] thumbs_backfilled       150
+  [timing] thumbs_backfilled       200
+  [timing] thumbs_backfilled       250
+  [timing] thumbs_backfilled       300
+  [timing] startup_dicts        3727.4 ms
+  [timing] thumbs_backfilled       350
+  [timing] thumbs_backfilled       450
+  [timing] thumbs_backfilled       500
+  [timing] thumbs_backfilled       550
+  [timing] thumbs_backfilled       650
+  [timing] thumbs_backfilled       700
+  [timing] thumbs_backfilled       750
+  [timing] thumbs_backfilled       800
+  [timing] thumbs_backfilled       850
+  [timing] thumbs_backfilled       900
+  [timing] thumbs_backfilled       950
+  [timing] thumbs_backfilled      1000
+  [timing] thumbs_backfilled      1050
+  [timing] thumbs_backfilled      1100
+  [timing] thumbs_backfilled      1150
+  [timing] thumbs_backfilled      1200
+  [timing] thumbs_backfilled      1300
+  [timing] thumbs_backfilled      1350
+  [timing] thumbs_backfilled      1400
+  [timing] thumbs_backfilled      1450
+  [timing] thumbs_backfilled      1500
+  [timing] thumbs_backfilled      1550
+  [timing] thumbs_backfilled      1600
+  [timing] thumbs_backfilled      1650
+  [timing] thumbs_backfilled      1700
+  [timing] thumbs_backfilled      1750
+  [timing] thumbs_backfilled      1800
+  [timing] thumbs_backfilled      1850
+  [timing] thumbs_backfilled      1900
+  [timing] thumbs_backfilled      1950
+  [timing] thumbs_backfilled      2000
+  [timing] thumbs_backfill_done     1882
+
+=== did the covers actually load? ===
+  01-home.png: 1600x1000  coloured=18.9%  lit=100.0%
+  02-after-nav.png: 1600x1000  coloured=18.9%  lit=100.0%
+  03-after-nav-settled.png: 1600x1000  coloured=18.9%  lit=100.0%
+  (numbers only -- no threshold is enforced yet; see the docstring)
+
+=== peak memory ===
+books=2000 peak_rss_kb=240336 peak_rss_mb=234
+
+=== shutting down ===
+
+=== artifacts ===
+  total 204
+  drwxr-xr-x  2 runner runner  4096 Sep  3 14:47 .
+  drwxr-xr-x 13 runner runner  4096 Sep  3 14:46 ..
+  -rw-r--r--  1 runner runner 58191 Sep  3 14:47 01-home.png
+  -rw-r--r--  1 runner runner 58191 Sep  3 14:47 02-after-nav.png
+  -rw-r--r--  1 runner runner 58191 Sep  3 14:48 03-after-nav-settled.png
+  -rw-r--r--  1 runner runner     0 Sep  3 14:47 grim.log
+  -rw-r--r--  1 runner runner  1875 Sep  3 14:46 kalam.log
+  -rw-r--r--  1 runner runner  2703 Sep  3 14:48 report.txt
+  -rw-r--r--  1 runner runner     0 Sep  3 14:46 sway.log
+  -rw-r--r--  1 runner runner  6548 Sep  3 14:47 tree.json
+--- run 33767919865 ---
