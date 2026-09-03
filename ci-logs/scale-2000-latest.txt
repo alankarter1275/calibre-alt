@@ -1,0 +1,12 @@
+=== kalam screenshot run ===
+books=2000 out=ci-shots-2000 settle=60
+binary: 15988728 bytes
+
+=== seeding 2000 books ===
+seed-library: 2000 books, 1882 covers -> /tmp/kalam-ci-data/kalam
+
+=== starting headless sway ===
+FATAL: sway never came up. Its log:
+  00:00:00.298 [ERROR] [wlr] [xwayland/server.c:454] Cannot find Xwayland binary "/usr/bin/Xwayland"
+  00:00:00.298 [ERROR] [sway/server.c:363] Failed to start Xwayland
+--- run 33763667071 ---
