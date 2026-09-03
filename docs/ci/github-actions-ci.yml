@@ -163,9 +163,15 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     continue-on-error: true
+    # Needed by "publish the screenshot report" below, which commits the
+    # text summary back to the branch for the agent to read.
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install system dependencies
         run: |
@@ -192,7 +198,7 @@ jobs:
       # screenshots and the numbers describe the same thing.
       - name: screenshots
         run: |
-          chmod +x docs/ci/screenshot.sh
+          chmod +x docs/ci/screenshot.sh docs/ci/check-shot.py
           BOOKS=139 OUT=ci-shots docs/ci/screenshot.sh
 
       - name: upload screenshots
@@ -203,6 +209,26 @@ jobs:
           path: ci-shots/
           retention-days: 14
           if-no-files-found: warn
+
+      # The Arena sandbox cannot download Actions artifacts -- the blob host is
+      # unreachable from it, exactly like the Actions log host (which is why
+      # clippy failures are committed to ci-logs/). The PNGs are for humans;
+      # this text report is the only way the agent can see what happened.
+      # Committed on success AND failure, because a failed screenshot run is
+      # precisely when the diagnostics matter.
+      - name: publish the screenshot report
+        if: always()
+        run: |
+          mkdir -p ci-logs
+          cp ci-shots/report.txt ci-logs/screenshots-latest.txt 2>/dev/null \
+            || echo "(no report produced)" > ci-logs/screenshots-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/screenshots-latest.txt
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -f ci-logs/screenshots-latest.txt
+          git commit -m "ci: publish screenshot report [skip ci]" || true
+          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+          git push origin "HEAD:$GITHUB_REF_NAME" || true
 
   # ---------------------------------------------------------------------------
   # Scale check: 2,000 books.
@@ -219,12 +245,18 @@ jobs:
   # ---------------------------------------------------------------------------
   scale:
     name: scale check (2000 books)
-    needs: build
+    # Deliberately after `screenshots`, not in parallel: both jobs commit a
+    # report to the same branch, and racing pushes means one of them loses.
+    needs: [build, screenshots]
     runs-on: ubuntu-latest
     continue-on-error: true
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install system dependencies
         run: |
@@ -252,10 +284,8 @@ jobs:
       # the parent, not us). Longer settle: 2,000 covers take a while to warm.
       - name: run at 2000 books and record peak memory
         run: |
-          chmod +x docs/ci/screenshot.sh
+          chmod +x docs/ci/screenshot.sh docs/ci/check-shot.py
           BOOKS=2000 OUT=ci-shots-2000 SETTLE=60 docs/ci/screenshot.sh
-          echo "--- headline ---"
-          cat ci-shots-2000/peak-rss.txt || echo "(no measurement captured)"
 
       - name: upload scale artifacts
         uses: actions/upload-artifact@v4
@@ -265,3 +295,20 @@ jobs:
           path: ci-shots-2000/
           retention-days: 14
           if-no-files-found: warn
+
+      # Same reasoning as the screenshots job: the peak-memory number is the
+      # whole point of this job, and it is useless if it can only be read by
+      # downloading a zip the agent cannot reach.
+      - name: publish the scale report
+        if: always()
+        run: |
+          mkdir -p ci-logs
+          cp ci-shots-2000/report.txt ci-logs/scale-2000-latest.txt 2>/dev/null \
+            || echo "(no report produced)" > ci-logs/scale-2000-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/scale-2000-latest.txt
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -f ci-logs/scale-2000-latest.txt
+          git commit -m "ci: publish scale report [skip ci]" || true
+          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+          git push origin "HEAD:$GITHUB_REF_NAME" || true

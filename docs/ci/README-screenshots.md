@@ -30,7 +30,26 @@ change. `build` remains the only thing that can fail the run.
   catalog schema under `XDG_DATA_HOME`. It refuses to run without that variable
   set, so it can never scribble on a real `~/.local/share/kalam`.
 - `docs/ci/screenshot.sh` — starts headless sway, launches the release binary,
-  waits, grabs PNGs with `grim`, samples the app's peak memory.
+  waits, grabs PNGs with `grim`, samples the app's peak memory, and writes
+  `report.txt`.
+- `docs/ci/check-shot.py` — reads the PNGs and reports what fraction of pixels
+  are strongly coloured. The seeded covers are saturated colours and the
+  placeholder is grey, so this answers "did the covers load?" as a number
+  rather than needing someone to squint at an image. It reports numbers and
+  never fails: a threshold invented before we have seen real runs would be a
+  guess, and a wrong threshold that fails good builds is worse than none.
+
+## How the agent reads the results
+
+The Arena sandbox **cannot download Actions artifacts** — the blob host is
+unreachable from it, the same limitation that makes clippy failures get
+committed to `ci-logs/`. So both jobs copy their `report.txt` into
+`ci-logs/screenshots-latest.txt` and `ci-logs/scale-2000-latest.txt` and commit
+it back to the branch, on success *and* failure.
+
+The PNGs are for you. The committed text report is for the agent. It contains
+the `[timing]` lines, the cover-colour percentages, peak memory, and any fatal
+error with the sway or app log attached.
 
 ## Caveats — read these before believing a screenshot
 
