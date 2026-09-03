@@ -183,6 +183,7 @@ jobs:
             libgraphene-1.0-dev \
             libwebkitgtk-6.0-dev libsoup-3.0-dev \
             sway grim wtype \
+            xwayland \
             fonts-dejavu-core
 
       - name: Install Rust toolchain
@@ -268,6 +269,7 @@ jobs:
             libgraphene-1.0-dev \
             libwebkitgtk-6.0-dev libsoup-3.0-dev \
             sway grim wtype \
+            xwayland \
             fonts-dejavu-core
 
       - name: Install Rust toolchain
