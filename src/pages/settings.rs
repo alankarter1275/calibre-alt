@@ -419,13 +419,28 @@ impl Component for SettingsPageModel {
                                         // outcome is returned as plain data and
                                         // reported by `on_done` below.
                                         //
-                                        // `import_dictionary` is a single long
-                                        // call with no inner progress, so this
-                                        // is the one honest report available:
-                                        // which file is being parsed.
-                                        reporter.step(0, 1, name);
-                                        dict::import_dictionary(&catalog, &path)
-                                            .map_err(|e| format!("{e:#}"))
+                                        // The importer now streams in batches
+                                        // and reports the running entry count,
+                                        // so this is a real progress bar rather
+                                        // than a single "started" ping that sat
+                                        // still for the whole import.
+                                        reporter.step(0, 0, name.clone());
+                                        dict::import_dictionary_with_progress(
+                                            &catalog,
+                                            &path,
+                                            &|written| {
+                                                // Total is unknown until the
+                                                // stream ends, so report 0 —
+                                                // `Update::total` documents
+                                                // that as "cannot know yet".
+                                                reporter.step(
+                                                    written,
+                                                    0,
+                                                    format!("{name} · {written} entries"),
+                                                );
+                                            },
+                                        )
+                                        .map_err(|e| format!("{e:#}"))
                                     },
                                     // A dictionary pack can take a while. The
                                     // worker cannot raise a toast itself, so it

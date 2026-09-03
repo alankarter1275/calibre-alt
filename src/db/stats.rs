@@ -71,6 +71,17 @@ impl Catalog {
 
     /// SQLite's write counter. Any INSERT/UPDATE/DELETE bumps it, so callers
     /// can cheaply tell whether the catalog changed since they last looked.
+    ///
+    /// Callers must treat this as an **opaque token compared for equality**,
+    /// never as a monotonically increasing number. `sqlite3_total_changes` is
+    /// a C `int`, so after ~2.1 billion row changes it wraps to negative and
+    /// keeps counting. Equality still behaves correctly across a wrap except
+    /// for the single unlucky value that repeats, which costs one stale page
+    /// and nothing else. Ordering comparisons (`>`), by contrast, would go
+    /// permanently wrong — hence the warning rather than a fix.
+    ///
+    /// Reaching that count needs millions of writes per session, which only
+    /// the dictionary importer produces; a book library never will.
     pub fn change_token(&self) -> i64 {
         self.conn
             .lock()
@@ -164,6 +175,10 @@ impl Catalog {
                  ORDER BY ym DESC
                  LIMIT 6",
             )?;
+            // Month granularity: the local-vs-UTC boundary only matters for
+            // books added within hours of a month change, and a month label
+            // being off by one in that window is not worth a per-row
+            // conversion over the whole table.
             let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
             let mut months = rows.collect::<std::result::Result<Vec<_>, _>>()?;
             months.reverse();
@@ -172,12 +187,18 @@ impl Catalog {
 
         // Reading minutes per day for the last 14 days (zero-filled).
         {
-            let mut stmt = conn.prepare_cached(
-                "SELECT substr(started_at, 1, 10) AS d, IFNULL(SUM(seconds), 0)
+            // Bucketed by the user's local day, not UTC's -- see
+            // `local_day_sql`. Not `prepare_cached`: the SQL embeds the
+            // timezone offset, so caching it under a fixed key would be
+            // wrong if the offset ever differed.
+            let sql = format!(
+                "SELECT {} AS d, IFNULL(SUM(seconds), 0)
                  FROM reading_sessions
                  WHERE started_at >= ?1
                  GROUP BY d",
-            )?;
+                crate::db::local_day_sql("started_at")
+            );
+            let mut stmt = conn.prepare(&sql)?;
             let cutoff_14 = iso_days_ago(13);
             let rows = stmt.query_map(params![cutoff_14], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
@@ -185,8 +206,8 @@ impl Catalog {
             let found = rows.collect::<std::result::Result<Vec<_>, _>>()?;
             let mut series = Vec::with_capacity(14);
             for back in (0..14).rev() {
-                let day = iso_days_ago(back);
-                let key = day[..10].to_string();
+                // The local day label, matching what the query bucketed.
+                let key = crate::db::local_day_ago(back);
                 let secs = found
                     .iter()
                     .find(|(d, _)| *d == key)
@@ -200,12 +221,16 @@ impl Catalog {
         // Average over *active* days only — dividing by 30 when you read on 3 of
         // them reports a demoralising and fairly meaningless number.
         {
+            let active_days_sql = format!(
+                "SELECT IFNULL(SUM(seconds), 0),
+                        COUNT(DISTINCT {})
+                 FROM reading_sessions
+                 WHERE started_at >= ?1 AND seconds > 0",
+                crate::db::local_day_sql("started_at")
+            );
             let (total, days): (i64, i64) = conn
                 .query_row(
-                    "SELECT IFNULL(SUM(seconds), 0),
-                            COUNT(DISTINCT substr(started_at, 1, 10))
-                     FROM reading_sessions
-                     WHERE started_at >= ?1 AND seconds > 0",
+                    &active_days_sql,
                     params![cutoff_30],
                     |r| Ok((r.get(0)?, r.get(1)?)),
                 )
@@ -248,10 +273,15 @@ impl Catalog {
 
         // Streaks over distinct days that have any reading session.
         {
-            let mut stmt = conn.prepare_cached(
-                "SELECT DISTINCT substr(started_at, 1, 10) FROM reading_sessions
-                 WHERE seconds > 0 ORDER BY 1 DESC",
-            )?;
+            // Local days: a streak is about the user's calendar. Bucketing
+            // in UTC merged two local nights into one day east of Greenwich
+            // and broke streaks the user had genuinely earned.
+            let sql = format!(
+                "SELECT DISTINCT {} AS d FROM reading_sessions
+                 WHERE seconds > 0 ORDER BY d DESC",
+                crate::db::local_day_sql("started_at")
+            );
+            let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
             let days = rows.collect::<std::result::Result<Vec<_>, _>>()?;
             let (current, longest) = streaks(&days);

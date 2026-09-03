@@ -139,22 +139,99 @@ impl OpenBook {
     }
 }
 
+/// Total bytes we are willing to write for one book.
+///
+/// An EPUB is a zip, and a zip's declared sizes are chosen by whoever built
+/// it. A "zip bomb" — nested deflate streams, or a flat entry of a few
+/// kilobytes that expands to gigabytes — would otherwise fill
+/// `~/.local/share/kalam/cache/reader/` until the disk is full, which on the
+/// 4 GB laptop this app targets wedges the whole session rather than just
+/// failing one book. 512 MB is far beyond any real EPUB (a heavily
+/// illustrated one is tens of MB) and far below "the disk is gone".
+const MAX_EXTRACT_BYTES: u64 = 512 * 1024 * 1024;
+
+/// Entry-count ceiling, for the same reason: a zip can declare millions of
+/// tiny entries and cost us a `create`/`close` syscall pair for each.
+const MAX_EXTRACT_ENTRIES: usize = 10_000;
+
 fn extract_zip(epub: &Path, dest: &Path) -> Result<()> {
     let file = File::open(epub)?;
     let mut archive = ZipArchive::new(file)?;
+
+    if archive.len() > MAX_EXTRACT_ENTRIES {
+        return Err(anyhow!(
+            "EPUB has {} entries (limit {MAX_EXTRACT_ENTRIES}) — refusing to extract",
+            archive.len()
+        ));
+    }
+
+    let mut written: u64 = 0;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i)?;
-        let name = entry.name().replace('\\', "/");
-        if name.ends_with('/') {
-            fs::create_dir_all(dest.join(&name))?;
+
+        // SECURITY: `entry.name()` is attacker-controlled, and `Path::join`
+        // has two behaviours that turn it into arbitrary file write:
+        //   * a relative name may contain `..` and climb out of `dest`,
+        //   * an *absolute* name replaces `dest` entirely, because
+        //     `a.join("/etc/x") == "/etc/x"`.
+        // Either one lets an EPUB downloaded from a stranger drop a file into
+        // ~/.config/autostart and run code at next login. `enclosed_name()`
+        // is the zip crate's answer: it returns `None` for exactly the names
+        // that can escape the destination directory.
+        //
+        // Skipped rather than fatal: one hostile or malformed entry should
+        // not make an otherwise readable book refuse to open. The rest of the
+        // archive still extracts, and a book missing a chapter is a visible
+        // problem the user can act on.
+        let Some(relative) = entry.enclosed_name() else {
+            eprintln!(
+                "kalam: skipping unsafe EPUB entry path {:?} in {}",
+                entry.name(),
+                epub.display()
+            );
+            continue;
+        };
+
+        // Note on symlinks: zip can carry a unix symlink entry, whose body is
+        // the link target. We write that body as a plain file, which is inert.
+        // Do not "fix" this by honouring unix modes — a symlink pointing at
+        // ~/.ssh/authorized_keys plus a later entry writing through it is the
+        // two-step version of the traversal guarded against above.
+        let out_path = dest.join(&relative);
+
+        if entry.is_dir() {
+            fs::create_dir_all(&out_path)?;
             continue;
         }
-        let out_path = dest.join(&name);
+
         if let Some(parent) = out_path.parent() {
             fs::create_dir_all(parent)?;
         }
+
+        // The remaining budget is enforced on bytes actually copied, via
+        // `take`. Deliberately NOT on `entry.size()`: that is the archive's
+        // *declared* uncompressed size, which is attacker-controlled and can
+        // lie in either direction. Capping the real read is what makes the
+        // limit real.
+        let remaining = MAX_EXTRACT_BYTES.saturating_sub(written);
+        if remaining == 0 {
+            return Err(anyhow!(
+                "EPUB expands past {MAX_EXTRACT_BYTES} bytes — refusing to extract"
+            ));
+        }
         let mut out = File::create(&out_path)?;
-        std::io::copy(&mut entry, &mut out)?;
+        let copied = std::io::copy(&mut entry.by_ref().take(remaining), &mut out)?;
+        written += copied;
+
+        // `copied == remaining` means we stopped because we hit the cap, not
+        // because the entry ended, so the file on disk is truncated garbage.
+        if copied == remaining && entry.by_ref().bytes().next().is_some() {
+            drop(out);
+            let _ = fs::remove_file(&out_path);
+            return Err(anyhow!(
+                "EPUB expands past {MAX_EXTRACT_BYTES} bytes — refusing to extract"
+            ));
+        }
     }
     Ok(())
 }
@@ -3338,5 +3415,212 @@ impl ReadingTheme {
             ReadingTheme::Dark => ("rgba(184, 93, 112, 0.52)", "#ffd166"),
             ReadingTheme::Ink => ("rgba(204, 104, 132, 0.52)", "#ffd166"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use zip::write::SimpleFileOptions;
+    use zip::ZipWriter;
+
+    /// A scratch directory that removes itself.
+    ///
+    /// The repo has no `tempfile` dependency and this is not worth adding one
+    /// for; the pattern matches `thumbs.rs` and `preload.rs`.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(tag: &str) -> Self {
+            let p = std::env::temp_dir()
+                .join(format!("kalam-{tag}-{}", uuid::Uuid::new_v4()));
+            fs::create_dir_all(&p).expect("scratch dir");
+            Self(p)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Build a zip at `at` from `(name, bytes)` pairs, writing the names
+    /// verbatim so a test can put a traversal path in one.
+    fn write_zip(at: &Path, entries: &[(&str, &[u8])]) {
+        let file = File::create(at).expect("create zip");
+        let mut zip = ZipWriter::new(file);
+        let opts = SimpleFileOptions::default();
+        for (name, body) in entries {
+            zip.start_file(*name, opts).expect("start entry");
+            zip.write_all(body).expect("write entry");
+        }
+        zip.finish().expect("finish zip");
+    }
+
+    /// Assert that `archive` really contains an entry named `name`.
+    ///
+    /// Guards against the failure mode in `docs/pitfalls.md` §19: if
+    /// `ZipWriter` ever normalises a hostile path on the way *in*, the
+    /// traversal tests below would pass without exercising anything. This
+    /// makes that situation a loud failure telling the next person to build
+    /// the fixture bytes by hand instead.
+    fn assert_archive_contains(at: &Path, name: &str) {
+        let file = File::open(at).expect("reopen zip");
+        let archive = ZipArchive::new(file).expect("parse zip");
+        let names: Vec<String> = archive.file_names().map(|n| n.to_string()).collect();
+        assert!(
+            names.iter().any(|n| n == name),
+            "fixture did not survive ZipWriter: wanted an entry literally named \
+             {name:?}, archive holds {names:?}. The traversal tests are only \
+             meaningful if the hostile name is really in the archive."
+        );
+    }
+
+    #[test]
+    fn extract_refuses_to_climb_out_of_the_destination() {
+        // The zip-slip attack: an EPUB whose entry name walks up out of the
+        // cache directory. Before `enclosed_name()` this wrote a real file
+        // into the parent, which in the shipping layout is the shared
+        // `cache/reader/` root -- and with enough `..` segments, anywhere the
+        // user can write.
+        let scratch = Scratch::new("zipslip");
+        let epub = scratch.path().join("evil.epub");
+        let dest = scratch.path().join("dest");
+        fs::create_dir_all(&dest).unwrap();
+
+        write_zip(
+            &epub,
+            &[
+                ("../escaped.txt", b"pwned" as &[u8]),
+                ("../../escaped-twice.txt", b"pwned"),
+                ("ok.txt", b"fine"),
+            ],
+        );
+
+        assert_archive_contains(&epub, "../escaped.txt");
+
+        extract_zip(&epub, &dest).expect("a hostile entry is skipped, not fatal");
+
+        assert!(
+            !scratch.path().join("escaped.txt").exists(),
+            "entry with `..` escaped the destination directory"
+        );
+        assert!(
+            !scratch.path().join("escaped-twice.txt").exists(),
+            "entry with `../..` escaped the destination directory"
+        );
+        assert!(
+            dest.join("ok.txt").exists(),
+            "the safe entries must still extract -- one bad path should not \
+             make an otherwise readable book refuse to open"
+        );
+    }
+
+    #[test]
+    fn extract_refuses_an_absolute_entry_path() {
+        // The subtler half of zip-slip, and the reason a `..` check alone is
+        // not enough: `Path::join` DISCARDS the base when the argument is
+        // absolute, so `dest.join("/tmp/x")` is just "/tmp/x". No `..`
+        // required.
+        let scratch = Scratch::new("zipabs");
+        let epub = scratch.path().join("evil.epub");
+        let dest = scratch.path().join("dest");
+        fs::create_dir_all(&dest).unwrap();
+
+        let absolute = scratch.path().join("absolute-escape.txt");
+        let absolute_name = absolute.to_string_lossy().into_owned();
+        write_zip(&epub, &[(absolute_name.as_str(), b"pwned" as &[u8])]);
+        assert_archive_contains(&epub, absolute_name.as_str());
+
+        extract_zip(&epub, &dest).expect("a hostile entry is skipped, not fatal");
+
+        assert!(
+            !absolute.exists(),
+            "an absolute entry name wrote outside the destination directory"
+        );
+    }
+
+    #[test]
+    fn extract_stops_at_the_size_ceiling() {
+        // Stand-in for a zip bomb. The point is not the ratio -- it is that
+        // the ceiling is enforced on bytes actually written, so an entry that
+        // lies about its size cannot get past it.
+        let scratch = Scratch::new("zipbomb");
+        let epub = scratch.path().join("big.epub");
+        let dest = scratch.path().join("dest");
+        fs::create_dir_all(&dest).unwrap();
+
+        // Highly compressible, so the archive on disk stays tiny.
+        let chunk = vec![b'A'; 1024 * 1024];
+        let entries: Vec<(String, Vec<u8>)> = (0..600)
+            .map(|i| (format!("big-{i}.txt"), chunk.clone()))
+            .collect();
+        let refs: Vec<(&str, &[u8])> = entries
+            .iter()
+            .map(|(n, b)| (n.as_str(), b.as_slice()))
+            .collect();
+        write_zip(&epub, &refs);
+
+        let err = extract_zip(&epub, &dest)
+            .expect_err("600 MB of payload must trip the 512 MB ceiling");
+        assert!(
+            err.to_string().contains("refusing to extract"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn extract_rejects_an_absurd_entry_count() {
+        let scratch = Scratch::new("zipcount");
+        let epub = scratch.path().join("many.epub");
+        let dest = scratch.path().join("dest");
+        fs::create_dir_all(&dest).unwrap();
+
+        let names: Vec<String> = (0..MAX_EXTRACT_ENTRIES + 1)
+            .map(|i| format!("f{i}.txt"))
+            .collect();
+        let refs: Vec<(&str, &[u8])> =
+            names.iter().map(|n| (n.as_str(), b"x" as &[u8])).collect();
+        write_zip(&epub, &refs);
+
+        let err = extract_zip(&epub, &dest).expect_err("entry count must be capped");
+        assert!(
+            err.to_string().contains("refusing to extract"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn extract_writes_normal_entries_including_nested_directories() {
+        // The guard must not break the ordinary case: a real EPUB is mostly
+        // nested paths like OEBPS/Text/chapter1.xhtml.
+        let scratch = Scratch::new("zipok");
+        let epub = scratch.path().join("book.epub");
+        let dest = scratch.path().join("dest");
+        fs::create_dir_all(&dest).unwrap();
+
+        write_zip(
+            &epub,
+            &[
+                ("mimetype", b"application/epub+zip" as &[u8]),
+                ("META-INF/container.xml", b"<container/>"),
+                ("OEBPS/Text/chapter1.xhtml", b"<html/>"),
+                ("./OEBPS/Text/chapter2.xhtml", b"<html/>"),
+            ],
+        );
+
+        extract_zip(&epub, &dest).expect("a normal EPUB extracts");
+
+        assert!(dest.join("mimetype").exists());
+        assert!(dest.join("META-INF/container.xml").exists());
+        assert!(dest.join("OEBPS/Text/chapter1.xhtml").exists());
+        // `enclosed_name` normalises a leading `./` away rather than
+        // rejecting it -- a curly but legal path must still land.
+        assert!(dest.join("OEBPS/Text/chapter2.xhtml").exists());
     }
 }

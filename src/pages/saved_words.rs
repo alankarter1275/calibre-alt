@@ -478,12 +478,32 @@ fn rebuild(list: &gtk::Box, words: &[SavedWord], sender: &ComponentSender<SavedW
 // with the resulting path). Pure string builders are unit-tested.
 // ---------------------------------------------------------------------------
 
+/// Quote one CSV field, and defuse it if a spreadsheet would treat it as a
+/// formula.
+///
+/// Excel and LibreOffice evaluate any cell whose text begins with `=`, `+`,
+/// `-` or `@`. Dictionary content hits this constantly and innocently:
+/// suffix headwords like `-ness`, and definitions written as `- to do X`.
+/// The result ranges from a cell showing `#NAME?` instead of the definition
+/// to, with a crafted pack, a formula the spreadsheet offers to execute.
+///
+/// The standard defusal is a leading apostrophe, which spreadsheets consume
+/// as "treat the rest as text" and other CSV readers see as one stray
+/// character. Prefixing forces quoting too, so the apostrophe cannot be
+/// mistaken for part of the delimiter structure.
 fn csv_field(value: &str) -> String {
-    let needs_quoting = value.contains(',') || value.contains('"') || value.contains('\n');
+    let dangerous = value.starts_with(['=', '+', '-', '@']);
+    let needs_quoting =
+        dangerous || value.contains(',') || value.contains('"') || value.contains('\n');
+    let escaped = value.replace('"', "\"\"");
     if !needs_quoting {
-        return value.to_string();
+        return escaped;
     }
-    format!("\"{}\"", value.replace('"', "\"\""))
+    if dangerous {
+        format!("\"'{escaped}\"")
+    } else {
+        format!("\"{escaped}\"")
+    }
 }
 
 fn saved_words_csv(words: &[SavedWord]) -> String {
@@ -631,6 +651,30 @@ mod tests {
         assert!(csv.contains(",line one line two,"));
         assert!(csv.contains(",known,"));
         assert!(csv.contains(",to review,"));
+    }
+
+    #[test]
+    fn csv_defuses_spreadsheet_formulas() {
+        // Suffix headwords and dash-led definitions are ordinary dictionary
+        // content, and both begin with a character that Excel and
+        // LibreOffice treat as the start of a formula.
+        for danger in ["-ness", "=1+1", "+foo", "@bar", "-- to remove"] {
+            let out = csv_field(danger);
+            assert!(
+                out.starts_with("\"'"),
+                "{danger:?} must be quoted and apostrophe-prefixed, got {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn csv_leaves_ordinary_fields_alone() {
+        // The defusal must not fire on normal text, or every cell in the
+        // export grows a stray apostrophe.
+        assert_eq!(csv_field("bank"), "bank");
+        assert_eq!(csv_field("a river bank"), "a river bank");
+        // A dash *inside* the value is not a leading dash.
+        assert_eq!(csv_field("well-being"), "well-being");
     }
 
     #[test]

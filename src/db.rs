@@ -1,4 +1,10 @@
 //! SQLite catalog access — P1 books + P2 progress + P3 annotations & dictionary.
+
+// Module-wide because `Catalog` is a complete data layer whose accessors are
+// each used by some pages and not others, and CI runs `-D warnings`. This is
+// the blunt instrument: it also hides items that become dead *later*, so
+// prefer a per-item `#[allow(dead_code)]` for anything added from here on,
+// and chip away at this one when a page is next converted.
 #![allow(dead_code)]
 
 use crate::models::{Book, BookFormat};
@@ -1127,21 +1133,29 @@ fn hydrate_books(conn: &Connection, books: &mut [Book]) -> Result<()> {
     // One query for every book's tags, rather than one query per book. With a
     // few hundred books the old loop was the dominant cost of opening any page
     // that showed a list.
-    let ids: Vec<String> = books.iter().map(|b| b.id.to_string()).collect();
+    // Bound parameters, not interpolated ids. The values are `i64`s straight
+    // from the database, so nothing here was injectable — but this was the
+    // one dynamic `IN (...)` in the codebase built by string concatenation
+    // while `books_by_ids` and `finished_ids_among` next door both use
+    // placeholders. An inconsistency in a security-relevant pattern is how
+    // the next one gets written against user input, so it now matches them.
+    let holders = vec!["?"; books.len()].join(",");
     let sql = format!(
         "SELECT bt.book_id, t.name FROM tags t
          JOIN book_tags bt ON bt.tag_id = t.id
-         WHERE bt.book_id IN ({})
-         ORDER BY t.name COLLATE NOCASE",
-        ids.join(",")
+         WHERE bt.book_id IN ({holders})
+         ORDER BY t.name COLLATE NOCASE"
     );
+    let ids: Vec<i64> = books.iter().map(|b| b.id).collect();
 
     let mut by_book: std::collections::HashMap<i64, Vec<String>> = std::collections::HashMap::new();
     {
-        // Plain prepare: the id list makes this SQL unique per call, so caching
-        // it would grow the statement cache without bound.
+        // Plain prepare: the placeholder count varies with the page size, so
+        // caching would grow the statement cache without bound.
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        })?;
         for row in rows {
             let (book_id, tag) = row?;
             by_book.entry(book_id).or_default().push(tag);
@@ -1198,7 +1212,11 @@ fn streaks(days_desc: &[String]) -> (i64, i64) {
         return (0, 0);
     }
 
-    let today = days_from_iso(&chrono_like_now()[..10]).unwrap_or(nums[0]);
+    // The user's today, not UTC's. `days_desc` is now bucketed by local day
+    // (see `local_day_sql`), so comparing it against a UTC "today" would be
+    // an off-by-one-day for anyone east or west of Greenwich for part of the
+    // clock — including the 05:30 window that broke streaks at UTC+05:30.
+    let today = days_from_iso(&local_today()).unwrap_or(nums[0]);
     // A streak is "current" if the newest day is today or yesterday.
     let mut current = 0;
     if today - nums[0] <= 1 {
@@ -1256,17 +1274,122 @@ pub fn days_since_epoch() -> i64 {
         .unwrap_or(0)
 }
 
-/// ISO-8601 UTC timestamp for midnight `days` ago — used by date-window rules.
+/// Seconds to add to UTC to get the user's local wall-clock time.
+///
+/// # Why this exists
+///
+/// Every timestamp is *stored* as ISO-8601 UTC, which is right and does not
+/// change. But every day-bucket used to be computed as the UTC date, and a
+/// day-bucket is a **wall-clock** question: "did I read today?" means the
+/// user's today, not Greenwich's.
+///
+/// At UTC+05:30 — the timezone this project is developed in — reading between
+/// midnight and 05:30 local was filed under the *previous* day. That shifted
+/// the 14-day chart, made "last 7 days" a window offset by five and a half
+/// hours, and, worst of all, broke reading streaks: a late-night reader could
+/// read every single night and still see the streak reset, because two
+/// consecutive local days collapsed into one UTC day.
+///
+/// # Why SQLite computes it
+///
+/// The project deliberately has no `chrono`/`time` dependency, and reading
+/// `/etc/localtime` by hand is a TZif parser nobody should write. SQLite is
+/// already linked, already knows the OS timezone, and answers this in one
+/// query. Computed once per process: the offset can technically change under
+/// a running process (DST), but a reader app that is wrong for one evening
+/// after a DST shift and right again on restart is an acceptable trade for
+/// not carrying a timezone database.
+pub fn local_offset_seconds() -> i64 {
+    static OFFSET: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+    *OFFSET.get_or_init(|| {
+        // A scratch in-memory connection: this must work before (and
+        // independently of) the catalog being open.
+        let Ok(conn) = Connection::open_in_memory() else {
+            return 0;
+        };
+        conn.query_row(
+            "SELECT CAST(strftime('%s', 'now', 'localtime') AS INTEGER)
+                  - CAST(strftime('%s', 'now') AS INTEGER)",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+    })
+}
+
+/// SQL fragment: the **local** calendar day (`YYYY-MM-DD`) of a stored UTC
+/// timestamp column.
+///
+/// Use this anywhere a query groups or filters by day. Writing
+/// `substr(col, 1, 10)` instead takes the UTC date and reintroduces the bug
+/// described on [`local_offset_seconds`].
+///
+/// `datetime(col, 'localtime')` is not used here: it would make the result
+/// depend on the timezone of whatever process runs the query, whereas the
+/// offset above is resolved once and shared with the Rust-side day maths, so
+/// SQL and Rust always agree on where a day boundary is.
+pub fn local_day_sql(column: &str) -> String {
+    let offset = local_offset_seconds();
+    format!("substr(datetime({column}, '{offset:+} seconds'), 1, 10)")
+}
+
+/// ISO-8601 **UTC** timestamp for the instant of local midnight, `days` ago.
+///
+/// The value is still UTC because that is what the stored columns are
+/// compared against; the *boundary* it names is the user's midnight, not
+/// Greenwich's. That is the whole distinction: "the last 7 days" should start
+/// at 00:00 in the user's kitchen.
 pub fn iso_days_ago(days: i64) -> String {
+    iso_days_ago_at(days, now_unix(), local_offset_seconds())
+}
+
+/// [`iso_days_ago`] with the clock and the timezone injected.
+///
+/// Split out so the day maths is testable without depending on the machine's
+/// timezone — `docs/pitfalls.md` §19: a test run in UTC would pass on every
+/// version of this function, including the broken one.
+fn iso_days_ago_at(days: i64, now: i64, offset: i64) -> String {
+    let then = (now - days.max(0) * 86400).max(0);
+    // Snap to midnight *in local time*: shift into local, truncate the
+    // day there, then shift back to UTC for storage comparison.
+    let local = then + offset;
+    let local_midnight = local - local.rem_euclid(86400);
+    let utc_midnight = (local_midnight - offset).max(0);
+    format_unix_utc(utc_midnight as u64)
+}
+
+/// Seconds since the Unix epoch, or 0 if the clock is before it.
+fn now_unix() -> i64 {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now()
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let then = (now - days.max(0) * 86400).max(0);
-    // Snap to midnight so "last 7 days" means 7 whole days.
-    let midnight = then - (then % 86400);
-    format_unix_utc(midnight as u64)
+        .unwrap_or(0)
+}
+
+/// The local calendar date `days` ago, as `YYYY-MM-DD`.
+///
+/// The label counterpart to [`iso_days_ago`]: that returns a UTC *instant* to
+/// compare a column against, this returns the *day string* a
+/// [`local_day_sql`] bucket will carry. Chart code needs the second one, and
+/// using `iso_days_ago(n)[..10]` for it is wrong — that is the UTC date of a
+/// local midnight, which is the previous day for any positive offset.
+pub fn local_day_ago(days: i64) -> String {
+    local_day_ago_at(days, now_unix(), local_offset_seconds())
+}
+
+/// [`local_day_ago`] with the clock and timezone injected, for tests.
+fn local_day_ago_at(days: i64, now: i64, offset: i64) -> String {
+    let local = (now + offset - days.max(0) * 86400).max(0);
+    format_unix_utc(local as u64)[..10].to_string()
+}
+
+/// Today's local calendar date as `YYYY-MM-DD`.
+///
+/// The counterpart to [`local_day_sql`] on the Rust side, so streak maths and
+/// chart labels agree with what the queries bucketed.
+pub fn local_today() -> String {
+    local_day_ago_at(0, now_unix(), local_offset_seconds())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2193,8 +2316,105 @@ mod tests {
     }
 
     #[test]
-    fn iso_days_ago_is_midnight_aligned() {
-        let s = iso_days_ago(3);
+    fn iso_days_ago_is_midnight_aligned_in_utc() {
+        // With no offset, local midnight IS UTC midnight.
+        let s = iso_days_ago_at(3, 1_760_000_000, 0);
         assert!(s.ends_with("T00:00:00Z"), "{s}");
+    }
+
+    #[test]
+    fn iso_days_ago_snaps_to_local_midnight_not_utc_midnight() {
+        // The bug this fixes. At UTC+05:30 the user's midnight is 18:30Z the
+        // previous day, so a day window must START there -- snapping to
+        // 00:00Z would include five and a half hours of the user's previous
+        // day and exclude the same from today.
+        let ist = 5 * 3600 + 1800;
+        let s = iso_days_ago_at(0, 1_760_000_000, ist);
+        assert!(
+            s.ends_with("T18:30:00Z"),
+            "expected local midnight expressed in UTC, got {s}"
+        );
+
+        // West of Greenwich the boundary moves the other way: UTC-05:00
+        // means local midnight is 05:00Z the same day.
+        let est = -5 * 3600;
+        let s = iso_days_ago_at(0, 1_760_000_000, est);
+        assert!(s.ends_with("T05:00:00Z"), "{s}");
+    }
+
+    #[test]
+    fn a_local_day_label_is_the_users_date_not_utcs() {
+        // 2025-10-09T08:53:20Z. At UTC+05:30 that is already 14:23 local on
+        // the 9th -- same date here.
+        let now = 1_760_000_000;
+        let ist = 5 * 3600 + 1800;
+        assert_eq!(local_day_ago_at(0, now, ist), "2025-10-09");
+
+        // The case that mattered: 20:00Z on the 9th is 01:30 on the *10th*
+        // in Kolkata. Bucketing by UTC filed that reading under the 9th and
+        // is exactly how a late-night reader lost a streak.
+        let late = 1_760_040_000; // 2025-10-09T20:00:00Z
+        assert_eq!(
+            local_day_ago_at(0, late, ist),
+            "2025-10-10",
+            "reading after local midnight belongs to the new local day"
+        );
+        assert_eq!(
+            local_day_ago_at(0, late, 0),
+            "2025-10-09",
+            "and in UTC it would have been filed a day earlier -- the bug"
+        );
+    }
+
+    #[test]
+    fn local_day_labels_walk_backwards_one_day_at_a_time() {
+        let now = 1_760_000_000;
+        let ist = 5 * 3600 + 1800;
+        assert_eq!(local_day_ago_at(1, now, ist), "2025-10-08");
+        assert_eq!(local_day_ago_at(2, now, ist), "2025-10-07");
+        // Across a month boundary.
+        assert_eq!(local_day_ago_at(9, now, ist), "2025-09-30");
+    }
+
+    #[test]
+    fn local_day_sql_produces_a_shifted_date_expression() {
+        // The SQL text is generated, so assert its shape: a wrong sign here
+        // would move every chart bar by a day and be invisible in review.
+        let sql = local_day_sql("started_at");
+        assert!(sql.starts_with("substr(datetime(started_at,"), "{sql}");
+        assert!(sql.ends_with("), 1, 10)"), "{sql}");
+        // The offset must carry an explicit sign for SQLite's modifier syntax.
+        assert!(sql.contains('+') || sql.contains('-'), "{sql}");
+    }
+
+    #[test]
+    fn local_day_sql_and_rust_agree_on_the_same_instant() {
+        // The invariant that matters: the SQL bucket and the Rust label must
+        // name the same day, or the zero-fill loop silently misses every bar.
+        let conn = Connection::open_in_memory().unwrap();
+        let offset = local_offset_seconds();
+        let stamp = chrono_like_now();
+
+        let sql = format!("SELECT {}", local_day_sql("?1"));
+        let from_sql: String = conn.query_row(&sql, params![stamp], |r| r.get(0)).unwrap();
+        let from_rust = local_day_ago_at(0, now_unix(), offset);
+        assert_eq!(
+            from_sql, from_rust,
+            "SQL bucketing and Rust labelling disagree about today"
+        );
+    }
+
+    #[test]
+    fn streaks_use_local_days() {
+        // Three consecutive local days, newest first, as `local_day_sql`
+        // would return them.
+        let days = vec![
+            local_day_ago(0),
+            local_day_ago(1),
+            local_day_ago(2),
+        ];
+        let (current, longest) = streaks(&days);
+        assert_eq!(current, 3, "three consecutive days read is a 3-day streak");
+        assert_eq!(longest, 3);
     }
 }

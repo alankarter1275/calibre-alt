@@ -322,33 +322,45 @@ fn read_zip_bytes<R: Read + std::io::Seek>(
     archive: &mut ZipArchive<R>,
     name: &str,
 ) -> Result<Vec<u8>> {
-    // Case-insensitive search fallback.
-    let idx = find_zip_index(archive, name)?;
-    let mut file = archive.by_index(idx)?;
+    // Resolve to the archive's own spelling of the name, then open by name.
+    // Resolving to an *index* would couple this to `file_names()` yielding
+    // entries in `by_index` order -- true today, unnoticeable if it ever
+    // stopped being true, and the symptom would be silently reading the
+    // wrong file out of the book.
+    let resolved = find_zip_name(archive, name)?;
+    let mut file = archive.by_name(&resolved)?;
     let mut buf = Vec::new();
     file.read_to_end(&mut buf)?;
     Ok(buf)
 }
 
-fn find_zip_index<R: Read + std::io::Seek>(
+/// Normalise a zip entry name for comparison: forward slashes, no leading
+/// `./`, lowercased. Zip entries vary wildly between EPUB producers, so
+/// lookups are deliberately forgiving.
+fn normalize_zip_name(name: &str) -> String {
+    name.replace('\\', "/")
+        .trim_start_matches("./")
+        .to_ascii_lowercase()
+}
+
+/// The archive's exact name for `name`, matched forgivingly.
+///
+/// `file_names()` reads the already-parsed central directory, so this borrows
+/// existing strings instead of having `by_index` construct a `ZipFile` per
+/// candidate. The previous version did the latter *and* built two fresh
+/// `String`s per entry per lookup, and `extract_cover` calls this up to three
+/// times — on a 2,000-entry EPUB that was thousands of allocations to locate
+/// one cover.
+fn find_zip_name<R: Read + std::io::Seek>(
     archive: &mut ZipArchive<R>,
     name: &str,
-) -> Result<usize> {
-    let target = name.replace('\\', "/");
-    let target_l = target.to_ascii_lowercase();
-    for i in 0..archive.len() {
-        let f = archive.by_index(i)?;
-        let n = f.name().replace('\\', "/");
-        if n == target || n.trim_start_matches("./") == target.trim_start_matches("./") {
-            return Ok(i);
-        }
-        if n.to_ascii_lowercase() == target_l
-            || n.to_ascii_lowercase().trim_start_matches("./") == target_l.trim_start_matches("./")
-        {
-            return Ok(i);
-        }
-    }
-    Err(anyhow!("zip entry not found: {name}"))
+) -> Result<String> {
+    let target = normalize_zip_name(name);
+    archive
+        .file_names()
+        .find(|n| normalize_zip_name(n) == target)
+        .map(|n| n.to_string())
+        .ok_or_else(|| anyhow!("zip entry not found: {name}"))
 }
 
 fn parent_zip_path(path: &str) -> String {
@@ -503,5 +515,185 @@ fn guess_image_ext(bytes: &[u8]) -> &'static str {
         "webp"
     } else {
         "jpg"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+//
+// This file parses files produced by other people's software, which is the
+// one place where being lenient matters and where a regression is invisible
+// until a reader opens a book and finds it blank. Every case below is a shape
+// that real EPUBs in the wild actually have: EPUB 2 `<meta name="cover">`
+// versus EPUB 3 `properties="cover-image"`, percent-escaped hrefs, content
+// documents addressed relative to an `OEBPS/` OPF, and descriptions that are
+// really HTML.
+//
+// Per pitfalls §19 these assert on parsed values, not on "it did not error".
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_opf_reads_epub2_metadata_and_cover_id() {
+        // EPUB 2 names the cover indirectly: a <meta name="cover"> holds a
+        // manifest *id*, which then has to be resolved to an href.
+        let xml = r#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>The Long Goodbye</dc:title>
+    <dc:creator>Raymond Chandler</dc:creator>
+    <dc:creator>A Translator</dc:creator>
+    <dc:subject>Crime</dc:subject>
+    <dc:subject>Noir</dc:subject>
+    <dc:description>A  detective
+    story.</dc:description>
+    <meta name="cover" content="cover-img"/>
+    <meta name="calibre:series" content="Philip Marlowe"/>
+  </metadata>
+  <manifest>
+    <item id="cover-img" href="images/cover.jpg" media-type="image/jpeg"/>
+    <item id="ch1" href="text/ch1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+</package>"#;
+        let meta = parse_opf(xml).expect("valid OPF must parse");
+        assert_eq!(meta.title.as_deref(), Some("The Long Goodbye"));
+        assert_eq!(meta.authors, vec!["Raymond Chandler", "A Translator"]);
+        assert_eq!(meta.subjects, vec!["Crime", "Noir"]);
+        // The description's internal newline and run of spaces are collapsed.
+        assert_eq!(meta.description.as_deref(), Some("A detective story."));
+        assert_eq!(meta.series.as_deref(), Some("Philip Marlowe"));
+        assert_eq!(meta.cover_id.as_deref(), Some("cover-img"));
+        // EPUB 2 gives no direct href; only the id.
+        assert_eq!(meta.cover_href, None);
+        assert_eq!(meta.manifest.len(), 2);
+        assert_eq!(meta.manifest[0].1, "images/cover.jpg");
+    }
+
+    #[test]
+    fn parse_opf_reads_epub3_cover_image_property() {
+        // EPUB 3 marks the cover on the manifest item itself, and
+        // `properties` is a space-separated list the cover may share.
+        let xml = r#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>Dune</dc:title>
+    <meta property="belongs-to-collection">Dune Chronicles</meta>
+  </metadata>
+  <manifest>
+    <item id="c" href="cover.png" media-type="image/png" properties="cover-image"/>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav scripted"/>
+  </manifest>
+</package>"#;
+        let meta = parse_opf(xml).expect("valid OPF must parse");
+        assert_eq!(meta.cover_href.as_deref(), Some("cover.png"));
+        // `belongs-to-collection` carries its value as text, not @content.
+        assert_eq!(meta.series.as_deref(), Some("Dune Chronicles"));
+        // "nav scripted" must not be mistaken for a cover by substring match.
+        assert_eq!(meta.manifest.len(), 2);
+    }
+
+    #[test]
+    fn parse_opf_ignores_title_outside_metadata() {
+        // A <title> inside the nav document or a guide reference must not
+        // become the book title. This is why the parser checks the parent.
+        let xml = r#"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf">
+  <metadata><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Real Title</dc:title></metadata>
+  <guide><reference type="cover" title="Cover Page" href="c.xhtml"/></guide>
+  <somewhere><title>Not The Title</title></somewhere>
+</package>"#;
+        let meta = parse_opf(xml).expect("valid OPF must parse");
+        assert_eq!(meta.title.as_deref(), Some("Real Title"));
+    }
+
+    #[test]
+    fn parse_opf_rejects_malformed_xml() {
+        // Truncated downloads happen; the import must fail with an error
+        // rather than silently producing an empty book.
+        assert!(parse_opf("<package><metadata>").is_err());
+    }
+
+    #[test]
+    fn join_zip_path_resolves_relative_hrefs() {
+        // Content documents are addressed relative to the OPF's directory,
+        // and hrefs routinely climb out of it with `..`.
+        assert_eq!(join_zip_path("OEBPS", "text/ch1.xhtml"), "OEBPS/text/ch1.xhtml");
+        assert_eq!(join_zip_path("OEBPS/text", "../images/c.jpg"), "OEBPS/images/c.jpg");
+        assert_eq!(join_zip_path("OEBPS", "./cover.jpg"), "OEBPS/cover.jpg");
+        // An absolute href is taken from the archive root, not the OPF dir.
+        assert_eq!(join_zip_path("OEBPS", "/images/c.jpg"), "images/c.jpg");
+        // No OPF directory: the href stands alone.
+        assert_eq!(join_zip_path("", "cover.jpg"), "cover.jpg");
+        // Windows separators appear in archives written on Windows.
+        assert_eq!(join_zip_path("OEBPS", "text\\ch1.xhtml"), "OEBPS/text/ch1.xhtml");
+    }
+
+    #[test]
+    fn parent_zip_path_returns_the_opf_directory() {
+        assert_eq!(parent_zip_path("OEBPS/content.opf"), "OEBPS");
+        assert_eq!(parent_zip_path("a/b/content.opf"), "a/b");
+        // An OPF at the archive root has no parent directory.
+        assert_eq!(parent_zip_path("content.opf"), "");
+    }
+
+    #[test]
+    fn percent_decode_handles_escapes_and_leaves_junk_alone() {
+        // Hrefs in the OPF are URL-escaped, but zip entry names are not.
+        assert_eq!(percent_decode("images/my%20cover.jpg"), "images/my cover.jpg");
+        assert_eq!(percent_decode("caf%C3%A9.xhtml"), "café.xhtml");
+        // Lowercase hex is equally valid.
+        assert_eq!(percent_decode("a%c3%a9b"), "aéb");
+        // A bare '%' is not an escape and must survive untouched, as must a
+        // truncated one at the very end of the string.
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("a%zz"), "a%zz");
+        assert_eq!(percent_decode("a%2"), "a%2");
+        assert_eq!(percent_decode("plain.jpg"), "plain.jpg");
+    }
+
+    #[test]
+    fn normalize_zip_name_is_forgiving_about_spelling() {
+        assert_eq!(normalize_zip_name("OEBPS\\Text\\Ch1.xhtml"), "oebps/text/ch1.xhtml");
+        assert_eq!(normalize_zip_name("./content.opf"), "content.opf");
+        // Only a *leading* "./" is stripped.
+        assert_eq!(normalize_zip_name("a/./b"), "a/./b");
+    }
+
+    #[test]
+    fn strip_html_produces_readable_plain_text() {
+        // OPF descriptions are frequently escaped HTML, and the book page
+        // shows them as plain text.
+        // Note that removing a tag does not insert a space, so adjacent
+        // block elements run together. Recorded as the current behaviour
+        // rather than asserted as desirable: descriptions are one paragraph
+        // in practice, and inserting spaces would break mid-word <i>italics</i>.
+        assert_eq!(
+            strip_html("<p>A <b>great</b> book.</p><p>Really.</p>"),
+            "A great book.Really."
+        );
+        assert_eq!(strip_html("Tom &amp; Jerry"), "Tom & Jerry");
+        assert_eq!(strip_html("&quot;quoted&quot; &apos;and&apos;"), "\"quoted\" 'and'");
+        assert_eq!(strip_html("a&nbsp;&nbsp;b"), "a b");
+        // Whitespace from the source markup's indentation is collapsed.
+        assert_eq!(strip_html("<div>\n   spaced\n   out\n</div>"), "spaced out");
+        assert_eq!(strip_html("no markup here"), "no markup here");
+    }
+
+    #[test]
+    fn guess_image_ext_sniffs_magic_bytes() {
+        // Covers are routinely a PNG named .jpg; the extension on disk has to
+        // match the actual bytes or GTK refuses to load the texture.
+        assert_eq!(guess_image_ext(&[0x89, b'P', b'N', b'G', 0x0D]), "png");
+        assert_eq!(guess_image_ext(&[0xFF, 0xD8, 0xFF, 0xE0]), "jpg");
+        assert_eq!(guess_image_ext(b"GIF89a...."), "gif");
+        assert_eq!(guess_image_ext(b"RIFF\0\0\0\0WEBPVP8 "), "webp");
+        // Unknown bytes fall back to jpg rather than failing the import.
+        assert_eq!(guess_image_ext(b"not an image"), "jpg");
+        // A RIFF header too short to hold the WEBP tag must not panic on the
+        // bytes[8..12] slice.
+        assert_eq!(guess_image_ext(b"RIFF"), "jpg");
     }
 }

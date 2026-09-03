@@ -18,6 +18,11 @@
 //! positional parameters. Keeping rules flat (no nested groups) means the whole
 //! editor is a list of combo boxes, and the JSON stays forward compatible: a
 //! future nested-group syntax can add a `"groups"` key without a migration.
+
+// Module-wide because the rule vocabulary (every `RuleField`, `RuleOp` and
+// their `label`/`value_hint` helpers) is deliberately complete, while the
+// editor UI surfaces only part of it. Same caveat as `db.rs`: this hides
+// future dead code too, so new items should carry their own narrow allow.
 #![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
