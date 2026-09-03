@@ -905,6 +905,13 @@ impl Component for AppModel {
         });
         float_scrim.add_controller(scrim_click);
 
+        // Tab must not walk out of an open float into the page behind it.
+        // Permanent, like the key handler below: the trap is inert whenever
+        // `float_host` is hidden, so there is nothing to add or remove per
+        // float. (`in_app_dialog.rs` attaches its own per dialog instead,
+        // because those hosts are created and destroyed with the dialog.)
+        root.add_controller(crate::widgets::focus_trap::controller(&float_host));
+
         let close_float_key = gtk::EventControllerKey::new();
         let s_key = sender.clone();
         let key_root = root.clone();

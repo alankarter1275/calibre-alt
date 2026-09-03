@@ -34,8 +34,17 @@
 //! * **Esc** — always.
 //! * **A visible control** — see [`DialogExit`]. Backdrop and Esc are both
 //!   *invisible* affordances, so a dialog whose only exits are invisible is
-//!   still a trap. Every dialog keeps one visible control; which one depends
-//!   on what the dialog *is*, not on habit.
+//!   still a trap. Every dialog here keeps one visible control; which one
+//!   depends on what the dialog *is*, not on habit. (The book and series
+//!   floats are the deliberate exception, and they do not use this helper —
+//!   see [`DialogExit`] for why.)
+//!
+//! # Focus
+//!
+//! Tab is confined to the panel by `crate::widgets::focus_trap`. An overlay is
+//! not a focus scope the way a window is, so without it Tab walks out of a
+//! modal dialog and into the page behind — reachable, invisible, clickable
+//! with Enter. The scrim stops the mouse; the trap stops the keyboard.
 
 use gtk::prelude::*;
 use std::cell::Cell;
@@ -48,11 +57,25 @@ use std::rc::Rc;
 /// the typing, and a ✕ next to "Cancel" and "Delete" is just a vaguer third
 /// option.
 ///
-/// Two variants today, because the two dialog kinds that live in a real
-/// `gtk::Window` both bring their own buttons. The detour (‹ Back) and
-/// transient-overlay (✕) kinds from the A1 table apply to the book/series
-/// floats, which are already drawn in-app through `app.rs` and keep their own
-/// header; they will join this enum when those headers are revisited.
+/// Two variants, and that is the finished set — not a stub waiting for more.
+///
+/// An earlier note here said the "detour" (‹ Back) and "transient overlay" (✕)
+/// kinds would join the enum once the book and series float headers were
+/// revisited. They will not, and the reason is worth keeping:
+///
+/// * The two floats were given **no visible exit at all** (user's call,
+///   2026-09-03: read-only detours, so a stray click outside loses nothing).
+///   An enum variant for "renders no control" that no caller can pass would be
+///   dead code, and dead code fails the `-D warnings` build.
+/// * The floats do not go through this helper anyway. They are Relm4
+///   components hosted by the float layer in `app.rs`, which owns their scrim,
+///   Esc key and header. Folding them in would mean routing a closure through
+///   a `#[derive(Debug)]` message enum, which is the very thing this helper
+///   exists to avoid.
+///
+/// What the two systems *do* share is behaviour, not types: Esc closes,
+/// backdrop closes, and focus stays inside the panel
+/// (`crate::widgets::focus_trap`, used by both).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DialogExit {
     /// The content supplies its own named buttons — "Done" on a picker,
@@ -91,6 +114,9 @@ pub struct InAppDialog {
     scrim: gtk::Box,
     host: gtk::Box,
     key_controller: gtk::EventControllerKey,
+    /// Confines Tab to the panel. Lives on the root like `key_controller`, so
+    /// it must come off at teardown too.
+    focus_controller: gtk::EventControllerKey,
     root: gtk::Widget,
     closed: Rc<Cell<bool>>,
 }
@@ -108,6 +134,7 @@ impl InAppDialog {
             &self.host,
             &self.root,
             &self.key_controller,
+            Some(&self.focus_controller),
         );
     }
 }
@@ -129,6 +156,7 @@ fn teardown(
     host: &gtk::Box,
     root: &gtk::Widget,
     key_controller: &gtk::EventControllerKey,
+    focus_controller: Option<&gtk::EventControllerKey>,
 ) {
     if closed.replace(true) {
         return;
@@ -156,6 +184,12 @@ fn teardown(
     // must come off: otherwise every dialog ever opened leaves one behind, and
     // each would swallow Esc from whatever needs it next.
     root.remove_controller(key_controller);
+
+    // Same reasoning for the focus trap: left attached, it would keep
+    // swallowing Tab for a panel that is no longer on screen.
+    if let Some(focus_controller) = focus_controller {
+        root.remove_controller(focus_controller);
+    }
 }
 
 /// Walk up from `widget` to the nearest enclosing [`gtk::Overlay`].
@@ -246,12 +280,18 @@ pub fn present(
         .map(|r| r.upcast::<gtk::Widget>())
         .unwrap_or_else(|| overlay.clone().upcast());
 
+    // Tab must not walk out of a modal panel into the page behind it. The
+    // scrim already blocks the mouse; this blocks the keyboard.
+    let focus_controller = crate::widgets::focus_trap::controller(&host);
+    root.add_controller(focus_controller.clone());
+
     let closed = Rc::new(Cell::new(false));
     let dialog = InAppDialog {
         overlay: overlay.clone(),
         scrim: scrim.clone(),
         host: host.clone(),
         key_controller: key_controller.clone(),
+        focus_controller: focus_controller.clone(),
         root: root.clone(),
         closed: closed.clone(),
     };
@@ -267,6 +307,7 @@ pub fn present(
         let host = host.clone();
         let root_for_key = root.clone();
         let closed = closed.clone();
+        let focus_for_key = focus_controller.clone();
         key_controller.connect_key_pressed(move |controller, keyval, _, _| {
             if keyval != gtk::gdk::Key::Escape {
                 return gtk::glib::Propagation::Proceed;
@@ -279,6 +320,7 @@ pub fn present(
             let overlay = overlay.clone();
             let scrim = scrim.clone();
             let host = host.clone();
+            let focus_for_key = focus_for_key.clone();
             gtk::glib::idle_add_local_once(move || {
                 teardown(
                     &closed,
@@ -287,6 +329,7 @@ pub fn present(
                     &host,
                     &root_for_key,
                     &controller,
+                    Some(&focus_for_key),
                 );
             });
             gtk::glib::Propagation::Stop
@@ -303,6 +346,7 @@ pub fn present(
         let scrim_weak = scrim.downgrade();
         let root_for_click = root.clone();
         let key_for_click = key_controller.clone();
+        let focus_for_click = focus_controller.clone();
         let closed = closed.clone();
         click.connect_pressed(move |_, _, _, _| {
             teardown(
@@ -312,6 +356,7 @@ pub fn present(
                 &host,
                 &root_for_click,
                 &key_for_click,
+                Some(&focus_for_click),
             );
         });
     }

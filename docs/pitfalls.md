@@ -153,6 +153,28 @@ once — it pins everything below it to the bottom, and it donates the spare
 height to the description. A dedicated spacer is only right when nothing in the
 layout actually wants the space.
 
+## 2b. An overlay is not a focus scope
+
+Related to 2, and missed when the dialogs were first converted. A
+`gtk::Window` confines Tab: focus cycles within the window and stops at its
+edge. A panel in a `gtk::Overlay` gets no such thing — the page underneath is
+still in the same widget tree and still focusable, so Tab walked out of a
+"modal" dialog and into the sidebar behind it. You could focus a button you
+could not see and activate it with Enter.
+
+The scrim hides this in testing because `can_target` blocks the **mouse**.
+Nothing was blocking the **keyboard**.
+
+**Do instead:** `crate::widgets::focus_trap` — a capture-phase key controller
+on the window root that owns Tab/Shift+Tab while the panel is visible, moves
+focus with `child_focus`, and wraps at the ends by clearing the root focus and
+searching again. Attach it to the **root**, not the panel: when a dialog opens,
+focus is usually still on the page widget that opened it, so a controller on
+the panel would never see the keypress that walks away from it.
+
+Remove it when the dialog closes, for the same reason as the Esc controller —
+an orphan keeps swallowing Tab for a panel that no longer exists.
+
 ## 5. Never use `opacity` on a scrollbar
 
 `src/style.rs` opens with a warning block explaining that `opacity` below 1
