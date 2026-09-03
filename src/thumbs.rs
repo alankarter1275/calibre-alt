@@ -279,7 +279,10 @@ mod tests {
         assert!(!should_skip(None, 139), "first ever launch");
         assert!(!should_skip(Some(""), 139), "cleared by a deletion");
         assert!(!should_skip(Some("not a number"), 139), "corrupt value");
-        assert!(!should_skip(Some("-1"), 139), "negative cannot parse to usize");
+        assert!(
+            !should_skip(Some("-1"), 139),
+            "negative cannot parse to usize"
+        );
     }
 
     #[test]
