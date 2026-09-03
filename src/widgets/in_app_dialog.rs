@@ -17,6 +17,15 @@
 //! and adds its own scrim + host to it. No app plumbing, no message round
 //! trip, and pages stay unaware of `AppModel`.
 //!
+//! # Before you change this
+//!
+//! A `gtk::Window` used to do three things for these dialogs that an overlay
+//! does not: destroy the widget tree on close (which breaks the
+//! widget-holds-callback-holds-widget cycle), bound their height, and act as a
+//! real top-level for portal dialogs. All three are replaced by hand here.
+//! `docs/pitfalls.md` §2 explains each one — read it before simplifying
+//! `teardown()` or removing a height cap.
+//!
 //! # Dismissal
 //!
 //! Three ways out, and the visible one is chosen per dialog:

@@ -2,6 +2,14 @@
 //!
 //! Cover and reading progress live on the left; story info and actions live on
 //! the right. Clicking the cover opens the full book page. Q / Esc closes.
+//!
+//! **Fixed size, deliberately.** `set_size_request(720, 420)` in `app.rs` is a
+//! *floor*, not a size — GTK grows a widget past its request whenever content
+//! needs the room. Every variable-length child here is therefore bounded on
+//! purpose: the tag row scrolls, the title/series ellipsise, the author line is
+//! clipped, and the description section reserves a constant height in every
+//! branch. Removing any one of those bounds brings back "the panel changes size
+//! depending on the book". See `docs/pitfalls.md` §3 and §4.
 
 use crate::db::Catalog;
 use crate::models::Book;

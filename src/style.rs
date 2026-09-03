@@ -74,6 +74,7 @@ window.kalam-window {
 
 /* ── scrollbars ─────────────────────────────────────── */
 /*  ⚠  READ src/style.rs's header before touching this block.  ⚠
+ *  ⚠  See also docs/pitfalls.md §5 — this trap has been walked into twice. ⚠
  *
  * A 5px pill, no outline, invisible until the pointer reaches the edge.
  * Every line here exists because of a specific bug. In short:

@@ -11,7 +11,10 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 > **For AI agents / new chats — read this first.** Plan and status:
 > [`ROADMAP.md`](./ROADMAP.md) (its **"Read this first"** block and **"Current
 > trajectory"** section). Design decisions: [`docs/conversation.md`](./docs/conversation.md).
-> **Keep all three updated in the same commit as your code** — a change that
+> **Known pitfalls: [`docs/pitfalls.md`](./docs/pitfalls.md)** — mistakes already
+> made here and how they were fixed; read it before writing code, and add to it
+> when you get something wrong.
+> **Keep all four updated in the same commit as your code** — a change that
 > leaves the roadmap stale is not done.
 
 ## Working agreement
@@ -33,6 +36,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 - **Your Arch machine** is only needed at **phase boundaries** (smoke-test + design feedback).
 - Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md) ·
   design decisions: [`docs/conversation.md`](./docs/conversation.md) ·
+  known pitfalls: [`docs/pitfalls.md`](./docs/pitfalls.md) ·
   how to smoke-test the A0 changes and read the timing output:
   [`docs/testing-a0.md`](./docs/testing-a0.md)
 
