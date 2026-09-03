@@ -1004,4 +1004,3 @@ fn clear_box(host: &gtk::Box) {
         host.remove(&child);
     }
 }
-
