@@ -199,6 +199,35 @@ the panel would never see the keypress that walks away from it.
 Remove it when the dialog closes, for the same reason as the Esc controller —
 an orphan keeps swallowing Tab for a panel that no longer exists.
 
+## 4e. `thread_local!` state silently swallows cross-thread calls
+
+`notify` keeps its queue and history in `thread_local!` cells. Worker threads
+called `notify::error` anyway — the import loop reports an unreadable file that
+way. There was no panic and no warning: the toast was appended to *that
+thread's* copy of the queue, which nothing ever renders, and the message was
+lost. A module whose entire purpose is "no failure goes unreported" was
+dropping reports on the floor.
+
+**Do instead:** make the entry point thread-safe rather than auditing every
+caller. `push` now checks `MainContext::default().is_owner()` and re-invokes
+itself on the main thread when it is on a worker. `invoke` runs the closure
+inline when already on the main thread, so the common path is unchanged.
+
+The general rule: if a free function touches `thread_local!` state or GTK, it
+must either be documented main-thread-only *and* enforced, or it must bounce.
+"Documented and not enforced" means it will be called from a worker eventually.
+
+## 4f. Two futures racing to report the same job
+
+The task manager first drained progress and awaited the result concurrently.
+That reads naturally and is wrong: the result usually arrives while a progress
+update is still queued, so the finished toast appeared and *then* a stale
+"importing 3 of 5" overwrote the status line.
+
+**Do instead:** drain progress to exhaustion, then take the result. Dropping
+the `Reporter` closes the progress channel, so the loop ends on its own and the
+ordering is guaranteed rather than lucky.
+
 ## 5. Never use `opacity` on a scrollbar
 
 `src/style.rs` opens with a warning block explaining that `opacity` below 1

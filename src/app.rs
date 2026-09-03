@@ -662,6 +662,20 @@ impl Component for AppModel {
             // window controls. The page runs edge to edge; Alt+F4 closes.
             set_decorated: false,
 
+            // A0 step 4: tell background tasks to stop before the window goes.
+            // Cancellation is cooperative, so this only sets a flag — short
+            // tasks finish anyway, but a long one (the thumbnail backfill on a
+            // big first launch) stops instead of decoding covers for a window
+            // that no longer exists. `Proceed` so the close is not blocked.
+            connect_close_request => move |_| {
+                let pending = crate::tasks::running_count();
+                crate::tasks::cancel_all();
+                if pending > 0 {
+                    crate::timing::note("tasks_cancelled_at_exit", pending);
+                }
+                gtk::glib::Propagation::Proceed
+            },
+
             // One root overlay: main app under it, then a dimmed in-app book
             // panel, then toasts on top.
             #[name = "root_overlay"]
@@ -836,7 +850,11 @@ impl Component for AppModel {
         // without re-importing. Off the UI thread so first paint is not delayed;
         // only missing files are generated, so it is cheap after the first pass.
         let backfill_catalog = catalog.clone();
-        std::thread::spawn(move || crate::thumbs::backfill_missing(&backfill_catalog));
+        crate::tasks::spawn(
+            move |reporter| crate::thumbs::backfill_missing(&backfill_catalog, &reporter),
+            |_update| {},
+            |_done| {},
+        );
         // First run decompresses and imports ~6.8 MB of gzipped TSV packs on
         // this thread; later runs early-out on a pref. Timed to confirm which
         // of the two a given start was.

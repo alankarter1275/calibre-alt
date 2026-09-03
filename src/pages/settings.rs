@@ -401,28 +401,43 @@ impl Component for SettingsPageModel {
                     move |res| {
                         if let Ok(file) = res {
                             if let Some(path) = file.path() {
-                                crate::notify::activity(
-                                    "Importing dictionary…",
-                                    &path
-                                        .file_name()
-                                        .map(|n| n.to_string_lossy().into_owned())
-                                        .unwrap_or_default(),
+                                let name = path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().into_owned())
+                                    .unwrap_or_default();
+                                crate::notify::activity("Importing dictionary…", &name);
+
+                                // A0 step 4. This used to run `import_dictionary`
+                                // right here, inside the file-chooser callback on
+                                // the UI thread: parsing a StarDict or TSV pack of
+                                // a few hundred thousand entries froze the whole
+                                // window, with the "Importing…" toast painted
+                                // *before* the freeze so it looked like a hang.
+                                let catalog = catalog_clone.clone();
+                                let done_sender = sender_clone.clone();
+                                crate::tasks::spawn(
+                                    move |_reporter| {
+                                        // Worker thread: no GTK, no notify. The
+                                        // outcome is returned as plain data and
+                                        // reported by `on_done` below.
+                                        dict::import_dictionary(&catalog, &path)
+                                            .map_err(|e| format!("{e:#}"))
+                                    },
+                                    |_update| {},
+                                    move |result| {
+                                        match result {
+                                            Ok((name, count)) => crate::notify::success(
+                                                "Dictionary imported",
+                                                &format!("{name} · {count} entries"),
+                                            ),
+                                            Err(detail) => crate::notify::error(
+                                                "Dictionary import failed",
+                                                &detail,
+                                            ),
+                                        }
+                                        done_sender.input(SettingsMsg::Refresh);
+                                    },
                                 );
-                                match dict::import_dictionary(&catalog_clone, &path) {
-                                    Ok((name, count)) => {
-                                        crate::notify::success(
-                                            "Dictionary imported",
-                                            &format!("{name} · {count} entries"),
-                                        );
-                                    }
-                                    Err(e) => {
-                                        crate::notify::error(
-                                            "Dictionary import failed",
-                                            &format!("{e:#}"),
-                                        );
-                                    }
-                                }
-                                sender_clone.input(SettingsMsg::Refresh);
                             }
                         }
                     },

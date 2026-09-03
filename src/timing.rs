@@ -68,6 +68,17 @@ pub fn now(label: &'static str) {
     println!("[timing] {label:<18} {el:>8.1} ms");
 }
 
+/// Print a labelled count, e.g. how many tasks were still running at exit.
+///
+/// Like the rest of this module it is a no-op unless `KALAM_TIMING=1`, so it
+/// costs nothing in a normal run.
+pub fn note(label: &'static str, value: usize) {
+    if !enabled() {
+        return;
+    }
+    println!("[timing] {label:<18} {value:>8}");
+}
+
 /// Begin a named span (e.g. "book_open"). If a span with the same label is
 /// already open it is replaced.
 pub fn span(label: &'static str) {

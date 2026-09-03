@@ -13,6 +13,12 @@
 //!
 //! Toasts are queued if the overlay is not mounted yet, so early-startup
 //! messages are not lost.
+//!
+//! **Thread safety.** The state here is `thread_local!` and the widgets are
+//! GTK, so all of it is main-thread-only. Callers do not have to care: `push`
+//! detects a worker thread and bounces the message to the main context. Before
+//! that, a toast raised from a worker vanished into that thread's own copy of
+//! the queue.
 
 use gtk::prelude::*;
 use std::cell::RefCell;
@@ -198,6 +204,23 @@ pub fn outcome_info<T, E: std::fmt::Display>(
 }
 
 fn push(kind: Kind, title: &str, detail: &str, compact: bool) {
+    // Everything below is `thread_local!` and builds GTK widgets, so it is
+    // main-thread-only. Worker threads *do* call this — the import loop
+    // reports a bad file with `notify::error` from inside its worker — and
+    // when they did, the toast went into that thread's own empty HISTORY and
+    // PENDING and was never seen again. The message was silently lost: the
+    // exact failure mode `notify` exists to prevent.
+    //
+    // Rather than make every caller think about threads, bounce to the main
+    // thread here. `invoke` runs the closure immediately when we are already
+    // on the main thread, so the common path costs nothing extra.
+    let context = gtk::glib::MainContext::default();
+    if !context.is_owner() {
+        let (kind, title, detail) = (kind, title.to_string(), detail.to_string());
+        context.invoke(move || push(kind, &title, &detail, compact));
+        return;
+    }
+
     let entry = Entry {
         kind,
         title: title.to_string(),

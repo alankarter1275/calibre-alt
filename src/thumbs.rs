@@ -63,15 +63,25 @@ fn backfill_one(uuid: &str, cover: &Path, thumb_of: &dyn Fn(&str) -> PathBuf) ->
 /// gains thumbnails without re-importing, and only missing files are generated
 /// (so it is cheap after the first pass). Best-effort: a failure for one book
 /// is skipped and the grid falls back to the full cover for that one.
-pub fn backfill_missing(cat: &crate::db::Catalog) {
+///
+/// Takes a [`crate::tasks::Reporter`] so a big first pass can be abandoned when
+/// the window closes. Without that, quitting during the very first launch of a
+/// large library left a thread decoding covers with nothing left to show them
+/// to, and the process lingered until it finished.
+pub fn backfill_missing(cat: &crate::db::Catalog, reporter: &crate::tasks::Reporter) {
     let Ok(books) = cat.list_books(crate::db::SortKey::Title, "") else {
         return;
     };
-    for b in books {
+    let total = books.len();
+    for (i, b) in books.iter().enumerate() {
+        if reporter.cancelled() {
+            return;
+        }
         let Some(cover) = b.cover_path.as_deref() else {
             continue;
         };
         let _ = backfill_one(&b.uuid, cover, &crate::paths::thumbnail_path);
+        reporter.step(i + 1, total, b.title.clone());
     }
 }
 

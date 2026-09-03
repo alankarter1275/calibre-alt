@@ -20,6 +20,7 @@ mod perf;
 mod service;
 mod shelf_rules;
 mod style;
+mod tasks;
 mod theme;
 mod thumbs;
 mod timing;
