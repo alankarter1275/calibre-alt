@@ -812,6 +812,28 @@ impl Catalog {
         Ok(n as usize)
     }
 
+    /// Just `(uuid, cover_name)` for books that have a cover.
+    ///
+    /// The thumbnail backfill needs exactly these two columns, but was calling
+    /// [`Catalog::list_books`], which selects all 21 fields of every book *and*
+    /// runs a second query joining `tags` — none of which it reads. On a
+    /// 2,000-book library that is two full table scans and 2,000 `Book`
+    /// structs built and dropped, on every launch, to answer a question about
+    /// files on disk.
+    ///
+    /// Books with no cover are filtered in SQL rather than in the loop: they
+    /// can never have a thumbnail, so carrying them out of the database only
+    /// to skip them is pure waste.
+    pub fn books_with_covers(&self) -> Result<Vec<(String, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare_cached(
+            "SELECT uuid, cover_name FROM books \
+             WHERE cover_name IS NOT NULL AND cover_name <> ''",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        Ok(rows.flatten().collect())
+    }
+
     pub fn list_books(&self, sort: SortKey, query: &str) -> Result<Vec<Book>> {
         let conn = self.conn();
         let order = match sort {
@@ -1030,6 +1052,12 @@ impl Catalog {
         // A0 step 3: drop the cover thumbnail so the cache cannot grow with
         // deleted books.
         crate::thumbs::remove_thumbnail(&book.uuid);
+        // The startup backfill skips itself when the book count matches its
+        // last complete run. A delete followed by an import nets to the same
+        // count, which would wrongly skip the new book, so forget the marker
+        // here — the cost of an unnecessary pass is far lower than the cost of
+        // a book permanently without a thumbnail.
+        crate::thumbs::invalidate_backfill_marker(self);
         Ok(())
     }
 

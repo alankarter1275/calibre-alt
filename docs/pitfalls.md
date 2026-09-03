@@ -601,3 +601,51 @@ ordinary blocking code in the startup path with no thread anywhere near it.
 Searching for the mechanism instead of the requirement cannot find work that
 was never threaded in the first place. Same shape as §16: checking a
 convenient proxy rather than the actual property.
+
+---
+
+## 18. Cheap work repeated for ever is not cheap
+
+The thumbnail backfill existed to give books imported before A0 step 3 a
+thumbnail without re-importing. It was written as "only missing files are
+generated, so it is cheap after the first pass" — and that sentence was true
+about the *generating*, which is why nobody looked further.
+
+What it actually did on every launch of a settled library:
+
+1. `list_books()` — every column of every book, plus a second query joining
+   `tags`, building and dropping a full `Book` struct per row. The backfill
+   reads exactly two fields: `uuid` and `cover_path`.
+2. One `is_file()` per book, to confirm thumbnails that were already there.
+
+At 139 books nobody notices. At 2,000 that is two table scans, 2,000 structs
+and 2,000 stat calls, every single start, to do nothing at all. The CI report
+made it visible: `thumbs_backfilled 50/100/…/2000` scrolling past on a library
+where every thumbnail already existed.
+
+Two fixes, and the second is the one that matters:
+
+- A narrow query (`books_with_covers`) returning just the two columns, with
+  cover-less books filtered in SQL rather than skipped in the loop.
+- A skip marker, so a settled library does no work at all.
+
+### Getting the marker right
+
+A plain "done" flag would be wrong — importing a book has to trigger a new
+pass. Storing the **book count** at the last complete run gives that for free:
+any import changes the count.
+
+Three cases that had to be reasoned about rather than assumed:
+
+- **A cancelled pass must not record the marker.** It has not verified the rest
+  of the library, and claiming otherwise leaves those books without thumbnails
+  permanently.
+- **A cover that fails to thumbnail must not count as covered**, or the marker
+  promises a complete library that is not one.
+- **Delete-then-import nets to the same count.** The count alone cannot see it,
+  so `delete_book` clears the marker explicitly. An unnecessary pass costs one
+  query; a missed one costs a book its thumbnail for good.
+
+The general shape: **an optimisation that skips work must be wrong in the safe
+direction.** Every ambiguous case here re-runs. Compare §16, where a preloader
+dropped work and nothing picked it back up — same failure, opposite cause.
