@@ -74,6 +74,7 @@ window.kalam-window {
 
 /* ── scrollbars ─────────────────────────────────────── */
 /*  ⚠  READ src/style.rs's header before touching this block.  ⚠
+ *  ⚠  See also docs/pitfalls.md §5 — this trap has been walked into twice. ⚠
  *
  * A 5px pill, no outline, invisible until the pointer reaches the edge.
  * Every line here exists because of a specific bug. In short:
@@ -738,6 +739,21 @@ button.kalam-author-photo-refresh:hover {
     background: transparent;
 }
 
+/* In-app dialogs (A1): same shell as a float, but sized by content rather
+ * than the fixed 700x368 a book float needs. */
+.kalam-in-app-dialog {
+    min-width: 0px;
+    min-height: 0px;
+}
+
+.kalam-in-app-dialog-head {
+    padding: 14px 16px 10px 18px;
+}
+
+.kalam-in-app-dialog-body {
+    padding: 0px 18px 18px 18px;
+}
+
 .kalam-float {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
@@ -884,31 +900,6 @@ progressbar.kalam-float-progress progress {
     margin-top: 2px;
 }
 
-button.kalam-float-close {
-    min-width: 28px;
-    min-height: 28px;
-    margin-top: 2px;
-    margin-right: 2px;
-    margin-bottom: 0;
-    margin-left: 0;
-    padding: 0px;
-    border-radius: 14px;
-    background: @kalam_surface_2;
-    border: 1px solid @kalam_border;
-    box-shadow: none;
-    color: @kalam_text_dim;
-}
-
-button.kalam-float-close > box {
-    min-width: 0;
-    min-height: 0;
-}
-
-button.kalam-float-close:hover {
-    background: @kalam_border;
-    color: @kalam_text;
-}
-
 .kalam-float-body {
     padding-top: 10px;
     padding-right: 22px;
@@ -938,29 +929,43 @@ button.kalam-float-close:hover {
     padding-top: 2px;
 }
 
-button.kalam-float-read-more {
+/* The tag row scrolls sideways on one line — see the note in book_float.rs.
+ * The scroller owns the margins now; the inner box just holds the chips.
+ *
+ * No visible scrollbar, by request. `PolicyType::External` already stops GTK
+ * allocating one; the rule below makes certain nothing is painted if a theme
+ * puts one back. The row still scrolls by wheel, touchpad and drag.
+ *
+ * Note it hides by making the slider's BACKGROUND transparent, NOT with
+ * `opacity: 0` — see the scrollbar block at the top of this file: opacity
+ * renders through an offscreen surface, and a collapsed scrollbar's surface
+ * is zero-sized, which trips `pixman_region32_init_rect: Invalid rectangle`. */
+.kalam-float-tags-scroll {
+    margin-top: 0;
+    margin-bottom: 0;
     background: transparent;
-    border: none;
-    border-radius: 0;
-    box-shadow: none;
-    color: @kalam_accent;
-    padding: 0;
-    min-width: 0;
-    min-height: 0;
-    font-size: 0.76rem;
 }
 
-button.kalam-float-read-more:hover {
-    color: @kalam_text;
+.kalam-float-tags-scroll > scrollbar,
+.kalam-float-tags-scroll > scrollbar slider {
+    background: transparent;
+    background-color: transparent;
+    border: none;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
 }
 
 .kalam-float-tags {
-    margin-top: 0;
-    margin-bottom: 2px;
+    background: transparent;
 }
 
+/* Tight against the tag row above it: the body already supplies 10px of
+ * spacing, and the description section takes all the slack, so extra padding
+ * here just reopens the gap the user asked to close. */
 .kalam-float-actions {
-    padding-top: 8px;
+    padding-top: 0;
 }
 
 button.kalam-float-read {
@@ -989,8 +994,7 @@ button.kalam-float-icon-btn.done-active {
     color: @kalam_success;
 }
 
-button.kalam-float-icon-btn:focus,
-button.kalam-float-close:focus {
+button.kalam-float-icon-btn:focus {
     box-shadow: none;
 }
 
@@ -3209,27 +3213,17 @@ button.kalam-journey-more:hover {
 }
 
 /* ── in-app highlights & quotes panel ─────────────────── */
-.kalam-annotations-float {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 14px;
-    box-shadow: 0 18px 44px alpha(#000, 0.40);
-}
-
-/* In-app shelves checklist float (book page's Shelves button) */
-.kalam-shelves-float {
-    background: @kalam_surface;
-    border: 1px solid @kalam_border;
-    border-radius: 14px;
-    box-shadow: 0 18px 44px alpha(#000, 0.40);
-}
-
-/* In-app tags panel float (book page's "+" chip) */
+/* The three book-page panels: highlights, shelves checklist, tags. One rule
+ * for all three — they were three byte-identical copies, and they now match
+ * the A1 dialog shell (.kalam-float) so the app has one panel look, not two.
+ * Kept as separate selectors because each is addressed elsewhere by name. */
+.kalam-annotations-float,
+.kalam-shelves-float,
 .kalam-tags-float {
     background: @kalam_surface;
     border: 1px solid @kalam_border;
-    border-radius: 14px;
-    box-shadow: 0 18px 44px alpha(#000, 0.40);
+    border-radius: 20px;
+    box-shadow: 0 30px 80px alpha(#000, 0.46), 0 8px 24px alpha(#000, 0.26);
 }
 
 .kalam-series-float-title {

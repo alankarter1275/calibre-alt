@@ -11,7 +11,10 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 > **For AI agents / new chats — read this first.** Plan and status:
 > [`ROADMAP.md`](./ROADMAP.md) (its **"Read this first"** block and **"Current
 > trajectory"** section). Design decisions: [`docs/conversation.md`](./docs/conversation.md).
-> **Keep all three updated in the same commit as your code** — a change that
+> **Known pitfalls: [`docs/pitfalls.md`](./docs/pitfalls.md)** — mistakes already
+> made here and how they were fixed; read it before writing code, and add to it
+> when you get something wrong.
+> **Keep all four updated in the same commit as your code** — a change that
 > leaves the roadmap stale is not done.
 
 ## Working agreement
@@ -22,7 +25,8 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
   importers hardened (read-only SQLite packs, identifier quoting, rollback,
   catalog.db self-import guard), one latent bug fixed (reading-list column
   offsets), 9 new unit tests. No other defects.
-- **CI now runs the 156 unit tests on every push** (the `cargo test` step is
+- **CI now runs the 173 unit tests on every push** (175 `#[test]`s, 2 of them
+  `#[ignore]`d perf probes that are run by hand — the `cargo test` step is
   live in `.github/workflows/ci.yml`). The first real run caught one failing
   test (a bad escape in the `quote_ident` test literal) — fixed, all green.
   On failure the diagnostics are published to `ci-logs/test-latest.txt`.
@@ -31,13 +35,21 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
   `docs/ci/github-actions-ci.yml` — see `docs/ci/README.md`.
 - **Your Arch machine** is only needed at **phase boundaries** (smoke-test + design feedback).
 - Full plan: [`ROADMAP.md`](./ROADMAP.md) · architecture notes: [`ARCH.md`](./ARCH.md) ·
-  design decisions: [`docs/conversation.md`](./docs/conversation.md)
+  design decisions: [`docs/conversation.md`](./docs/conversation.md) ·
+  known pitfalls: [`docs/pitfalls.md`](./docs/pitfalls.md) ·
+  how to smoke-test the A0 changes and read the timing output:
+  [`docs/testing-a0.md`](./docs/testing-a0.md) ·
+  **A0 steps 4+5 (background tasks + preloaders):
+  [`docs/testing-a0-step5.md`](./docs/testing-a0-step5.md)**
 
 ## What works now
 
 - Slim sidebar shell + cover-card library grid
 - **SQLite catalog** at `~/.local/share/kalam/catalog.db`
 - **Import EPUB** (Home → “+ Add books”, or My Library → All books → “+ Import EPUB”)
+- **All books** grid (search, sort, cover cards) — from Home → “All books” or the
+  My Library quick links
+- **Reading list**, **Tags** and **Analytics** — from the My Library quick links
 - **EPUB reader** (WebKitGTK): chapter-wise scroll, TOC, themes, font size, progress restore
 - **Highlights & quotes**: select text → floating chip (yellow/green/blue/pink/orange), save quote (❝), copy
 - **Dictionary**: offline packs (StarDict .ifo/.idx/.dict[.dz], SQLite .db, TSV), lookup via chip, tap, or `D` shortcut, a popup with numbered senses + POS, synonym/antonym chips, idiom cards, bookmark & copy, offline IPA pronunciation (`bank` → `/ˈbæŋk/`) from the bundled CMU Pronouncing Dictionary, keyboard support (↑/↓ focus a sense, Enter saves it), and **Find in chapter**
@@ -73,6 +85,7 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 | **P5** | **Metadata edit, cover replace, Open Library fetch** ✅ |
 | Reader track | Annotation workflow + hybrid anchoring; dictionary overhaul (merged store, popup redesign, likely-sense hint, IPA pronunciation, tap-to-look-up, find in chapter) + vocabulary review (known flag, CSV/Anki export) ✅ · Phases 8–10 shipped: POS grouping dividers, dictionary priority reorder UI, lookup history |
 | Backend review | Full sweep of `db.rs` + `db/*`: importers hardened, reading-list column bug fixed, 9 new tests ✅ |
+| A0 (architecture) | Measured (`perf.rs` / `timing.rs`) ✅ · cover thumbnails ✅ · one reused WebView ✅ · `LibraryService` seam — **in progress** (Home/Analytics/Tags converted) · task manager + preloaders next |
 | P6–P11 | Downloads, AO3/FF, comics, PDF, tools — see ROADMAP |
 | UI overhaul (P5.5) | Colour system, 13 themes, Settings v2, book page, series float — **in progress** (Home/Library/Reader chrome next) |
 
@@ -159,21 +172,33 @@ cargo run
 ```text
 src/
   main.rs          entry + dark preference
-  app.rs           shell, sidebar, routing
+  app.rs           shell, sidebar, routing, page cache
   db.rs            SQLite catalog + annotations + dict + P4 shelves/lists/stats
   dict.rs          StarDict / SQLite / TSV import & search
   shelf_rules.rs   smart-shelf rule documents → SQL
   epub.rs          EPUB OPF metadata + cover extract/replace
-  openlibrary.rs   Open Library search / description / cover
   epub_book.rs     spine, TOC, chapter HTML + reading CSS/JS (highlights, chip, dict)
+  epub_write.rs    metadata writeback into the EPUB's OPF
+  author.rs        author profile fetch + normalisation
   models.rs        routes + books/shelves
-  style.rs         global CSS (including P3 badges/rows)
+  icons.rs         symbolic icon helpers
+  notify.rs        toast notifications + history
+  paths.rs         XDG data/cache paths
+  service.rs       LibraryService — pages ask, it answers (A0 step 2)
+  webview_pool.rs  one reused WebKit view across book opens (A0)
+  thumbs.rs        persistent cover thumbnails (A0 step 3)
+  perf.rs          headless perf probes (#[ignore]d; run manually)
+  timing.rs        in-app timing harness (KALAM_TIMING=1)
+  theme.rs         every colour — 13 dark themes
+  style.rs         global CSS — shape only (spacing, radii, type scale)
+  metadata/        Open Library + Google Books fetch, series lookup
   pages/           Home, Library, Shelves (+ editor/detail), ReadingList,
                    History, Tags, Analytics, Book, Reader, SavedQuotes,
-                   SavedWords, Settings
+                   SavedWords, LookupHistory, Settings, floats
   db/              db.rs split: annotations, authors, dictionaries, history,
-                   metadata, prefs, pronunciation, series, shelves, stats
-  widgets/         book row, shelf card
+                   lookup_history, metadata, prefs, pronunciation, series,
+                   shelves, stats
+  widgets/         book row/card, charts, author links
 ```
 
 ### Backend layout (post split)
@@ -200,8 +225,10 @@ on the same `Catalog`:
   catalog.db
   library/<uuid>/
   dictionaries/        (imported packs meta only; entries in catalog.db)
-  cache/reader/<uuid>/
-  override-covers/     (stashed covers for metadata restore)
+  cache/reader/<uuid>/  (extracted EPUB for the reader)
+  cache/thumbs/<uuid>.png  (persistent cover thumbnails)
+  covers/              (stashed covers for metadata restore, keyed by file hash)
+  authors/             (cached author photos)
   series-covers/       (cached series float covers)
 ~/.config/kalam/       (future)
 ~/Quotes.md            (export target — saved quotes, Markdown)

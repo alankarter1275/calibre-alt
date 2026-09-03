@@ -1,6 +1,7 @@
 //! P4 — History: the append-only reading event log.
 
 use crate::db::{Catalog, EventKind, ReadingEvent};
+use crate::service::LibraryService;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -21,7 +22,7 @@ pub enum HistoryMsg {
 }
 
 pub struct HistoryModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     events: Vec<ReadingEvent>,
     query: String,
     filter: Option<EventKind>,
@@ -119,12 +120,12 @@ impl Component for HistoryModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let events = catalog
-            .list_events(None, "", PAGE_LIMIT)
-            .unwrap_or_default();
+        let service = LibraryService::new(catalog);
+        let snap = service.history(None, "", PAGE_LIMIT);
+        report_errors(&snap.errors);
         let model = HistoryModel {
-            catalog,
-            events,
+            service,
+            events: snap.events,
             query: String::new(),
             filter: None,
         };
@@ -176,7 +177,7 @@ impl Component for HistoryModel {
                 // `self.events` is the *filtered* view, so its length would
                 // understate what was actually removed. Say nothing numeric.
                 crate::notify::outcome_info(
-                    self.catalog.clear_history(),
+                    self.service.catalog().clear_history(),
                     "History cleared",
                     "Every reading event was removed",
                     "Could not clear the history",
@@ -192,10 +193,17 @@ impl Component for HistoryModel {
 
 impl HistoryModel {
     fn reload(&mut self) {
-        self.events = self
-            .catalog
-            .list_events(self.filter, &self.query, PAGE_LIMIT)
-            .unwrap_or_default();
+        let snap = self.service.history(self.filter, &self.query, PAGE_LIMIT);
+        report_errors(&snap.errors);
+        self.events = snap.events;
+    }
+}
+
+/// Surface read failures instead of rendering them as an empty feed. The
+/// service collects them; deciding what the user sees stays with the UI.
+fn report_errors(errors: &[String]) {
+    for err in errors {
+        crate::notify::error("Could not read your reading history", err);
     }
 }
 

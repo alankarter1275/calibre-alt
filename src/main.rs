@@ -17,11 +17,15 @@ mod notify;
 mod pages;
 mod paths;
 mod perf;
+mod preload;
+mod service;
 mod shelf_rules;
 mod style;
+mod tasks;
 mod theme;
 mod thumbs;
 mod timing;
+mod webview_pool;
 mod widgets;
 
 use app::AppModel;
@@ -60,6 +64,27 @@ fn main() {
         theme::apply(&startup_theme());
     } else {
         eprintln!("kalam: KALAM_NO_CSS set — running with stock GTK styling");
+    }
+
+    // Fail here, not inside AppModel::init. The app cannot do anything without
+    // a catalog, and init() runs inside a GTK signal callback where a panic
+    // cannot unwind: it aborts the process with a core dump and a backtrace
+    // instead of saying what is wrong. Checking first turns "Aborted (core
+    // dumped)" into one readable line and exit code 1.
+    if let Err(err) = db::Catalog::open() {
+        eprintln!("kalam: cannot open the library database.");
+        eprintln!("  {err}");
+        eprintln!("  file: {}", paths::catalog_db().display());
+        eprintln!();
+        eprintln!("If that file is corrupt, move it aside and restart:");
+        let db = paths::catalog_db();
+        eprintln!("  mv {} {}.broken", db.display(), db.display());
+        eprintln!("Kalam will build a fresh library. Your book files are kept");
+        eprintln!(
+            "separately in {} and are not affected.",
+            paths::library_dir().display()
+        );
+        std::process::exit(1);
     }
 
     app.run::<AppModel>(());

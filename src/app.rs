@@ -214,6 +214,12 @@ impl AppModel {
             });
 
         let float = ctrl.widget().clone();
+        // 720x420 is a *floor*, not a size: GTK grows a widget past its size
+        // request whenever the content needs more room, which is why the panel
+        // used to change size from book to book. The content itself is now
+        // bounded (see the tag row, title, author line and description section
+        // in `book_float.rs`); pinning halign/valign to Center rather than Fill
+        // keeps the panel at its requested size instead of stretching it.
         float.set_size_request(720, 420);
         float.set_hexpand(false);
         float.set_vexpand(false);
@@ -239,7 +245,6 @@ impl AppModel {
         let ctrl = SeriesFloatModel::builder()
             .launch((self.catalog.clone(), series, first_author))
             .forward(sender.input_sender(), |out| match out {
-                SeriesFloatOut::Close => AppMsg::CloseBookDialog,
                 SeriesFloatOut::OpenBook { book_id } => AppMsg::FloatOpenFull { book_id },
             });
 
@@ -340,8 +345,11 @@ impl AppModel {
                 let ctrl = HomePageModel::builder().launch(catalog.clone()).forward(
                     sender.input_sender(),
                     |out| match out {
-                        HomeOut::OpenBook { book_id } => AppMsg::Push(Route::BookPage { book_id }),
-                        HomeOut::OpenBookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
+                        HomeOut::Book { book_id } => AppMsg::Push(Route::BookPage { book_id }),
+                        HomeOut::BookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
+                        HomeOut::AllBooks => {
+                            AppMsg::Push(Route::LibrarySection(LibrarySection::AllBooks))
+                        }
                     },
                 );
                 PageSlot::Home(ctrl)
@@ -654,6 +662,20 @@ impl Component for AppModel {
             // window controls. The page runs edge to edge; Alt+F4 closes.
             set_decorated: false,
 
+            // A0 step 4: tell background tasks to stop before the window goes.
+            // Cancellation is cooperative, so this only sets a flag — short
+            // tasks finish anyway, but a long one (the thumbnail backfill on a
+            // big first launch) stops instead of decoding covers for a window
+            // that no longer exists. `Proceed` so the close is not blocked.
+            connect_close_request => move |_| {
+                let pending = crate::tasks::running_count();
+                crate::tasks::cancel_all();
+                if pending > 0 {
+                    crate::timing::note("tasks_cancelled_at_exit", pending);
+                }
+                gtk::glib::Propagation::Proceed
+            },
+
             // One root overlay: main app under it, then a dimmed in-app book
             // panel, then toasts on top.
             #[name = "root_overlay"]
@@ -802,28 +824,92 @@ impl Component for AppModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
+        // Cold start is one number until it is broken down, and the first
+        // measurement on a real library came back at 8 s. These three spans
+        // split `window_shown` into the work that precedes first paint, so the
+        // next run says which part to fix instead of inviting a guess.
+        crate::timing::span("startup_db_open");
+        // `main()` already proved the catalog opens and exits cleanly if it
+        // does not, so reaching the error arm here means the database broke
+        // between that check and now. There is no useful fallback: the old
+        // code "handled" it by calling the same failing function again and
+        // `.expect()`ing it, which is a guaranteed panic — and because init()
+        // runs inside a GTK callback that panic cannot unwind, so it aborted
+        // with a core dump. Say what happened and leave, in one piece.
         let catalog = match Catalog::open() {
             Ok(c) => Arc::new(c),
             Err(err) => {
-                // Raised before the overlay exists; notify queues it.
-                crate::notify::error("Could not open the library", &err.to_string());
-                Arc::new(Catalog::open().expect("catalog open"))
+                eprintln!("kalam: the library database became unreadable during startup.");
+                eprintln!("  {err}");
+                eprintln!("  file: {}", crate::paths::catalog_db().display());
+                std::process::exit(1);
             }
         };
+        crate::timing::span_end("startup_db_open");
         // A0 step 3: give books imported before thumbnails existed a thumbnail
         // without re-importing. Off the UI thread so first paint is not delayed;
         // only missing files are generated, so it is cheap after the first pass.
         let backfill_catalog = catalog.clone();
-        std::thread::spawn(move || crate::thumbs::backfill_missing(&backfill_catalog));
-        if let Err(err) = crate::dict::install_bundled_dictionaries(&catalog) {
-            crate::notify::error(
-                "Could not install the bundled dictionaries",
-                &err.to_string(),
-            );
-        }
+        crate::tasks::spawn(
+            move |reporter| crate::thumbs::backfill_missing(&backfill_catalog, &reporter),
+            // Only interesting under KALAM_TIMING=1: a first launch over a big
+            // library can spend a while here, and without a progress line
+            // there was no way to tell a slow backfill from a stalled one.
+            |update| {
+                if update.done == update.total || update.done % 50 == 0 {
+                    crate::timing::note("thumbs_backfilled", update.done);
+                }
+            },
+            |generated| {
+                if generated > 0 {
+                    crate::timing::note("thumbs_backfill_done", generated);
+                }
+            },
+        );
+        // A0 step 4 leftover, finished here: the first run decompresses and
+        // imports ~6.8 MB of gzipped TSV packs, and it used to do that on this
+        // thread — before the window existed. A new user waited on it with
+        // nothing on screen to explain why.
+        //
+        // Off the seam now. Nothing on screen depends on it: the dictionary is
+        // read when the user looks a word up in the reader, which cannot
+        // happen before the window is even drawn. Later runs still early-out
+        // on a pref, so this is a no-op after the first launch.
+        //
+        // Not merged into the thumbnail task above, deliberately: two
+        // independent jobs sharing one worker means the slower one delays the
+        // other for no reason, and a failure in one would be reported as a
+        // failure of both.
+        let dict_catalog = catalog.clone();
+        crate::tasks::spawn(
+            move |_reporter| {
+                // No cancel check inside: the unit of work is a whole pack,
+                // and abandoning one half-imported would leave the pref unset
+                // and the rows partly written. It is bounded work that ends on
+                // its own, so letting it finish is simpler and safer than
+                // making it interruptible.
+                crate::timing::span("startup_dicts");
+                let result = crate::dict::install_bundled_dictionaries(&dict_catalog);
+                crate::timing::span_end("startup_dicts");
+                // Send back a String rather than the error: anyhow::Error is
+                // not Send-safe to move across the seam here, and the message
+                // is all the UI needs.
+                result.err().map(|err| err.to_string())
+            },
+            |_update| {},
+            |failed: Option<String>| {
+                // Back on the main thread, so the toast is raised where the
+                // notification system can actually display it (pitfalls §4e).
+                if let Some(message) = failed {
+                    crate::notify::error("Could not install the bundled dictionaries", &message);
+                }
+            },
+        );
 
         let initial_route = Route::Module(NavItem::Home);
+        crate::timing::span("startup_first_page");
         let page = Self::build_page(&catalog, &initial_route, &sender);
+        crate::timing::span_end("startup_first_page");
 
         let float_scrim = gtk::Box::new(gtk::Orientation::Vertical, 0);
         float_scrim.add_css_class("kalam-float-scrim");
@@ -865,17 +951,46 @@ impl Component for AppModel {
         widgets.root_overlay.add_overlay(&float_scrim);
         widgets.root_overlay.add_overlay(&float_host);
 
-        let block_float_clicks = gtk::GestureClick::new();
-        block_float_clicks.connect_pressed(|_, _, _, _| {});
-        float_scrim.add_controller(block_float_clicks);
+        // Clicking the dimmed area closes the float. The scrim already
+        // swallowed those clicks so they could not reach the page behind it;
+        // the handler was simply empty, which made the dim look interactive
+        // and do nothing. Same behaviour as Esc, reachable with the mouse.
+        let scrim_click = gtk::GestureClick::new();
+        let s_scrim = sender.clone();
+        scrim_click.connect_pressed(move |_, _, _, _| {
+            s_scrim.input(AppMsg::CloseBookDialog);
+        });
+        float_scrim.add_controller(scrim_click);
+
+        // Tab must not walk out of an open float into the page behind it.
+        // Permanent, like the key handler below: the trap is inert whenever
+        // `float_host` is hidden, so there is nothing to add or remove per
+        // float. (`in_app_dialog.rs` attaches its own per dialog instead,
+        // because those hosts are created and destroyed with the dialog.)
+        root.add_controller(crate::widgets::focus_trap::controller(&float_host));
 
         let close_float_key = gtk::EventControllerKey::new();
         let s_key = sender.clone();
+        let key_root = root.clone();
         close_float_key.connect_key_pressed(move |_, keyval, _, _| {
             use gtk::gdk::Key;
-            if float_host.is_visible()
-                && (keyval == Key::q || keyval == Key::Q || keyval == Key::Escape)
-            {
+            if !float_host.is_visible() {
+                return gtk::glib::Propagation::Proceed;
+            }
+            // Esc always closes. `q` is a convenience for the read-only
+            // floats, but it must never fire while a text box has focus:
+            // the tags panel has an entry, and typing "q" in it used to
+            // dismiss the panel instead of typing the letter.
+            // Spelled out because both `WidgetExt` and `GtkWindowExt` have a
+            // `focus`, and a bare call is ambiguous. `gtk::Text` is the inner
+            // widget of an Entry and is what actually holds focus.
+            let focused = gtk::prelude::GtkWindowExt::focus(&key_root);
+            let typing = focused
+                .map(|w| w.is::<gtk::Text>() || w.is::<gtk::Entry>() || w.is::<gtk::SearchEntry>())
+                .unwrap_or(false);
+            let quit_key = keyval == Key::q || keyval == Key::Q;
+            let close = keyval == Key::Escape || (!typing && quit_key);
+            if close {
                 s_key.input(AppMsg::CloseBookDialog);
                 return gtk::glib::Propagation::Stop;
             }

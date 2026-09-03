@@ -1,8 +1,12 @@
 //! P5 — edit metadata, replace the cover, fetch from Open Library.
 //!
-//! A standalone `gtk::Window` rather than a Relm4 component, matching
-//! `shelf_editor`: the Open Library results list is built and rebuilt
-//! dynamically, which is far simpler with direct widget handling.
+//! Built with direct widget handling rather than as a Relm4 component,
+//! matching `shelf_editor`: the Open Library results list is built and
+//! rebuilt dynamically, which is far simpler that way.
+//!
+//! A1: shown as an in-app dialog, not a `gtk::Window`. It holds unsaved edits,
+//! so backdrop-click is deliberately disabled — Cancel and Esc are the ways
+//! out. See `crate::widgets::in_app_dialog`.
 //!
 //! Network work runs on a worker thread and reports back through a channel on
 //! the main context, so the dialog never blocks the UI. Fetched values are
@@ -13,6 +17,7 @@ use crate::db::Catalog;
 use crate::metadata::{self, Candidate, CoverRef};
 use crate::widgets::book_row::cover_widget;
 use crate::widgets::charts::star_picker;
+use crate::widgets::in_app_dialog;
 use gtk::prelude::*;
 use relm4::RelmWidgetExt;
 use std::cell::RefCell;
@@ -44,46 +49,57 @@ enum FetchMsg {
 
 /// Open the editor for `book_id`. `on_saved` runs after a successful write.
 pub fn open_metadata_editor(
-    parent: Option<&gtk::Window>,
+    anchor: &impl IsA<gtk::Widget>,
     catalog: Arc<Catalog>,
     book_id: i64,
     on_saved: impl Fn() + 'static,
 ) {
-    open_editor_inner(parent, catalog, book_id, Rc::new(on_saved));
+    open_editor_inner(anchor.as_ref(), catalog, book_id, Rc::new(on_saved));
 }
 
 fn open_editor_inner(
-    parent: Option<&gtk::Window>,
+    anchor: &gtk::Widget,
     catalog: Arc<Catalog>,
     book_id: i64,
     on_saved: Rc<dyn Fn()>,
 ) {
-    let Ok(Some(book)) = catalog.get_book(book_id) else {
-        return;
+    // Silently returning here meant the editor just never appeared: no
+    // dialog, no message, nothing to click. Say which of the two it was.
+    let book = match catalog.get_book(book_id) {
+        Ok(Some(book)) => book,
+        Ok(None) => {
+            crate::notify::error(
+                "Cannot edit this book",
+                "It is no longer in your library — it may have been deleted.",
+            );
+            return;
+        }
+        Err(err) => {
+            crate::notify::error("Could not open the metadata editor", &err.to_string());
+            return;
+        }
     };
 
-    // Clamp to the display so the dialog fits on small laptop screens.
-    let max_width = parent
-        .and_then(|p| p.surface())
+    // The app window: needed to measure the display, and later as the parent
+    // for the cover file chooser, which is a real portal dialog.
+    let app_window: Option<gtk::Window> =
+        anchor.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+
+    // Clamp to the display so the form fits on small laptop screens. As an
+    // in-app dialog it can never exceed the window, but a form wider than the
+    // window would still be clipped, so the clamp stays.
+    let max_width = app_window
+        .as_ref()
+        .and_then(|w| w.surface())
         .and_then(|s| gtk::gdk::Display::default().and_then(|d| d.monitor_at_surface(&s)))
         .map(|m| m.geometry().width() - 80)
         .unwrap_or(DIALOG_WIDTH);
 
-    let window = gtk::Window::builder()
-        .title("Edit metadata")
-        .modal(true)
-        .default_width(DIALOG_WIDTH.min(max_width))
-        // Deliberately short: on a 768px-tall laptop a 640px dialog plus window
-        // chrome pushed the action bar off-screen. Content scrolls instead.
-        .default_height(560)
-        .build();
-    window.add_css_class("kalam-window");
-    if let Some(parent) = parent {
-        window.set_transient_for(Some(parent));
-    }
-
     // Outer shell holds the scroller and an always-visible action bar.
     let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    // Width only: the height comes from the content, capped by the scroller
+    // below so the action bar is always reachable on a short laptop screen.
+    shell.set_size_request(DIALOG_WIDTH.min(max_width), -1);
 
     let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
     root.set_margin_all(18);
@@ -140,7 +156,7 @@ fn open_editor_inner(
         let rating_host_inner = rating_host.clone();
         let rating_value = rating_value.clone();
         // Rebuilt on each pick so the filled glyphs follow the click.
-        let rebuild: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+        let rebuild: crate::pages::SelfRebuild = Rc::new(RefCell::new(None));
         let rebuild_ref = rebuild.clone();
         let f: Rc<dyn Fn()> = Rc::new(move || {
             while let Some(c) = rating_host_inner.first_child() {
@@ -220,11 +236,7 @@ fn open_editor_inner(
     search_entry.set_hexpand(true);
     search_entry.set_placeholder_text(Some("Title and author…"));
     // Seed with what we already know so one click usually suffices.
-    search_entry.set_text(
-        &format!("{} {}", book.title, book.authors)
-            .trim()
-            .to_string(),
-    );
+    search_entry.set_text(format!("{} {}", book.title, book.authors).trim());
 
     let search_btn = gtk::Button::with_label("Search");
     search_btn.add_css_class("kalam-primary-btn");
@@ -297,8 +309,14 @@ fn open_editor_inner(
     revealer.set_hexpand(false);
 
     // ── actions: pinned outside the scroller so Save is always reachable ─
+    // `max_content_height` is what keeps the form from growing taller than the
+    // screen. A `gtk::Window` was bounded by its own default height; an in-app
+    // panel is sized by its content, so without a cap a long description would
+    // push the action bar out of view.
     let content_scroll = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Never)
+        .max_content_height(460)
+        .propagate_natural_height(true)
         .vexpand(true)
         .hexpand(true)
         .child(&root)
@@ -367,7 +385,20 @@ fn open_editor_inner(
     actions.append(&save);
     shell.append(&actions);
 
-    window.set_child(Some(&shell));
+    // A1: an in-app dialog, so Sway cannot tile it away from the app. Unsaved
+    // edits mean backdrop-click is disabled; Cancel and Esc remain.
+    let Some(dialog) = in_app_dialog::present(
+        anchor,
+        "Edit metadata",
+        in_app_dialog::DialogExit::UnsavedInput,
+        &shell,
+    ) else {
+        crate::notify::error(
+            "Could not open the metadata editor",
+            "Please try again once the page has finished loading.",
+        );
+        return;
+    };
 
     // Cover bytes fetched from Open Library, written only on Save.
     let pending_cover: Rc<RefCell<Option<Vec<u8>>>> = Rc::new(RefCell::new(None));
@@ -533,13 +564,16 @@ fn open_editor_inner(
                                 ss.set_label("Fetching full-size cover…");
                                 let tx2 = tx2.clone();
                                 let cover_ref = cover_ref.clone();
-                                std::thread::spawn(move || {
-                                    let msg = match metadata::fetch_cover(&cover_ref) {
+                                crate::tasks::spawn(
+                                    move |_reporter| match metadata::fetch_cover(&cover_ref) {
                                         Ok(b) => FetchMsg::CoverReady(b),
                                         Err(e) => FetchMsg::CoverFailed(e.to_string()),
-                                    };
-                                    let _ = tx2.send_blocking(msg);
-                                });
+                                    },
+                                    |_update| {},
+                                    move |msg| {
+                                        let _ = tx2.send_blocking(msg);
+                                    },
+                                );
                             });
                             grid.insert(&btn, -1);
                         }
@@ -592,22 +626,29 @@ fn open_editor_inner(
             search_status.set_label("Searching…");
             let tx = tx.clone();
             // Blocking HTTP on a worker thread keeps the dialog responsive.
-            std::thread::spawn(move || {
-                let (list, errors) = metadata::search_all(sources, &query, 10);
-                let msg = if list.is_empty() && !errors.is_empty() {
-                    // Every source failed — surface why.
-                    FetchMsg::Failed(
-                        errors
-                            .iter()
-                            .map(|(id, e)| format!("{}: {e}", id.label()))
-                            .collect::<Vec<_>>()
-                            .join("  ·  "),
-                    )
-                } else {
-                    FetchMsg::Results(list, errors)
-                };
-                let _ = tx.send_blocking(msg);
-            });
+            // Through the seam (A0 step 4) so it is cancelled at shutdown
+            // rather than left holding an open socket.
+            crate::tasks::spawn(
+                move |_reporter| {
+                    let (list, errors) = metadata::search_all(sources, &query, 10);
+                    if list.is_empty() && !errors.is_empty() {
+                        // Every source failed — surface why.
+                        FetchMsg::Failed(
+                            errors
+                                .iter()
+                                .map(|(id, e)| format!("{}: {e}", id.label()))
+                                .collect::<Vec<_>>()
+                                .join("  ·  "),
+                        )
+                    } else {
+                        FetchMsg::Results(list, errors)
+                    }
+                },
+                |_update| {},
+                move |msg| {
+                    let _ = tx.send_blocking(msg);
+                },
+            );
         });
         let run2 = run.clone();
         search_btn.connect_clicked(move |_| run());
@@ -640,37 +681,50 @@ fn open_editor_inner(
 
             let tx = tx.clone();
             let sources = metadata::enabled_sources(&catalog_c);
-            std::thread::spawn(move || {
-                let (list, errors) = metadata::search_all(sources, &query, 12);
-                // Fetch small thumbnails so the grid appears quickly; the
-                // full-size image is only pulled once one is picked.
-                let mut found = Vec::new();
-                for cover in list.iter().filter_map(|c| c.cover.clone()).take(6) {
-                    if let Ok(bytes) = metadata::fetch_thumbnail(&cover) {
-                        found.push((cover, bytes));
+            crate::tasks::spawn(
+                move |reporter| {
+                    let (list, errors) = metadata::search_all(sources, &query, 12);
+                    // Fetch small thumbnails so the grid appears quickly; the
+                    // full-size image is only pulled once one is picked.
+                    //
+                    // Six sequential HTTP gets is the longest wait in this
+                    // dialog, so this is the one loop here worth making
+                    // cancellable: closing the window mid-search stops it
+                    // instead of downloading covers nobody will see.
+                    let mut found = Vec::new();
+                    for cover in list.iter().filter_map(|c| c.cover.clone()).take(6) {
+                        if reporter.cancelled() {
+                            break;
+                        }
+                        if let Ok(bytes) = metadata::fetch_thumbnail(&cover) {
+                            found.push((cover, bytes));
+                        }
                     }
-                }
-                let msg = if !found.is_empty() {
-                    FetchMsg::CoverChoices(found)
-                } else if !errors.is_empty() {
-                    FetchMsg::CoverFailed(
-                        errors
-                            .iter()
-                            .map(|(id, e)| format!("{}: {e}", id.label()))
-                            .collect::<Vec<_>>()
-                            .join("  ·  "),
-                    )
-                } else {
-                    FetchMsg::CoverFailed("no covers found for that title".into())
-                };
-                let _ = tx.send_blocking(msg);
-            });
+                    if !found.is_empty() {
+                        FetchMsg::CoverChoices(found)
+                    } else if !errors.is_empty() {
+                        FetchMsg::CoverFailed(
+                            errors
+                                .iter()
+                                .map(|(id, e)| format!("{}: {e}", id.label()))
+                                .collect::<Vec<_>>()
+                                .join("  ·  "),
+                        )
+                    } else {
+                        FetchMsg::CoverFailed("no covers found for that title".into())
+                    }
+                },
+                |_update| {},
+                move |msg| {
+                    let _ = tx.send_blocking(msg);
+                },
+            );
         });
     }
 
     // ── replace cover from disk ─────────────────────────────────────────
     {
-        let window = window.clone();
+        let app_window = app_window.clone();
         let cover_host = cover_host.clone();
         let pending_cover = pending_cover.clone();
         let status = status.clone();
@@ -691,33 +745,37 @@ fn open_editor_inner(
             let cover_host = cover_host.clone();
             let pending_cover = pending_cover.clone();
             let status = status.clone();
-            dialog.open(Some(&window), gtk::gio::Cancellable::NONE, move |res| {
-                let Ok(file) = res else { return };
-                let Some(path) = file.path() else { return };
-                match std::fs::read(&path) {
-                    Ok(bytes) if !bytes.is_empty() => {
-                        if let Some(texture) = texture_from_bytes(&bytes) {
-                            while let Some(c) = cover_host.first_child() {
-                                cover_host.remove(&c);
+            dialog.open(
+                app_window.as_ref(),
+                gtk::gio::Cancellable::NONE,
+                move |res| {
+                    let Ok(file) = res else { return };
+                    let Some(path) = file.path() else { return };
+                    match std::fs::read(&path) {
+                        Ok(bytes) if !bytes.is_empty() => {
+                            if let Some(texture) = texture_from_bytes(&bytes) {
+                                while let Some(c) = cover_host.first_child() {
+                                    cover_host.remove(&c);
+                                }
+                                let pic = gtk::Picture::for_paintable(&texture);
+                                pic.set_size_request(150, 240);
+                                pic.set_content_fit(gtk::ContentFit::Fill);
+                                cover_host.append(&pic);
                             }
-                            let pic = gtk::Picture::for_paintable(&texture);
-                            pic.set_size_request(150, 240);
-                            pic.set_content_fit(gtk::ContentFit::Fill);
-                            cover_host.append(&pic);
+                            *pending_cover.borrow_mut() = Some(bytes);
+                            status.set_label("Cover selected — press Save to keep it.");
                         }
-                        *pending_cover.borrow_mut() = Some(bytes);
-                        status.set_label("Cover selected — press Save to keep it.");
+                        Ok(_) => status.set_label("That image file is empty."),
+                        Err(err) => status.set_label(&format!("Could not read that file: {err}")),
                     }
-                    Ok(_) => status.set_label("That image file is empty."),
-                    Err(err) => status.set_label(&format!("Could not read that file: {err}")),
-                }
-            });
+                },
+            );
         });
     }
 
     {
-        let window = window.clone();
-        cancel.connect_clicked(move |_| window.close());
+        let dialog = dialog.clone();
+        cancel.connect_clicked(move |_| dialog.close());
     }
 
     // ── save ────────────────────────────────────────────────────────────
@@ -851,18 +909,19 @@ fn open_editor_inner(
     }
 
     {
-        let window = window.clone();
+        let dialog = dialog.clone();
         let commit = commit.clone();
         save.connect_clicked(move |_| {
             if commit() {
-                window.close();
+                dialog.close();
             }
         });
     }
 
     // Previous / Next: commit, close, reopen on the neighbour.
     for (btn, delta) in [(&prev_btn, -1_i64), (&next_btn, 1_i64)] {
-        let window = window.clone();
+        let dialog = dialog.clone();
+        let anchor = anchor.clone();
         let catalog = catalog.clone();
         let commit = commit.clone();
         let on_saved = on_saved.clone();
@@ -879,30 +938,14 @@ fn open_editor_inner(
                 return;
             }
             let next_id = neighbours[target as usize];
-            let parent = window.transient_for().or_else(|| {
-                relm4::main_application()
-                    .active_window()
-                    .and_then(|w| w.downcast::<gtk::Window>().ok())
-            });
-            window.close();
-            open_editor_inner(parent.as_ref(), catalog.clone(), next_id, on_saved.clone());
+            // Close this panel before reopening on the neighbour, or two
+            // dialogs would stack on the same overlay.
+            dialog.close();
+            open_editor_inner(&anchor, catalog.clone(), next_id, on_saved.clone());
         });
     }
 
-    let key = gtk::EventControllerKey::new();
-    {
-        let window = window.clone();
-        key.connect_key_pressed(move |_, keyval, _, _| {
-            if keyval == gtk::gdk::Key::Escape {
-                window.close();
-                return gtk::glib::Propagation::Stop;
-            }
-            gtk::glib::Propagation::Proceed
-        });
-    }
-    window.add_controller(key);
-
-    window.present();
+    // Esc is handled by the dialog helper, for every in-app dialog alike.
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1000,42 +1043,45 @@ fn rebuild_results(
                 } else if let (Some(key), Some(id)) = (c.detail_key.clone(), c.source) {
                     let desc_view = desc_view.clone();
                     let status2 = status.clone();
-                    let (dtx, drx) = async_channel::bounded::<String>(1);
-                    std::thread::spawn(move || {
-                        let source: Box<dyn metadata::MetadataSource> = match id {
-                            metadata::SourceId::OpenLibrary => {
-                                Box::new(metadata::openlibrary::OpenLibrary)
-                            }
-                            metadata::SourceId::GoogleBooks => {
-                                Box::new(metadata::google_books::GoogleBooks {
-                                    api_key: String::new(),
-                                    country: metadata::google_books::detect_country(),
-                                })
-                            }
-                        };
-                        if let Ok(text) = source.fetch_description(&key) {
-                            let _ = dtx.send_blocking(text);
-                        }
-                    });
-                    gtk::glib::spawn_future_local(async move {
-                        if let Ok(text) = drx.recv().await {
+                    // Was a worker + its own channel + a local future, three
+                    // pieces to say "fetch this and set a label". One call now.
+                    crate::tasks::spawn(
+                        move |_reporter| {
+                            let source: Box<dyn metadata::MetadataSource> = match id {
+                                metadata::SourceId::OpenLibrary => {
+                                    Box::new(metadata::openlibrary::OpenLibrary)
+                                }
+                                metadata::SourceId::GoogleBooks => {
+                                    Box::new(metadata::google_books::GoogleBooks {
+                                        api_key: String::new(),
+                                        country: metadata::google_books::detect_country(),
+                                    })
+                                }
+                            };
+                            source.fetch_description(&key).unwrap_or_default()
+                        },
+                        |_update| {},
+                        move |text| {
                             if !text.trim().is_empty() {
                                 desc_view.buffer().set_text(&text);
                                 status2.set_label("Description filled — review, then Save.");
                             }
-                        }
-                    });
+                        },
+                    );
                 }
 
                 if let Some(cover_ref) = c.cover.clone() {
                     let tx = tx.clone();
-                    std::thread::spawn(move || {
-                        let msg = match metadata::fetch_cover(&cover_ref) {
+                    crate::tasks::spawn(
+                        move |_reporter| match metadata::fetch_cover(&cover_ref) {
                             Ok(bytes) => FetchMsg::CoverReady(bytes),
                             Err(err) => FetchMsg::CoverFailed(err.to_string()),
-                        };
-                        let _ = tx.send_blocking(msg);
-                    });
+                        },
+                        |_update| {},
+                        move |msg| {
+                            let _ = tx.send_blocking(msg);
+                        },
+                    );
                 }
             });
         }

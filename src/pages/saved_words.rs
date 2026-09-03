@@ -1,4 +1,5 @@
 use crate::db::{Catalog, SavedWord};
+use crate::service::LibraryService;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::path::PathBuf;
@@ -28,7 +29,7 @@ pub enum SavedWordsMsg {
 }
 
 pub struct SavedWordsModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     query: String,
     words: Vec<SavedWord>,
     status: String,
@@ -162,7 +163,7 @@ impl Component for SavedWordsModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = SavedWordsModel {
-            catalog: catalog.clone(),
+            service: LibraryService::new(catalog),
             query: String::new(),
             words: Vec::new(),
             status: String::new(),
@@ -218,7 +219,7 @@ impl Component for SavedWordsModel {
                     .map(|w| w.word.clone())
                     .unwrap_or_default();
                 crate::notify::outcome_info(
-                    self.catalog.delete_saved_word(id),
+                    self.service.catalog().delete_saved_word(id),
                     "Word deleted",
                     &word,
                     "Could not delete the word",
@@ -235,7 +236,7 @@ impl Component for SavedWordsModel {
                     .map(|w| (w.word.clone(), !w.known))
                     .unwrap_or((String::new(), true));
                 crate::notify::outcome_info(
-                    self.catalog.set_saved_word_known(id, word.1),
+                    self.service.catalog().set_saved_word_known(id, word.1),
                     if word.1 {
                         "Marked as known"
                     } else {
@@ -276,7 +277,11 @@ impl Component for SavedWordsModel {
                 widgets.status_label.set_label(&self.status);
             }
             SavedWordsMsg::SuggestFromHistory => {
-                let repeats = self.catalog.repeat_lookup_words(20).unwrap_or_default();
+                let repeats = self
+                    .service
+                    .catalog()
+                    .repeat_lookup_words(20)
+                    .unwrap_or_default();
                 if repeats.is_empty() {
                     crate::notify::info(
                         "No repeat lookups yet",
@@ -292,7 +297,7 @@ impl Component for SavedWordsModel {
                 rebuild(&widgets.list_box, &self.words, &sender);
                 widgets.status_label.set_label(&self.status);
             }
-            SavedWordsMsg::ExportCsv => match export_saved_words_csv(&self.catalog) {
+            SavedWordsMsg::ExportCsv => match export_saved_words_csv(self.service.catalog()) {
                 Ok((n, path)) => {
                     crate::notify::compact(
                         &format!("{n} word{} exported", if n == 1 { "" } else { "s" }),
@@ -301,7 +306,7 @@ impl Component for SavedWordsModel {
                 }
                 Err(e) => crate::notify::error("Could not export words", &e),
             },
-            SavedWordsMsg::ExportAnki => match export_saved_words_anki(&self.catalog) {
+            SavedWordsMsg::ExportAnki => match export_saved_words_anki(self.service.catalog()) {
                 Ok((n, path)) => {
                     crate::notify::compact(
                         &format!(
@@ -325,50 +330,42 @@ impl Component for SavedWordsModel {
 
 impl SavedWordsModel {
     fn reload(&mut self) {
-        match self.catalog.list_saved_words(&self.query, self.filter) {
-            Ok(words) => {
-                let n = words.len();
-                let total = self
-                    .catalog
-                    .list_saved_words("", None)
-                    .map(|all| all.len())
-                    .unwrap_or(n);
-                let known = self
-                    .catalog
-                    .list_saved_words("", Some(true))
-                    .map(|all| all.len())
-                    .unwrap_or(0);
-                self.words = words;
-                let scope = match self.filter {
-                    None => format!("{n} of {total} word{}", if total == 1 { "" } else { "s" }),
-                    Some(false) => format!(
-                        "{n} to review · {total} word{} saved",
-                        if total == 1 { "" } else { "s" }
-                    ),
-                    Some(true) => format!(
-                        "{n} known · {total} word{} saved",
-                        if total == 1 { "" } else { "s" }
-                    ),
-                };
-                self.status = if self.query.trim().is_empty() {
-                    if total == 0 {
-                        "No saved words yet — lookup a word in the reader (D or chip Aa) and save it.".into()
-                    } else {
-                        format!("{scope} · {known} known")
-                    }
-                } else {
-                    format!(
-                        "{n} result{} for \"{}\"",
-                        if n == 1 { "" } else { "s" },
-                        self.query
-                    )
-                };
-            }
-            Err(e) => {
-                self.words.clear();
-                self.status = format!("DB error: {e}");
-            }
+        let snap = self.service.words(&self.query, self.filter);
+        // This page reports failures in its status line, as it always has.
+        if let Some(e) = snap.errors.first() {
+            self.words.clear();
+            self.status = format!("DB error: {e}");
+            return;
         }
+        let n = snap.words.len();
+        let total = snap.total;
+        let known = snap.known;
+        self.words = snap.words;
+        let scope = match self.filter {
+            None => format!("{n} of {total} word{}", if total == 1 { "" } else { "s" }),
+            Some(false) => format!(
+                "{n} to review · {total} word{} saved",
+                if total == 1 { "" } else { "s" }
+            ),
+            Some(true) => format!(
+                "{n} known · {total} word{} saved",
+                if total == 1 { "" } else { "s" }
+            ),
+        };
+        self.status = if self.query.trim().is_empty() {
+            if total == 0 {
+                "No saved words yet — lookup a word in the reader (D or chip Aa) and save it."
+                    .into()
+            } else {
+                format!("{scope} · {known} known")
+            }
+        } else {
+            format!(
+                "{n} result{} for \"{}\"",
+                if n == 1 { "" } else { "s" },
+                self.query
+            )
+        };
     }
 }
 

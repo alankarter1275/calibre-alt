@@ -7,6 +7,7 @@ use crate::db::{
 use crate::epub_book::{reading_css, OpenBook, ReadingTheme};
 use crate::models::Book;
 use crate::paths::reader_cache_dir;
+use crate::service::LibraryService;
 use crate::widgets::book_row::cover_widget;
 use gtk::glib;
 use gtk::prelude::*;
@@ -209,8 +210,19 @@ pub enum ReaderMsg {
     ShowAllChrome,
 }
 
+/// The signal handlers one reader connects to the pooled WebView, kept so they
+/// can be disconnected again when that reader goes away.
+struct WebViewHandlers {
+    title: glib::SignalHandlerId,
+    load_changed: glib::SignalHandlerId,
+    decide_policy: glib::SignalHandlerId,
+    /// The content manager is held alongside its id: the signal belongs to the
+    /// manager, not the view, so disconnecting needs both.
+    script_message: Option<(webkit6::UserContentManager, glib::SignalHandlerId)>,
+}
+
 pub struct ReaderModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     book_id: i64,
     book_title: String,
     book_authors: String,
@@ -224,6 +236,11 @@ pub struct ReaderModel {
     column_px: u32,
     loading: bool,
     webview: webkit6::WebView,
+    /// Handlers this reader connected to the pooled WebView. The view outlives
+    /// the component, so they are disconnected in `shutdown()` before the view
+    /// is parked — otherwise each book open leaves another set behind, firing
+    /// into dropped components. `None` only between shutdown and drop.
+    webview_handlers: Option<WebViewHandlers>,
     chapter_annotations: Vec<Annotation>,
     all_book_annotations: Vec<Annotation>,
     annotation_search_query: String,
@@ -561,15 +578,26 @@ impl Component for ReaderModel {
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let book = catalog.get_book(book_id).ok().flatten();
+        // One read of everything this book needs. These four were each
+        // swallowed, so opening a book against a broken database silently
+        // dropped your highlights, bookmarks and saved words: the reader
+        // looked fine and simply showed none of your work.
+        let service = LibraryService::new(catalog);
+        // Prefs and per-chapter reads below still go straight to the catalog;
+        // they are step-4 work, not step-2 error swallowing.
+        let catalog = service.catalog();
+        let snap = service.reader(book_id);
+        report_errors(&snap.errors);
+        let book = snap.book.clone();
         // A0 step 1: measure book-open (EPUB parsed) when KALAM_TIMING=1.
         crate::timing::span("book_open");
-        let webview = webkit6::WebView::new();
-        // The reader is not a browser: suppress WebKit's Back/Forward/Stop/
-        // Reload context menu so a right-click cannot navigate the EPUB view.
-        webview.connect_context_menu(|_, _, _| true);
-        webview.set_hexpand(true);
-        webview.set_vexpand(true);
+        // A0: reuse the parked WebView instead of spawning a WebKit process per
+        // book open (~400 ms, the largest avoidable cost step 1 measured).
+        // Sizing, context-menu suppression and the "kalam" script-message
+        // handler registration are permanent and live in the pool; everything
+        // below that captures `sender` is per reader and is disconnected in
+        // `shutdown()`. See `src/webview_pool.rs`.
+        let webview = crate::webview_pool::acquire();
 
         let (book_meta, open, chapter, fraction) = if let Some(book) = book.clone() {
             let cache = reader_cache_dir(&book.uuid);
@@ -629,11 +657,9 @@ impl Component for ReaderModel {
         } else {
             Vec::new()
         };
-        let all_book_annotations = catalog
-            .get_annotations_for_book(book_id)
-            .unwrap_or_default();
-        let bookmarks = catalog.list_reading_bookmarks(book_id).unwrap_or_default();
-        let saved_words = catalog.list_saved_words("", None).unwrap_or_default();
+        let all_book_annotations = snap.annotations;
+        let bookmarks = snap.bookmarks;
+        let saved_words = snap.saved_words;
 
         let catalog_theme = catalog
             .get_pref("reader.theme")
@@ -648,7 +674,7 @@ impl Component for ReaderModel {
         let catalog_column = catalog
             .get_pref_i64("reader.column_px", 620)
             .clamp(400, 860) as u32;
-        let ui_prefs = ReaderUiPrefs::load(&catalog);
+        let ui_prefs = ReaderUiPrefs::load(catalog);
         let ui_css_provider = gtk::CssProvider::new();
         register_reader_ui_provider(&ui_css_provider);
 
@@ -720,7 +746,7 @@ impl Component for ReaderModel {
         right_stack.add_named(&words_panel, Some("words"));
 
         let model = ReaderModel {
-            catalog,
+            service,
             book_id,
             book_title: book_meta.title.clone(),
             book_authors: book_meta.authors_display().to_string(),
@@ -734,6 +760,8 @@ impl Component for ReaderModel {
             column_px: catalog_column,
             loading: false,
             webview: webview.clone(),
+            // Filled in below, once the handlers are connected.
+            webview_handlers: None,
             chapter_annotations,
             all_book_annotations,
             annotation_search_query: String::new(),
@@ -793,17 +821,16 @@ impl Component for ReaderModel {
 
         let mut model = model;
         if model.open.chapter_count() > 0 {
-            let _ = model.catalog.mark_book_opened(book_id);
-            let start_pct = model
-                .catalog
-                .get_book(book_id)
-                .ok()
-                .flatten()
-                .map(|b| b.progress as i64)
-                .unwrap_or(0);
+            let _ = model.service.catalog().mark_book_opened(book_id);
+            // `book` came from the snapshot above; no second read needed.
+            let start_pct = book.as_ref().map(|b| b.progress as i64).unwrap_or(0);
             model.session_start_pct = start_pct;
             model.session_start = std::time::Instant::now();
-            model.session_id = model.catalog.start_reading_session(book_id, start_pct).ok();
+            model.session_id = model
+                .service
+                .catalog()
+                .start_reading_session(book_id, start_pct)
+                .ok();
         }
 
         let widgets = view_output!();
@@ -876,8 +903,12 @@ impl Component for ReaderModel {
             );
         }
 
+        // Every handler below captures this reader's `sender`. Because the
+        // WebView outlives the reader now, each id is kept and disconnected in
+        // `shutdown()` — otherwise they accumulate one set per book open and
+        // deliver events to dropped components.
         let s = sender.clone();
-        webview.connect_title_notify(move |wv| {
+        let title_handler = webview.connect_title_notify(move |wv| {
             if let Some(title) = wv.title() {
                 let t = title.to_string();
                 if t.contains("kalam://")
@@ -891,7 +922,7 @@ impl Component for ReaderModel {
         });
 
         let s = sender.clone();
-        webview.connect_load_changed(move |_wv, event| {
+        let load_handler = webview.connect_load_changed(move |_wv, event| {
             if event == webkit6::LoadEvent::Finished {
                 // A0 step 1: WebKit finished rendering the chapter — the end of
                 // a chapter turn (started in `load_chapter`).
@@ -900,16 +931,18 @@ impl Component for ReaderModel {
             }
         });
 
-        if let Some(ucm) = webview.user_content_manager() {
-            let _ = ucm.register_script_message_handler("kalam", None);
+        // The handler *name* is registered once per view by the pool; this
+        // connects this reader to its signal.
+        let script_handler = webview.user_content_manager().map(|ucm| {
             let s = sender.clone();
-            ucm.connect_script_message_received(Some("kalam"), move |_mgr, msg| {
+            let id = ucm.connect_script_message_received(Some("kalam"), move |_mgr, msg| {
                 s.input(ReaderMsg::JsRaw(msg.to_string()));
             });
-        }
+            (ucm, id)
+        });
 
         let s = sender.clone();
-        webview.connect_decide_policy(move |_wv, decision, decision_type| {
+        let policy_handler = webview.connect_decide_policy(move |_wv, decision, decision_type| {
             if decision_type == webkit6::PolicyDecisionType::NavigationAction {
                 if let Some(nav_decision) =
                     decision.downcast_ref::<webkit6::NavigationPolicyDecision>()
@@ -933,8 +966,18 @@ impl Component for ReaderModel {
             false
         });
 
+        model.webview_handlers = Some(WebViewHandlers {
+            title: title_handler,
+            load_changed: load_handler,
+            decide_policy: policy_handler,
+            script_message: script_handler,
+        });
+
         if model.open.chapter_count() > 0 {
             load_chapter(&model);
+            // Opening a book is followed by reading forward, so start warming
+            // the next chapter now rather than at the first page turn.
+            model.preload_next_chapter();
         }
 
         let key = gtk::EventControllerKey::new();
@@ -1126,7 +1169,9 @@ impl Component for ReaderModel {
             ReaderMsg::Theme(theme) => {
                 self.close_annotation_editor();
                 self.theme = theme;
-                self.catalog.set_pref("reader.theme", theme.as_str());
+                self.service
+                    .catalog()
+                    .set_pref("reader.theme", theme.as_str());
                 self.loading = true;
                 load_chapter(self);
                 self.loading = false;
@@ -1138,7 +1183,9 @@ impl Component for ReaderModel {
                 if next != self.font_px {
                     self.close_annotation_editor();
                     self.font_px = next;
-                    self.catalog.set_pref("reader.font_px", &next.to_string());
+                    self.service
+                        .catalog()
+                        .set_pref("reader.font_px", &next.to_string());
                     self.loading = true;
                     load_chapter(self);
                     self.loading = false;
@@ -1151,7 +1198,8 @@ impl Component for ReaderModel {
                 if (next - self.line_height).abs() > f32::EPSILON {
                     self.close_annotation_editor();
                     self.line_height = next;
-                    self.catalog
+                    self.service
+                        .catalog()
                         .set_pref("reader.line_height", &format!("{next:.1}"));
                     self.loading = true;
                     load_chapter(self);
@@ -1164,7 +1212,9 @@ impl Component for ReaderModel {
                 if next != self.column_px {
                     self.close_annotation_editor();
                     self.column_px = next;
-                    self.catalog.set_pref("reader.column_px", &next.to_string());
+                    self.service
+                        .catalog()
+                        .set_pref("reader.column_px", &next.to_string());
                     self.loading = true;
                     load_chapter(self);
                     self.loading = false;
@@ -1193,14 +1243,16 @@ impl Component for ReaderModel {
             ReaderMsg::SetDictSenseHint(on) => {
                 // P5.5: `dict_sense_hint` toggles the Lesk "likely here"
                 // marker; POS grouping (the pill) stays always on.
-                self.catalog
+                self.service
+                    .catalog()
                     .set_pref("dict_sense_hint", if on { "1" } else { "0" });
             }
             ReaderMsg::SetDictHistory(on) => {
                 // Phase 10: lookup history is opt-out, but the toggle ships
                 // with the feature — a silent log of unknown words needs a
                 // visible off switch.
-                self.catalog
+                self.service
+                    .catalog()
                     .set_pref("dict_history_enabled", if on { "1" } else { "0" });
             }
             ReaderMsg::JsRaw(raw) => {
@@ -1294,7 +1346,11 @@ impl Component for ReaderModel {
                 if unchanged {
                     return;
                 }
-                match self.catalog.update_annotation_color(id, color_name) {
+                match self
+                    .service
+                    .catalog()
+                    .update_annotation_color(id, color_name)
+                {
                     Ok(()) => {
                         for annotation in &mut self.all_book_annotations {
                             if annotation.id == id {
@@ -1329,7 +1385,7 @@ impl Component for ReaderModel {
             ReaderMsg::DeleteAnnotation(id) => {
                 self.flush_annotation_note_draft();
                 crate::notify::report(
-                    self.catalog.delete_annotation(id),
+                    self.service.catalog().delete_annotation(id),
                     "Could not delete the highlight",
                 );
                 if self.editing_annotation == Some(id) {
@@ -1361,7 +1417,7 @@ impl Component for ReaderModel {
             }
             ReaderMsg::DeleteBookmark(id) => {
                 crate::notify::report(
-                    self.catalog.delete_reading_bookmark(id),
+                    self.service.catalog().delete_reading_bookmark(id),
                     "Could not delete the mark",
                 );
                 self.reload_bookmarks();
@@ -1378,7 +1434,8 @@ impl Component for ReaderModel {
             }
             ReaderMsg::DictSearchSelect(word) => {
                 let data = self
-                    .catalog
+                    .service
+                    .catalog()
                     .lookup_entry(&word)
                     .unwrap_or_else(|_| EntryData {
                         word: word.clone(),
@@ -1398,7 +1455,7 @@ impl Component for ReaderModel {
             }
             ReaderMsg::SaveCurrentWord => {
                 if let (Some(word), Some(def)) = (&self.dict_lookup_word, &self.dict_lookup_def) {
-                    let saved = self.catalog.insert_saved_word(
+                    let saved = self.service.catalog().insert_saved_word(
                         word,
                         def,
                         None,
@@ -1432,7 +1489,7 @@ impl Component for ReaderModel {
                 self.cancel_right_close();
                 if self.open.chapter_count() > 0 {
                     let label = self.current_chapter_title().to_string();
-                    match self.catalog.insert_reading_bookmark(
+                    match self.service.catalog().insert_reading_bookmark(
                         self.book_id,
                         self.chapter as i64,
                         self.fraction,
@@ -1599,6 +1656,29 @@ impl Component for ReaderModel {
         self.cancel_left_close();
         self.cancel_right_close();
         self.webview.stop_loading();
+
+        // A0: hand the WebView back so the next book open reuses the warm
+        // WebKit process instead of spawning one (~400 ms). Disconnect this
+        // reader's handlers first — the view outlives us, and a handler left
+        // connected would fire into a dropped component and leak a `Sender`
+        // per book open.
+        if let Some(handlers) = self.webview_handlers.take() {
+            self.webview.disconnect(handlers.title);
+            self.webview.disconnect(handlers.load_changed);
+            self.webview.disconnect(handlers.decide_policy);
+            if let Some((ucm, id)) = handlers.script_message {
+                ucm.disconnect(id);
+            }
+            crate::webview_pool::release(self.webview.clone());
+        }
+    }
+}
+
+/// Surface read failures. Without this, opening a book against a broken
+/// database silently showed none of your highlights, bookmarks or words.
+fn report_errors(errors: &[String]) {
+    for err in errors {
+        crate::notify::error("Could not open this book properly", err);
     }
 }
 
@@ -1609,7 +1689,7 @@ impl ReaderModel {
             self.font_px,
             self.line_height,
             self.column_px,
-            crate::theme::current(&self.catalog),
+            crate::theme::current(self.service.catalog()),
         )
     }
 
@@ -1635,14 +1715,17 @@ impl ReaderModel {
         if self.open.chapter_count() == 0 {
             return;
         }
-        let _ = self.catalog.set_reading_progress(
+        let _ = self.service.catalog().set_reading_progress(
             self.book_id,
             self.chapter,
             self.fraction,
             self.open.chapter_count(),
         );
         let pct = self.progress_pct();
-        let _ = self.catalog.auto_finish_if_complete(self.book_id, pct);
+        let _ = self
+            .service
+            .catalog()
+            .auto_finish_if_complete(self.book_id, pct);
     }
 
     fn close_session(&mut self) {
@@ -1650,9 +1733,10 @@ impl ReaderModel {
             return;
         };
         let seconds = self.session_start.elapsed().as_secs() as i64;
-        let _ = self
-            .catalog
-            .end_reading_session(session_id, seconds, self.progress_pct());
+        let _ =
+            self.service
+                .catalog()
+                .end_reading_session(session_id, seconds, self.progress_pct());
     }
 
     fn go_chapter(&mut self, idx: usize, frac: f64) {
@@ -1665,28 +1749,58 @@ impl ReaderModel {
         self.reload_saved_words();
         load_chapter(self);
         self.loading = false;
+        self.preload_next_chapter();
+    }
+
+    /// A0 step 5: warm the *next* chapter's file while this one is being read.
+    ///
+    /// Reading forward is the overwhelmingly common case, so by the time the
+    /// user turns the page the file is already in the OS page cache and
+    /// `chapter_html`'s read is served from RAM instead of disk. See
+    /// `crate::preload` for why only the read, and not the render, can be
+    /// prepared ahead of time.
+    fn preload_next_chapter(&self) {
+        if let Some(path) = crate::preload::next_chapter_file(&self.open.spine, self.chapter) {
+            crate::preload::warm_chapter_file(path);
+        }
     }
 
     fn reload_annotations(&mut self) {
-        self.chapter_annotations = self
-            .catalog
-            .get_annotations_for_chapter(self.book_id, self.chapter as i64)
-            .unwrap_or_default();
-        self.all_book_annotations = self
-            .catalog
-            .get_annotations_for_book(self.book_id)
-            .unwrap_or_default();
+        let chapter = self
+            .service
+            .catalog()
+            .get_annotations_for_chapter(self.book_id, self.chapter as i64);
+        let book = self
+            .service
+            .catalog()
+            .get_annotations_for_book(self.book_id);
+        match (chapter, book) {
+            (Ok(ch), Ok(all)) => {
+                self.chapter_annotations = ch;
+                self.all_book_annotations = all;
+            }
+            // Keep whatever is on screen rather than blanking it: an empty
+            // list reads as "you never highlighted anything".
+            (Err(err), _) | (_, Err(err)) => {
+                crate::notify::error("Could not read your highlights", &err.to_string())
+            }
+        }
     }
 
     fn reload_bookmarks(&mut self) {
-        self.bookmarks = self
-            .catalog
-            .list_reading_bookmarks(self.book_id)
-            .unwrap_or_default();
+        match self.service.catalog().list_reading_bookmarks(self.book_id) {
+            Ok(rows) => self.bookmarks = rows,
+            // Keep the old list rather than blanking it: showing nothing here
+            // reads as "you have no bookmarks", which is a lie.
+            Err(err) => crate::notify::error("Could not read your bookmarks", &err.to_string()),
+        }
     }
 
     fn reload_saved_words(&mut self) {
-        self.saved_words = self.catalog.list_saved_words("", None).unwrap_or_default();
+        match self.service.catalog().list_saved_words("", None) {
+            Ok(rows) => self.saved_words = rows,
+            Err(err) => crate::notify::error("Could not read your saved words", &err.to_string()),
+        }
     }
 
     fn toc_display_position(&self) -> Option<(usize, usize)> {
@@ -1772,7 +1886,11 @@ impl ReaderModel {
         {
             return true;
         }
-        if let Err(err) = self.catalog.update_annotation_note(id, normalized) {
+        if let Err(err) = self
+            .service
+            .catalog()
+            .update_annotation_note(id, normalized)
+        {
             crate::notify::error("Could not save your note", &err.to_string());
             return false;
         }
@@ -1898,7 +2016,8 @@ impl ReaderModel {
         crate::timing::span("dict_lookup");
         let results = if query.split_whitespace().count() > 1 {
             match self
-                .catalog
+                .service
+                .catalog()
                 .search_phrase(query, limit)
                 .unwrap_or(PhraseLookup::Empty)
             {
@@ -1911,12 +2030,20 @@ impl ReaderModel {
                 PhraseLookup::Empty => Vec::new(),
             }
         } else {
-            self.catalog.search_dict(query, limit).unwrap_or_default()
+            match self.service.catalog().search_dict(query, limit) {
+                Ok(hits) => hits,
+                Err(err) => {
+                    // Otherwise a broken dictionary index is indistinguishable
+                    // from "that word isn't in the dictionary".
+                    crate::notify::error("Dictionary search failed", &err.to_string());
+                    Vec::new()
+                }
+            }
         };
         // Phase 10: every lookup lands in the append-only history (gated by
         // the `dict_history_enabled` pref and hour-collapsed inside). The
         // popup path logs separately in the "dict-lookup" handler.
-        let _ = self.catalog.log_dict_lookup(
+        let _ = self.service.catalog().log_dict_lookup(
             query,
             Some(self.book_id),
             Some(self.chapter as i64),
@@ -1942,14 +2069,16 @@ impl ReaderModel {
         hint_index: Option<usize>,
     ) {
         let data = self
-            .catalog
+            .service
+            .catalog()
             .lookup_entry(query)
             .unwrap_or_else(|_| EntryData {
                 word: query.trim().to_string(),
                 ..Default::default()
             });
         let saved = self
-            .catalog
+            .service
+            .catalog()
             .saved_word_exists(&data.word, self.book_id)
             .unwrap_or(false);
         let pronunciation = crate::db::pronunciation_for(&data.word).map(|p| format!("/{p}"));
@@ -2011,7 +2140,7 @@ impl ReaderModel {
                     return;
                 }
                 let col = HighlightColor::from_str_lossy(&color).as_str().to_string();
-                match self.catalog.insert_annotation(
+                match self.service.catalog().insert_annotation(
                     self.book_id,
                     "highlight",
                     self.chapter as i64,
@@ -2045,7 +2174,7 @@ impl ReaderModel {
                 if sp.is_empty() || ep.is_empty() || text.trim().is_empty() {
                     return;
                 }
-                match self.catalog.insert_annotation(
+                match self.service.catalog().insert_annotation(
                     self.book_id,
                     "quote",
                     self.chapter as i64,
@@ -2078,7 +2207,8 @@ impl ReaderModel {
                 // chips, idioms, or did-you-mean suggestions. The fake
                 // "No definition found / Total dict entries" result is gone.
                 let data = self
-                    .catalog
+                    .service
+                    .catalog()
                     .lookup_entry(&word)
                     .unwrap_or_else(|_| EntryData {
                         word: word.clone(),
@@ -2096,7 +2226,7 @@ impl ReaderModel {
                 // when there is no evidence, so a neutral context produces
                 // no marker and no sense is ever hidden.
                 let hint_index = context.as_deref().and_then(|sentence| {
-                    if self.catalog.get_pref_i64("dict_sense_hint", 1) == 0 {
+                    if self.service.catalog().get_pref_i64("dict_sense_hint", 1) == 0 {
                         return None;
                     }
                     if !data.senses.iter().any(|s| s.pos.is_some()) {
@@ -2107,7 +2237,7 @@ impl ReaderModel {
                 // Phase 10: log the popup lookup itself (the sidebar funnel
                 // logs in `lookup_dict`; the same word re-logged within the
                 // hour collapses to one row).
-                let _ = self.catalog.log_dict_lookup(
+                let _ = self.service.catalog().log_dict_lookup(
                     &word,
                     Some(self.book_id),
                     Some(self.chapter as i64),
@@ -2120,7 +2250,7 @@ impl ReaderModel {
                 let word = payload.word.unwrap_or_default();
                 let def = payload.definition.unwrap_or_default();
                 if !word.trim().is_empty() && !def.trim().is_empty() {
-                    match self.catalog.insert_saved_word(
+                    match self.service.catalog().insert_saved_word(
                         &word,
                         &def,
                         None,
@@ -2143,7 +2273,11 @@ impl ReaderModel {
                 // word for the current book.
                 let word = payload.word.unwrap_or_default();
                 if !word.trim().is_empty() {
-                    match self.catalog.delete_saved_word_by_word(&word, self.book_id) {
+                    match self
+                        .service
+                        .catalog()
+                        .delete_saved_word_by_word(&word, self.book_id)
+                    {
                         Ok(_) => {
                             crate::notify::compact("Word removed", &word);
                             self.reload_saved_words();
@@ -2869,13 +3003,17 @@ fn update_reader_ui_setting(model: &mut ReaderModel, setting: ReaderUiSetting, v
     if !model.ui_prefs.set(setting, value) {
         return false;
     }
-    model.catalog.set_pref(
+    model.service.catalog().set_pref(
         reader_ui_pref_key(setting),
         &model.ui_prefs.get(setting).to_string(),
     );
     true
 }
 
+// 8 typed settings rather than a struct built solely to satisfy the lint:
+// every argument is a distinct reader preference read straight from the model,
+// and wrapping them would add a type that exists only at this one call site.
+#[allow(clippy::too_many_arguments)]
 fn build_reader_settings_panel(
     sender: &ComponentSender<ReaderModel>,
     theme: ReadingTheme,

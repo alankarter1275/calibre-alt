@@ -13,10 +13,18 @@
 //!
 //! Toasts are queued if the overlay is not mounted yet, so early-startup
 //! messages are not lost.
+//!
+//! **Thread safety.** Showing a toast builds GTK widgets and the queue is
+//! `thread_local!`, so that half is main-thread-only. Callers do not have to
+//! care: `push` records the history entry immediately (plain data, readable as
+//! soon as `push` returns) and bounces only the *display* to the main context.
+//! Before that, a toast raised from a worker vanished into that thread's own
+//! copy of the queue and was never shown.
 
 use gtk::prelude::*;
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::sync::Mutex;
 
 /// How long a toast stays on screen before fading, by severity.
 const DISMISS_MS_INFO: u32 = 4_000;
@@ -91,8 +99,29 @@ thread_local! {
     static HOST: RefCell<Option<gtk::Box>> = const { RefCell::new(None) };
     /// Messages raised before the overlay was mounted.
     static PENDING: RefCell<Vec<Entry>> = const { RefCell::new(Vec::new()) };
-    /// Everything that has been shown this session, newest first.
-    static HISTORY: RefCell<VecDeque<Entry>> = const { RefCell::new(VecDeque::new()) };
+}
+
+/// Everything raised this session, newest first.
+///
+/// Process-wide, **not** `thread_local!`. It used to be thread-local, which
+/// meant a message raised on a worker thread was filed in that thread's own
+/// copy: Settings → Notifications reads this from the main thread, so those
+/// entries were invisible there and vanished when the worker exited. Since
+/// workers are exactly where unattended failures happen — a failed import, a
+/// bad dictionary pack — that was the wrong half of the app to lose.
+static HISTORY: Mutex<VecDeque<Entry>> = Mutex::new(VecDeque::new());
+
+/// Read the history, surviving a panic in another thread.
+///
+/// A poisoned lock still holds perfectly good data here, and refusing to show
+/// the notification list because some unrelated thread panicked would be a
+/// worse outcome than showing it.
+fn with_history<R>(f: impl FnOnce(&mut VecDeque<Entry>) -> R) -> R {
+    let mut guard = match HISTORY.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    f(&mut guard)
 }
 
 /// Attach the overlay's toast container. Called once from the app shell.
@@ -206,14 +235,40 @@ fn push(kind: Kind, title: &str, detail: &str, compact: bool) {
         compact,
     };
 
-    HISTORY.with(|h| {
-        let mut h = h.borrow_mut();
+    with_history(|h| {
         h.push_front(entry.clone());
         while h.len() > MAX_HISTORY {
             h.pop_back();
         }
     });
 
+    // Showing the toast means building GTK widgets, and `HOST`/`PENDING` are
+    // `thread_local!`, so this half is main-thread-only. Worker threads *do*
+    // reach here — the import loop reports an unreadable file with
+    // `notify::error` from inside its worker — and when they did, the entry
+    // went into that thread's own empty PENDING and was never seen again. The
+    // message was silently lost: the exact failure mode this module exists to
+    // prevent.
+    //
+    // Bounce rather than make every caller think about threads. `invoke` runs
+    // the closure inline when we are already the main-context owner, so the
+    // common path costs nothing.
+    //
+    // The history write above is deliberately *not* bounced: it is plain data,
+    // callers (and tests) expect it to be readable the moment `push` returns,
+    // and deferring it would make `notify::history()` racy.
+    let context = gtk::glib::MainContext::default();
+    if context.is_owner() {
+        deliver(entry);
+    } else {
+        context.invoke(move || deliver(entry));
+    }
+}
+
+/// Put an entry on screen, or queue it until the overlay is mounted.
+///
+/// Main thread only — see the note in [`push`].
+fn deliver(entry: Entry) {
     let mounted = HOST.with(|h| h.borrow().is_some());
     if mounted {
         present(&entry);
@@ -224,11 +279,11 @@ fn push(kind: Kind, title: &str, detail: &str, compact: bool) {
 
 /// Everything shown this session, newest first.
 pub fn history() -> Vec<Entry> {
-    HISTORY.with(|h| h.borrow().iter().cloned().collect())
+    with_history(|h| h.iter().cloned().collect())
 }
 
 pub fn clear_history() {
-    HISTORY.with(|h| h.borrow_mut().clear());
+    with_history(|h| h.clear());
 }
 
 fn present(entry: &Entry) {
@@ -400,8 +455,30 @@ mod tests {
     // These exercise the non-GTK bookkeeping only; presenting a toast needs a
     // display, which CI does not have.
 
+    /// Serialises the tests that touch the history.
+    ///
+    /// `HISTORY` is process-wide (it has to be -- a worker's message must be
+    /// readable from the main thread), and `cargo test` runs these on
+    /// parallel threads of one process. So `clear_history()` at the top of a
+    /// test is not isolation: another test can push between that call and the
+    /// assertion. Every test that reads or writes the history takes this lock
+    /// first.
+    ///
+    /// Poison-tolerant for the same reason as the rest of the module: one
+    /// failing test should report its own failure, not turn every later test
+    /// into a mutex panic that hides it.
+    static HISTORY_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn history_guard() -> std::sync::MutexGuard<'static, ()> {
+        match HISTORY_TEST_LOCK.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
     #[test]
     fn history_keeps_newest_first() {
+        let _guard = history_guard();
         clear_history();
         push(Kind::Info, "first", "", false);
         push(Kind::Info, "second", "", false);
@@ -413,6 +490,7 @@ mod tests {
 
     #[test]
     fn history_is_bounded() {
+        let _guard = history_guard();
         clear_history();
         for i in 0..(MAX_HISTORY + 25) {
             push(Kind::Info, &format!("n{i}"), "", false);
@@ -423,6 +501,7 @@ mod tests {
 
     #[test]
     fn report_passes_ok_through_and_flags_errors() {
+        let _guard = history_guard();
         clear_history();
         let ok: Result<(), String> = Ok(());
         assert!(report(ok, "should not appear"));
@@ -434,6 +513,29 @@ mod tests {
         assert_eq!(h.len(), 1);
         assert_eq!(h[0].kind, Kind::Error);
         assert!(h[0].detail.contains("disk full"));
+        clear_history();
+    }
+
+    #[test]
+    fn a_message_from_a_worker_thread_is_visible_from_the_main_thread() {
+        let _guard = history_guard();
+        // The real bug this guards. Background work is exactly where
+        // unattended failures happen -- a failed import, a bad dictionary
+        // pack -- and Settings reads `history()` on the main thread. While
+        // HISTORY was `thread_local!` those entries went into the worker's own
+        // copy: invisible in the notification list, gone when the thread
+        // ended. Raise from a worker, read from here.
+        clear_history();
+        std::thread::spawn(|| {
+            push(Kind::Error, "from a worker", "disk full", false);
+        })
+        .join()
+        .expect("worker thread finished");
+
+        let h = history();
+        assert_eq!(h.len(), 1, "the worker's message crossed the thread");
+        assert_eq!(h[0].title, "from a worker");
+        assert_eq!(h[0].kind, Kind::Error);
         clear_history();
     }
 

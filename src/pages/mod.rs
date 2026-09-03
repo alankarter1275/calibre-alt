@@ -1,5 +1,17 @@
 //! Top-level and nested pages mounted into the main content area.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
+/// A rebuild closure that needs to call itself (a list re-renders, and each
+/// rebuilt row's handler triggers another rebuild). The closure is stored in
+/// a shared cell so it can be cloned into its own body without a cycle at
+/// construction time.
+///
+/// Named because the bare form -- `Rc<RefCell<Option<Rc<dyn Fn()>>>>` -- trips
+/// clippy::type_complexity in three separate pages.
+pub type SelfRebuild = Rc<RefCell<Option<Rc<dyn Fn()>>>>;
+
 pub mod all_books;
 pub mod analytics;
 pub mod author;

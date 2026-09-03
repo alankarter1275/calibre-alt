@@ -261,7 +261,7 @@ impl Catalog {
             if let Some(&pos) = position.get(&row.key) {
                 if merged[pos].2 == row.dict_id {
                     let senses = &mut merged[pos].3;
-                    if !senses.iter().any(|d| *d == row.definition) {
+                    if !senses.contains(&row.definition) {
                         senses.push(row.definition);
                     }
                 }
@@ -457,7 +457,7 @@ impl Catalog {
              ORDER BY word ASC LIMIT ?2",
         )?;
         let mut out = Vec::new();
-        for r in stmt.query_map(params![key.as_str(), limit], |r| combined_row_to_entry(r))? {
+        for r in stmt.query_map(params![key.as_str(), limit], combined_row_to_entry)? {
             out.push(r?);
         }
         Ok(out)
@@ -484,7 +484,7 @@ impl Catalog {
              WHERE key LIKE ?1 ESCAPE '\\' COLLATE NOCASE
              ORDER BY key COLLATE NOCASE ASC, word ASC LIMIT ?2",
         )?;
-        for r in stmt2.query_map(params![like.as_str(), limit], |r| combined_row_to_entry(r))? {
+        for r in stmt2.query_map(params![like.as_str(), limit], combined_row_to_entry)? {
             out.push(r?);
         }
         Ok(out)
@@ -500,7 +500,7 @@ impl Catalog {
              ORDER BY LENGTH(key) ASC, key COLLATE NOCASE ASC LIMIT ?2",
         )?;
         let mut out = Vec::new();
-        for r in stmt.query_map(params![like, limit], |r| combined_row_to_entry(r))? {
+        for r in stmt.query_map(params![like, limit], combined_row_to_entry)? {
             out.push(r?);
         }
         Ok(out)
@@ -1075,6 +1075,11 @@ fn tokenize_context(sentence: &str) -> Vec<String> {
 /// match each other. Suffixes are only stripped when a meaningful stem
 /// remains (3+ letters), and the "ing"/"ed"/"ly" rules require a vowel in
 /// the remainder so roots like "bring" and "need" survive untouched.
+// Several suffix rules share an identical body ("ies"/"ied" -> y, "ed"/"ly"
+// -> truncate 2). clippy::if_same_then_else wants them merged, but each arm is
+// a distinct linguistic rule that will diverge as the stemmer is refined, and
+// collapsing them into one condition makes the rule set unreadable.
+#[allow(clippy::if_same_then_else)]
 fn stem_token(token: &str) -> String {
     let mut t = token;
     for suffix in ["'s", "’s"] {

@@ -409,6 +409,108 @@ fn escape_xml(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+// ---------------------------------------------------------------------------
+// Orchestration
+// ---------------------------------------------------------------------------
+
+/// Preference key controlling whether saves reach the file.
+pub const PREF_WRITE_TO_FILE: &str = "epub.write_metadata";
+
+/// True unless the user has explicitly turned it off.
+pub fn write_enabled(catalog: &crate::db::Catalog) -> bool {
+    catalog
+        .get_pref(PREF_WRITE_TO_FILE)
+        .map(|v| v != "0")
+        .unwrap_or(true)
+}
+
+pub fn set_write_enabled(catalog: &crate::db::Catalog, on: bool) {
+    catalog.set_pref(PREF_WRITE_TO_FILE, if on { "1" } else { "0" });
+}
+
+/// Push the catalog's metadata for `book_id` into its EPUB, then re-point the
+/// catalog at the rewritten file's hash.
+///
+/// A failure here is reported but never rolled back into the database: the
+/// edit is already saved in Kalam, and only portability is lost.
+pub fn sync_book_to_file(catalog: &crate::db::Catalog, book_id: i64) -> Result<WriteReport> {
+    let book = catalog
+        .get_book(book_id)?
+        .ok_or_else(|| anyhow!("book not found"))?;
+
+    if !matches!(book.format, crate::models::BookFormat::Epub) {
+        return Ok(WriteReport::default());
+    }
+
+    // Send the cover we are actually displaying, so the file matches Kalam.
+    let cover_bytes = book
+        .cover_path
+        .as_ref()
+        .filter(|p| p.is_file())
+        .and_then(|p| fs::read(p).ok());
+
+    let report = write_metadata_to_epub(&book, cover_bytes.as_deref())?;
+
+    // The bytes changed, so the stored hash is stale.
+    if report.wrote_metadata || report.wrote_cover {
+        if let Ok(new_hash) = crate::db::hash_file(&book.file_path) {
+            catalog.rehash_book(book_id, &book.file_hash, &new_hash)?;
+        }
+    }
+    Ok(report)
+}
+
+/// Every `.epub.orig` backup under the library, with its size.
+pub fn list_backups() -> Vec<(PathBuf, u64)> {
+    let mut out = Vec::new();
+    let Ok(entries) = fs::read_dir(crate::paths::library_dir()) else {
+        return out;
+    };
+    // Backups sit inside each book's own uuid directory.
+    for book_dir in entries.flatten() {
+        let Ok(files) = fs::read_dir(book_dir.path()) else {
+            continue;
+        };
+        for file in files.flatten() {
+            let path = file.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("orig") {
+                let size = file.metadata().map(|m| m.len()).unwrap_or(0);
+                out.push((path, size));
+            }
+        }
+    }
+    out
+}
+
+/// Delete every backup. Returns how many went and how much was freed.
+pub fn delete_backups() -> (usize, u64) {
+    let mut count = 0;
+    let mut freed = 0;
+    for (path, size) in list_backups() {
+        if fs::remove_file(&path).is_ok() {
+            count += 1;
+            freed += size;
+        }
+    }
+    (count, freed)
+}
+
+/// `1.4 GB`, `812 MB`, `44 KB`.
+pub fn human_size(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -607,107 +709,5 @@ mod tests {
     fn backup_name_sits_beside_the_book() {
         let p = backup_path(Path::new("/lib/uuid/book.epub"));
         assert_eq!(p, PathBuf::from("/lib/uuid/book.epub.orig"));
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Orchestration
-// ---------------------------------------------------------------------------
-
-/// Preference key controlling whether saves reach the file.
-pub const PREF_WRITE_TO_FILE: &str = "epub.write_metadata";
-
-/// True unless the user has explicitly turned it off.
-pub fn write_enabled(catalog: &crate::db::Catalog) -> bool {
-    catalog
-        .get_pref(PREF_WRITE_TO_FILE)
-        .map(|v| v != "0")
-        .unwrap_or(true)
-}
-
-pub fn set_write_enabled(catalog: &crate::db::Catalog, on: bool) {
-    catalog.set_pref(PREF_WRITE_TO_FILE, if on { "1" } else { "0" });
-}
-
-/// Push the catalog's metadata for `book_id` into its EPUB, then re-point the
-/// catalog at the rewritten file's hash.
-///
-/// A failure here is reported but never rolled back into the database: the
-/// edit is already saved in Kalam, and only portability is lost.
-pub fn sync_book_to_file(catalog: &crate::db::Catalog, book_id: i64) -> Result<WriteReport> {
-    let book = catalog
-        .get_book(book_id)?
-        .ok_or_else(|| anyhow!("book not found"))?;
-
-    if !matches!(book.format, crate::models::BookFormat::Epub) {
-        return Ok(WriteReport::default());
-    }
-
-    // Send the cover we are actually displaying, so the file matches Kalam.
-    let cover_bytes = book
-        .cover_path
-        .as_ref()
-        .filter(|p| p.is_file())
-        .and_then(|p| fs::read(p).ok());
-
-    let report = write_metadata_to_epub(&book, cover_bytes.as_deref())?;
-
-    // The bytes changed, so the stored hash is stale.
-    if report.wrote_metadata || report.wrote_cover {
-        if let Ok(new_hash) = crate::db::hash_file(&book.file_path) {
-            catalog.rehash_book(book_id, &book.file_hash, &new_hash)?;
-        }
-    }
-    Ok(report)
-}
-
-/// Every `.epub.orig` backup under the library, with its size.
-pub fn list_backups() -> Vec<(PathBuf, u64)> {
-    let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(crate::paths::library_dir()) else {
-        return out;
-    };
-    // Backups sit inside each book's own uuid directory.
-    for book_dir in entries.flatten() {
-        let Ok(files) = fs::read_dir(book_dir.path()) else {
-            continue;
-        };
-        for file in files.flatten() {
-            let path = file.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("orig") {
-                let size = file.metadata().map(|m| m.len()).unwrap_or(0);
-                out.push((path, size));
-            }
-        }
-    }
-    out
-}
-
-/// Delete every backup. Returns how many went and how much was freed.
-pub fn delete_backups() -> (usize, u64) {
-    let mut count = 0;
-    let mut freed = 0;
-    for (path, size) in list_backups() {
-        if fs::remove_file(&path).is_ok() {
-            count += 1;
-            freed += size;
-        }
-    }
-    (count, freed)
-}
-
-/// `1.4 GB`, `812 MB`, `44 KB`.
-pub fn human_size(bytes: u64) -> String {
-    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
-    let mut value = bytes as f64;
-    let mut unit = 0;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
-        unit += 1;
-    }
-    if unit == 0 {
-        format!("{bytes} B")
-    } else {
-        format!("{value:.1} {}", UNITS[unit])
     }
 }

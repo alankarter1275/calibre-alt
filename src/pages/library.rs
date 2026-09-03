@@ -7,10 +7,14 @@
 //! Below: continue reading (with hover play buttons), saved quotes, a
 //! merged history feed (events + sessions) and a vocabulary strip.
 //! Section headers double as the way in — click a header to drill down.
+//! Sections only render when they have content, though, so the pages that
+//! have no section here (or whose section is empty) are reached from the
+//! quick-links row under the title instead.
 
 use crate::db::{Catalog, EventKind};
 use crate::models::{Book, BookFormat, LibrarySection};
 use crate::pages::history::pretty_day;
+use crate::service::{DashboardSnapshot, LibraryService};
 use crate::widgets::book_row::cover_widget;
 use crate::widgets::charts::{monthly_series, sparkline};
 use gtk::prelude::*;
@@ -35,7 +39,7 @@ pub enum LibraryOut {
 }
 
 pub struct LibraryPageModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
 }
 
 #[relm4::component(pub)]
@@ -65,19 +69,39 @@ impl SimpleComponent for LibraryPageModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = LibraryPageModel { catalog };
+        let model = LibraryPageModel {
+            service: LibraryService::new(catalog),
+        };
         let widgets = view_output!();
-        build_dashboard(&widgets.body, &model.catalog, &sender);
+        let snap = model.service.dashboard(FEED_LIMIT);
+        report_errors(&snap.errors);
+        build_dashboard(&widgets.body, &snap, &model.service, &sender);
         ComponentParts { model, widgets }
     }
 }
 
+/// How many feed rows the dashboard shows.
+const FEED_LIMIT: usize = 4;
+
+/// Surface read failures instead of rendering them as an empty dashboard.
+/// The service collects them; deciding what the user sees stays with the UI.
+fn report_errors(errors: &[String]) {
+    for err in errors {
+        crate::notify::error("Could not read your library", err);
+    }
+}
+
+/// `snap` carries everything the page reads in one go; `service` is still
+/// needed for the per-row lookups the feed does (progress, book format) and
+/// for the cover/chapter work the cards do.
 fn build_dashboard(
     body: &gtk::Box,
-    catalog: &Arc<Catalog>,
+    snap: &DashboardSnapshot,
+    service: &LibraryService,
     sender: &ComponentSender<LibraryPageModel>,
 ) {
-    let stats = catalog.library_stats().unwrap_or_default();
+    let catalog = service.catalog();
+    let stats = &snap.stats;
 
     // ── header ──────────────────────────────────────────────────────────
     let head = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -98,8 +122,11 @@ fn build_dashboard(
     sub.set_halign(gtk::Align::Start);
     head.append(&sub);
     body.append(&head);
+    body.append(&quick_links(sender));
 
     if stats.total_books == 0 {
+        // The "All books" quick link above is the way in (that page owns the
+        // importer), so there is no duplicate section header here.
         let empty = gtk::Label::new(Some(concat!(
             "Your library is empty.\n\n",
             "Import an EPUB from All books to get started — this page fills up ",
@@ -109,12 +136,6 @@ fn build_dashboard(
         empty.set_wrap(true);
         empty.set_halign(gtk::Align::Start);
         body.append(&empty);
-        body.append(&section(
-            "ALL BOOKS",
-            LibrarySection::AllBooks,
-            sender,
-            gtk::Label::new(Some("Import your first book here.")).upcast::<gtk::Widget>(),
-        ));
         return;
     }
 
@@ -123,13 +144,9 @@ fn build_dashboard(
     top_row.set_hexpand(true);
 
     // Now reading: the most recently opened book that isn't finished yet.
-    let now = catalog
-        .recently_opened(5)
-        .unwrap_or_default()
-        .into_iter()
-        .find(|b| b.progress < 100);
+    let now = snap.recently_opened.iter().find(|b| b.progress < 100);
     if let Some(book) = now {
-        top_row.append(&now_reading_card(&book, catalog, sender));
+        top_row.append(&now_reading_card(book, catalog, sender));
     }
 
     let grid = gtk::Grid::new();
@@ -155,7 +172,7 @@ fn build_dashboard(
             } else {
                 "books".to_string()
             },
-            monthly_series(&stats),
+            monthly_series(stats),
             "kalam-spark-red",
         ),
         (
@@ -174,20 +191,20 @@ fn build_dashboard(
         let card = stat_card(label, value, unit, series, spark_class);
         grid.attach(&card, (i % 2) as i32, (i / 2) as i32, 1, 1);
     }
-    grid.attach(&goal_card(catalog), 1, 1, 1, 1);
+    grid.attach(&goal_card(snap), 1, 1, 1, 1);
     top_row.append(&grid);
     body.append(&top_row);
 
     // ── continue reading ────────────────────────────────────────────────
-    let mut continuing = catalog.recently_opened(6).unwrap_or_default();
+    let mut continuing: Vec<Book> = snap.recently_opened.clone();
     if continuing.is_empty() {
         // Bounded: this used to load every book to show at most six.
-        continuing = catalog
-            .recent_books(60)
-            .unwrap_or_default()
-            .into_iter()
+        continuing = snap
+            .recent
+            .iter()
             .filter(|b| b.progress > 0 && b.progress < 100)
             .take(6)
+            .cloned()
             .collect();
     }
     if !continuing.is_empty() {
@@ -200,7 +217,7 @@ fn build_dashboard(
     }
 
     // ── saved quotes ────────────────────────────────────────────────────
-    let quotes = catalog.recent_quotes(2).unwrap_or_default();
+    let quotes = &snap.quotes;
     if !quotes.is_empty() {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         row.set_homogeneous(true);
@@ -216,7 +233,7 @@ fn build_dashboard(
     }
 
     // ── history (events + sessions, merged) ─────────────────────────────
-    let feed = history_feed(catalog, 4);
+    let feed = history_feed(snap, catalog);
     if !feed.is_empty() {
         let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
         for item in &feed {
@@ -231,12 +248,7 @@ fn build_dashboard(
     }
 
     // ── vocabulary ──────────────────────────────────────────────────────
-    let words = catalog
-        .list_saved_words("", None)
-        .unwrap_or_default()
-        .into_iter()
-        .take(4)
-        .collect::<Vec<_>>();
+    let words: Vec<_> = snap.words.iter().take(4).collect();
     if !words.is_empty() {
         let flow = gtk::FlowBox::builder()
             .selection_mode(gtk::SelectionMode::None)
@@ -245,7 +257,7 @@ fn build_dashboard(
             .row_spacing(10)
             .halign(gtk::Align::Start)
             .build();
-        for w in &words {
+        for w in words {
             let pill = gtk::Box::new(gtk::Orientation::Vertical, 3);
             pill.add_css_class("kalam-vocab-pill");
             let word = gtk::Label::new(Some(&w.word));
@@ -280,10 +292,10 @@ fn build_dashboard(
     }
 
     // ── lookup history (Phase 10) ────────────────────────────────────────
-    let lookups = catalog.list_dict_lookups("", 3).unwrap_or_default();
+    let lookups = &snap.lookups;
     if !lookups.is_empty() {
         let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        for lookup in &lookups {
+        for lookup in lookups {
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
             row.add_css_class("kalam-list-row");
             let word = gtk::Label::new(Some(&lookup.word));
@@ -370,7 +382,7 @@ fn now_reading_card(
     title.set_xalign(0.0);
     title.set_halign(gtk::Align::Start);
     meta.append(&title);
-    let author = gtk::Label::new(Some(&book.authors_display()));
+    let author = gtk::Label::new(Some(book.authors_display()));
     author.add_css_class("kalam-nr-author");
     author.set_halign(gtk::Align::Start);
     author.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -531,9 +543,9 @@ fn stat_card(label: &str, value: &str, unit: &str, series: &[i64], spark_class: 
 
 /// The yearly goal card: finished-this-year over the configured goal, with
 /// a gold progress bar.
-fn goal_card(catalog: &Arc<Catalog>) -> gtk::Box {
-    let goal = catalog.reading_goal();
-    let done = catalog.finished_this_year();
+fn goal_card(snap: &DashboardSnapshot) -> gtk::Box {
+    let goal = snap.goal;
+    let done = snap.finished_this_year;
     let year = crate::db::iso_days_ago(0)
         .get(..4)
         .unwrap_or("")
@@ -654,7 +666,7 @@ fn continue_card(book: &Book, sender: &ComponentSender<LibraryPageModel>) -> gtk
     title.set_halign(gtk::Align::Start);
     cell.append(&title);
 
-    let author = gtk::Label::new(Some(&book.authors_display()));
+    let author = gtk::Label::new(Some(book.authors_display()));
     author.add_css_class("kalam-lib-author");
     author.set_ellipsize(gtk::pango::EllipsizeMode::End);
     author.set_halign(gtk::Align::Start);
@@ -753,89 +765,87 @@ struct FeedItem {
     book_id: i64,
 }
 
-/// Newest-first mix of the event log and reading sessions, capped at `limit`.
-fn history_feed(catalog: &Arc<Catalog>, limit: usize) -> Vec<FeedItem> {
+/// Newest-first mix of the event log and reading sessions, capped at
+/// [`FEED_LIMIT`]. Both inputs come from the snapshot; `catalog` remains only
+/// for the per-event detail lookups (progress, format).
+fn history_feed(snap: &DashboardSnapshot, catalog: &Arc<Catalog>) -> Vec<FeedItem> {
     let mut items: Vec<FeedItem> = Vec::new();
 
-    if let Ok(events) = catalog.list_events(None, "", limit * 2) {
-        for e in events {
-            let sub = match e.kind {
-                // Opened events carry no detail — show where the book
-                // currently sits instead.
-                EventKind::Opened => catalog
-                    .get_reading_progress(e.book_id)
+    for e in &snap.events {
+        let sub = match e.kind {
+            // Opened events carry no detail — show where the book
+            // currently sits instead.
+            EventKind::Opened => catalog
+                .get_reading_progress(e.book_id)
+                .ok()
+                .flatten()
+                .map(|(_, frac)| format!("Resumed at {}%", (frac * 100.0).round() as i64))
+                .unwrap_or_default(),
+            EventKind::Finished => {
+                if e.detail == "auto" {
+                    format!("{} · auto-finished", e.book_authors)
+                } else {
+                    e.book_authors.clone()
+                }
+            }
+            EventKind::Unfinished => e.book_authors.clone(),
+            EventKind::Imported => {
+                let format_label = catalog
+                    .get_book(e.book_id)
                     .ok()
                     .flatten()
-                    .map(|(_, frac)| format!("Resumed at {}%", (frac * 100.0).round() as i64))
-                    .unwrap_or_default(),
-                EventKind::Finished => {
-                    if e.detail == "auto" {
-                        format!("{} · auto-finished", e.book_authors)
-                    } else {
-                        e.book_authors.clone()
-                    }
+                    .map(|b| b.format.as_str().to_string())
+                    .unwrap_or_default();
+                if format_label.is_empty() {
+                    e.book_authors.clone()
+                } else {
+                    format!("{} · {}", e.book_authors, format_label)
                 }
-                EventKind::Unfinished => e.book_authors.clone(),
-                EventKind::Imported => {
-                    let format_label = catalog
-                        .get_book(e.book_id)
-                        .ok()
-                        .flatten()
-                        .map(|b| b.format.as_str().to_string())
-                        .unwrap_or_default();
-                    if format_label.is_empty() {
-                        e.book_authors.clone()
-                    } else {
-                        format!("{} · {}", e.book_authors, format_label)
-                    }
-                }
-            };
-            items.push(FeedItem {
-                at: e.at.clone(),
-                title: format!("{} {}", e.kind.label(), e.book_title),
-                sub,
-                icon: e.kind.icon(),
-                tint: match e.kind {
-                    EventKind::Finished => "kalam-hist-tint-success",
-                    EventKind::Imported => "kalam-hist-tint-warning",
-                    _ => "kalam-hist-tint-accent",
-                },
-                icon_tint: match e.kind {
-                    EventKind::Finished => "kalam-event-finished",
-                    EventKind::Imported => "kalam-event-imported",
-                    _ => "kalam-event-opened",
-                },
-                book_id: e.book_id,
-            });
-        }
+            }
+        };
+        items.push(FeedItem {
+            at: e.at.clone(),
+            title: format!("{} {}", e.kind.label(), e.book_title),
+            sub,
+            icon: e.kind.icon(),
+            tint: match e.kind {
+                EventKind::Finished => "kalam-hist-tint-success",
+                EventKind::Imported => "kalam-hist-tint-warning",
+                _ => "kalam-hist-tint-accent",
+            },
+            icon_tint: match e.kind {
+                EventKind::Finished => "kalam-event-finished",
+                EventKind::Imported => "kalam-event-imported",
+                _ => "kalam-event-opened",
+            },
+            book_id: e.book_id,
+        });
     }
 
-    if let Ok(sessions) = catalog.recent_sessions(limit * 2) {
-        for s in sessions {
-            if s.seconds < 30 {
-                continue; // ignore flip-in-and-out sessions
-            }
-            let mins = (s.seconds / 60).max(1);
-            let sub = if (1..100).contains(&s.end_pct) {
-                format!("{mins} min session · reached {}%", s.end_pct)
-            } else {
-                format!("{mins} min session")
-            };
-            items.push(FeedItem {
-                at: s.started_at.clone(),
-                title: format!("Read {}", s.book_title),
-                sub,
-                icon: "media-playback-start-symbolic",
-                tint: "kalam-hist-tint-accent",
-                icon_tint: "kalam-event-opened",
-                book_id: s.book_id,
-            });
+    for s in &snap.sessions {
+        if s.seconds < 30 {
+            continue; // ignore flip-in-and-out sessions
         }
+        let mins = (s.seconds / 60).max(1);
+        let sub = if (1..100).contains(&s.end_pct) {
+            format!("{mins} min session · reached {}%", s.end_pct)
+        } else {
+            format!("{mins} min session")
+        };
+        items.push(FeedItem {
+            at: s.started_at.clone(),
+            title: format!("Read {}", s.book_title),
+            sub,
+            icon: "media-playback-start-symbolic",
+            tint: "kalam-hist-tint-accent",
+            icon_tint: "kalam-event-opened",
+            book_id: s.book_id,
+        });
     }
 
     // ISO-8601 UTC strings compare chronologically.
     items.sort_by(|a, b| b.at.cmp(&a.at));
-    items.truncate(limit);
+    items.truncate(FEED_LIMIT);
     items
 }
 
@@ -904,6 +914,59 @@ fn feed_time(at: &str) -> String {
 
 /// Section with a clickable header that routes to the full page, showing a
 /// "Show all →" affordance on the right (whole header is the affordance).
+/// Quick links to the library pages that this dashboard does not give a
+/// section of its own.
+///
+/// These were unreachable. `AllBooks` was linked only from the empty-library
+/// placeholder below, inside its `return` branch — so the one moment you could
+/// open the full grid from here was while you owned no books, and importing
+/// your first book made the link vanish. `ReadingList`, `Tags` and `Analytics`
+/// have complete pages wired into the router in `app.rs`, but nothing in the
+/// UI ever pushed those routes, so they could not be opened at all.
+///
+/// Content sections (history, quotes, vocabulary) keep their own clickable
+/// headers; this row deliberately does not duplicate them.
+fn quick_links(sender: &ComponentSender<LibraryPageModel>) -> gtk::Box {
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row.set_halign(gtk::Align::Start);
+
+    let targets = [
+        (
+            "All books",
+            LibrarySection::AllBooks,
+            "Browse, search and sort every book in your library",
+        ),
+        (
+            "Reading list",
+            LibrarySection::ReadingList,
+            "Your ordered to-read queue",
+        ),
+        (
+            "Tags",
+            LibrarySection::Tags,
+            "Browse your tags and the books under each one",
+        ),
+        (
+            "Analytics",
+            LibrarySection::Analytics,
+            "Reading stats, charts and streaks",
+        ),
+    ];
+
+    for (label, target, tip) in targets {
+        let btn = gtk::Button::with_label(label);
+        btn.add_css_class("kalam-secondary-btn");
+        btn.set_tooltip_text(Some(tip));
+        let s = sender.clone();
+        btn.connect_clicked(move |_| {
+            s.output(LibraryOut::Section(target)).ok();
+        });
+        row.append(&btn);
+    }
+
+    row
+}
+
 fn section(
     title: &str,
     target: LibrarySection,

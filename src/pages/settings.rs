@@ -316,7 +316,15 @@ impl Component for SettingsPageModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let dicts = catalog.list_dictionaries().unwrap_or_default();
+        // A failed read here rendered as "no dictionaries installed", which
+        // is exactly what a user would see after a successful uninstall.
+        let dicts = match catalog.list_dictionaries() {
+            Ok(rows) => rows,
+            Err(err) => {
+                crate::notify::error("Could not list your dictionaries", &err.to_string());
+                Vec::new()
+            }
+        };
         let active_tab = SettingsTab::Appearance;
         let model = SettingsPageModel {
             catalog,
@@ -393,28 +401,58 @@ impl Component for SettingsPageModel {
                     move |res| {
                         if let Ok(file) = res {
                             if let Some(path) = file.path() {
-                                crate::notify::activity(
-                                    "Importing dictionary…",
-                                    &path
-                                        .file_name()
-                                        .map(|n| n.to_string_lossy().into_owned())
-                                        .unwrap_or_default(),
+                                let name = path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().into_owned())
+                                    .unwrap_or_default();
+                                // A0 step 4. This used to run `import_dictionary`
+                                // right here, inside the file-chooser callback on
+                                // the UI thread: parsing a StarDict or TSV pack of
+                                // a few hundred thousand entries froze the whole
+                                // window, with the "Importing…" toast painted
+                                // *before* the freeze so it looked like a hang.
+                                let catalog = catalog_clone.clone();
+                                let done_sender = sender_clone.clone();
+                                crate::tasks::spawn(
+                                    move |reporter| {
+                                        // Worker thread: no GTK, no notify. The
+                                        // outcome is returned as plain data and
+                                        // reported by `on_done` below.
+                                        //
+                                        // `import_dictionary` is a single long
+                                        // call with no inner progress, so this
+                                        // is the one honest report available:
+                                        // which file is being parsed.
+                                        reporter.step(0, 1, name);
+                                        dict::import_dictionary(&catalog, &path)
+                                            .map_err(|e| format!("{e:#}"))
+                                    },
+                                    // A dictionary pack can take a while. The
+                                    // worker cannot raise a toast itself, so it
+                                    // reports here and this runs on the main
+                                    // thread where `notify` is safe.
+                                    |update| {
+                                        if !update.detail.is_empty() {
+                                            crate::notify::activity(
+                                                "Importing dictionary…",
+                                                &update.detail,
+                                            );
+                                        }
+                                    },
+                                    move |result| {
+                                        match result {
+                                            Ok((name, count)) => crate::notify::success(
+                                                "Dictionary imported",
+                                                &format!("{name} · {count} entries"),
+                                            ),
+                                            Err(detail) => crate::notify::error(
+                                                "Dictionary import failed",
+                                                &detail,
+                                            ),
+                                        }
+                                        done_sender.input(SettingsMsg::Refresh);
+                                    },
                                 );
-                                match dict::import_dictionary(&catalog_clone, &path) {
-                                    Ok((name, count)) => {
-                                        crate::notify::success(
-                                            "Dictionary imported",
-                                            &format!("{name} · {count} entries"),
-                                        );
-                                    }
-                                    Err(e) => {
-                                        crate::notify::error(
-                                            "Dictionary import failed",
-                                            &format!("{e:#}"),
-                                        );
-                                    }
-                                }
-                                sender_clone.input(SettingsMsg::Refresh);
                             }
                         }
                     },
@@ -450,7 +488,11 @@ impl Component for SettingsPageModel {
 
 impl SettingsPageModel {
     fn refresh(&mut self) {
-        self.dicts = self.catalog.list_dictionaries().unwrap_or_default();
+        match self.catalog.list_dictionaries() {
+            Ok(rows) => self.dicts = rows,
+            // Keep the current list rather than blanking it.
+            Err(err) => crate::notify::error("Could not list your dictionaries", &err.to_string()),
+        }
     }
 }
 
@@ -609,7 +651,7 @@ fn build_theme_picker(host: &gtk::Grid, catalog: &Arc<Catalog>) {
             continue;
         }
         let block = theme_family_block(&family, name, desc, prefix, active, host, catalog);
-        host.attach(&block, (slot % 2) as i32, (slot / 2) as i32, 1, 1);
+        host.attach(&block, slot % 2, slot / 2, 1, 1);
         slot += 1;
     }
 }

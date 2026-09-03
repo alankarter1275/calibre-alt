@@ -63,16 +63,97 @@ fn backfill_one(uuid: &str, cover: &Path, thumb_of: &dyn Fn(&str) -> PathBuf) ->
 /// gains thumbnails without re-importing, and only missing files are generated
 /// (so it is cheap after the first pass). Best-effort: a failure for one book
 /// is skipped and the grid falls back to the full cover for that one.
-pub fn backfill_missing(cat: &crate::db::Catalog) {
-    let Ok(books) = cat.list_books(crate::db::SortKey::Title, "") else {
-        return;
+///
+/// Takes a [`crate::tasks::Reporter`] so a big first pass can be abandoned when
+/// the window closes. Without that, quitting during the very first launch of a
+/// large library left a thread decoding covers with nothing left to show them
+/// to, and the process lingered until it finished.
+/// Returns how many thumbnails were actually generated.
+///
+/// Skips the whole pass when the library has not changed since the last
+/// complete run — see [`should_skip`] for why that check is a book count and
+/// not a "done" flag.
+pub fn backfill_missing(cat: &crate::db::Catalog, reporter: &crate::tasks::Reporter) -> usize {
+    // Only uuid + cover_name: this used to call `list_books`, which builds a
+    // full `Book` for every row and runs a second query to join tags, none of
+    // which is read here.
+    let Ok(books) = cat.books_with_covers() else {
+        return 0;
     };
-    for b in books {
-        let Some(cover) = b.cover_path.as_deref() else {
-            continue;
-        };
-        let _ = backfill_one(&b.uuid, cover, &crate::paths::thumbnail_path);
+
+    if should_skip(cat.get_pref(BACKFILL_DONE_PREF).as_deref(), books.len()) {
+        return 0;
     }
+
+    let total = books.len();
+    let mut generated = 0;
+    let mut all_present = true;
+    for (i, (uuid, cover_name)) in books.iter().enumerate() {
+        if reporter.cancelled() {
+            // Deliberately does not record the marker: a cancelled pass has
+            // not verified the rest of the library, and claiming otherwise
+            // would leave those books without thumbnails for good.
+            return generated;
+        }
+        let cover = crate::paths::book_dir(uuid).join(cover_name);
+        // `backfill_one` returns true when the thumbnail is *present*, which
+        // includes "was already there" — so count only the ones that were
+        // actually missing beforehand, or the number is just the library size.
+        let existed = crate::paths::thumbnail_path(uuid).is_file();
+        if backfill_one(uuid, &cover, &crate::paths::thumbnail_path) {
+            if !existed {
+                generated += 1;
+            }
+        } else {
+            // A cover that cannot be thumbnailed (missing file, unsupported
+            // format) must not count as covered, or the marker would promise
+            // a complete library that is not one.
+            all_present = false;
+        }
+        reporter.step(i + 1, total, uuid.clone());
+    }
+
+    if all_present {
+        cat.set_pref(BACKFILL_DONE_PREF, &total.to_string());
+    }
+    generated
+}
+
+/// Pref holding the book count at the last *complete* backfill.
+const BACKFILL_DONE_PREF: &str = "thumbs.backfill_done_count";
+
+/// Forget the skip marker, forcing a full pass on the next launch.
+///
+/// Called when a book is deleted. The marker is a book *count*, so a delete
+/// plus an import nets to zero and would wrongly skip the new book's
+/// thumbnail. An unnecessary pass costs one query and a few stat calls; a
+/// missed one costs a book its thumbnail for good.
+pub fn invalidate_backfill_marker(cat: &crate::db::Catalog) {
+    cat.set_pref(BACKFILL_DONE_PREF, "");
+}
+
+/// Whether the startup backfill can be skipped entirely.
+///
+/// The problem being solved: on a settled library every launch listed all the
+/// books and ran one `is_file()` per book to confirm thumbnails that were
+/// already there. Harmless at 139 books; at 2,000 it is a query plus 2,000
+/// stat calls on every start, to do nothing.
+///
+/// A plain "done" flag would be wrong, because importing a book must trigger a
+/// new pass. Storing the *count* at the last complete run gives that for free:
+/// any import changes the count and the pass runs again.
+///
+/// Deliberately conservative in both directions:
+/// * a differing count (more **or** fewer books) re-runs, because a deletion
+///   could have been a delete-and-reimport that netted to zero,
+/// * an unparseable or missing pref re-runs.
+///
+/// The failure mode this cannot catch is a count-preserving change — deleting
+/// one book and importing another between launches, with the thumbnail cache
+/// wiped. The cost of missing it is one book decoding its full cover instead
+/// of a thumbnail, which is the pre-A0-step-3 behaviour, not a bug.
+fn should_skip(recorded: Option<&str>, current: usize) -> bool {
+    matches!(recorded.and_then(|v| v.parse::<usize>().ok()), Some(n) if n == current)
 }
 
 #[cfg(test)]
@@ -94,9 +175,6 @@ mod tests {
             ));
             std::fs::create_dir_all(&p).expect("scratch dir");
             Scratch(p)
-        }
-        fn path(&self) -> &Path {
-            &self.0
         }
         fn join(&self, name: &str) -> PathBuf {
             self.0.join(name)
@@ -171,5 +249,48 @@ mod tests {
         let got = backfill_one("nope", &dir.join("absent.png"), &thumb_of);
         assert!(!got);
         assert!(!thumb_of("nope").exists());
+    }
+
+    // `should_skip` is a pure function precisely so the interesting decision
+    // can be tested without a database, a display, or a filesystem.
+
+    #[test]
+    fn an_unchanged_library_is_skipped() {
+        // The whole point: on a settled library the startup pass should do
+        // nothing at all, rather than stat every book to confirm what it
+        // already knows.
+        assert!(should_skip(Some("139"), 139));
+    }
+
+    #[test]
+    fn importing_or_deleting_forces_another_pass() {
+        // More books than last time: the new one needs a thumbnail.
+        assert!(!should_skip(Some("139"), 140), "an import must re-run");
+        // Fewer: a deletion could have been half of a delete-and-reimport, so
+        // being conservative is right. An unnecessary pass is cheap.
+        assert!(!should_skip(Some("139"), 138), "a deletion must re-run");
+    }
+
+    #[test]
+    fn a_missing_or_corrupt_marker_re_runs() {
+        // Never trust an absent or unreadable marker: the cost of an extra
+        // pass is a query and some stat calls, the cost of wrongly skipping is
+        // a book with no thumbnail for good.
+        assert!(!should_skip(None, 139), "first ever launch");
+        assert!(!should_skip(Some(""), 139), "cleared by a deletion");
+        assert!(!should_skip(Some("not a number"), 139), "corrupt value");
+        assert!(
+            !should_skip(Some("-1"), 139),
+            "negative cannot parse to usize"
+        );
+    }
+
+    #[test]
+    fn an_empty_library_is_skipped_once_recorded() {
+        // Zero is a legitimate count, not a stand-in for "unknown" -- an empty
+        // library should settle like any other. Kept as a test because it is
+        // exactly the case a `> 0` guard would break.
+        assert!(should_skip(Some("0"), 0));
+        assert!(!should_skip(None, 0), "but not before the first pass");
     }
 }

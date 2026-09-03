@@ -18,13 +18,11 @@ use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum SeriesFloatOut {
-    Close,
     OpenBook { book_id: i64 },
 }
 
 #[derive(Debug)]
 pub enum SeriesFloatMsg {
-    Close,
     /// Manual re-fetch (the ⟳ button, or the retry button after an error).
     Refresh,
     /// A background fetch finished. `works` is `Some` on success — possibly
@@ -86,7 +84,7 @@ impl Component for SeriesFloatModel {
             set_hexpand: true,
             set_vexpand: true,
 
-            // Header: title, refresh, close.
+            // Header: title and refresh. Dismissal is backdrop-click or Esc.
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_spacing: 10,
@@ -111,13 +109,9 @@ impl Component for SeriesFloatModel {
                     connect_clicked => SeriesFloatMsg::Refresh,
                 },
 
-                gtk::Button {
-                    add_css_class: "kalam-icon-btn",
-                    set_focus_on_click: false,
-                    set_tooltip_text: Some("Close (Esc)"),
-                    set_child: Some(&crate::icons::symbolic("window-close-symbolic", 16)),
-                    connect_clicked => SeriesFloatMsg::Close,
-                },
+                // No close button by user request (2026-09-03): the backdrop
+                // and Esc both dismiss this, and it is a read-only listing, so
+                // a misclick outside costs nothing.
             },
 
             // Swapped between loading / list / error.
@@ -192,9 +186,6 @@ impl Component for SeriesFloatModel {
         _root: &Self::Root,
     ) {
         match msg {
-            SeriesFloatMsg::Close => {
-                sender.output(SeriesFloatOut::Close).ok();
-            }
             SeriesFloatMsg::Refresh => {
                 if self.fetching {
                     return;
@@ -242,41 +233,45 @@ impl Component for SeriesFloatModel {
 
 /// Run the fetch on a worker thread and post the result back to GTK.
 ///
-/// Takes the sender by value: the spawned future must be `'static`, so it
+/// Takes the sender by value: the delivery closure must be `'static`, so it
 /// keeps its own clone.
+///
+/// A0 step 4: this used to hand-roll the worker, the `async_channel` and the
+/// local future — the exact three-part dance `tasks::spawn` now owns. Worth
+/// noting what the old version got wrong, because the seam makes it
+/// unrepresentable: `send()` on an `async_channel::Sender` returns a *future*,
+/// and nothing polls it on a plain worker thread, so `let _ = tx.send(..)`
+/// dropped every result on the floor and the receiver only woke when the
+/// sender dropped — surfacing successful fetches as "Fetch worker ended
+/// unexpectedly". `Reporter` and the result channel use `send_blocking`
+/// internally, so a caller cannot make that mistake here again.
 fn start_fetch(
     catalog: &Arc<Catalog>,
     series_name: &str,
     series_key: &str,
     sender: ComponentSender<SeriesFloatModel>,
 ) {
-    let (tx, rx) = async_channel::unbounded::<FetchResult>();
     let name = series_name.to_string();
     let key = series_key.to_string();
     let cat = catalog.clone();
 
-    std::thread::spawn(move || {
-        let result = fetch_and_cache(&cat, &name, &key);
-        let _ = tx.send(result);
-    });
-
-    gtk::glib::spawn_future_local(async move {
-        let result = rx
-            .recv()
-            .await
-            .unwrap_or_else(|_| FetchResult::Err("Fetch worker ended unexpectedly.".into()));
-        let msg = match result {
-            FetchResult::Ok(works) => SeriesFloatMsg::Fetched {
-                works: Some(works),
-                error: None,
-            },
-            FetchResult::Err(detail) => SeriesFloatMsg::Fetched {
-                works: None,
-                error: Some(detail),
-            },
-        };
-        sender.input(msg);
-    });
+    crate::tasks::spawn(
+        move |_reporter| fetch_and_cache(&cat, &name, &key),
+        |_update| {},
+        move |result| {
+            let msg = match result {
+                FetchResult::Ok(works) => SeriesFloatMsg::Fetched {
+                    works: Some(works),
+                    error: None,
+                },
+                FetchResult::Err(detail) => SeriesFloatMsg::Fetched {
+                    works: None,
+                    error: Some(detail),
+                },
+            };
+            sender.input(msg);
+        },
+    );
 }
 
 /// Search, download covers, and cache the listing. Runs off the main thread.
@@ -333,7 +328,18 @@ fn merge_rows(catalog: &Arc<Catalog>, series_name: &str, remote: &[SeriesWork]) 
         })
         .collect();
 
-    let owned = catalog.books_in_series(series_name).unwrap_or_default();
+    // A failed read here would silently hide books you actually own, making
+    // the panel claim the series is entirely unowned.
+    let owned = match catalog.books_in_series(series_name) {
+        Ok(books) => books,
+        Err(err) => {
+            crate::notify::error(
+                "Could not check your copies of this series",
+                &err.to_string(),
+            );
+            Vec::new()
+        }
+    };
     let mut extras: Vec<SeriesRow> = Vec::new();
     for book in owned {
         let key = normalise(&book.title);
@@ -452,8 +458,20 @@ fn render(
 
             let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
             list.add_css_class("kalam-series-list");
+            // One query for the whole list instead of `book_finished_at` per
+            // row. A failed read leaves the set empty, which reads as "not
+            // finished" — the same thing the per-row `.ok()` used to do, but
+            // now it costs one query instead of N.
+            let owned_ids: Vec<i64> = rows
+                .iter()
+                .filter_map(|r| r.local.as_ref().map(|b| b.id))
+                .collect();
+            let finished_ids = model
+                .catalog
+                .finished_book_ids(&owned_ids)
+                .unwrap_or_default();
             for (pos, row) in rows.iter().enumerate() {
-                list.append(&build_series_row(row, pos, &model.catalog, &sender));
+                list.append(&build_series_row(row, pos, &finished_ids, sender));
             }
             scroll.set_child(Some(&list));
             host.append(&scroll);
@@ -471,7 +489,7 @@ fn render(
 fn build_series_row(
     row: &SeriesRow,
     pos: usize,
-    catalog: &Arc<Catalog>,
+    finished_ids: &std::collections::HashSet<i64>,
     sender: &ComponentSender<SeriesFloatModel>,
 ) -> gtk::Box {
     let outer = gtk::Box::new(gtk::Orientation::Horizontal, 10);
@@ -509,7 +527,7 @@ fn build_series_row(
     // Status badge: live for books you own, muted for the rest.
     let (text, class): (String, &str) = match &row.local {
         Some(book) => {
-            let finished = catalog.book_finished_at(book.id).ok().flatten().is_some();
+            let finished = finished_ids.contains(&book.id);
             if finished || book.progress >= 100 {
                 ("Read".into(), "kalam-badge-series-read")
             } else if book.progress > 0 {

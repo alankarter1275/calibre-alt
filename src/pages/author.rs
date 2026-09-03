@@ -22,7 +22,9 @@ pub enum AuthorPageOut {
 #[derive(Debug)]
 pub enum AuthorPageMsg {
     Refresh,
-    Fetched(Result<AuthorProfile, String>),
+    // Boxed: AuthorProfile is ~376 bytes, so an unboxed variant made every
+    // AuthorPageMsg that large -- including the far more frequent Refresh.
+    Fetched(Box<Result<AuthorProfile, String>>),
 }
 
 pub struct AuthorPageModel {
@@ -197,7 +199,7 @@ impl Component for AuthorPageModel {
             }
             AuthorPageMsg::Fetched(result) => {
                 self.loading = false;
-                match result {
+                match *result {
                     Ok(profile) => {
                         self.profile = Some(profile);
                         self.error = None;
@@ -223,11 +225,19 @@ fn spawn_author_fetch(
     owned_books: Vec<Book>,
     sender: &ComponentSender<AuthorPageModel>,
 ) {
+    // A0 step 4. The old version posted straight into the input sender from
+    // the worker, which happens to be safe (relm4 senders are `Send`) but left
+    // the page with no way to be told to stop. Going through the seam means
+    // this fetch is registered and gets cancelled with everything else when
+    // the window closes.
     let tx = sender.input_sender().clone();
-    std::thread::spawn(move || {
-        let result = author::fetch_and_cache_author(&catalog, &author_name, &owned_books);
-        let _ = tx.send(AuthorPageMsg::Fetched(result));
-    });
+    crate::tasks::spawn(
+        move |_reporter| author::fetch_and_cache_author(&catalog, &author_name, &owned_books),
+        |_update| {},
+        move |result| {
+            let _ = tx.send(AuthorPageMsg::Fetched(Box::new(result)));
+        },
+    );
 }
 
 fn fill_author_page(
@@ -346,12 +356,12 @@ fn rebuild_owned_books(host: &gtk::Box, books: &[Book], sender: &ComponentSender
     row.add_css_class("kalam-author-books-strip");
     row.set_halign(gtk::Align::Start);
 
-    for book in books {
+    for book in &books {
         let book_id = book.id;
         let full_sender = sender.clone();
         let float_sender = sender.clone();
         row.append(&build_book_card(
-            &book,
+            book,
             move || {
                 full_sender.output(AuthorPageOut::OpenBook { book_id }).ok();
             },
@@ -362,6 +372,16 @@ fn rebuild_owned_books(host: &gtk::Box, books: &[Book], sender: &ComponentSender
             },
         ));
     }
+
+    // These cards defer their cover decode, so nothing fills them without
+    // this. (`build_book_grid` does it for pages that use the grid; this page
+    // builds its strip by hand.)
+    crate::preload::warm_books(
+        &books,
+        0,
+        crate::widgets::book_row::COVER_W,
+        crate::widgets::book_row::COVER_H,
+    );
 
     let rail = gtk::ScrolledWindow::new();
     rail.add_css_class("kalam-author-books-rail");

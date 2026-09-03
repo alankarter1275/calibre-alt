@@ -1,0 +1,771 @@
+# Pitfalls — mistakes already made in this repo, and how they were fixed
+
+**Read this before writing code.** Every entry below is a mistake that was
+actually made here, caught, and fixed. They are written down so the next agent
+does not spend a CI cycle — or ship a bug — rediscovering them.
+
+Format: **what went wrong** → **why** → **what to do instead**.
+
+Related reading: `ROADMAP.md` ("Read this first"), `docs/conversation.md`
+(settled design decisions), `docs/ci/README.md` (how CI is installed).
+
+---
+
+## 1. Error paths that have never once executed
+
+**Both real bugs found during the A0 step-2 pass had the same shape: an error
+branch nobody had ever run.**
+
+### 1a. A fallback that was a guaranteed panic
+
+`AppModel::init` "handled" a failed `Catalog::open()` like this:
+
+```rust
+Err(err) => {
+    notify::error("Could not open the library", …);
+    Arc::new(Catalog::open().expect("catalog open"))   // ← retries the call that just failed
+}
+```
+
+It retried the call that had *just* failed and `.expect()`ed the result. On a
+corrupt database that is a certain panic — and because `init()` runs inside a
+GTK signal callback, the panic **cannot unwind**, so it escalated to
+`panic in a function that cannot unwind` → `Aborted (core dumped)` with a raw
+backtrace instead of a message.
+
+**Do instead:** an error branch must do something *different* from the thing
+that failed. `main()` now opens the catalog **before** `app.run()` and, on
+failure, prints the error, the database path and the exact `mv` command to move
+the broken file aside, then exits 1.
+
+### 1b. `SELECT MIN(x)` over zero rows returns NULL, not zero rows
+
+`book_first_opened` read `SELECT MIN(at) …` into a `String`. Over zero rows
+that query returns **one row containing NULL**, so `.optional()` does not help
+— the *value* must be nullable. "Never opened" was therefore a hard error.
+
+Nobody noticed because every caller wrote `.ok().flatten()`, which turned the
+error into `None` and produced the correct screen **by accident**.
+
+**Do instead:** read aggregates into `Option<T>`, or wrap them in `IFNULL`. And
+treat a swallowed error as a place a bug can hide, not merely as untidy code.
+
+---
+
+## 2. GTK: things a `gtk::Window` was doing for you
+
+When the A1 track moved dialogs from `gtk::Window` into an in-app overlay,
+three things silently stopped happening. All three had to be replaced by hand.
+
+| A window gave you | Why it matters | Replacement |
+|---|---|---|
+| **Teardown** — `close()` destroys the widget tree | A button's callback holds the dialog; the dialog holds the button. Destroying the tree breaks that loop. Removing an overlay child does **not**. | `teardown()` also empties the host, so a closed dialog is actually freed instead of leaking on every open |
+| **A height bound** — a window has a default height | A panel centred in an overlay is sized by its content, so a long description or twenty rule rows push the action bar off a 768px screen | `max_content_height` + `propagate_natural_height` on the scroller |
+| **A real top-level** for portal dialogs | `gtk::FileDialog` is portal-backed and needs a genuine window as parent | Resolve it from the anchor's root, not from the dialog |
+
+## 3. `set_size_request` is a FLOOR, not a size
+
+This one caused a user-visible bug that took four separate fixes.
+
+The book float had `set_size_request(720, 420)`, and the panel still changed
+size from book to book. GTK grows a widget past its size request whenever the
+content inside needs more room. So **any unbounded child can resize the
+panel**. In that one float there were four:
+
+1. Tags in a `gtk::FlowBox` (`max_children_per_line: 8`, up to 12 chips) —
+   9+ tags wrapped to a second row and made the panel taller.
+2. Title and series labels with `set_wrap: true` — a long title took 2–3 lines.
+3. Authors, filled by the shared `replace_author_links`, which builds a
+   wrapping FlowBox.
+4. The description section's "no Read more" branch left the section entirely
+   unbounded — `height_request(-1)`, natural height, no max — so a short blurb
+   gave a short panel and a nearly-long-enough one gave a tall panel.
+
+**Do instead:** if a panel must be a fixed size, every variable-length child
+needs an explicit bound — ellipsise, clip, or scroll. Do not assume the size
+request is doing it. And when a shared helper (like `replace_author_links`)
+behaves correctly elsewhere, constrain it **at the call site**, not in the
+helper.
+
+## 3b. A view property and a fill function are two writers
+
+The book float's "Read more" button made the description **shrink to one
+line**. The view declared `set_vexpand: true` on the description scroller;
+`fill()` — which runs on every update, not just the first — called
+`set_vexpand(false)` on the same widget. The fill function always wins, because
+it runs last.
+
+The bug hid for a while because the collapsed state used
+`PolicyType::Never`, and `Never` forces a scroller to show its content at full
+height (see 4b). That masked the missing `vexpand`. Expanding switched the
+policy to `Automatic`, which released the scroller back down to its own
+minimum — one line.
+
+**Do instead:** decide where each property lives and keep it there. If a value
+is static, set it in the view and never touch it in the update path. If it
+varies, set it *only* in the update path so there is one writer. When a widget
+misbehaves, grep its name across the whole file before assuming the view is the
+source of truth.
+
+Corollary: a control that changes a panel's shape does not belong in a panel
+whose defining property is a fixed shape. The toggle was deleted rather than
+repaired — scrolling already solved the problem it existed for.
+
+## 4. Hiding a widget removes its space
+
+Fixing (3) introduced a new bug: `fill()` hid the tag row when a book had no
+tags, and a hidden widget occupies no space — so the action buttons below it
+shifted up on untagged books.
+
+**Do instead:** when a widget's job is to reserve space, show it
+unconditionally. An empty row is invisible anyway.
+
+## 4b. Reserving space is not the same as anchoring
+
+Fixing (4) by keeping the tag row permanently visible **did not work** — the
+user reported the buttons still moving. Two reasons, and the second is the
+general lesson.
+
+**`ScrolledWindow` + `PolicyType::Never` ignores your height.** `Never` is a
+promise to GTK that the content is fully visible in that direction, so GTK
+propagates the child's *whole* minimum height and `min_content_height` /
+`max_content_height` cannot shrink it. A chip taller than the requested row
+height still grew the row. Use `External` when you want a hard height *and*
+scrolling; `Never` is only safe when the content genuinely cannot overflow.
+
+**Reserving space for one child only fixes that child.** Nothing in the float
+body had `vexpand: true`, so all leftover height pooled *below* the action row
+and its position tracked whatever happened to sit above it. Every variable
+child would have needed its own bound, forever.
+
+**Do instead: anchor the thing that must not move.** One `vexpand: true` spacer,
+plus `valign: End` on the rows below it, makes the slack collect *above* them.
+In a fixed-height panel that pins them absolutely, regardless of what changes
+higher up.
+
+**Where you put the spacer decides what gets separated.** Placing it directly
+before the action row anchored the buttons but shoved the tag row up with the
+slack, leaving a gap between two things that belong together. If several
+trailing rows should stay as a group, the spacer goes **above the whole group**,
+not between its members.
+
+## 4c. Ellipsising a label does not stop it widening its parent
+
+The book float kept growing sideways for long titles even though the title
+label had `EllipsizeMode::End` set. Ellipsize only decides how overflow is
+*drawn*; the label still reports its **entire** string as its natural width,
+and since `set_size_request` is a floor (see 3), the panel grew to grant it.
+
+**Do instead:** set `set_max_width_chars(n)`, which is what actually caps the
+natural width, and pair it with `hexpand: true` so the label is still allocated
+the real column width rather than being squeezed to `n` characters. Ellipsize
+or wrap then applies within that cap. The same applies to *wrapping* labels: a
+wrapping label with no cap asks for its whole text on one line.
+
+Backstop for a whole region: `set_overflow(gtk::Overflow::Hidden)` on the
+container, so a label added later cannot silently widen it again.
+
+## 4d. Slack is a resource — give it to something useful
+
+The first anchoring fix parked all the leftover height in a blank `vexpand`
+spacer. That worked, but it meant a panel with a short title showed a band of
+empty space while the description sat in a cramped scroller right next to it.
+
+**Do instead:** make the element that *benefits* from extra room the expanding
+one. Here `desc_section` carries the only `vexpand`, so it does both jobs at
+once — it pins everything below it to the bottom, and it donates the spare
+height to the description. A dedicated spacer is only right when nothing in the
+layout actually wants the space.
+
+## 2b. An overlay is not a focus scope
+
+Related to 2, and missed when the dialogs were first converted. A
+`gtk::Window` confines Tab: focus cycles within the window and stops at its
+edge. A panel in a `gtk::Overlay` gets no such thing — the page underneath is
+still in the same widget tree and still focusable, so Tab walked out of a
+"modal" dialog and into the sidebar behind it. You could focus a button you
+could not see and activate it with Enter.
+
+The scrim hides this in testing because `can_target` blocks the **mouse**.
+Nothing was blocking the **keyboard**.
+
+**Do instead:** `crate::widgets::focus_trap` — a capture-phase key controller
+on the window root that owns Tab/Shift+Tab while the panel is visible, moves
+focus with `child_focus`, and wraps at the ends by clearing the root focus and
+searching again. Attach it to the **root**, not the panel: when a dialog opens,
+focus is usually still on the page widget that opened it, so a controller on
+the panel would never see the keypress that walks away from it.
+
+Remove it when the dialog closes, for the same reason as the Esc controller —
+an orphan keeps swallowing Tab for a panel that no longer exists.
+
+## 4e. `thread_local!` state silently swallows cross-thread calls
+
+`notify` keeps its queue and history in `thread_local!` cells. Worker threads
+called `notify::error` anyway — the import loop reports an unreadable file that
+way. There was no panic and no warning: the toast was appended to *that
+thread's* copy of the queue, which nothing ever renders, and the message was
+lost. A module whose entire purpose is "no failure goes unreported" was
+dropping reports on the floor.
+
+**Do instead:** make the entry point thread-safe rather than auditing every
+caller — but bounce only the part that actually needs the main thread. `push`
+records the history entry synchronously (plain data) and defers only the
+*display* via `MainContext::invoke`, which runs inline when already on the main
+thread.
+
+**And the history itself was `thread_local!` too.** Fixing the display was only
+half of it: `HISTORY` was a thread-local `RefCell`, so a worker's entry was
+filed in that thread's own copy, invisible to Settings → Notifications (which
+reads it from the main thread) and discarded when the thread ended. Background
+work is precisely where unattended failures happen, so that was the worst half
+of the app to lose. It is now a process-wide `static Mutex<VecDeque<Entry>>`.
+
+Rule of thumb: `thread_local!` is right for *UI-owned* state (the widget host,
+the pending-display queue) and wrong for anything a different thread might
+legitimately produce or a different thread might read back.
+
+**The first attempt bounced the whole function, and that broke two tests.**
+Cargo's test harness runs each test on its own thread, so nothing under `cargo
+test` is the main-context owner: every `push` got deferred to a main loop that
+never runs, and the history stayed empty. Splitting data from display fixed it,
+and a regression test now pushes from a `thread::spawn` and asserts the entry
+is in the history. Lesson: "is this the main thread?" is false in unit tests
+too, so any bounce must leave the testable bookkeeping on the calling thread.
+
+The general rule: if a free function touches `thread_local!` state or GTK, it
+must either be documented main-thread-only *and* enforced, or it must bounce.
+"Documented and not enforced" means it will be called from a worker eventually.
+
+## 4f. Two futures racing to report the same job
+
+The task manager first drained progress and awaited the result concurrently.
+That reads naturally and is wrong: the result usually arrives while a progress
+update is still queued, so the finished toast appeared and *then* a stale
+"importing 3 of 5" overwrote the status line.
+
+**Do instead:** drain progress to exhaustion, then take the result. Dropping
+the `Reporter` closes the progress channel, so the loop ends on its own and the
+ordering is guaranteed rather than lucky.
+
+## 4f2. Making state process-wide makes its tests racy
+
+A follow-on from §4e, and it took a CI failure two commits later to show up.
+
+`HISTORY` moved from `thread_local!` to a process-wide `Mutex` so a worker's
+message would be readable from the main thread. That was right. But `cargo
+test` runs tests on **parallel threads of one process**, so four tests that had
+each been working on their own private copy were suddenly sharing one.
+
+`clear_history()` at the top of a test is not isolation. Another test can push
+between that call and the assertion, and
+`report_passes_ok_through_and_flags_errors` failed on exactly that: it asserted
+the history was empty, and it was not.
+
+**Do instead:** give the shared state a test-only `Mutex<()>` and take it at
+the top of every test that touches it. Poison-tolerant, so one failing test
+reports its own failure instead of turning every later test into a mutex panic
+that hides it.
+
+**The general rule:** whenever you widen the scope of some state — thread-local
+to global, per-instance to shared — re-read its tests. They were written under
+the old scope and may have been relying on it for isolation without saying so.
+
+## 4g. Overriding `update_with_view` turns off every `#[watch]`
+
+Found while migrating the import loops, not while looking for it.
+
+relm4's default `update_with_view` calls `update` **and then** `update_view`.
+Override it and you replace both halves, so unless the override ends with
+`self.update_view(widgets, sender)` nothing ever re-evaluates the `#[watch]`
+bindings in `view!`. The docs say so plainly: *"you must remember to call
+`update_view` in your implementation. Otherwise, the view will not reflect the
+updated model."*
+
+Two pages were getting this wrong:
+
+- `home.rs` — four `#[watch]` bindings, including the import status line and
+  the `+ Add books` button's `set_sensitive` / `"Importing…"` label. The page
+  looked fine only because `rebuild()` repaints the parts it owns by hand.
+- `lookup_history.rs` — one `#[watch]`, the "N lookups" count, which never
+  moved after a search or a clear.
+
+`book.rs` and `series_float.rs` also override without calling it, and those are
+**fine**: neither has a single `#[watch]`, so there is nothing to refresh.
+
+**Check, when overriding:** does this file contain `#[watch]`? If yes, the
+override must end by calling `update_view`. Watch for a `return` inside a match
+arm — it skips that tail, which is sometimes deliberate (`all_books.rs` returns
+early per file so a 300-book import does not rebuild the grid 300 times) but is
+easy to do by accident.
+
+## 4h. A GObject cannot cross a thread — its raw bytes can
+
+The obvious way to preload covers is "decode on a worker, return the texture".
+It does not compile, and that is the seam doing its job: `gdk::Texture` is a
+GObject owned by the main thread, so `tasks::spawn`'s `T: Send` bound rejects
+it.
+
+The fix is to move the boundary rather than fight it. Split the job at the
+last point where the data is still plain:
+
+- **worker** — read the file, decode it, resize it, hand back `Vec<u8>` of RGBA
+- **main thread** — wrap those bytes in a `gdk::MemoryTexture`
+
+The expensive part is all on the left. The wrap is a pointer copy.
+
+Two things to get right when doing this:
+
+- **The buffer must match the dimensions exactly.** `MemoryTexture::new` takes
+  a stride and trusts it; a short buffer is a garbled image or a crash inside
+  GDK, not a Rust panic. Check `len() == w * h * 4` before wrapping.
+- **Hold widget references weakly.** A page can be destroyed long before its
+  covers finish decoding. A strong reference leaks the widget *and* lets a
+  finished preload write into a dead page.
+
+Related: anything you park in a list waiting for an async result needs a way to
+be reaped when the result never comes. A cover with a missing or corrupt file
+is never swapped in, so its entry is only removed by the periodic sweep — not
+by the success path, which is the one that is easy to remember.
+
+## 5. Never use `opacity` on a scrollbar
+
+`src/style.rs` opens with a warning block explaining that `opacity` below 1
+makes GTK render through an offscreen surface, and a collapsed overlay
+scrollbar's surface is zero-sized:
+
+```
+*** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
+```
+
+**I wrote `opacity: 0` anyway** while hiding the tag scrollbar, and only caught
+it by re-reading that block. Hide a scrollbar by making its **background
+transparent**.
+
+More generally: `src/style.rs` says every line in its scrollbar block exists
+because of a specific bug. Believe it.
+
+## 6. To hide a scrollbar, use `PolicyType::External`
+
+`Automatic` reserves space for a bar that appears only sometimes — which is its
+own version of the "size varies" complaint. `External` keeps wheel, touchpad
+and drag scrolling while GTK draws and allocates nothing.
+
+## 7. `.focus()` is ambiguous on a `gtk::Window`
+
+With `gtk::prelude::*` in scope, both `WidgetExt::focus` and
+`GtkWindowExt::focus` apply:
+
+```
+error[E0034]: multiple applicable items in scope: multiple `focus` found
+```
+
+Name the trait: `gtk::prelude::GtkWindowExt::focus(&window)`. Note also that
+`gtk::Text` is the inner widget of a `gtk::Entry` and is what actually holds
+focus — test for it first.
+
+## 8. A keyboard shortcut on the window root fires while you are typing
+
+The float close handler in `app.rs` fired on `q`/`Q`/Esc whenever a float was
+visible, without checking focus. The tags panel has a text entry, so **typing
+the letter `q` into it dismissed the panel**.
+
+**Do instead:** a letter shortcut must check whether a text widget has focus.
+Esc is safe; letters are not.
+
+---
+
+## 9. Dead code fails the build
+
+This is a **binary crate** and clippy runs `-- -D warnings`. An enum variant
+that is only *matched* and never *constructed*, a helper that lost its last
+caller, or an import left behind by an edit will all fail CI.
+
+Real examples from this session:
+
+- Removing the ✕ from the series float made `SeriesFloatMsg::Close` and
+  `SeriesFloatOut::Close` unreachable.
+- Converting the pickers left three copies of a `window_of()` helper unused.
+- `shelf_editor.rs` kept `use relm4::RelmWidgetExt;` after its last
+  `set_margin_all` went away.
+
+**After deleting a call site, grep for what it used**, including enum variants,
+helpers and imports. Do not add an import to `src/db.rs` for a symbol used only
+in one submodule.
+
+## 10. Do not write "helpful" defaults that hide failures
+
+The whole A0 step-2 pass exists because pages did
+`list_x().unwrap_or_default()`. The result was **the empty-state lie**: a
+broken database rendered as "your library is empty", "no dictionaries
+installed", "no shelves yet" — each indistinguishable from the real empty case.
+
+Specific traps recorded during that pass:
+
+- `self.x = ….unwrap_or_default()` in a *reload* **overwrites live on-screen
+  data**. On error, report and keep what is displayed.
+- A silent `return` on a failed read is the same defect with different syntax.
+- `unwrap_or(false)` on a uniqueness check silently assumes "the name is free".
+- Distinguish "row absent" from "read failed". They are different messages.
+- Raw grep counts of `unwrap_or_default()` **over-count** — many are string,
+  path or date defaults, or `get_pref(key, default)` calls that default *by
+  design*. In `reader.rs`, 35 matches were 4 real ones.
+
+---
+
+## 11. Working with CI in this repo (no local toolchain)
+
+There is **no `cargo` in the sandbox** — no `~/.cargo`, no `pkg-config`, no
+gtk4, and no network to `static.rust-lang.org`. **CI is the only gate.** Runs
+take roughly 5.5–9 minutes.
+
+Practical consequences:
+
+- **Check the failing *step* before assuming your code is broken.** Twice a
+  "failed" run was the rustfmt step alone, whose formatting commit had in fact
+  landed. Use `gh run view <id> --json jobs`; `gh run view --log` returns
+  nothing here.
+- Read the published logs: `ci-logs/clippy-latest.txt` for clippy,
+  `ci-logs/test-latest.txt` for tests. **`clippy-latest.txt` can be stale** —
+  it keeps a `--- run <id> ---` footer from an older run.
+- **CI's rustfmt step auto-commits and pushes**, so your next push is often
+  rejected. Recover with `git fetch origin <branch>` then
+  `git rebase FETCH_HEAD`. Use `FETCH_HEAD`; `origin/<branch>` may not exist
+  locally in a shallow clone.
+- **Local HEAD silently drifts between turns.** Always
+  `git fetch origin <branch> && git reset --hard FETCH_HEAD` before editing.
+  The sandbox can also be replaced wholesale — it came back once as a fresh
+  clone at old `main`, and the branch had to be re-fetched. Your pushed work is
+  safe; your local checkout is not.
+- **Two pushes in quick succession race CI's rustfmt.**
+- **Never `git commit --amend` after pushing.** Use `git reset --soft <sha>`.
+- **`echo "push=$?"` after `git push … | tail` reports `tail`'s status**, not
+  git's. A rejected push can print `push=0`. Read the hint text or check
+  `$PIPESTATUS`.
+- On a rebase conflict in `ROADMAP.md`, it is almost always duelling appended
+  changelog rows. Keep both.
+
+## 12. Editing files you cannot compile
+
+Because nothing can be built locally, scripted edits need their own safety net:
+
+- Python heredocs must `assert old in s` **and** assert the occurrence count,
+  then verify brace/paren balance afterwards. Compare against
+  `git show HEAD:<file>` — `reader.rs` has a pre-existing `+1` brace delta from
+  a `{` inside a string literal, and so do `dictionaries.rs` and
+  `shelf_rules.rs`.
+- **Do not chain `python3 <<'PY' … PY && git commit && git push`.** A failed
+  `assert` exits Python but the `&&` chain still proceeds.
+- **After a CI rustfmt commit, re-read the file before scripted edits.** An
+  anchor matching a one-line expression will fail once rustfmt has reflowed it
+  into a 4-line chain.
+- **A flat `grep -n "self\.catalog"` misses multi-line method chains.** Sweep
+  with `\b(self|model)\s*\n?\s*\.catalog\b`. A single-line grep cost one CI
+  failure.
+- `awk 'length>100'` counts **bytes, not characters** — curly quotes and em
+  dashes trip it. Check with Python before "fixing" a line.
+- **Writing new code from memory is unsafe.** Four API mistakes came from it:
+  there is no `insert_book_for_test` (use the 10-arg `insert_book`), `Book` has
+  no `Default`, `Book.progress`/`rating` are `u8`, and `Book` lives in
+  `crate::models`. Also: `Cargo.toml` sets no `rust-version`, so avoid recent
+  std APIs (`repeat_n` needs 1.82).
+- `catalog()` already returns `&Catalog`, so `&self.service.catalog()` is a
+  type error and a needless borrow. And `let cat = self.service.catalog();`
+  followed by assigning to `self.<field>` is a borrow conflict — finish reads
+  into locals first.
+
+## 13. A route existing in `app.rs` does not mean the user can reach it
+
+`ReadingList`, `Tags` and `Analytics` had complete pages, `PageSlot` variants
+and `Route` arms — and **nothing in the UI ever emitted those routes**. Three
+finished pages that could not be opened at all. `AllBooks` was linked from
+exactly one place: inside the `if total_books == 0` placeholder, so importing
+your first book removed the only link to the full grid.
+
+**Reachability means grepping for who *emits* the route**, not who handles it.
+
+## 14. You cannot see the screen
+
+The user is the QA loop for anything visual. Do not ask for screenshots — you
+cannot view them. Ask for error text, and say precisely which two states to
+compare ("a book with no tags versus one with many — do the buttons sit at the
+same height?").
+
+Corollary: **verify a claim before repeating it.** I told the user the series
+float "skips the book float you came from"; it opens from the **book page**
+(`book.rs:695`), and the book float's series line is a plain label. The
+correction is in the ROADMAP rather than quietly dropped.
+
+---
+
+## 15. Do not skip a file on a shallow check
+
+Rejected reasoning, in the user's words: *"it already reports its main error,
+so it's fine."* A proper check also covers secondary/enriching reads, N+1 query
+patterns, and whether the page could later move off the UI thread.
+`saved_quotes.rs` and `saved_words.rs` were skipped on exactly that shallow
+basis and had to be revisited.
+
+If a file genuinely needs nothing, say **why** precisely. `author.rs` is the
+model: it makes no database reads at all, it only passes the `Arc` to its
+children, and its one `unwrap_or_default()` is on a local helper.
+
+---
+
+## 16. A preloader wired into one call site leaves every other page blank
+
+Step 5 added `cover_widget_deferred`: a card draws a placeholder immediately
+and a worker fills it in later. The thing that starts that worker,
+`warm_covers`, was called from exactly **one** place — `build_book_grid`.
+
+But cards are not only built by the grid. `home.rs` and `author.rs` call
+`build_book_card` directly to lay out their own strips. Those cards happily
+drew placeholders and then waited for a decode that nobody had asked for, so
+**Home's covers never appeared at all** — not slowly, never. It looked like a
+loading bug and was really a missing function call.
+
+Two rules came out of it:
+
+1. **Pair the deferral with the warm-up in one function.** `preload::warm_books`
+   is now the only thing a page calls; it cannot be given the list without also
+   queueing it. A page that builds deferred cards and does not call it is the
+   bug, and the fix is one line rather than three.
+2. **When you make something lazy, grep for every builder of the lazy thing**,
+   not every caller of the function you edited. The grid was the obvious
+   caller; the two that mattered were the ones that had quietly bypassed it.
+
+### The sibling mistake: a budget that was never topped up
+
+`ahead_of` ended in `.take(PRELOAD_AHEAD)` — 24 covers. The intent was "decode
+what is visible first". The missing half was anything to request the other 115,
+because scroll-driven re-queueing was never wired up. On a 139-book library the
+first two rows filled in and the rest kept placeholders for good, which is
+worse than the slow-but-complete behaviour it replaced.
+
+An optimisation that drops work must say **who picks the work back up**. If the
+answer is "nothing", it is not a budget, it is a cap, and the feature is
+half-finished. `ahead_of` now returns everything, nearest-first, and the
+batching moved into `warm_covers`, where the yield between off-screen covers
+keeps the UI thread free without ever abandoning a cover.
+
+Both defects survived a green CI run and were found in ten seconds by a human
+looking at the actual screen. CI cannot see a placeholder.
+
+---
+
+## 17. "If it is too big, empty it" is not a cache bound
+
+`COVER_CACHE` had a bound. It was:
+
+```rust
+if cache.len() > 400 { cache.clear(); }
+```
+
+That is worse than it looks. It throws away *everything*, including the covers
+on screen right now — so the moment a library crosses the limit, the visible
+grid has to decode itself all over again. The cache stops helping at exactly
+the size where it starts to matter, and the user sees a stall they did not see
+at 399 covers.
+
+It also nearly escaped notice because of an unrelated bug. Before A0 step 5's
+fix the preloader stopped after 24 covers, so nothing ever approached 400.
+Removing that cap — correct on its own terms, the covers were not loading —
+quietly turned a dormant flaw into a live one. **When you remove a limit,
+check what else was relying on it.**
+
+The replacement drops only the least-recently-used entry, which keeps what the
+user is looking at. Two details that are easy to get wrong:
+
+1. **The order list has to be pruned everywhere the map is.** A key left behind
+   in the bookkeeping will evict a live entry later, and that bug would surface
+   as an occasional unexplained re-decode rather than anything obvious.
+2. **A probe is not a use.** `is_cover_cached` is the preloader asking whether
+   it needs to decode something — if that counted as a use, a background sweep
+   across a whole library would reorder the cache away from what is on screen,
+   which is precisely backwards.
+
+Both are covered by tests, which was only possible after making the cache
+generic over its value type: a `gdk::Texture` cannot be built without an
+initialised GTK display, and CI has none. Parameterising the type was cheaper
+than leaving the eviction logic untested.
+
+### The related reporting failure
+
+`install_bundled_dictionaries` ran on the UI thread for the whole of A0 step 4
+and was in neither the "converted" nor the "deliberately left alone" list I
+gave the user. The reason is the search method: I looked for `thread::spawn`
+call sites, because the task was "move the threads onto the seam". But the
+acceptance criterion was **"all slow work off the UI thread"**, and this is
+ordinary blocking code in the startup path with no thread anywhere near it.
+
+Searching for the mechanism instead of the requirement cannot find work that
+was never threaded in the first place. Same shape as §16: checking a
+convenient proxy rather than the actual property.
+
+---
+
+## 18. Cheap work repeated for ever is not cheap
+
+The thumbnail backfill existed to give books imported before A0 step 3 a
+thumbnail without re-importing. It was written as "only missing files are
+generated, so it is cheap after the first pass" — and that sentence was true
+about the *generating*, which is why nobody looked further.
+
+What it actually did on every launch of a settled library:
+
+1. `list_books()` — every column of every book, plus a second query joining
+   `tags`, building and dropping a full `Book` struct per row. The backfill
+   reads exactly two fields: `uuid` and `cover_path`.
+2. One `is_file()` per book, to confirm thumbnails that were already there.
+
+At 139 books nobody notices. At 2,000 that is two table scans, 2,000 structs
+and 2,000 stat calls, every single start, to do nothing at all. The CI report
+made it visible: `thumbs_backfilled 50/100/…/2000` scrolling past on a library
+where every thumbnail already existed.
+
+Two fixes, and the second is the one that matters:
+
+- A narrow query (`books_with_covers`) returning just the two columns, with
+  cover-less books filtered in SQL rather than skipped in the loop.
+- A skip marker, so a settled library does no work at all.
+
+### Getting the marker right
+
+A plain "done" flag would be wrong — importing a book has to trigger a new
+pass. Storing the **book count** at the last complete run gives that for free:
+any import changes the count.
+
+Three cases that had to be reasoned about rather than assumed:
+
+- **A cancelled pass must not record the marker.** It has not verified the rest
+  of the library, and claiming otherwise leaves those books without thumbnails
+  permanently.
+- **A cover that fails to thumbnail must not count as covered**, or the marker
+  promises a complete library that is not one.
+- **Delete-then-import nets to the same count.** The count alone cannot see it,
+  so `delete_book` clears the marker explicitly. An unnecessary pass costs one
+  query; a missed one costs a book its thumbnail for good.
+
+The general shape: **an optimisation that skips work must be wrong in the safe
+direction.** Every ambiguous case here re-runs. Compare §16, where a preloader
+dropped work and nothing picked it back up — same failure, opposite cause.
+
+## 19. A test that passes on a machine where the bug cannot appear is not a test
+
+`docs/testing-a0-step5.md` told the user to check that `startup_dicts` prints
+*after* `window_shown`, to confirm the dictionary import had moved off the UI
+thread. They ran it and reported `startup_dicts 0.6 ms` printed **before**
+`window_shown 711.6 ms`.
+
+The build is correct. The instruction was not.
+
+The line prints when the work *finishes*. On a settled machine the packs
+installed months ago, so `install_bundled_dictionaries` early-outs on a pref in
+well under a millisecond — long before the window appears at ~700 ms. It
+therefore prints before `window_shown`.
+
+The fatal part: **it would have printed before `window_shown` on the broken
+build too.** Sub-millisecond work does not delay anything whether it runs on
+the UI thread or a worker. So the check produced the same output for a fixed
+build and a broken one — it had no power to distinguish them, which means it
+was never a test, just a line to read.
+
+What makes it a real test is forcing the condition the fix addresses:
+
+```bash
+XDG_DATA_HOME=/tmp/kalam-dicttest KALAM_TIMING=1 cargo run --release
+```
+
+An empty data dir means the dictionaries genuinely install (~2–3 s), so the
+ordering finally carries information. CI gets this for free by seeding a fresh
+library every run, which is exactly why CI *could* prove this fix while the
+user's machine could not.
+
+### The general rule
+
+Before writing a manual check, ask: **what would this print if the bug were
+still there?** If the answer is "the same thing", the check is worthless no
+matter how sensible it reads. A test needs a failing case that is reachable on
+the machine it runs on.
+
+Note the symmetry with §18. The thumbnail skip is the mirror image — it can
+*only* be verified on a settled library, and CI (always a first launch) can
+never show it. Two fixes in the same commit, each provable in exactly the
+environment where the other is invisible. Neither environment is "the" test
+environment; the question is always which one can make the bug appear.
+
+---
+
+## 20. Answering a question the user did not ask
+
+**The mistake.** The user was asked how far extensibility should go, and
+answered about **scope**:
+
+> *"sources and metadata and maybe a few more, not an ecosystem, because it's
+> for personal use. plugin system makes sense if there is a community, which
+> isn't the case here."*
+
+I turned that into a decision about **implementation language**: removed Lua
+from the plan entirely, renamed the user's "P12 — Lua plugin system" to "P12 —
+Extension surfaces", wrote "deferred, probably indefinitely" and "No scripting
+runtime of any kind", and swept eleven documents to match.
+
+The user had said *no ecosystem*. I heard *no scripting runtime*. Those are
+different claims:
+
+| The user's claim | What I wrote |
+| --- | --- |
+| Do not court third-party authors, no marketplace, no API-stability promises | There will be no Lua |
+| About **who else** uses the extension points | About **what language** they are written in |
+
+An ecosystem is about *other people*. A scripting runtime is about *how fast
+you can fix something*. The second applies to one developer just as much as to
+a thousand — which is the whole argument I had thrown away.
+
+**The user's correction, which was checkable and correct:**
+
+> *"have you seen how metadata plugins in Calibre work?? there are many, many
+> plugins in Calibre just for metadata sources."*
+
+Calibre's index carries 20+ third-party metadata-source plugins — Goodreads,
+Amazon, Kobo, StoryGraph, ISFDB, Douban, DNB, moly.hu, databazeknih.cz, Skoob,
+Kitapyurdu, noosfere — mostly regional or niche, and almost all HTML scrapers.
+I had written in `source-seam.md` §12a that metadata was "already extensible,
+done" because we ship two providers. Two providers is not the same as
+extensible; Calibre ships several built in *and still* needed the plugin tail.
+
+### Three separate errors, worth naming individually
+
+1. **Under-weighted how often scrapers break.** Tachiyomi's entire extension
+   architecture exists for this: *"extensions are parsers; if a website
+   changes its structure, the extension breaks. The core app stays stable;
+   extensions change constantly."* I treated site changes as rare.
+2. **Asserted a cost without measuring it.** I said recompiling was "a few
+   minutes" without opening `Cargo.toml`. It is `lto = true` with
+   `codegen-units = 1` over 44k lines and 36 dependencies — the slowest
+   possible configuration, a full relink for a one-character change, and the
+   one most likely to be OOM-killed on the user's 4 GB machine. **A number I
+   have not measured is not evidence, and this repo has a measurement culture
+   precisely so I do not have to guess.**
+3. **Scope creep in reverse.** Deleting a feature is a change like any other.
+   Renaming a phase the user named, and writing "indefinitely" on their idea,
+   needed their agreement first.
+
+### The rule
+
+**When an answer settles one variable, change only that variable.** If a
+second decision seems to follow, say so and ask — do not ship it. Watch for
+the shape of this error: the user answers question A, and the next commit
+message explains a decision about question B.
+
+And the specific form it took here: **"no community" does not imply "no
+tooling for ourselves."** Ask who a constraint protects. If the answer is
+"strangers", it says nothing about what the maintainers should use.
+
+### Related
+
+§19's rule was "what would this print if the bug were still there?" The
+analogue: **what did the user actually say, and would their sentence still be
+true if I had decided the opposite?** Here it would — "not an ecosystem" is
+equally true with or without Lua, which is the tell that the sentence never
+settled the question.

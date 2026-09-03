@@ -1,25 +1,44 @@
 use crate::db::Catalog;
-use crate::pages::all_books::{ImportProgress, ImportTally};
-use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W};
+use crate::pages::all_books::{import_summary, spawn_import, ImportTally};
+use crate::service::LibraryService;
+use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W, COVER_H, COVER_W};
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// Navigation requests from Home. Variants are named for their destination
+/// rather than sharing an `Open` prefix (clippy::enum_variant_names) -- the
+/// same convention `LibraryOut` uses.
 #[derive(Debug)]
 pub enum HomeOut {
-    OpenBook { book_id: i64 },
-    OpenBookDialog { book_id: i64 },
+    Book {
+        book_id: i64,
+    },
+    BookDialog {
+        book_id: i64,
+    },
+    /// My Library → All books (the full searchable/sortable grid).
+    AllBooks,
 }
 
 #[derive(Debug)]
 pub enum HomeMsg {
     AddBooks,
+    AllBooks,
     FilesChosen(Vec<PathBuf>),
+    /// One file finished importing: 1-based index, total, and its title.
+    ImportStep {
+        done: usize,
+        total: usize,
+        title: String,
+    },
+    /// The whole import finished.
+    ImportFinished(ImportTally),
 }
 
 pub struct HomePageModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     importing: bool,
     status: String,
 }
@@ -29,7 +48,7 @@ impl Component for HomePageModel {
     type Init = Arc<Catalog>;
     type Input = HomeMsg;
     type Output = HomeOut;
-    type CommandOutput = ImportProgress;
+    type CommandOutput = ();
 
     view! {
         #[root]
@@ -49,6 +68,17 @@ impl Component for HomePageModel {
                     add_css_class: "kalam-page-title",
                     set_halign: gtk::Align::Start,
                     set_hexpand: true,
+                },
+
+                // Sits left of "+ Add books": browsing the whole library is
+                // the more common intent, importing the rarer one, but the
+                // primary-styled button stays the import action.
+                #[name = "all_books_btn"]
+                gtk::Button {
+                    set_label: "All books",
+                    add_css_class: "kalam-secondary-btn",
+                    set_tooltip_text: Some("Browse, search and sort every book in your library"),
+                    connect_clicked => HomeMsg::AllBooks,
                 },
 
                 #[name = "add_btn"]
@@ -140,26 +170,55 @@ impl Component for HomePageModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let model = HomePageModel {
-            catalog,
+            service: LibraryService::new(catalog),
             importing: false,
             status: String::new(),
         };
         let widgets = view_output!();
 
-        // Bounded: Home shows a dozen covers, not the whole library.
-        rebuild(&widgets, &model.catalog, &sender);
+        rebuild(&widgets, &model.service, &sender);
 
         ComponentParts { model, widgets }
     }
 
     fn update_with_view(
         &mut self,
-        _widgets: &mut Self::Widgets,
+        widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
         root: &Self::Root,
     ) {
         match msg {
+            HomeMsg::ImportStep { done, total, title } => {
+                self.status = if title.is_empty() {
+                    format!("Importing {done} of {total}…")
+                } else {
+                    format!("Importing {done} of {total} — {title}")
+                };
+            }
+            HomeMsg::ImportFinished(tally) => {
+                self.importing = false;
+
+                if tally.imported > 0 {
+                    crate::notify::success(
+                        &format!(
+                            "{} book{} imported",
+                            tally.imported,
+                            if tally.imported == 1 { "" } else { "s" }
+                        ),
+                        &tally.last_title,
+                    );
+                }
+
+                self.status = import_summary(&tally);
+
+                // New books are in the catalog now; refresh this page so the
+                // counts / continue / recently-added cards reflect them.
+                rebuild(widgets, &self.service, &sender);
+            }
+            HomeMsg::AllBooks => {
+                sender.output(HomeOut::AllBooks).ok();
+            }
             HomeMsg::AddBooks => {
                 let dialog = gtk::FileDialog::builder()
                     .title("Import EPUB books")
@@ -181,6 +240,7 @@ impl Component for HomePageModel {
                         .and_then(|w| w.downcast::<gtk::Window>().ok())
                 });
 
+                let s = sender.clone();
                 dialog.open_multiple(
                     window.as_ref(),
                     gtk::gio::Cancellable::NONE,
@@ -198,7 +258,7 @@ impl Component for HomePageModel {
                                 }
                             }
                             if !paths.is_empty() {
-                                sender.input(HomeMsg::FilesChosen(paths));
+                                s.input(HomeMsg::FilesChosen(paths));
                             }
                         }
                     },
@@ -212,98 +272,30 @@ impl Component for HomePageModel {
                 self.importing = true;
                 self.status = format!("Importing 1 of {total}…");
 
-                let catalog = self.catalog.clone();
-                sender.spawn_command(move |out| {
-                    let mut tally = ImportTally::default();
-                    for (i, path) in paths.iter().enumerate() {
-                        match crate::epub::import_epub(&catalog, path) {
-                            Ok(r) if r.duplicate => {
-                                tally.dupes += 1;
-                                tally.last_title = r.title.clone();
-                            }
-                            Ok(r) => {
-                                tally.imported += 1;
-                                if r.restored {
-                                    tally.restored += 1;
-                                }
-                                tally.last_title = r.title.clone();
-                            }
-                            Err(err) => {
-                                tally.errors += 1;
-                                let name = path
-                                    .file_name()
-                                    .map(|n| n.to_string_lossy().into_owned())
-                                    .unwrap_or_default();
-                                crate::notify::error(
-                                    &format!("Could not import {name}"),
-                                    &format!("{err:#}"),
-                                );
-                            }
-                        }
-                        out.send(ImportProgress::Step {
-                            done: i + 1,
-                            total,
-                            title: tally.last_title.clone(),
-                        })
-                        .ok();
-                    }
-                    out.send(ImportProgress::Finished(tally)).ok();
-                });
-            }
-        }
-    }
-
-    fn update_cmd_with_view(
-        &mut self,
-        widgets: &mut Self::Widgets,
-        msg: Self::CommandOutput,
-        sender: ComponentSender<Self>,
-        _root: &Self::Root,
-    ) {
-        match msg {
-            ImportProgress::Step { done, total, title } => {
-                self.status = if title.is_empty() {
-                    format!("Importing {done} of {total}…")
-                } else {
-                    format!("Importing {done} of {total} — {title}")
-                };
-            }
-            ImportProgress::Finished(tally) => {
-                self.importing = false;
-
-                if tally.imported > 0 {
-                    crate::notify::success(
-                        &format!(
-                            "{} book{} imported",
-                            tally.imported,
-                            if tally.imported == 1 { "" } else { "s" }
-                        ),
-                        &tally.last_title,
-                    );
-                }
-
-                let restored_note = if tally.restored > 0 {
-                    format!(" {} kept your earlier metadata edits.", tally.restored)
-                } else {
-                    String::new()
-                };
-                self.status = format!(
-                    "Import done — {} added, {} already in library, {} failed.{restored_note}{}",
-                    tally.imported,
-                    tally.dupes,
-                    tally.errors,
-                    if tally.last_title.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" Last: {}", tally.last_title)
-                    }
+                // Imports still go straight to the catalog: writes are not
+                // part of the read-snapshot seam (they belong to the task
+                // manager, A0 step 4).
+                let catalog = self.service.catalog().clone();
+                let step_sender = sender.clone();
+                let done_sender = sender.clone();
+                spawn_import(
+                    catalog,
+                    paths,
+                    move |done, total, title| {
+                        step_sender.input(HomeMsg::ImportStep { done, total, title });
+                    },
+                    move |tally| {
+                        done_sender.input(HomeMsg::ImportFinished(tally));
+                    },
                 );
-
-                // New books are in the catalog now; refresh this page so the
-                // counts / continue / recently-added cards reflect them.
-                rebuild(widgets, &self.catalog, &sender);
             }
         }
+
+        // Overriding `update_with_view` replaces relm4's default
+        // `update` + `update_view` pair, so nothing refreshes the `#[watch]`
+        // bindings unless we say so. Missing this left the status line and the
+        // "Importing…" button state frozen at their initial values.
+        self.update_view(widgets, sender);
     }
 }
 
@@ -313,19 +305,35 @@ fn clear_box(host: &gtk::Box) {
     }
 }
 
-/// (Re)populate Home from the catalog. Called at init and again after an import.
+/// (Re)populate Home. Called at init and again after an import.
+///
+/// A0 step 2: one `service.home()` call replaces four direct catalog reads.
+/// Everything below is pure widget building against an owned snapshot — which
+/// is what makes moving the query to a worker thread a change in the service
+/// rather than in this function.
 fn rebuild(
     widgets: &HomePageModelWidgets,
-    catalog: &Arc<Catalog>,
+    service: &LibraryService,
     sender: &ComponentSender<HomePageModel>,
 ) {
+    let snap = service.home();
+    for err in &snap.errors {
+        crate::notify::error("Could not read the library", err);
+    }
+
     clear_box(&widgets.counts_host);
     clear_box(&widgets.continue_host);
     clear_box(&widgets.tbr_host);
     clear_box(&widgets.recent_host);
 
+    // Home builds its cards by hand rather than through `build_book_grid`, so
+    // it has to warm its own covers -- the cards defer their decode and would
+    // otherwise sit on placeholders for ever. Every strip is warmed together
+    // below, once the snapshot is in hand.
+    let mut on_screen: Vec<crate::models::Book> = Vec::new();
+
     // ── counts strip ────────────────────────────────────────────────
-    let stats = catalog.library_stats().unwrap_or_default();
+    let stats = &snap.stats;
     for (label, value) in [
         ("Books", stats.total_books.to_string()),
         ("Reading", stats.reading.to_string()),
@@ -345,24 +353,10 @@ fn rebuild(
         widgets.counts_host.append(&tile);
     }
 
-    // Bounded: Home shows a dozen covers, not the whole library.
-    let books = catalog.recent_books(12).unwrap_or_default();
-
     // ── continue: most recently opened, newest first ────────────────
-    let mut cont: Vec<_> = catalog.recently_opened(4).unwrap_or_default();
-    if cont.is_empty() {
-        cont = books
-            .iter()
-            .filter(|b| b.progress > 0 && b.progress < 100)
-            .take(4)
-            .cloned()
-            .collect();
-    }
-    if cont.is_empty() {
-        if let Some(first) = books.first() {
-            cont.push(first.clone());
-        }
-    }
+    // The fallback chain (opened -> in progress -> newest) now lives in the
+    // service, where it is unit-tested.
+    let cont = &snap.continue_reading;
 
     if cont.is_empty() {
         let empty = gtk::Label::new(Some(
@@ -373,25 +367,26 @@ fn rebuild(
         empty.set_halign(gtk::Align::Start);
         widgets.continue_host.append(&empty);
     } else {
-        for book in &cont {
+        for book in cont {
             let id = book.id;
             let s1 = sender.clone();
             let s2 = sender.clone();
             let card = build_book_card(
                 book,
                 move || {
-                    s1.output(HomeOut::OpenBook { book_id: id }).ok();
+                    s1.output(HomeOut::Book { book_id: id }).ok();
                 },
                 move || {
-                    s2.output(HomeOut::OpenBookDialog { book_id: id }).ok();
+                    s2.output(HomeOut::BookDialog { book_id: id }).ok();
                 },
             );
             widgets.continue_host.append(&card);
+            on_screen.push(book.clone());
         }
     }
 
     // ── reading list peek ───────────────────────────────────────────
-    let tbr = catalog.list_reading_list().unwrap_or_default();
+    let tbr = &snap.reading_list;
     if tbr.is_empty() {
         widgets.tbr_label.set_visible(false);
         widgets.tbr_host.set_visible(false);
@@ -424,7 +419,7 @@ fn rebuild(
             let click = gtk::GestureClick::new();
             click.set_button(1);
             click.connect_released(move |_, _, _, _| {
-                s.output(HomeOut::OpenBook { book_id: id }).ok();
+                s.output(HomeOut::Book { book_id: id }).ok();
             });
             row.add_controller(click);
             row.set_cursor_from_name(Some("pointer"));
@@ -434,7 +429,8 @@ fn rebuild(
     }
 
     // ── recently added ──────────────────────────────────────────────
-    let recent: Vec<_> = books.iter().take(12).cloned().collect();
+    // Already bounded to 12 by the service, so no second `take` here.
+    let recent = &snap.recent;
     if recent.is_empty() {
         let empty = gtk::Label::new(Some("Your library is empty — add a book above."));
         empty.add_css_class("kalam-muted");
@@ -456,7 +452,7 @@ fn rebuild(
         flow.add_css_class("kalam-book-grid");
         flow.add_css_class("kalam-home-flow");
 
-        for book in &recent {
+        for book in recent {
             let id = book.id;
             let s1 = sender.clone();
             let s2 = sender.clone();
@@ -465,13 +461,13 @@ fn rebuild(
                 {
                     let s = s1.clone();
                     move || {
-                        s.output(HomeOut::OpenBook { book_id: id }).ok();
+                        s.output(HomeOut::Book { book_id: id }).ok();
                     }
                 },
                 {
                     let s = s2.clone();
                     move || {
-                        s.output(HomeOut::OpenBookDialog { book_id: id }).ok();
+                        s.output(HomeOut::BookDialog { book_id: id }).ok();
                     }
                 },
             );
@@ -482,7 +478,13 @@ fn rebuild(
             cell.set_valign(gtk::Align::Start);
             cell.append(&card);
             flow.insert(&cell, -1);
+            on_screen.push(book.clone());
         }
         widgets.recent_host.append(&flow);
     }
+
+    // Both strips are showing placeholders until this runs. The size must be
+    // exactly what `build_book_card` asked for -- the cache is keyed on it, so
+    // a mismatch decodes into an entry nothing ever reads.
+    crate::preload::warm_books(&on_screen, 0, COVER_W, COVER_H);
 }

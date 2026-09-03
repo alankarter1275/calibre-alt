@@ -16,12 +16,22 @@
 //! ```
 //!
 //! Then read the `[timing]` lines. They mark the boundaries A0 cares about:
-//!   app           → cold-start countdown reference (`timing::start()`)
-//!   window_shown  → first window drawn (cold-start END) — a `now` snapshot
-//!   book_open     → reader init done, EPUB parsed (a span)
-//!   chapter_load  → chapter HTML handed to WebKit (a span)
-//!   chapter_done  → WebKit finished rendering (span_end of chapter_load)
-//!   dict_lookup   → dictionary search returned (a span)
+//!   window_shown  → first window drawn, measured from process start
+//!                   (cold start; a `now` snapshot, not a span)
+//!   startup_db_open / startup_dicts / startup_first_page
+//!                 → the three pieces of work that run before first paint,
+//!                   so a slow `window_shown` can be attributed rather than
+//!                   guessed at. `startup_dicts` is large only on the very
+//!                   first run (it imports the bundled packs), and
+//!                   `startup_first_page` scales with library size.
+//!   book_open     → EPUB parsed and the reader initialised
+//!   chapter_load  → chapter HTML handed to WebKit *until* WebKit finished
+//!                   rendering it — i.e. the whole chapter turn
+//!   dict_lookup   → dictionary search returned
+//!
+//! Note that a span prints **one** line, under the label it was opened with,
+//! when it ends. `chapter_load` therefore reports the full load→rendered
+//! duration; there is no separate "done" line to wait for.
 //!
 //! A book open + one chapter turn is enough to answer whether the reader paths
 //! need preloaders (A0 step 5).
@@ -58,6 +68,17 @@ pub fn now(label: &'static str) {
     println!("[timing] {label:<18} {el:>8.1} ms");
 }
 
+/// Print a labelled count, e.g. how many tasks were still running at exit.
+///
+/// Like the rest of this module it is a no-op unless `KALAM_TIMING=1`, so it
+/// costs nothing in a normal run.
+pub fn note(label: &'static str, value: usize) {
+    if !enabled() {
+        return;
+    }
+    println!("[timing] {label:<18} {value:>8}");
+}
+
 /// Begin a named span (e.g. "book_open"). If a span with the same label is
 /// already open it is replaced.
 pub fn span(label: &'static str) {
@@ -71,9 +92,11 @@ pub fn span(label: &'static str) {
         .insert(label, Instant::now());
 }
 
-/// End a named span opened by `span(label)` and print its elapsed ms. Printing
-/// the label of the *previous* named point by hand is useful when one span feeds
-/// another (chapter_load → chapter_done).
+/// End a named span opened by `span(label)` and print its elapsed ms.
+///
+/// The line is printed under the label the span was *opened* with, so
+/// `span("chapter_load")` … `span_end("chapter_load")` yields a single
+/// `chapter_load` line covering the whole interval.
 pub fn span_end(label: &'static str) {
     if !enabled() {
         return;

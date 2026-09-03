@@ -218,6 +218,27 @@ impl Catalog {
     /// Saved words, newest first. `query` filters by word/definition;
     /// `known` (Phase 7) restricts to `Some(true)` known / `Some(false)`
     /// to-review words, or `None` for all.
+    /// `(total, known)` counts for the vocabulary page header.
+    ///
+    /// The page used to get these by calling [`Catalog::list_saved_words`]
+    /// twice and taking `.len()`, which loads up to 500 full rows — definition
+    /// text and all — purely to count them. It also swallowed both reads, so a
+    /// failure silently reported **zero known words**, which reads as real
+    /// data rather than as a problem.
+    ///
+    /// One query, and it counts past the 500-row display cap, so the header is
+    /// now accurate for large vocabularies.
+    pub fn saved_word_counts(&self) -> Result<(i64, i64)> {
+        let conn = self.conn();
+        let row = conn.query_row(
+            "SELECT COUNT(*), COALESCE(SUM(CASE WHEN known THEN 1 ELSE 0 END), 0)
+             FROM saved_words",
+            [],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+        )?;
+        Ok(row)
+    }
+
     pub fn list_saved_words(&self, query: &str, known: Option<bool>) -> Result<Vec<SavedWord>> {
         let conn = self.conn();
         let q = query.trim();

@@ -3,7 +3,9 @@
 use crate::db::{Catalog, Shelf, ShelfKind, SortKey};
 use crate::models::Book;
 use crate::pages::shelf_editor::{open_shelf_editor, ShelfEditorMode};
+use crate::service::LibraryService;
 use crate::widgets::book_row::build_book_grid;
+use crate::widgets::in_app_dialog;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::rc::Rc;
@@ -25,7 +27,7 @@ pub enum ShelfDetailMsg {
 }
 
 pub struct ShelfDetailModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     shelf: Option<Shelf>,
     books: Vec<Book>,
     query: String,
@@ -137,17 +139,15 @@ impl Component for ShelfDetailModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let shelf = catalog.get_shelf(shelf_id).ok().flatten();
         let sort = SortKey::Added;
-        let books = shelf
-            .as_ref()
-            .and_then(|s| catalog.shelf_books(s, sort, "").ok())
-            .unwrap_or_default();
+        let service = LibraryService::new(catalog);
+        let snap = service.shelf_detail(shelf_id, sort, "");
+        report_errors(&snap.errors);
 
         let model = ShelfDetailModel {
-            catalog,
-            shelf,
-            books,
+            service,
+            shelf: snap.shelf,
+            books: snap.books,
             query: String::new(),
             sort,
         };
@@ -201,8 +201,8 @@ impl Component for ShelfDetailModel {
                 if let Some(shelf) = &self.shelf {
                     let s = sender.clone();
                     open_shelf_editor(
-                        window_of(root).as_ref(),
-                        self.catalog.clone(),
+                        root,
+                        self.service.catalog().clone(),
                         ShelfEditorMode::Edit { shelf_id: shelf.id },
                         move || s.input(ShelfDetailMsg::Refresh),
                     );
@@ -213,8 +213,8 @@ impl Component for ShelfDetailModel {
                     if shelf.kind == ShelfKind::Manual {
                         let s = sender.clone();
                         open_book_picker(
-                            window_of(root).as_ref(),
-                            self.catalog.clone(),
+                            root,
+                            self.service.catalog().clone(),
                             shelf.id,
                             move || s.input(ShelfDetailMsg::Refresh),
                         );
@@ -222,9 +222,6 @@ impl Component for ShelfDetailModel {
                 }
             }
             ShelfDetailMsg::Refresh => {
-                if let Some(shelf) = &self.shelf {
-                    self.shelf = self.catalog.get_shelf(shelf.id).ok().flatten();
-                }
                 self.reload();
             }
         }
@@ -232,6 +229,14 @@ impl Component for ShelfDetailModel {
         self.refresh_header(widgets);
         self.rebuild(widgets, &sender);
         self.update_view(widgets, sender);
+    }
+}
+
+/// Surface read failures. Without this a database problem looked like an
+/// empty shelf.
+fn report_errors(errors: &[String]) {
+    for err in errors {
+        crate::notify::error("Could not read this shelf", err);
     }
 }
 
@@ -243,12 +248,18 @@ impl ShelfDetailModel {
             .unwrap_or(false)
     }
 
+    /// Re-read the shelf **and** its books together. The shelf row itself can
+    /// change under us (rename, cover, kind), so refreshing only the books
+    /// left the header stale.
     fn reload(&mut self) {
-        self.books = self
-            .shelf
-            .as_ref()
-            .and_then(|s| self.catalog.shelf_books(s, self.sort, &self.query).ok())
-            .unwrap_or_default();
+        let Some(id) = self.shelf.as_ref().map(|s| s.id) else {
+            self.books.clear();
+            return;
+        };
+        let snap = self.service.shelf_detail(id, self.sort, &self.query);
+        report_errors(&snap.errors);
+        self.shelf = snap.shelf;
+        self.books = snap.books;
     }
 
     fn refresh_header(&self, widgets: &ShelfDetailModelWidgets) {
@@ -359,7 +370,7 @@ impl ShelfDetailModel {
             "Switch to “Shelf order” to reorder"
         }));
         {
-            let catalog = self.catalog.clone();
+            let catalog = self.service.catalog().clone();
             let s = sender.clone();
             up.connect_clicked(move |_| {
                 // Reordering is visible in the list itself, so only a failure
@@ -383,7 +394,7 @@ impl ShelfDetailModel {
         down.set_sensitive(sortable);
         down.set_tooltip_text(Some("Move down"));
         {
-            let catalog = self.catalog.clone();
+            let catalog = self.service.catalog().clone();
             let s = sender.clone();
             down.connect_clicked(move |_| {
                 crate::notify::report(
@@ -399,7 +410,7 @@ impl ShelfDetailModel {
         remove.add_css_class("kalam-mini-btn");
         remove.add_css_class("kalam-mini-btn-danger");
         {
-            let catalog = self.catalog.clone();
+            let catalog = self.service.catalog().clone();
             let s = sender.clone();
             let book_title = book.title.clone();
             remove.connect_clicked(move |_| {
@@ -416,16 +427,6 @@ impl ShelfDetailModel {
 
         row
     }
-}
-
-fn window_of(root: &gtk::Box) -> Option<gtk::Window> {
-    root.root()
-        .and_then(|r| r.downcast::<gtk::Window>().ok())
-        .or_else(|| {
-            relm4::main_application()
-                .active_window()
-                .and_then(|w| w.downcast::<gtk::Window>().ok())
-        })
 }
 
 fn group_toggles(box_: &gtk::Box) {
@@ -445,25 +446,18 @@ fn group_toggles(box_: &gtk::Box) {
 
 /// Checklist of every book in the library, ticked for the ones already on this
 /// manual shelf. Toggling writes straight through to the DB.
+///
+/// A1: drawn inside the window rather than as a `gtk::Window`. Exit is
+/// [`in_app_dialog::DialogExit::OwnButtons`] — each tick writes straight to
+/// the DB, so "Done", Esc and a backdrop click all mean the same thing.
 fn open_book_picker(
-    parent: Option<&gtk::Window>,
+    anchor: &gtk::Box,
     catalog: Arc<Catalog>,
     shelf_id: i64,
     on_changed: impl Fn() + 'static,
 ) {
-    let window = gtk::Window::builder()
-        .title("Add books to shelf")
-        .modal(true)
-        .default_width(520)
-        .default_height(560)
-        .build();
-    window.add_css_class("kalam-window");
-    if let Some(parent) = parent {
-        window.set_transient_for(Some(parent));
-    }
-
     let root = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    root.set_margin_all(16);
+    root.set_size_request(520, 520);
 
     let hint = gtk::Label::new(Some("Tick the books that belong on this shelf."));
     hint.add_css_class("kalam-muted");
@@ -558,12 +552,19 @@ fn open_book_picker(
     let done = gtk::Button::with_label("Done");
     done.add_css_class("kalam-primary-btn");
     done.set_halign(gtk::Align::End);
-    {
-        let window = window.clone();
-        done.connect_clicked(move |_| window.close());
-    }
     root.append(&done);
 
-    window.set_child(Some(&root));
-    window.present();
+    let Some(dialog) = in_app_dialog::present(
+        anchor,
+        "Add books to shelf",
+        in_app_dialog::DialogExit::OwnButtons,
+        &root,
+    ) else {
+        crate::notify::error(
+            "Could not open the picker",
+            "Please try again once the page has finished loading.",
+        );
+        return;
+    };
+    done.connect_clicked(move |_| dialog.close());
 }

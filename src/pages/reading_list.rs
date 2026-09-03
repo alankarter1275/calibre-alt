@@ -1,7 +1,9 @@
 //! P4 — Reading list: an ordered to-be-read queue.
 
 use crate::db::{Catalog, ReadingListEntry, SortKey};
+use crate::service::LibraryService;
 use crate::widgets::book_row::cover_widget;
+use crate::widgets::in_app_dialog;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::rc::Rc;
@@ -22,7 +24,7 @@ pub enum ReadingListMsg {
 }
 
 pub struct ReadingListModel {
-    catalog: Arc<Catalog>,
+    service: LibraryService,
     entries: Vec<ReadingListEntry>,
 }
 
@@ -88,8 +90,13 @@ impl Component for ReadingListModel {
         _root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let entries = catalog.list_reading_list().unwrap_or_default();
-        let model = ReadingListModel { catalog, entries };
+        let service = LibraryService::new(catalog);
+        let snap = service.reading_list();
+        report_errors(&snap.errors);
+        let model = ReadingListModel {
+            service,
+            entries: snap.entries,
+        };
         let widgets = view_output!();
         rebuild(&widgets.list, &model.entries, &sender);
         ComponentParts { model, widgets }
@@ -106,7 +113,9 @@ impl Component for ReadingListModel {
             ReadingListMsg::Move { book_id, delta } => {
                 // The list visibly reorders itself, so success needs no toast.
                 crate::notify::report(
-                    self.catalog.move_reading_list_entry(book_id, delta),
+                    self.service
+                        .catalog()
+                        .move_reading_list_entry(book_id, delta),
                     "Could not reorder the reading list",
                 );
                 self.reload();
@@ -119,7 +128,7 @@ impl Component for ReadingListModel {
                     .map(|e| e.book.title.clone())
                     .unwrap_or_default();
                 crate::notify::outcome_info(
-                    self.catalog.remove_from_reading_list(book_id),
+                    self.service.catalog().remove_from_reading_list(book_id),
                     "Removed from reading list",
                     &title,
                     "Could not update the reading list",
@@ -128,7 +137,7 @@ impl Component for ReadingListModel {
             }
             ReadingListMsg::AddBooks => {
                 let s = sender.clone();
-                open_picker(window_of(root).as_ref(), self.catalog.clone(), move || {
+                open_picker(root, self.service.catalog().clone(), move || {
                     s.input(ReadingListMsg::Refresh)
                 });
             }
@@ -141,7 +150,17 @@ impl Component for ReadingListModel {
 
 impl ReadingListModel {
     fn reload(&mut self) {
-        self.entries = self.catalog.list_reading_list().unwrap_or_default();
+        let snap = self.service.reading_list();
+        report_errors(&snap.errors);
+        self.entries = snap.entries;
+    }
+}
+
+/// Surface read failures instead of rendering them as an empty queue. The
+/// service collects them; deciding what the user sees stays with the UI.
+fn report_errors(errors: &[String]) {
+    for err in errors {
+        crate::notify::error("Could not read the reading list", err);
     }
 }
 
@@ -151,16 +170,6 @@ fn status_line(n: usize) -> String {
     } else {
         format!("{n} book{} queued up", if n == 1 { "" } else { "s" })
     }
-}
-
-fn window_of(root: &gtk::Box) -> Option<gtk::Window> {
-    root.root()
-        .and_then(|r| r.downcast::<gtk::Window>().ok())
-        .or_else(|| {
-            relm4::main_application()
-                .active_window()
-                .and_then(|w| w.downcast::<gtk::Window>().ok())
-        })
 }
 
 fn rebuild(
@@ -312,24 +321,15 @@ fn build_row(
 }
 
 /// Library checklist for bulk-queueing books.
-fn open_picker(
-    parent: Option<&gtk::Window>,
-    catalog: Arc<Catalog>,
-    on_changed: impl Fn() + 'static,
-) {
-    let window = gtk::Window::builder()
-        .title("Add to reading list")
-        .modal(true)
-        .default_width(520)
-        .default_height(560)
-        .build();
-    window.add_css_class("kalam-window");
-    if let Some(parent) = parent {
-        window.set_transient_for(Some(parent));
-    }
-
+///
+/// A1: drawn inside the window rather than as a `gtk::Window`, which Sway
+/// treated as an ordinary tile. Exit is
+/// [`in_app_dialog::DialogExit::OwnButtons`]: ticking a box writes straight to
+/// the DB, so there is nothing unsaved and "Done" is just "I am finished
+/// looking". Backdrop-click and Esc mean the same thing here.
+fn open_picker(anchor: &gtk::Box, catalog: Arc<Catalog>, on_changed: impl Fn() + 'static) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 10);
-    root.set_margin_all(16);
+    root.set_size_request(520, 520);
 
     let search = gtk::SearchEntry::new();
     search.set_placeholder_text(Some("Search library…"));
@@ -407,12 +407,19 @@ fn open_picker(
     let done = gtk::Button::with_label("Done");
     done.add_css_class("kalam-primary-btn");
     done.set_halign(gtk::Align::End);
-    {
-        let window = window.clone();
-        done.connect_clicked(move |_| window.close());
-    }
     root.append(&done);
 
-    window.set_child(Some(&root));
-    window.present();
+    let Some(dialog) = in_app_dialog::present(
+        anchor,
+        "Add to reading list",
+        in_app_dialog::DialogExit::OwnButtons,
+        &root,
+    ) else {
+        crate::notify::error(
+            "Could not open the picker",
+            "Please try again once the page has finished loading.",
+        );
+        return;
+    };
+    done.connect_clicked(move |_| dialog.close());
 }
