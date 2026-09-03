@@ -135,7 +135,12 @@ pub fn warm_covers(covers: Vec<PathBuf>, w: i32, h: i32) {
 ///
 /// Pure and headless apart from the cache probe, which is why the interesting
 /// half — the windowing — is tested below.
-pub fn ahead_of(books: &[crate::models::Book], visible_from: usize, w: i32, h: i32) -> Vec<PathBuf> {
+pub fn ahead_of(
+    books: &[crate::models::Book],
+    visible_from: usize,
+    w: i32,
+    h: i32,
+) -> Vec<PathBuf> {
     let start = visible_from.min(books.len());
     books
         .iter()
@@ -298,7 +303,11 @@ mod tests {
         // survives the filter and this measures the windowing alone.
         let got = ahead_of(&books, 30, 128, 204);
         assert_eq!(got.len(), PRELOAD_AHEAD, "capped at PRELOAD_AHEAD");
-        assert_eq!(got[0], PathBuf::from("/covers/30.png"), "starts at the mark");
+        assert_eq!(
+            got[0],
+            PathBuf::from("/covers/30.png"),
+            "starts at the mark"
+        );
         assert_eq!(got[PRELOAD_AHEAD - 1], PathBuf::from("/covers/53.png"));
     }
 
@@ -343,7 +352,12 @@ mod tests {
     #[test]
     fn books_without_a_cover_are_not_queued() {
         let books: Vec<crate::models::Book> = (0..6)
-            .map(|i| book_with_cover(i, (i % 2 == 0).then(|| PathBuf::from(format!("/covers/{i}.png")))))
+            .map(|i| {
+                book_with_cover(
+                    i,
+                    (i % 2 == 0).then(|| PathBuf::from(format!("/covers/{i}.png"))),
+                )
+            })
             .collect();
         let got = ahead_of(&books, 0, 128, 204);
         assert_eq!(got.len(), 3, "only the three with covers");

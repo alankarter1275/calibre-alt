@@ -327,7 +327,8 @@ pub fn cover_widget_deferred(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget
 /// Forget frames whose widgets have been destroyed.
 fn drop_dead_pending_frames() {
     PENDING_FRAMES.with(|p| {
-        p.borrow_mut().retain(|entry| entry.frame.upgrade().is_some());
+        p.borrow_mut()
+            .retain(|entry| entry.frame.upgrade().is_some());
     });
 }
 
