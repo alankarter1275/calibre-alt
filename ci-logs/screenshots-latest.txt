@@ -6,5 +6,55 @@ binary: 16004696 bytes
 seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
-FATAL: sway never came up. Its log:
---- run 33766763115 ---
+sway binary: /usr/bin/sway sway version 1.9
+SWAYSOCK=/run/user/1001/sway-ipc.1001.5066.sock
+sway up: {
+  "human_readable": "1.9",
+  "variant": "sway",
+  "major": 1,
+  "minor": 9,
+  "patch": 0,
+  "loaded_config_file_name":
+WAYLAND_DISPLAY=wayland-1
+
+=== launching kalam ===
+toplevel windows seen: 1
+  shot: 01-home (58165 bytes)
+  shot: 02-after-nav (58165 bytes)
+  shot: 03-after-nav-settled (58165 bytes)
+
+=== timing lines from the app ===
+  [timing] startup_db_open         1.1 ms
+  [timing] covers_queued            11
+  [timing] startup_first_page      7.0 ms
+  [timing] window_shown          156.3 ms
+  [timing] thumbs_backfilled        50
+  [timing] thumbs_backfilled       100
+  [timing] thumbs_backfilled       139
+  [timing] thumbs_backfill_done      130
+  [timing] startup_dicts        2898.2 ms
+
+=== did the covers actually load? ===
+  01-home.png: 1600x1000  coloured=18.9%  lit=100.0%
+  02-after-nav.png: 1600x1000  coloured=18.9%  lit=100.0%
+  03-after-nav-settled.png: 1600x1000  coloured=18.9%  lit=100.0%
+  (numbers only -- no threshold is enforced yet; see the docstring)
+
+=== peak memory ===
+books=139 peak_rss_kb=239152 peak_rss_mb=233
+
+=== shutting down ===
+
+=== artifacts ===
+  total 204
+  drwxr-xr-x  2 runner runner  4096 Sep  3 14:43 .
+  drwxr-xr-x 13 runner runner  4096 Sep  3 14:43 ..
+  -rw-r--r--  1 runner runner 58165 Sep  3 14:43 01-home.png
+  -rw-r--r--  1 runner runner 58165 Sep  3 14:43 02-after-nav.png
+  -rw-r--r--  1 runner runner 58165 Sep  3 14:43 03-after-nav-settled.png
+  -rw-r--r--  1 runner runner     0 Sep  3 14:43 grim.log
+  -rw-r--r--  1 runner runner   654 Sep  3 14:43 kalam.log
+  -rw-r--r--  1 runner runner  1406 Sep  3 14:43 report.txt
+  -rw-r--r--  1 runner runner     0 Sep  3 14:43 sway.log
+  -rw-r--r--  1 runner runner  6548 Sep  3 14:43 tree.json
+--- run 33767919865 ---
