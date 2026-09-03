@@ -248,6 +248,34 @@ update is still queued, so the finished toast appeared and *then* a stale
 the `Reporter` closes the progress channel, so the loop ends on its own and the
 ordering is guaranteed rather than lucky.
 
+## 4g. Overriding `update_with_view` turns off every `#[watch]`
+
+Found while migrating the import loops, not while looking for it.
+
+relm4's default `update_with_view` calls `update` **and then** `update_view`.
+Override it and you replace both halves, so unless the override ends with
+`self.update_view(widgets, sender)` nothing ever re-evaluates the `#[watch]`
+bindings in `view!`. The docs say so plainly: *"you must remember to call
+`update_view` in your implementation. Otherwise, the view will not reflect the
+updated model."*
+
+Two pages were getting this wrong:
+
+- `home.rs` — four `#[watch]` bindings, including the import status line and
+  the `+ Add books` button's `set_sensitive` / `"Importing…"` label. The page
+  looked fine only because `rebuild()` repaints the parts it owns by hand.
+- `lookup_history.rs` — one `#[watch]`, the "N lookups" count, which never
+  moved after a search or a clear.
+
+`book.rs` and `series_float.rs` also override without calling it, and those are
+**fine**: neither has a single `#[watch]`, so there is nothing to refresh.
+
+**Check, when overriding:** does this file contain `#[watch]`? If yes, the
+override must end by calling `update_view`. Watch for a `return` inside a match
+arm — it skips that tail, which is sometimes deliberate (`all_books.rs` returns
+early per file so a 300-book import does not rebuild the grid 300 times) but is
+easy to do by accident.
+
 ## 5. Never use `opacity` on a scrollbar
 
 `src/style.rs` opens with a warning block explaining that `opacity` below 1

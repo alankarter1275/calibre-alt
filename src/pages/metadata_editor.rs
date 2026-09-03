@@ -564,13 +564,16 @@ fn open_editor_inner(
                                 ss.set_label("Fetching full-size cover…");
                                 let tx2 = tx2.clone();
                                 let cover_ref = cover_ref.clone();
-                                std::thread::spawn(move || {
-                                    let msg = match metadata::fetch_cover(&cover_ref) {
+                                crate::tasks::spawn(
+                                    move |_reporter| match metadata::fetch_cover(&cover_ref) {
                                         Ok(b) => FetchMsg::CoverReady(b),
                                         Err(e) => FetchMsg::CoverFailed(e.to_string()),
-                                    };
-                                    let _ = tx2.send_blocking(msg);
-                                });
+                                    },
+                                    |_update| {},
+                                    move |msg| {
+                                        let _ = tx2.send_blocking(msg);
+                                    },
+                                );
                             });
                             grid.insert(&btn, -1);
                         }
@@ -623,22 +626,29 @@ fn open_editor_inner(
             search_status.set_label("Searching…");
             let tx = tx.clone();
             // Blocking HTTP on a worker thread keeps the dialog responsive.
-            std::thread::spawn(move || {
-                let (list, errors) = metadata::search_all(sources, &query, 10);
-                let msg = if list.is_empty() && !errors.is_empty() {
-                    // Every source failed — surface why.
-                    FetchMsg::Failed(
-                        errors
-                            .iter()
-                            .map(|(id, e)| format!("{}: {e}", id.label()))
-                            .collect::<Vec<_>>()
-                            .join("  ·  "),
-                    )
-                } else {
-                    FetchMsg::Results(list, errors)
-                };
-                let _ = tx.send_blocking(msg);
-            });
+            // Through the seam (A0 step 4) so it is cancelled at shutdown
+            // rather than left holding an open socket.
+            crate::tasks::spawn(
+                move |_reporter| {
+                    let (list, errors) = metadata::search_all(sources, &query, 10);
+                    if list.is_empty() && !errors.is_empty() {
+                        // Every source failed — surface why.
+                        FetchMsg::Failed(
+                            errors
+                                .iter()
+                                .map(|(id, e)| format!("{}: {e}", id.label()))
+                                .collect::<Vec<_>>()
+                                .join("  ·  "),
+                        )
+                    } else {
+                        FetchMsg::Results(list, errors)
+                    }
+                },
+                |_update| {},
+                move |msg| {
+                    let _ = tx.send_blocking(msg);
+                },
+            );
         });
         let run2 = run.clone();
         search_btn.connect_clicked(move |_| run());
@@ -671,31 +681,44 @@ fn open_editor_inner(
 
             let tx = tx.clone();
             let sources = metadata::enabled_sources(&catalog_c);
-            std::thread::spawn(move || {
-                let (list, errors) = metadata::search_all(sources, &query, 12);
-                // Fetch small thumbnails so the grid appears quickly; the
-                // full-size image is only pulled once one is picked.
-                let mut found = Vec::new();
-                for cover in list.iter().filter_map(|c| c.cover.clone()).take(6) {
-                    if let Ok(bytes) = metadata::fetch_thumbnail(&cover) {
-                        found.push((cover, bytes));
+            crate::tasks::spawn(
+                move |reporter| {
+                    let (list, errors) = metadata::search_all(sources, &query, 12);
+                    // Fetch small thumbnails so the grid appears quickly; the
+                    // full-size image is only pulled once one is picked.
+                    //
+                    // Six sequential HTTP gets is the longest wait in this
+                    // dialog, so this is the one loop here worth making
+                    // cancellable: closing the window mid-search stops it
+                    // instead of downloading covers nobody will see.
+                    let mut found = Vec::new();
+                    for cover in list.iter().filter_map(|c| c.cover.clone()).take(6) {
+                        if reporter.cancelled() {
+                            break;
+                        }
+                        if let Ok(bytes) = metadata::fetch_thumbnail(&cover) {
+                            found.push((cover, bytes));
+                        }
                     }
-                }
-                let msg = if !found.is_empty() {
-                    FetchMsg::CoverChoices(found)
-                } else if !errors.is_empty() {
-                    FetchMsg::CoverFailed(
-                        errors
-                            .iter()
-                            .map(|(id, e)| format!("{}: {e}", id.label()))
-                            .collect::<Vec<_>>()
-                            .join("  ·  "),
-                    )
-                } else {
-                    FetchMsg::CoverFailed("no covers found for that title".into())
-                };
-                let _ = tx.send_blocking(msg);
-            });
+                    if !found.is_empty() {
+                        FetchMsg::CoverChoices(found)
+                    } else if !errors.is_empty() {
+                        FetchMsg::CoverFailed(
+                            errors
+                                .iter()
+                                .map(|(id, e)| format!("{}: {e}", id.label()))
+                                .collect::<Vec<_>>()
+                                .join("  ·  "),
+                        )
+                    } else {
+                        FetchMsg::CoverFailed("no covers found for that title".into())
+                    }
+                },
+                |_update| {},
+                move |msg| {
+                    let _ = tx.send_blocking(msg);
+                },
+            );
         });
     }
 
@@ -1020,42 +1043,45 @@ fn rebuild_results(
                 } else if let (Some(key), Some(id)) = (c.detail_key.clone(), c.source) {
                     let desc_view = desc_view.clone();
                     let status2 = status.clone();
-                    let (dtx, drx) = async_channel::bounded::<String>(1);
-                    std::thread::spawn(move || {
-                        let source: Box<dyn metadata::MetadataSource> = match id {
-                            metadata::SourceId::OpenLibrary => {
-                                Box::new(metadata::openlibrary::OpenLibrary)
-                            }
-                            metadata::SourceId::GoogleBooks => {
-                                Box::new(metadata::google_books::GoogleBooks {
-                                    api_key: String::new(),
-                                    country: metadata::google_books::detect_country(),
-                                })
-                            }
-                        };
-                        if let Ok(text) = source.fetch_description(&key) {
-                            let _ = dtx.send_blocking(text);
-                        }
-                    });
-                    gtk::glib::spawn_future_local(async move {
-                        if let Ok(text) = drx.recv().await {
+                    // Was a worker + its own channel + a local future, three
+                    // pieces to say "fetch this and set a label". One call now.
+                    crate::tasks::spawn(
+                        move |_reporter| {
+                            let source: Box<dyn metadata::MetadataSource> = match id {
+                                metadata::SourceId::OpenLibrary => {
+                                    Box::new(metadata::openlibrary::OpenLibrary)
+                                }
+                                metadata::SourceId::GoogleBooks => {
+                                    Box::new(metadata::google_books::GoogleBooks {
+                                        api_key: String::new(),
+                                        country: metadata::google_books::detect_country(),
+                                    })
+                                }
+                            };
+                            source.fetch_description(&key).unwrap_or_default()
+                        },
+                        |_update| {},
+                        move |text| {
                             if !text.trim().is_empty() {
                                 desc_view.buffer().set_text(&text);
                                 status2.set_label("Description filled — review, then Save.");
                             }
-                        }
-                    });
+                        },
+                    );
                 }
 
                 if let Some(cover_ref) = c.cover.clone() {
                     let tx = tx.clone();
-                    std::thread::spawn(move || {
-                        let msg = match metadata::fetch_cover(&cover_ref) {
+                    crate::tasks::spawn(
+                        move |_reporter| match metadata::fetch_cover(&cover_ref) {
                             Ok(bytes) => FetchMsg::CoverReady(bytes),
                             Err(err) => FetchMsg::CoverFailed(err.to_string()),
-                        };
-                        let _ = tx.send_blocking(msg);
-                    });
+                        },
+                        |_update| {},
+                        move |msg| {
+                            let _ = tx.send_blocking(msg);
+                        },
+                    );
                 }
             });
         }

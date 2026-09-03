@@ -1,7 +1,6 @@
 //! My Library → All books: search, sort, import, cover grid.
 
 use crate::db::{Catalog, SortKey};
-use crate::epub;
 use crate::models::Book;
 use crate::service::LibraryService;
 use crate::widgets::book_row::build_book_grid;
@@ -22,18 +21,14 @@ pub enum AllBooksMsg {
     SortChanged(SortKey),
     PickFiles,
     FilesChosen(Vec<PathBuf>),
-}
-
-/// Progress from the import worker.
-#[derive(Debug)]
-pub enum ImportProgress {
-    /// One file finished: 1-based index, total, and its title.
-    Step {
+    /// One file finished importing: 1-based index, total, and its title.
+    ImportStep {
         done: usize,
         total: usize,
         title: String,
     },
-    Finished(ImportTally),
+    /// The whole import finished.
+    ImportFinished(ImportTally),
 }
 
 #[derive(Debug, Default)]
@@ -43,6 +38,95 @@ pub struct ImportTally {
     pub errors: usize,
     pub restored: usize,
     pub last_title: String,
+}
+
+/// The one-line summary shown after an import finishes.
+///
+/// Lifted out of both pages because the two copies were byte-identical, and
+/// because it is the only part of the import worth asserting on in CI: the
+/// rest needs a display.
+pub fn import_summary(tally: &ImportTally) -> String {
+    let restored_note = if tally.restored > 0 {
+        format!(" {} kept your earlier metadata edits.", tally.restored)
+    } else {
+        String::new()
+    };
+    format!(
+        "Import done — {} added, {} already in library, {} failed.{restored_note}{}",
+        tally.imported,
+        tally.dupes,
+        tally.errors,
+        if tally.last_title.is_empty() {
+            String::new()
+        } else {
+            format!(" Last: {}", tally.last_title)
+        }
+    )
+}
+
+/// Import `paths` on a worker thread, reporting per file.
+///
+/// Shared by Home and All books: both had a byte-identical copy of this loop,
+/// so a fix to one silently missed the other.
+///
+/// `on_step` and `on_done` run on the main thread (see `crate::tasks`), which
+/// is what makes it safe for them to touch widgets. Note the failure path
+/// deliberately does *not* raise a toast from inside the worker — it collects
+/// the messages and hands them back, because `notify` from a worker is how
+/// import errors used to disappear (`docs/pitfalls.md` §4e).
+pub fn spawn_import(
+    catalog: Arc<Catalog>,
+    paths: Vec<PathBuf>,
+    on_step: impl Fn(usize, usize, String) + 'static,
+    on_done: impl FnOnce(ImportTally) + 'static,
+) {
+    let total = paths.len();
+    crate::tasks::spawn(
+        move |reporter| {
+            let mut tally = ImportTally::default();
+            let mut failures: Vec<(String, String)> = Vec::new();
+            for (i, path) in paths.iter().enumerate() {
+                // Importing a folder of a few hundred books is the longest
+                // job in the app; closing the window should stop it.
+                if reporter.cancelled() {
+                    break;
+                }
+                match crate::epub::import_epub(&catalog, path) {
+                    Ok(r) if r.duplicate => {
+                        tally.dupes += 1;
+                        tally.last_title = r.title.clone();
+                    }
+                    Ok(r) => {
+                        tally.imported += 1;
+                        if r.restored {
+                            tally.restored += 1;
+                        }
+                        tally.last_title = r.title.clone();
+                    }
+                    Err(err) => {
+                        tally.errors += 1;
+                        let name = path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        failures.push((format!("Could not import {name}"), format!("{err:#}")));
+                    }
+                }
+                reporter.step(i + 1, total, tally.last_title.clone());
+            }
+            (tally, failures)
+        },
+        move |update| on_step(update.done, update.total, update.detail),
+        move |(tally, failures)| {
+            // Back on the main thread, so raising toasts here is safe. The
+            // worker deliberately only *collects* them: a `notify` call from a
+            // worker thread is how import errors used to vanish.
+            for (title, detail) in &failures {
+                crate::notify::error(title, detail);
+            }
+            on_done(tally);
+        },
+    );
 }
 
 pub struct AllBooksModel {
@@ -60,7 +144,7 @@ impl Component for AllBooksModel {
     type Init = Arc<Catalog>;
     type Input = AllBooksMsg;
     type Output = AllBooksOut;
-    type CommandOutput = ImportProgress;
+    type CommandOutput = ();
 
     view! {
         #[root]
@@ -175,15 +259,15 @@ impl Component for AllBooksModel {
         ComponentParts { model, widgets }
     }
 
-    fn update_cmd_with_view(
+    fn update_with_view(
         &mut self,
         widgets: &mut Self::Widgets,
-        msg: Self::CommandOutput,
+        msg: Self::Input,
         sender: ComponentSender<Self>,
-        _root: &Self::Root,
+        root: &Self::Root,
     ) {
         match msg {
-            ImportProgress::Step { done, total, title } => {
+            AllBooksMsg::ImportStep { done, total, title } => {
                 // Only the counter moves per file; the list is rebuilt once at
                 // the end so a large import does not thrash the grid.
                 self.status = if title.is_empty() {
@@ -194,7 +278,7 @@ impl Component for AllBooksModel {
                 widgets.status_label.set_label(&self.status);
                 return;
             }
-            ImportProgress::Finished(tally) => {
+            AllBooksMsg::ImportFinished(tally) => {
                 self.importing = false;
                 self.reload();
 
@@ -209,39 +293,8 @@ impl Component for AllBooksModel {
                     );
                 }
 
-                // Say when edits came back, so a restored title does not look
-                // like the import ignored the file.
-                let restored_note = if tally.restored > 0 {
-                    format!(" {} kept your earlier metadata edits.", tally.restored)
-                } else {
-                    String::new()
-                };
-                self.status = format!(
-                    "Import done — {} added, {} already in library, {} failed.{restored_note}{}",
-                    tally.imported,
-                    tally.dupes,
-                    tally.errors,
-                    if tally.last_title.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" Last: {}", tally.last_title)
-                    }
-                );
+                self.status = import_summary(&tally);
             }
-        }
-
-        rebuild_list(&widgets.list, &self.books, &self.query, &sender);
-        self.update_view(widgets, sender);
-    }
-
-    fn update_with_view(
-        &mut self,
-        widgets: &mut Self::Widgets,
-        msg: Self::Input,
-        sender: ComponentSender<Self>,
-        root: &Self::Root,
-    ) {
-        match msg {
             AllBooksMsg::SearchChanged(q) => {
                 self.query = q;
                 self.status.clear();
@@ -306,42 +359,18 @@ impl Component for AllBooksModel {
                 self.status = format!("Importing 1 of {total}…");
 
                 let catalog = self.service.catalog().clone();
-                sender.spawn_command(move |out| {
-                    let mut tally = ImportTally::default();
-                    for (i, path) in paths.iter().enumerate() {
-                        match epub::import_epub(&catalog, path) {
-                            Ok(r) if r.duplicate => {
-                                tally.dupes += 1;
-                                tally.last_title = r.title.clone();
-                            }
-                            Ok(r) => {
-                                tally.imported += 1;
-                                if r.restored {
-                                    tally.restored += 1;
-                                }
-                                tally.last_title = r.title.clone();
-                            }
-                            Err(err) => {
-                                tally.errors += 1;
-                                let name = path
-                                    .file_name()
-                                    .map(|n| n.to_string_lossy().into_owned())
-                                    .unwrap_or_default();
-                                crate::notify::error(
-                                    &format!("Could not import {name}"),
-                                    &format!("{err:#}"),
-                                );
-                            }
-                        }
-                        out.send(ImportProgress::Step {
-                            done: i + 1,
-                            total,
-                            title: tally.last_title.clone(),
-                        })
-                        .ok();
-                    }
-                    out.send(ImportProgress::Finished(tally)).ok();
-                });
+                let step_sender = sender.clone();
+                let done_sender = sender.clone();
+                spawn_import(
+                    catalog,
+                    paths,
+                    move |done, total, title| {
+                        step_sender.input(AllBooksMsg::ImportStep { done, total, title });
+                    },
+                    move |tally| {
+                        done_sender.input(AllBooksMsg::ImportFinished(tally));
+                    },
+                );
             }
         }
 
@@ -438,4 +467,53 @@ fn rebuild_list(
         },
     );
     list.append(&grid);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_clean_import_reads_naturally() {
+        let tally = ImportTally {
+            imported: 3,
+            last_title: "Dune".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            import_summary(&tally),
+            "Import done — 3 added, 0 already in library, 0 failed. Last: Dune"
+        );
+    }
+
+    #[test]
+    fn restored_edits_are_called_out_but_only_when_there_were_some() {
+        // The note exists so a book that comes back with its old title does
+        // not look like the import ignored the file.
+        let none = ImportTally {
+            imported: 1,
+            ..Default::default()
+        };
+        assert!(!import_summary(&none).contains("kept your earlier"));
+
+        let some = ImportTally {
+            imported: 1,
+            restored: 1,
+            ..Default::default()
+        };
+        assert!(import_summary(&some).contains("1 kept your earlier metadata edits."));
+    }
+
+    #[test]
+    fn an_empty_title_leaves_off_the_last_clause() {
+        // Every file failing means there is no title to report; the summary
+        // should not trail off with a dangling "Last: ".
+        let tally = ImportTally {
+            errors: 2,
+            ..Default::default()
+        };
+        let text = import_summary(&tally);
+        assert!(text.ends_with("2 failed."), "got {text:?}");
+        assert!(!text.contains("Last:"));
+    }
 }

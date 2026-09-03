@@ -225,11 +225,19 @@ fn spawn_author_fetch(
     owned_books: Vec<Book>,
     sender: &ComponentSender<AuthorPageModel>,
 ) {
+    // A0 step 4. The old version posted straight into the input sender from
+    // the worker, which happens to be safe (relm4 senders are `Send`) but left
+    // the page with no way to be told to stop. Going through the seam means
+    // this fetch is registered and gets cancelled with everything else when
+    // the window closes.
     let tx = sender.input_sender().clone();
-    std::thread::spawn(move || {
-        let result = author::fetch_and_cache_author(&catalog, &author_name, &owned_books);
-        let _ = tx.send(AuthorPageMsg::Fetched(Box::new(result)));
-    });
+    crate::tasks::spawn(
+        move |_reporter| author::fetch_and_cache_author(&catalog, &author_name, &owned_books),
+        |_update| {},
+        move |result| {
+            let _ = tx.send(AuthorPageMsg::Fetched(Box::new(result)));
+        },
+    );
 }
 
 fn fill_author_page(

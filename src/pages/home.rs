@@ -1,5 +1,5 @@
 use crate::db::Catalog;
-use crate::pages::all_books::{ImportProgress, ImportTally};
+use crate::pages::all_books::{import_summary, spawn_import, ImportTally};
 use crate::service::LibraryService;
 use crate::widgets::book_row::{build_book_card, CARD_H, CARD_W};
 use gtk::prelude::*;
@@ -27,6 +27,14 @@ pub enum HomeMsg {
     AddBooks,
     AllBooks,
     FilesChosen(Vec<PathBuf>),
+    /// One file finished importing: 1-based index, total, and its title.
+    ImportStep {
+        done: usize,
+        total: usize,
+        title: String,
+    },
+    /// The whole import finished.
+    ImportFinished(ImportTally),
 }
 
 pub struct HomePageModel {
@@ -40,7 +48,7 @@ impl Component for HomePageModel {
     type Init = Arc<Catalog>;
     type Input = HomeMsg;
     type Output = HomeOut;
-    type CommandOutput = ImportProgress;
+    type CommandOutput = ();
 
     view! {
         #[root]
@@ -175,12 +183,39 @@ impl Component for HomePageModel {
 
     fn update_with_view(
         &mut self,
-        _widgets: &mut Self::Widgets,
+        widgets: &mut Self::Widgets,
         msg: Self::Input,
         sender: ComponentSender<Self>,
         root: &Self::Root,
     ) {
         match msg {
+            HomeMsg::ImportStep { done, total, title } => {
+                self.status = if title.is_empty() {
+                    format!("Importing {done} of {total}…")
+                } else {
+                    format!("Importing {done} of {total} — {title}")
+                };
+            }
+            HomeMsg::ImportFinished(tally) => {
+                self.importing = false;
+
+                if tally.imported > 0 {
+                    crate::notify::success(
+                        &format!(
+                            "{} book{} imported",
+                            tally.imported,
+                            if tally.imported == 1 { "" } else { "s" }
+                        ),
+                        &tally.last_title,
+                    );
+                }
+
+                self.status = import_summary(&tally);
+
+                // New books are in the catalog now; refresh this page so the
+                // counts / continue / recently-added cards reflect them.
+                rebuild(widgets, &self.service, &sender);
+            }
             HomeMsg::AllBooks => {
                 sender.output(HomeOut::AllBooks).ok();
             }
@@ -205,6 +240,7 @@ impl Component for HomePageModel {
                         .and_then(|w| w.downcast::<gtk::Window>().ok())
                 });
 
+                let s = sender.clone();
                 dialog.open_multiple(
                     window.as_ref(),
                     gtk::gio::Cancellable::NONE,
@@ -222,7 +258,7 @@ impl Component for HomePageModel {
                                 }
                             }
                             if !paths.is_empty() {
-                                sender.input(HomeMsg::FilesChosen(paths));
+                                s.input(HomeMsg::FilesChosen(paths));
                             }
                         }
                     },
@@ -240,97 +276,26 @@ impl Component for HomePageModel {
                 // part of the read-snapshot seam (they belong to the task
                 // manager, A0 step 4).
                 let catalog = self.service.catalog().clone();
-                sender.spawn_command(move |out| {
-                    let mut tally = ImportTally::default();
-                    for (i, path) in paths.iter().enumerate() {
-                        match crate::epub::import_epub(&catalog, path) {
-                            Ok(r) if r.duplicate => {
-                                tally.dupes += 1;
-                                tally.last_title = r.title.clone();
-                            }
-                            Ok(r) => {
-                                tally.imported += 1;
-                                if r.restored {
-                                    tally.restored += 1;
-                                }
-                                tally.last_title = r.title.clone();
-                            }
-                            Err(err) => {
-                                tally.errors += 1;
-                                let name = path
-                                    .file_name()
-                                    .map(|n| n.to_string_lossy().into_owned())
-                                    .unwrap_or_default();
-                                crate::notify::error(
-                                    &format!("Could not import {name}"),
-                                    &format!("{err:#}"),
-                                );
-                            }
-                        }
-                        out.send(ImportProgress::Step {
-                            done: i + 1,
-                            total,
-                            title: tally.last_title.clone(),
-                        })
-                        .ok();
-                    }
-                    out.send(ImportProgress::Finished(tally)).ok();
-                });
-            }
-        }
-    }
-
-    fn update_cmd_with_view(
-        &mut self,
-        widgets: &mut Self::Widgets,
-        msg: Self::CommandOutput,
-        sender: ComponentSender<Self>,
-        _root: &Self::Root,
-    ) {
-        match msg {
-            ImportProgress::Step { done, total, title } => {
-                self.status = if title.is_empty() {
-                    format!("Importing {done} of {total}…")
-                } else {
-                    format!("Importing {done} of {total} — {title}")
-                };
-            }
-            ImportProgress::Finished(tally) => {
-                self.importing = false;
-
-                if tally.imported > 0 {
-                    crate::notify::success(
-                        &format!(
-                            "{} book{} imported",
-                            tally.imported,
-                            if tally.imported == 1 { "" } else { "s" }
-                        ),
-                        &tally.last_title,
-                    );
-                }
-
-                let restored_note = if tally.restored > 0 {
-                    format!(" {} kept your earlier metadata edits.", tally.restored)
-                } else {
-                    String::new()
-                };
-                self.status = format!(
-                    "Import done — {} added, {} already in library, {} failed.{restored_note}{}",
-                    tally.imported,
-                    tally.dupes,
-                    tally.errors,
-                    if tally.last_title.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" Last: {}", tally.last_title)
-                    }
+                let step_sender = sender.clone();
+                let done_sender = sender.clone();
+                spawn_import(
+                    catalog,
+                    paths,
+                    move |done, total, title| {
+                        step_sender.input(HomeMsg::ImportStep { done, total, title });
+                    },
+                    move |tally| {
+                        done_sender.input(HomeMsg::ImportFinished(tally));
+                    },
                 );
-
-                // New books are in the catalog now; refresh this page so the
-                // counts / continue / recently-added cards reflect them.
-                rebuild(widgets, &self.service, &sender);
             }
         }
+
+        // Overriding `update_with_view` replaces relm4's default
+        // `update` + `update_view` pair, so nothing refreshes the `#[watch]`
+        // bindings unless we say so. Missing this left the status line and the
+        // "Importing…" button state frozen at their initial values.
+        self.update_view(widgets, sender);
     }
 }
 

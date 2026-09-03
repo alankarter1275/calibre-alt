@@ -118,7 +118,7 @@ impl Component for LookupHistoryModel {
         &mut self,
         widgets: &mut Self::Widgets,
         msg: Self::Input,
-        _sender: ComponentSender<Self>,
+        sender: ComponentSender<Self>,
         _root: &Self::Root,
     ) {
         match msg {
@@ -146,6 +146,10 @@ impl Component for LookupHistoryModel {
                 populate_list(&widgets.list_box, &self.lookups);
             }
         }
+
+        // Refreshes the `#[watch]` status line; overriding `update_with_view`
+        // means relm4 no longer calls this for us.
+        self.update_view(widgets, sender);
     }
 }
 

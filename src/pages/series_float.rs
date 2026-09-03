@@ -233,46 +233,45 @@ impl Component for SeriesFloatModel {
 
 /// Run the fetch on a worker thread and post the result back to GTK.
 ///
-/// Takes the sender by value: the spawned future must be `'static`, so it
+/// Takes the sender by value: the delivery closure must be `'static`, so it
 /// keeps its own clone.
+///
+/// A0 step 4: this used to hand-roll the worker, the `async_channel` and the
+/// local future — the exact three-part dance `tasks::spawn` now owns. Worth
+/// noting what the old version got wrong, because the seam makes it
+/// unrepresentable: `send()` on an `async_channel::Sender` returns a *future*,
+/// and nothing polls it on a plain worker thread, so `let _ = tx.send(..)`
+/// dropped every result on the floor and the receiver only woke when the
+/// sender dropped — surfacing successful fetches as "Fetch worker ended
+/// unexpectedly". `Reporter` and the result channel use `send_blocking`
+/// internally, so a caller cannot make that mistake here again.
 fn start_fetch(
     catalog: &Arc<Catalog>,
     series_name: &str,
     series_key: &str,
     sender: ComponentSender<SeriesFloatModel>,
 ) {
-    let (tx, rx) = async_channel::unbounded::<FetchResult>();
     let name = series_name.to_string();
     let key = series_key.to_string();
     let cat = catalog.clone();
 
-    std::thread::spawn(move || {
-        let result = fetch_and_cache(&cat, &name, &key);
-        // `send()` on an async_channel Sender returns a future: on this plain
-        // worker thread nothing polls it, so `let _ = tx.send(..)` dropped the
-        // result on the floor and the receiver only woke when `tx` dropped --
-        // surfacing every successful fetch as "Fetch worker ended
-        // unexpectedly". `send_blocking` is the sync-thread counterpart.
-        let _ = tx.send_blocking(result);
-    });
-
-    gtk::glib::spawn_future_local(async move {
-        let result = rx
-            .recv()
-            .await
-            .unwrap_or_else(|_| FetchResult::Err("Fetch worker ended unexpectedly.".into()));
-        let msg = match result {
-            FetchResult::Ok(works) => SeriesFloatMsg::Fetched {
-                works: Some(works),
-                error: None,
-            },
-            FetchResult::Err(detail) => SeriesFloatMsg::Fetched {
-                works: None,
-                error: Some(detail),
-            },
-        };
-        sender.input(msg);
-    });
+    crate::tasks::spawn(
+        move |_reporter| fetch_and_cache(&cat, &name, &key),
+        |_update| {},
+        move |result| {
+            let msg = match result {
+                FetchResult::Ok(works) => SeriesFloatMsg::Fetched {
+                    works: Some(works),
+                    error: None,
+                },
+                FetchResult::Err(detail) => SeriesFloatMsg::Fetched {
+                    works: None,
+                    error: Some(detail),
+                },
+            };
+            sender.input(msg);
+        },
+    );
 }
 
 /// Search, download covers, and cache the listing. Runs off the main thread.
