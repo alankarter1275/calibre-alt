@@ -958,7 +958,7 @@ button.kalam-float-read-more:hover {
  * is zero-sized, which trips `pixman_region32_init_rect: Invalid rectangle`. */
 .kalam-float-tags-scroll {
     margin-top: 0;
-    margin-bottom: 2px;
+    margin-bottom: 0;
     background: transparent;
 }
 
@@ -977,8 +977,11 @@ button.kalam-float-read-more:hover {
     background: transparent;
 }
 
+/* Tight against the tag row above it: the body already supplies 10px of
+ * spacing, and the description section takes all the slack, so extra padding
+ * here just reopens the gap the user asked to close. */
 .kalam-float-actions {
-    padding-top: 8px;
+    padding-top: 0;
 }
 
 button.kalam-float-read {

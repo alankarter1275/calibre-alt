@@ -125,6 +125,34 @@ slack, leaving a gap between two things that belong together. If several
 trailing rows should stay as a group, the spacer goes **above the whole group**,
 not between its members.
 
+## 4c. Ellipsising a label does not stop it widening its parent
+
+The book float kept growing sideways for long titles even though the title
+label had `EllipsizeMode::End` set. Ellipsize only decides how overflow is
+*drawn*; the label still reports its **entire** string as its natural width,
+and since `set_size_request` is a floor (see 3), the panel grew to grant it.
+
+**Do instead:** set `set_max_width_chars(n)`, which is what actually caps the
+natural width, and pair it with `hexpand: true` so the label is still allocated
+the real column width rather than being squeezed to `n` characters. Ellipsize
+or wrap then applies within that cap. The same applies to *wrapping* labels: a
+wrapping label with no cap asks for its whole text on one line.
+
+Backstop for a whole region: `set_overflow(gtk::Overflow::Hidden)` on the
+container, so a label added later cannot silently widen it again.
+
+## 4d. Slack is a resource — give it to something useful
+
+The first anchoring fix parked all the leftover height in a blank `vexpand`
+spacer. That worked, but it meant a panel with a short title showed a band of
+empty space while the description sat in a cramped scroller right next to it.
+
+**Do instead:** make the element that *benefits* from extra room the expanding
+one. Here `desc_section` carries the only `vexpand`, so it does both jobs at
+once — it pins everything below it to the bottom, and it donates the spare
+height to the description. A dedicated spacer is only right when nothing in the
+layout actually wants the space.
+
 ## 5. Never use `opacity` on a scrollbar
 
 `src/style.rs` opens with a warning block explaining that `opacity` below 1

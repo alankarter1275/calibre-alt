@@ -6,10 +6,22 @@
 //! **Fixed size, deliberately.** `set_size_request(720, 420)` in `app.rs` is a
 //! *floor*, not a size — GTK grows a widget past its request whenever content
 //! needs the room. Every variable-length child here is therefore bounded on
-//! purpose: the tag row scrolls, the title/series ellipsise, the author line is
-//! clipped, and the description section reserves a constant height in every
-//! branch. Removing any one of those bounds brings back "the panel changes size
-//! depending on the book". See `docs/pitfalls.md` §3 and §4.
+//! purpose: the tag row scrolls, the title wraps to two lines and then
+//! ellipsises, the series and fact labels ellipsise, the author line is
+//! clipped, and both side columns clip their overflow. Removing any one of
+//! those bounds brings back "the panel changes size depending on the book".
+//!
+//! Two traps in particular, both learned the hard way:
+//!
+//! - **Ellipsising a label does not stop it widening its parent.** The label
+//!   still reports the full string as its natural width. `max_width_chars` is
+//!   what actually caps it; ellipsize only decides how the overflow is drawn.
+//! - **Exactly one child carries `vexpand`** — `desc_section`. It absorbs all
+//!   the leftover height, which both keeps the tag row and action buttons
+//!   pinned to the bottom and hands the spare space to the description instead
+//!   of wasting it on a blank gap.
+//!
+//! See `docs/pitfalls.md` §3 and §4.
 
 use crate::db::Catalog;
 use crate::models::Book;
@@ -33,10 +45,27 @@ const AUTHOR_ROW_H: i32 = 22;
 const COVER_W: i32 = 120;
 const COVER_H: i32 = 176;
 const DESC_PREVIEW_CHARS: usize = 240;
-const DESC_PREVIEW_HEIGHT: i32 = 106;
+/// Floor for the text area itself. The scroller no longer caps its height —
+/// it expands — so there is no separate "preview height" any more: a collapsed
+/// description is bounded by DESC_PREVIEW_CHARS, not by pixels.
 const DESC_EXPANDED_HEIGHT: i32 = 154;
 const READ_MORE_HEIGHT: i32 = 20;
-const DESC_SECTION_HEIGHT: i32 = DESC_EXPANDED_HEIGHT + 10 + READ_MORE_HEIGHT;
+/// Floor for the description block. It is only a floor: the section carries
+/// `vexpand`, so it takes whatever the rest of the panel does not use — which
+/// is how a one-line title donates its spare row to the description instead of
+/// changing the panel's height.
+const DESC_SECTION_HEIGHT: i32 = DESC_EXPANDED_HEIGHT + 8 + READ_MORE_HEIGHT;
+/// The title wraps to at most this many lines, then ellipsises.
+const TITLE_MAX_LINES: i32 = 2;
+/// Caps the natural width of the fact values in the left column (publisher,
+/// published, format, progress). Same trap as the title: these labels wrap,
+/// and a wrapping label with no cap still asks for its whole text on one line,
+/// so a long publisher name widened the cover column and with it the float.
+const FACT_MAX_CHARS: i32 = 16;
+/// Caps the title's *natural* width. Without this a long title reports its
+/// whole length as the width it wants and widens the float, because the 720px
+/// in `app.rs` is a floor rather than a fixed size. See `docs/pitfalls.md` §3.
+const TITLE_MAX_CHARS: i32 = 30;
 
 #[derive(Debug)]
 pub enum BookFloatOut {
@@ -98,11 +127,15 @@ impl Component for BookFloatModel {
             set_hexpand: true,
             set_vexpand: true,
 
+            // `Overflow::Hidden` is the backstop for this column: the labels
+            // below are capped individually, but clipping here means anything
+            // added later cannot silently widen the float either.
             #[name = "cover_col"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Vertical,
                 add_css_class: "kalam-float-cover-col",
                 set_spacing: 16,
+                set_overflow: gtk::Overflow::Hidden,
                 set_hexpand: false,
                 set_vexpand: true,
                 set_halign: gtk::Align::Fill,
@@ -141,6 +174,8 @@ impl Component for BookFloatModel {
                             set_halign: gtk::Align::End,
                             set_valign: gtk::Align::Center,
                             set_height_request: 18,
+                            set_max_width_chars: FACT_MAX_CHARS,
+                            set_ellipsize: gtk::pango::EllipsizeMode::End,
                             set_xalign: 1.0,
                         },
                     },
@@ -181,6 +216,8 @@ impl Component for BookFloatModel {
                             set_halign: gtk::Align::Start,
                             set_valign: gtk::Align::Center,
                             set_height_request: 18,
+                            set_max_width_chars: FACT_MAX_CHARS,
+                            set_ellipsize: gtk::pango::EllipsizeMode::End,
                             set_margin_top: 0,
                             set_margin_bottom: 0,
                             set_xalign: 0.0,
@@ -209,6 +246,8 @@ impl Component for BookFloatModel {
                             set_halign: gtk::Align::Start,
                             set_valign: gtk::Align::Center,
                             set_height_request: 18,
+                            set_max_width_chars: FACT_MAX_CHARS,
+                            set_ellipsize: gtk::pango::EllipsizeMode::End,
                             set_margin_top: 0,
                             set_margin_bottom: 0,
                             set_wrap: true,
@@ -238,6 +277,8 @@ impl Component for BookFloatModel {
                             set_halign: gtk::Align::Start,
                             set_valign: gtk::Align::Center,
                             set_height_request: 18,
+                            set_max_width_chars: FACT_MAX_CHARS,
+                            set_ellipsize: gtk::pango::EllipsizeMode::End,
                             set_margin_top: 0,
                             set_margin_bottom: 0,
                             set_wrap: true,
@@ -264,18 +305,30 @@ impl Component for BookFloatModel {
                         set_spacing: 2,
                         set_hexpand: true,
 
-                        // One line, ellipsised. It used to wrap, so a long
-                        // title took two or three lines and pushed the whole
-                        // panel taller — the same "size varies by book" fault
-                        // as the tags. The full title is on the book page, and
-                        // the tooltip carries it here.
+                        // Up to TWO lines, then ellipsised.
+                        //
+                        // `set_max_width_chars` is the load-bearing line. A
+                        // `Label` with `ellipsize` still reports its *whole*
+                        // text as its natural width, and since the float's
+                        // 720px is a floor, that natural width pushed the
+                        // panel wider for a long title. Capping max-width-chars
+                        // caps the natural width; `hexpand` means the label is
+                        // still allocated the full column, so it wraps at the
+                        // real width rather than at 30 characters.
+                        //
+                        // Height is free to be one or two lines: `desc_section`
+                        // below expands, so the difference comes out of the
+                        // description instead of changing the panel's size.
                         #[name = "header_title"]
                         gtk::Label {
                             add_css_class: "kalam-float-title",
                             add_css_class: "kalam-title-serif",
                             set_halign: gtk::Align::Start,
-                            set_wrap: false,
-                            set_single_line_mode: true,
+                            set_hexpand: true,
+                            set_wrap: true,
+                            set_wrap_mode: gtk::pango::WrapMode::WordChar,
+                            set_lines: TITLE_MAX_LINES,
+                            set_max_width_chars: TITLE_MAX_CHARS,
                             set_ellipsize: gtk::pango::EllipsizeMode::End,
                             set_xalign: 0.0,
                         },
@@ -297,11 +350,18 @@ impl Component for BookFloatModel {
                             set_overflow: gtk::Overflow::Hidden,
                         },
 
-                        // Same reasoning as the title: one line, ellipsised.
+                        // One line, ellipsised — and capped the same way as
+                        // the title. Ellipsising alone does NOT stop a label
+                        // widening its parent: the label still reports the
+                        // full string as its natural width, and the float's
+                        // 720px is only a floor. A long series name was a
+                        // second way to stretch the panel sideways.
                         #[name = "series_val"]
                         gtk::Label {
                             add_css_class: "kalam-float-series",
                             set_halign: gtk::Align::Start,
+                            set_hexpand: true,
+                            set_max_width_chars: TITLE_MAX_CHARS,
                             set_wrap: false,
                             set_single_line_mode: true,
                             set_ellipsize: gtk::pango::EllipsizeMode::End,
@@ -329,18 +389,32 @@ impl Component for BookFloatModel {
                         set_halign: gtk::Align::Start,
                     },
 
+                    // This section takes ALL the leftover height in the body.
+                    //
+                    // It replaces the blank `vexpand` spacer that used to do
+                    // the anchoring: the slack has to go somewhere, and giving
+                    // it to the description is strictly better than leaving it
+                    // empty. Everything below is still pinned to the bottom for
+                    // exactly the same reason as before — one expanding child,
+                    // so nothing beneath it can drift.
+                    //
+                    // The height request is only a floor, and a small one, so
+                    // there is headroom for a two-line title.
                     #[name = "desc_section"]
                     gtk::Box {
                         set_orientation: gtk::Orientation::Vertical,
-                        set_spacing: 10,
+                        set_spacing: 8,
                         set_hexpand: true,
-                        set_vexpand: false,
+                        set_vexpand: true,
 
+                        // `vexpand` here too, so the text area absorbs the
+                        // section's growth and the button below is pushed to
+                        // the bottom edge instead of sitting under the text.
                         #[name = "desc_scroll"]
                         gtk::ScrolledWindow {
                             add_css_class: "kalam-float-desc-scroll",
                             set_hexpand: true,
-                            set_vexpand: false,
+                            set_vexpand: true,
                             set_hscrollbar_policy: gtk::PolicyType::Never,
 
                             #[name = "description"]
@@ -355,21 +429,17 @@ impl Component for BookFloatModel {
                             },
                         },
 
+                        // Sits at the bottom of the section. It used to be
+                        // followed by a `vexpand` spacer, which pushed the
+                        // button up against the text and wasted the rest of
+                        // the section on blank space.
                         #[name = "read_more_btn"]
                         gtk::Button {
                             add_css_class: "kalam-float-read-more",
                             set_halign: gtk::Align::Start,
+                            set_valign: gtk::Align::End,
+                            set_vexpand: false,
                             connect_clicked => BookFloatMsg::ToggleDescription,
-                        },
-
-                        // Inert: `desc_section` is `vexpand: false` with a
-                        // fixed height, so this never actually claims slack.
-                        // The real bottom-anchoring is the spacer below, just
-                        // before the action row. Kept only because `fill()`
-                        // still toggles it per description state.
-                        #[name = "desc_section_spacer"]
-                        gtk::Box {
-                            set_vexpand: true,
                         },
                     },
 
@@ -396,16 +466,11 @@ impl Component for BookFloatModel {
                     // still occupies its height so the action buttons below
                     // sit in the same place for every book.
 
-                    // The spacer goes ABOVE the tags, not between the tags and
-                    // the buttons. Both need to be anchored to the bottom: put
-                    // the slack between them and the tags float up, leaving an
-                    // ugly gap over the action row. Here it pushes the tag row
-                    // and the buttons down together, so they keep their natural
-                    // 10px body spacing and the pair lands at a fixed position.
-                    gtk::Box {
-                        set_vexpand: true,
-                    },
-
+                    // No spacer here any more. `desc_section` above carries
+                    // `vexpand`, so it is the single expanding child and the
+                    // tags and buttons are still pinned to the bottom — but the
+                    // slack now goes into the description rather than into a
+                    // blank gap above the tag row.
                     #[name = "tags_scroll"]
                     gtk::ScrolledWindow {
                         add_css_class: "kalam-float-tags-scroll",
@@ -773,7 +838,6 @@ fn fill(
     // fixed position. Hiding it collapsed that space and moved the buttons.
     widgets.tags.set_visible(true);
     widgets.tags_scroll.set_visible(true);
-    widgets.desc_section_spacer.set_visible(false);
 
     let Some(book) = model.book.as_ref() else {
         widgets.header_title.set_label("Book not found");
@@ -846,23 +910,23 @@ fn fill(
             .read_more_btn
             .set_label(if expanded { "Show less" } else { "Read more" });
         if expanded {
-            widgets.desc_section_spacer.set_visible(false);
+            // Expanded: no max, so the text fills whatever height the
+            // section was given and scrolls past that. `max_content_height`
+            // would cap it below the space now available.
             widgets.desc_scroll.set_propagate_natural_height(false);
             widgets.desc_scroll.set_min_content_height(-1);
-            widgets
-                .desc_scroll
-                .set_max_content_height(DESC_EXPANDED_HEIGHT);
-            widgets.desc_scroll.set_height_request(DESC_EXPANDED_HEIGHT);
+            widgets.desc_scroll.set_max_content_height(-1);
+            widgets.desc_scroll.set_height_request(-1);
             widgets
                 .desc_scroll
                 .set_vscrollbar_policy(gtk::PolicyType::Automatic);
         } else {
-            widgets.desc_section_spacer.set_visible(true);
+            // Collapsed: the preview is a fixed number of characters, so
+            // there is nothing to scroll. No max either — the box simply
+            // fills its share and the short text sits at the top of it.
             widgets.desc_scroll.set_propagate_natural_height(false);
             widgets.desc_scroll.set_min_content_height(-1);
-            widgets
-                .desc_scroll
-                .set_max_content_height(DESC_PREVIEW_HEIGHT);
+            widgets.desc_scroll.set_max_content_height(-1);
             widgets.desc_scroll.set_height_request(-1);
             widgets
                 .desc_scroll
@@ -875,17 +939,14 @@ fn fill(
         // produced a tall panel. The section now reserves the same height it
         // does in every other branch, so the float is one size for every book.
         widgets.desc_section.set_height_request(DESC_SECTION_HEIGHT);
-        widgets.desc_section_spacer.set_visible(true);
         widgets.read_more_btn.set_visible(false);
         widgets.desc_scroll.set_propagate_natural_height(false);
         widgets.desc_scroll.set_min_content_height(-1);
-        widgets
-            .desc_scroll
-            .set_max_content_height(DESC_PREVIEW_HEIGHT);
+        widgets.desc_scroll.set_max_content_height(-1);
         widgets.desc_scroll.set_height_request(-1);
         widgets
             .desc_scroll
-            .set_vscrollbar_policy(gtk::PolicyType::Never);
+            .set_vscrollbar_policy(gtk::PolicyType::Automatic);
     }
 
     // No `.take(12)` any more: the row scrolls, so every tag can be shown
