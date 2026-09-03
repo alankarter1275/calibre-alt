@@ -649,3 +649,47 @@ Three cases that had to be reasoned about rather than assumed:
 The general shape: **an optimisation that skips work must be wrong in the safe
 direction.** Every ambiguous case here re-runs. Compare §16, where a preloader
 dropped work and nothing picked it back up — same failure, opposite cause.
+
+## 19. A test that passes on a machine where the bug cannot appear is not a test
+
+`docs/testing-a0-step5.md` told the user to check that `startup_dicts` prints
+*after* `window_shown`, to confirm the dictionary import had moved off the UI
+thread. They ran it and reported `startup_dicts 0.6 ms` printed **before**
+`window_shown 711.6 ms`.
+
+The build is correct. The instruction was not.
+
+The line prints when the work *finishes*. On a settled machine the packs
+installed months ago, so `install_bundled_dictionaries` early-outs on a pref in
+well under a millisecond — long before the window appears at ~700 ms. It
+therefore prints before `window_shown`.
+
+The fatal part: **it would have printed before `window_shown` on the broken
+build too.** Sub-millisecond work does not delay anything whether it runs on
+the UI thread or a worker. So the check produced the same output for a fixed
+build and a broken one — it had no power to distinguish them, which means it
+was never a test, just a line to read.
+
+What makes it a real test is forcing the condition the fix addresses:
+
+```bash
+XDG_DATA_HOME=/tmp/kalam-dicttest KALAM_TIMING=1 cargo run --release
+```
+
+An empty data dir means the dictionaries genuinely install (~2–3 s), so the
+ordering finally carries information. CI gets this for free by seeding a fresh
+library every run, which is exactly why CI *could* prove this fix while the
+user's machine could not.
+
+### The general rule
+
+Before writing a manual check, ask: **what would this print if the bug were
+still there?** If the answer is "the same thing", the check is worthless no
+matter how sensible it reads. A test needs a failing case that is reachable on
+the machine it runs on.
+
+Note the symmetry with §18. The thumbnail skip is the mirror image — it can
+*only* be verified on a settled library, and CI (always a first launch) can
+never show it. Two fixes in the same commit, each provable in exactly the
+environment where the other is invisible. Neither environment is "the" test
+environment; the question is always which one can make the bug appear.

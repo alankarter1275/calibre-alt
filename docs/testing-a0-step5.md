@@ -17,8 +17,8 @@ Confirmed on the user's machine (Arch, 139 books, release build):
 | 1 — the grid got lazy | **passed** |
 | 1b — Home and author covers | **passed** |
 | 1c(a) — thumbnail backfill goes quiet | **passed** — the `thumbs_backfilled` ladder was gone on a second launch |
-| 1c(a) — re-import brings it back once | not yet run |
-| 1c(b) — `startup_dicts` after `window_shown` | not yet run |
+| 1c(a) — re-import brings it back once | **passed** — ladder returned once, ran to `144` after five imports |
+| 1c(b) — `startup_dicts` off the UI thread | **test was wrong, rewritten** — needs a throwaway data dir, see below |
 | 2 — chapter turns | not yet run |
 | 3 — background work does not freeze the window | not yet run |
 | 4 — imports still behave | not yet run |
@@ -149,11 +149,6 @@ and checking each file, to do nothing.
 **What should happen now:** on a settled library those lines are **gone**.
 Nothing about thumbnails should be printed at all.
 
-> **Confirmed.** On a second launch of a settled 139-book library the ladder
-> was gone. This is the only evidence there will be for this fix — CI seeds a
-> fresh library on every run, so it always does the real work and the ladder
-> always appears there, correctly.
-
 Then import one book and restart. The ladder should come back once (the pass
 re-runs because the book count changed), and then go quiet again on the launch
 after that.
@@ -162,13 +157,47 @@ If the lines never stop appearing, the skip marker is not being written — the
 likely cause is a cover that cannot be thumbnailed, which deliberately prevents
 the marker being recorded.
 
-**b) `startup_dicts` should be after `window_shown`, not before.**
+> **Confirmed, both halves.** On a second launch of a settled 139-book library
+> the ladder was gone. After importing five more books it came back once and ran
+> to `144`, which is the marker noticing the library changed. This is the only
+> evidence there will be for this fix — CI seeds a fresh library on every run,
+> so it always does the real work and the ladder always appears there, correctly.
+>
+> Note that the returning pass printed no `thumbs_backfill_done` line. That is
+> right: the importer already writes a thumbnail for each new book, so the pass
+> found all 144 present and generated nothing. It re-checked, confirmed, and
+> recorded the new count.
 
-On your machine this reads `0.1 ms` because the dictionaries installed long
-ago, so there is nothing to feel. The line's *position* is the thing to check:
-it should now appear after `window_shown`, because the import moved to a
-background thread. CI proves the payoff on a genuine first run — 2.7 s of
-dictionary import that now lands behind the window instead of in front of it.
+**b) `startup_dicts` — ignore the line's position. My earlier instruction here
+was wrong.**
+
+This doc used to say "`startup_dicts` should now print *after* `window_shown`".
+That test does not work on your machine, and you should not read anything into
+it either way.
+
+Why it was wrong: the line prints when the dictionary work *finishes*. On your
+machine the packs installed months ago, so the work early-outs on a pref in
+about `0.6 ms` — far sooner than the window appears at ~700 ms. So it prints
+before `window_shown`. But it would *also* have printed before `window_shown`
+back when it ran on the UI thread, because 0.6 ms of work is invisible either
+way. **The check could never tell a fixed build from a broken one on a settled
+machine**, which makes it not a test.
+
+The real property is "it does not hold up the window", and the honest way to
+see that is to give the app a throwaway data directory so the dictionaries
+genuinely have to install:
+
+```bash
+XDG_DATA_HOME=/tmp/kalam-dicttest KALAM_TIMING=1 cargo run --release
+```
+
+That starts from an empty library and no dictionaries, so the import does its
+real ~2–3 s of work. **Now the order means something:** `window_shown` should
+come first, with `startup_dicts` landing seconds later. Delete `/tmp/kalam-dicttest`
+afterwards. Your real library lives in `~/.local/share/kalam` and is not touched.
+
+CI already shows this on every run, for the same reason — it seeds a fresh
+library, so `window_shown 116 ms` is followed by `startup_dicts 3739 ms`.
 
 ## Test 2 — chapter turns
 
