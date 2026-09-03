@@ -38,7 +38,9 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
   design decisions: [`docs/conversation.md`](./docs/conversation.md) ·
   known pitfalls: [`docs/pitfalls.md`](./docs/pitfalls.md) ·
   how to smoke-test the A0 changes and read the timing output:
-  [`docs/testing-a0.md`](./docs/testing-a0.md)
+  [`docs/testing-a0.md`](./docs/testing-a0.md) ·
+  **A0 steps 4+5 (background tasks + preloaders):
+  [`docs/testing-a0-step5.md`](./docs/testing-a0-step5.md)**
 
 ## What works now
 

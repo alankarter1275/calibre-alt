@@ -229,6 +229,10 @@ pub fn build_book_grid(
     shell.set_vexpand(false);
     shell.add_css_class("kalam-book-grid-shell");
 
+    // A0 step 5: the number that says whether deferring the covers worked.
+    // Before, this loop decoded every cover before it could return.
+    crate::timing::span("grid_build");
+
     for (i, book) in books.iter().enumerate() {
         let id = book.id;
         let f1 = on_full.clone();
@@ -249,6 +253,8 @@ pub fn build_book_grid(
     }
 
     shell.append(&grid);
+    crate::timing::span_end("grid_build");
+    crate::timing::note("grid_cards", books.len());
 
     // Frames from pages that have since been destroyed. Covers that never
     // decode -- a missing or corrupt file -- are never swapped, so without
@@ -259,11 +265,9 @@ pub fn build_book_grid(
     // first, so the top of the grid fills in while the user is still looking
     // at it. `warm_covers` calls back into `cache_decoded_cover`, which swaps
     // each image into its frame as it lands.
-    crate::preload::warm_covers(
-        crate::preload::ahead_of(books, 0, COVER_W, COVER_H),
-        COVER_W,
-        COVER_H,
-    );
+    let queued = crate::preload::ahead_of(books, 0, COVER_W, COVER_H);
+    crate::timing::note("covers_queued", queued.len());
+    crate::preload::warm_covers(queued, COVER_W, COVER_H);
 
     shell
 }
@@ -299,6 +303,13 @@ pub fn cover_widget(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
 /// covers on the UI thread before it could show anything; now it shows
 /// straight away and the images arrive as they are ready.
 pub fn cover_widget_deferred(path: Option<&Path>, w: i32, h: i32) -> gtk::Widget {
+    // A/B escape hatch: with the preloader off nothing would ever fill these
+    // frames, so fall all the way back to the old synchronous behaviour rather
+    // than leaving a grid of permanent placeholders.
+    if !crate::preload::preload_enabled() {
+        return cover_widget(path, w, h);
+    }
+
     let frame = new_cover_frame(w, h);
 
     if let Some(path) = path {

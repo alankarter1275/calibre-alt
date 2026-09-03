@@ -36,6 +36,28 @@
 
 use std::path::{Path, PathBuf};
 
+/// `KALAM_NO_PRELOAD=1` turns the cover preloader off: cards decode
+/// synchronously as they did before A0 step 5.
+///
+/// Same spirit as `KALAM_NO_WEBVIEW_POOL=1` — a one-variable way to A/B the
+/// change against `KALAM_TIMING=1` in a single session, and an escape hatch if
+/// deferred covers ever misbehave on a real machine.
+pub fn preload_enabled() -> bool {
+    preload_enabled_for(std::env::var_os("KALAM_NO_PRELOAD").as_deref())
+}
+
+/// The env-var rule as a pure function, so it is unit-testable without
+/// mutating process-wide state mid-test-run.
+fn preload_enabled_for(value: Option<&std::ffi::OsStr>) -> bool {
+    match value {
+        None => true,
+        // Unset-but-present and an explicit "0" both mean "leave it on", so a
+        // stray `KALAM_NO_PRELOAD=` in a shell profile cannot silently disable
+        // it.
+        Some(v) => v.is_empty() || v == "0",
+    }
+}
+
 /// How many covers to decode ahead. The grid shows six columns, so this is
 /// roughly the next three to four rows — enough to stay ahead of a scroll
 /// without spending the session decoding a 2,000-book library nobody scrolls.
@@ -97,7 +119,7 @@ fn source_for(cover: &Path, w: i32, h: i32) -> PathBuf {
 /// `covers` should already be trimmed to what is worth preloading — see
 /// [`ahead_of`]. Call this from the main thread.
 pub fn warm_covers(covers: Vec<PathBuf>, w: i32, h: i32) {
-    if covers.is_empty() {
+    if covers.is_empty() || !preload_enabled() {
         return;
     }
     crate::tasks::spawn_stream(
@@ -257,6 +279,18 @@ mod tests {
     fn write_png(path: &Path, w: u32, h: u32) {
         let buf = vec![90u8; (w * h * 3) as usize];
         image::save_buffer(path, &buf, w, h, image::ExtendedColorType::Rgb8).expect("write png");
+    }
+
+    #[test]
+    fn the_preloader_is_on_unless_explicitly_switched_off() {
+        use std::ffi::OsStr;
+        assert!(preload_enabled_for(None), "on by default");
+        assert!(
+            preload_enabled_for(Some(OsStr::new(""))),
+            "an empty value is not a request to disable it"
+        );
+        assert!(preload_enabled_for(Some(OsStr::new("0"))), "0 means on");
+        assert!(!preload_enabled_for(Some(OsStr::new("1"))), "1 disables");
     }
 
     #[test]
