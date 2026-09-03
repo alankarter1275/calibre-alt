@@ -205,6 +205,15 @@ shot "01-home"
 # Home -> All books. The app has no CLI navigation, so this is keyboard-driven
 # and inherently brittle; a wrong page is obvious in the image rather than
 # silently passing.
+# Navigation. The first working run produced three byte-identical screenshots
+# and no `grid_build` line at all, which means the keystrokes went nowhere and
+# every shot was Home. Two changes: give the window focus first (a freshly
+# mapped window under a headless compositor does not necessarily have it), and
+# verify afterwards rather than assume.
+swaymsg '[app_id=".*"] focus' >/dev/null 2>&1 \
+  || swaymsg focus >/dev/null 2>&1 || true
+say "focused: $(swaymsg -t get_tree | grep -c '"focused": true' || echo 0)"
+
 key Tab; key Tab; key Return
 for _ in $(seq 1 6); do sample_rss; sleep 1; done
 shot "02-after-nav"
@@ -212,6 +221,16 @@ shot "02-after-nav"
 # one: anything still grey here is a cover that is never coming.
 for _ in $(seq 1 12); do sample_rss; sleep 1; done
 shot "03-after-nav-settled"
+
+# Did we actually move? `grid_build` is only emitted by build_book_grid, so it
+# is proof the All-books page was reached. Without this check a harness that
+# photographs the same page three times reports success.
+if grep -q "grid_build" "$OUT/kalam.log" 2>/dev/null; then
+  say "navigation: reached a grid page (grid_build seen)"
+else
+  say "navigation: DID NOT REACH the grid -- every shot is probably Home."
+  say "  The keyboard route is brittle by design; see README-screenshots.md."
+fi
 
 say ""
 say "=== timing lines from the app ==="
@@ -227,6 +246,19 @@ say "=== did the covers actually load? ==="
 # for "did the covers appear", and it does not need a human to squint at a PNG.
 python3 docs/ci/check-shot.py "$OUT"/0*.png 2>&1 | tee -a "$REPORT" \
   || say "  (cover check failed to run)"
+
+say ""
+say "=== screenshot fingerprints ==="
+# Identical checksums mean the screen never changed -- the single cheapest
+# signal that navigation did nothing, and the one that would have caught this
+# on the first working run.
+md5sum "$OUT"/0*.png 2>/dev/null | sed 's/^/  /' | tee -a "$REPORT" \
+  || say "  (no shots to fingerprint)"
+
+say ""
+say "=== app stderr (non-timing lines) ==="
+grep -vE "^\[timing\]" "$OUT/kalam.log" 2>/dev/null | tail -20 | sed 's/^/  /' \
+  | tee -a "$REPORT" || say "  (none)"
 
 say ""
 say "=== peak memory ==="
