@@ -36,24 +36,56 @@ So "read online" needs:
 **Nothing about the reader itself has to change.** That is a good position to
 be in.
 
-## The one thing I would do differently
+## ~~The one thing I would do differently~~ — withdrawn, the user's model is better
 
-You said cleared *when you close the app*. I would suggest **keep it a little
-longer, and cap the total size.**
+I suggested keeping every temporary cache for a few days with a size cap,
+instead of deleting on close. **The user rejected it and was right.**
 
-Reason: you read three chapters, close the app, come back an hour later and
-want to carry on. Deleting on close means downloading it again. Since the
-pruning machinery already exists, "temporary caches die after a few days, or
-when the folder exceeds N MB, whichever comes first" costs nothing extra and
-behaves better.
+Their model is three explicit tiers rather than one automatic one:
 
-Still fully deleted, still never counted as part of your library, and a
-"clear now" button in settings. Just not aggressively.
+| What you did | What is kept |
+|---|---|
+| Just reading / browsing | nothing lasting |
+| **Save** | kept in the temp area, *not* a library book |
+| **Download** | a real book in your library |
 
-**Worth knowing:** downloading the whole EPUB to read one chapter is fine for a
-50k-word fic. For a 2,000-chapter Royal Road serial it is not. Those probably
-need per-chapter fetching instead, which is a different path — one more reason
-the trait needs a chapter-content verb even though AO3 does not need one.
+That is better than mine for a plain reason: **it is predictable.** Time-and-size
+pruning means the app decides what to keep, disk usage moves on its own, and
+"why is this still here / why did this vanish" has no answer a user can
+predict. An explicit Save is a decision you made and can see.
+
+It also dissolves the problem I was solving. My worry was "close the app, come
+back, have to re-download" — but that only bites if reading requires
+downloading the whole work up front. With per-chapter reading (below), casual
+reading never produces a big download to lose in the first place.
+
+**Two decisions that fit together.** Per-chapter reading makes browsing cheap;
+selective Save makes keeping deliberate. Either alone would be worse.
+
+### Open question this creates
+
+What exactly is the difference between **Save** and **Download**? Both keep the
+fic. Candidates: Save keeps it readable without cluttering the library, while
+Download makes it a full book with highlights, progress, shelves and
+auto-update. Or: Save is a bookmark that keeps the text, Download owns the
+file. Worth pinning down before either is built — the answer decides whether
+"saved" fics need their own screen.
+
+---
+
+## Per-chapter reading — decided
+
+Fetch chapters as you read them, rather than downloading the whole work to open
+it.
+
+Required, not merely nicer: a 2,000-chapter Royal Road serial cannot be
+downloaded to read one chapter. It also makes opening anything feel instant,
+and it is what makes the casual-reading tier above cost almost nothing.
+
+Consequence for the design: **the trait needs a fetch-one-chapter verb even
+though AO3 never uses it** — AO3 hands over a whole EPUB, so its implementation
+of that verb is unusual, not typical. Worth remembering when the trait is
+written, because designing it around AO3 alone would produce the wrong shape.
 
 ---
 
@@ -125,6 +157,11 @@ The costs are honest ones. AO3 sessions expire — roughly two weeks, longer wit
 "remember me", and users report unpredictable early logouts. So you would be
 re-logging-in periodically. And a session cookie is still a credential: anyone
 with your machine and the file can act as you until it expires.
+
+## Status: undecided — "we will see" (2026-09-04)
+
+Left open deliberately. Login is stage P7e, the last one, so this does not
+block anything. Recorded here so the argument does not have to be rebuilt.
 
 ## What I lean towards
 

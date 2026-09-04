@@ -163,33 +163,38 @@ architecture.
 
 **The agreed order — do not reorder without asking:**
 
-1. **A0 — Architecture & performance track** (◀ NEXT, detailed below):
-   measure → `LibraryService` behind `Catalog` → thumbnails at import +
-   async cover decode → task manager → preloaders → grid virtualization
-   *only if the numbers say so* → perf-budget CI test → **plugin-host seam
-   design** (the `Source` adapter API that P7/P9 depend on).
-2. **P6 — Downloads hub** (queue + folder watch; prerequisite for P7).
-4. **P7 — Fiction platform** (AO3 first, then FFN / Royal Road / ScribbleHub /
-   Webnovel) via **Lua source plugins** (AO3 native first to prove the trait —
-   `docs/source-seam.md` §9a, §11); native tag search (fandom, tags,
-   characters, ships, rating, status); download + offline reading; follow +
-   **auto-updater** (background scheduler; FFN-app-class).
-5. **Renderer vertical slice** — starts *alongside* P7, not after: custom
-   renderer on **cosmic-text** for fiction content (clean plugin output).
-   This is the **calibration milestone**: 2–4 weeks of sessions; if it takes
-   longer, stop and reassess before sinking months in.
-6. **P8 — Comics local** (image pager — decode + paint, no engine) and
+1. **A0 — Architecture & performance track** — ✅ **done 2026-09-04** except the
+   plugin seam. measure → `LibraryService` behind `Catalog` → thumbnails at
+   import + async cover decode → task manager → preloaders → grid
+   virtualization (the numbers did say so in the end: 502 MB → 247 MB, 434 ms →
+   12 ms) → perf-budget CI test (query counts, not milliseconds). The
+   **plugin-host seam** is designed in `docs/source-seam.md` and lands as code
+   with its first implementation, not before.
+2. **P6.5 — Libraries** ◀ **NEXT.** Pick the folder, keep several libraries,
+   switch between them, copy one to another machine and it opens.
+3. **P6 — Downloads hub** (queue + folder watch).
+4. **P8 — Comics local** (image pager — decode + paint, no engine) and
    **P9 — Manga platform** (same `Source` trait, `ContentKind::Images`;
-   MangaDex official API built in, scraped sites as Lua plugins,
-   then Komga/Kavita/OPDS clients, scraped sites later).
-6. **EPUB path** → custom renderer takes EPUBs: either a normalization
-   pipeline (lol_html + rules) or **stylo** (Firefox's CSS engine, via
-   chapbook — the approach chapbook proves); WebKit demoted to fallback for
-   exotic EPUBs (may be cut later). **Adopt quote-anchored locators
-   (LayeredLocator, chapbook's model) for annotations regardless** — it
-   fixes the auto-updater anchor risk (§11).
-7. **P10 — PDF** (MuPDF) · **P11 — Tools** · **P12 — Lua plugin system**
-   for the surfaces that rot (scrapers), with stable-API providers staying
+   MangaDex official API built in — moved here from P7 on 2026-09-04 — then
+   Komga/Kavita/OPDS clients, scraped sites as Lua plugins later).
+5. **P7 — Fiction platform** — **moved behind P8/P9 on 2026-09-04** at the
+   user's request while the design settles. A browsing *client*, not a
+   downloader: category browsing, author pages, the site's own sort orders,
+   search with full filters — with downloading as one thing you can do while
+   in there. Sources AO3 → Royal Road → Literotica → FFN (Webnovel dropped:
+   paywalled). Split into stages P7a–P7f; see that section.
+6. **Renderer vertical slice** — custom renderer on **cosmic-text** for fiction
+   content. The **calibration milestone**: 2–4 weeks of sessions; if it takes
+   longer, stop and reassess before sinking months in.
+7. **EPUB path** → custom renderer takes EPUBs: either a normalization pipeline
+   (lol_html + rules) or **stylo** (Firefox's CSS engine, via chapbook);
+   WebKit demoted to fallback for exotic EPUBs (may be cut later). **Adopt
+   quote-anchored locators (LayeredLocator, chapbook's model) for annotations
+   regardless** — note that P7's re-anchoring decision (match on the saved
+   highlight text) is the same idea arrived at independently, and the two
+   should converge rather than both being built.
+8. **P10 — PDF** (MuPDF) · **P11 — Tools** · **P12 — Lua plugin system** for
+   the surfaces that rot (scrapers), with stable-API providers staying
    built-in; **not** a marketplace (`docs/source-seam.md` §0, §9a).
 
 **Locked decisions (full reasoning in `docs/conversation.md`):**
@@ -279,7 +284,7 @@ P7  Fiction platform ── AO3 first → FFN/RoyalRoad/etc.; Lua source
 P8  Comics local ────── CBZ/CBR + Moku-style comics reader (image pager)
 P9  Manga platform ──── Suwayomi-class sources, same Source trait
                         (MangaDex API built in; scrapers via Lua)
-P6.5 Libraries ──────── pick the folder, several of them, portable
+P6.5 Libraries ──────── pick the folder, several of them, portable  ◀ NEXT
 P10 PDF ─────────────── MuPDF in text-reader family + basic marks
 P11 Tools ───────────── convert (external), polish, Calibre import
 A0  Architecture track ─ service layer + task manager + preloaders +
@@ -1328,7 +1333,7 @@ runs — the constant that keeps appearing is the answer.
 
 ---
 
-## A0 — Architecture & performance track  ◀ NEXT
+## A0 — Architecture & performance track  ✅ done (except the plugin seam)
 
 **Status:** decided 2026-09-02 (design in `docs/conversation.md` §§1–3).
 **A0 is done apart from step 8, which is designed and lands with AO3 in P7.**
@@ -1577,15 +1582,16 @@ runs it on Arch.
 
 ---
 
-## P6.5 — Libraries: choose where books live, and have more than one  ◀ before P7
+## P6.5 — Libraries: choose where books live, and have more than one  ◀ NEXT
 
 **Goal:** Calibre-style libraries. You pick the folder. You can have several,
 completely separate from each other, and you switch between them. Copy the
 folder to another machine and it opens there.
 
-**Decided 2026-09-04.** Comes before P7 deliberately: P7 *adds books from new
-places*, this changes *where books live*, and doing both at once means a
-missing fic could be either one's fault.
+**Decided 2026-09-04. This is the next phase.** It was ordered before P7 because
+P7 *adds books from new places* while this changes *where books live*, and doing
+both at once means a missing fic could be either one's fault. P7 has since moved
+behind the comics phases, so the gap is wider still.
 
 ### Why this is not shelves
 
@@ -1646,7 +1652,69 @@ Full discussion: [`docs/libraries-and-portability.md`](./docs/libraries-and-port
 
 ---
 
-## P7 — Fiction platform (AO3 first, then more)
+## P8 — Comics local + Moku-style reader
+
+**Goal:** Local CBZ/CBR with a dedicated comics viewer.
+
+### Scope
+
+- Import CBZ/CBR into same catalog (`format = cbz|cbr`)  
+- **Comics reader UI (Moku reference — locked):**  
+  - Black immersive stage, art centered  
+  - Top bar: close, chapter/title, page `i / N`, zoom %  
+  - Bottom: scrubber, zoom, prev/next page  
+  - Page mode LTR/RTL; webtoon long-strip mode  
+  - Fit width / fit height  
+  - Tap center toggle chrome (optional)  
+- Memory-safe decode (viewport ± neighbors only)  
+- Progress per book  
+- Book page / float: **Read** routes to comics viewer when format is comic  
+
+### Out
+
+Remote catalogues (P9).
+
+### Arch check
+
+Open large CBZ, scrub pages, zoom, RTL, quit/restore page; RAM stays reasonable.
+
+---
+
+## P9 — Manga platform (Suwayomi-class)
+
+**Goal:** Browse/download manga into library → open in the P8 comics viewer.
+
+### Scope
+
+- **The same `Source` trait as P7**, with `ContentKind::Images` — see
+  [`docs/source-seam.md`](./docs/source-seam.md) §2. Same adapter shape as
+  Tachiyomi/Suwayomi extensions: search, chapter list, page fetch  
+- **No Suwayomi server rewrite:** Suwayomi's value is its Kotlin extension
+  ecosystem, which can't run in Rust; we reimplement the *adapter concept*
+  natively (porting an extension's scraping logic is hours — they are simple
+  scrapers). Optional later: a "Suwayomi server" adapter so Kalam can talk
+  to a user's existing Suwayomi instance via its API — the cheapest bridge
+  to the whole ecosystem  
+- Sources: MangaDex, Komga, Kavita, own archive, OPDS, … (legal /
+  self-hosted first)  
+- Downloads hub integration; per-source rate limits  
+- Reader is an **image pager** (P8) — no WebKit involved  
+
+### Policy
+
+Only sources you’re allowed to use. No unauthorized scraper assistance.
+
+---
+
+## P7 — Fiction platform (AO3 first, then more)  ◀ moved: now after P8/P9
+
+> **Reordered 2026-09-04, at the user's request:** *"push this step back at the
+> very last. this is a complex step and I am still working things out."* P7 now
+> runs **after the comics phases (P8, P9)** rather than before them. Two
+> reasons, and the second is the better one: the design is still moving, and
+> the `Source` trait gets proven on comics first — which is the flavour it has
+> never been tested against, since MangaDex was also moved into the comics
+> phase. Discussion continues in the meantime; nothing here is frozen.
 
 **Goal:** A FanFiction.net-app-class fiction **client** inside Kalam — not a
 downloader. Browsing, surfing and exploring the sites from inside the app:
@@ -1680,9 +1748,9 @@ can stop, reorder or change course without leaving a half-built thing.
   a browsing shape *first*; land them with AO3. Category/fandom browsing, the
   site's sort orders, search with AO3's full filter set in our own
   presentation. Ends with: you can wander AO3 inside Kalam.
-- **P7b — reading online.** Open a fic and read it without adding it to your
-  library. Temporary cache, "keep this" promotes it to a real book. Ends with:
-  Kalam is usable as a reading client.
+- **P7b — reading online.** Open a fic and read it per-chapter without adding
+  it to your library; **Save** keeps it in the temp area, **Download** promotes
+  it to a real book. Ends with: Kalam is usable as a reading client.
 - **P7c — author pages and sideways links.** Their works, favourites, follows,
   profile; series and collections. Ends with: you can follow a trail rather
   than only search.
@@ -1698,9 +1766,39 @@ can stop, reorder or change course without leaving a half-built thing.
 
 ### Reading online (decided 2026-09-04)
 
-**Read-online first**, download second. Opening a fic fetches it into a
-temporary cache and reads from there; a "keep this" action promotes it into the
-library.
+**Read-online first**, download second, and **per-chapter** rather than
+whole-work. Three explicit tiers, decided by the user:
+
+| What you did | What is kept |
+|---|---|
+| Just reading / browsing | nothing lasting |
+| **Save** | kept in the temp area, *not* a library book |
+| **Download** | a real book in your library |
+
+**Per-chapter fetching, not whole-work.** Required rather than merely nicer: a
+2,000-chapter Royal Road serial cannot be downloaded to read one chapter. It
+also makes opening anything feel instant, and it is what makes the casual tier
+cost almost nothing. **Consequence: the trait needs a fetch-one-chapter verb
+even though AO3 never uses it** — AO3 hands over a whole EPUB, so *AO3 is the
+unusual case*, not the template. Designing the trait around AO3 alone would
+produce the wrong shape.
+
+**An earlier suggestion of mine was withdrawn.** I proposed keeping every
+temporary cache for a few days with a size cap, instead of the user's
+delete-on-close. They rejected it in favour of the explicit Save tier above,
+and were right: time-and-size pruning means the *app* decides what to keep,
+disk usage moves on its own, and "why is this still here / why did it vanish"
+has no answer a user can predict. An explicit Save is a decision you made and
+can see. It also dissolved the problem I was solving — my worry was losing a
+big download by closing the app, which only bites if reading requires
+downloading the whole work up front, which per-chapter reading removes.
+
+**Still open:** what exactly separates **Save** from **Download**. Both keep
+the fic. Candidates: Save keeps it readable without cluttering the library,
+Download makes it a full book with highlights, progress, shelves and
+auto-update; or Save is a bookmark that happens to keep the text. Worth pinning
+down before either is built — the answer decides whether saved fics need their
+own screen.
 
 This costs less than it sounds: the reader **already** works this way. It never
 reads an EPUB directly — `EpubBook::open(epub, cache_dir)` unpacks into
@@ -1832,60 +1930,6 @@ Two refinements on the original idea:
 ### Out
 
 Piracy sources.
-
----
-
-## P8 — Comics local + Moku-style reader
-
-**Goal:** Local CBZ/CBR with a dedicated comics viewer.
-
-### Scope
-
-- Import CBZ/CBR into same catalog (`format = cbz|cbr`)  
-- **Comics reader UI (Moku reference — locked):**  
-  - Black immersive stage, art centered  
-  - Top bar: close, chapter/title, page `i / N`, zoom %  
-  - Bottom: scrubber, zoom, prev/next page  
-  - Page mode LTR/RTL; webtoon long-strip mode  
-  - Fit width / fit height  
-  - Tap center toggle chrome (optional)  
-- Memory-safe decode (viewport ± neighbors only)  
-- Progress per book  
-- Book page / float: **Read** routes to comics viewer when format is comic  
-
-### Out
-
-Remote catalogues (P9).
-
-### Arch check
-
-Open large CBZ, scrub pages, zoom, RTL, quit/restore page; RAM stays reasonable.
-
----
-
-## P9 — Manga platform (Suwayomi-class)
-
-**Goal:** Browse/download manga into library → open in the P8 comics viewer.
-
-### Scope
-
-- **The same `Source` trait as P7**, with `ContentKind::Images` — see
-  [`docs/source-seam.md`](./docs/source-seam.md) §2. Same adapter shape as
-  Tachiyomi/Suwayomi extensions: search, chapter list, page fetch  
-- **No Suwayomi server rewrite:** Suwayomi's value is its Kotlin extension
-  ecosystem, which can't run in Rust; we reimplement the *adapter concept*
-  natively (porting an extension's scraping logic is hours — they are simple
-  scrapers). Optional later: a "Suwayomi server" adapter so Kalam can talk
-  to a user's existing Suwayomi instance via its API — the cheapest bridge
-  to the whole ecosystem  
-- Sources: MangaDex, Komga, Kavita, own archive, OPDS, … (legal /
-  self-hosted first)  
-- Downloads hub integration; per-source rate limits  
-- Reader is an **image pager** (P8) — no WebKit involved  
-
-### Policy
-
-Only sources you’re allowed to use. No unauthorized scraper assistance.
 
 ---
 
@@ -2456,3 +2500,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-04 | **P7 sources settled: AO3 → Royal Road → Literotica → FFN, each proving something different.** Webnovel dropped — nearly everything worth reading sits behind their coin paywall, so a downloader gets a few free chapters and stops, and bypassing a paywall is out of scope. The ordering is deliberate rather than by popularity: **AO3 needs no text parsing at all**, because `download.archiveofourown.org/downloads/<id>/fic.epub` is a real EPUB that AO3 builds with Calibre and lists on their own FAQ, so scraping AO3 is only for *finding* things — which means AO3 alone would prove nothing about parsing. **Royal Road is second** because it is the first source where we build an EPUB ourselves, the biggest untested piece, and it is a gentle place to get that wrong. **Literotica** stresses the assumption that every source has neat chapters. **FFN is last and goes through FicHub, not scraping** — this is the finding that changed the plan. FFN sits behind Cloudflare and FanFicFare effectively abandoned it, but [FicHub](https://fichub.net/api) has a documented public API returning metadata plus a ready-made EPUB, and absorbs the Cloudflare problem on their side. Their conditions are conditions, not suggestions: identify the project in the user-agent with contact info, **never** concurrent requests, honour `429`/`Retry-After`, no bulk export. The dependency has to be visible in the UI, because if FicHub is down FFN silently stops working and the user deserves to know why. **The WebKit-as-fetcher idea is deferred, not rejected** — it was right when FFN looked impossible, and FicLab's extension proves the browser-session route works, but building a second fetching mechanism (heavier, slower, tied to the UI thread) cannot be justified when one JSON call does the job. It stays the fallback and the reasoning is recorded so it is not rediscovered from scratch. Also settled: **one shared EPUB assembler** rather than one per source, and highlights that survive an update by re-anchoring on their saved text. See [`docs/fichub-and-ffn.md`](./docs/fichub-and-ffn.md) |
 | 2026-09-04 | **P7 scope corrected: it is a browsing client, not a downloader — and FicHub does not solve FanFiction.net after all.** The user stopped the plan: *"not just a downloader, but surfing, exploring, etc."* They were right, and the tell had been sitting in `source-seam.md` §1 the whole time. Its four verbs — search → detail → chapters → content — **all begin from "I already know which work I want"**, which is a downloader's shape and cannot express wandering. Missing entirely: category and fandom browsing, author pages (their works, favourites, follows, profile), the site's own sort orders, your favourites and follows, series and collections, reviews. **The trait must be rewritten before anything is built**, because retrofitting a browse model onto a download-shaped API means changing every source and every screen. **The correction I most need to own: FicHub does not solve FFN.** I presented it as the answer one turn earlier. It has exactly two endpoints, `/api/v0/epub` and `/api/v0/meta`, and **both require a fic URL you already have** — no search, no browse, no author pages. So it solves *downloading* from FFN and does nothing for *browsing* it, which is most of this phase. My reasoning was sound only while the goal was downloading; the moment the goal is browsing, it collapses. **The WebKit-as-fetcher idea is therefore un-deferred the same day it was deferred** — browsing FFN means fetching FFN pages, means Cloudflare, means the browser engine we already ship. Best answer is probably both: WebKit for browsing, FicHub for the download once a fic is chosen. **Login also moves in-scope**, having been parked in `source-seam.md` §13 as "probably out of scope until someone asks" — someone asked, since favourites and follows live behind a site login, so credential storage needs doing properly. AO3, FFN and Literotica get full browsing; the trait must let other sources offer less without the UI breaking. P7 is now clearly several phases of work rather than one. Full write-up in [`docs/p7-scope-correction.md`](./docs/p7-scope-correction.md) |
 | 2026-09-04 | **P7 split into six stages; read-online decided; login pushed last and password storage ruled out; multiple-readers parked.** The phase is several phases of work, so it is now **P7a** trait+browse+search → **P7b** reading online → **P7c** author pages → **P7d** the other three sources → **P7e** accounts (if wanted) → **P7f** download/follow/auto-update. Note the inversion: downloading, which was the entire original plan, is now the *last* stage. **Read-online costs far less than expected** because the reader already works that way — it never reads an EPUB directly, it unpacks into `cache/reader/<uuid>/` and reads the unpacked files, and `prune_reader_cache` already sweeps old ones at startup. So the reader does not care whether the EPUB came from disk or the network; what is missing is a temporary identity for a non-library fic and a "keep this" promote action. Two refinements on the user's sketch: **do not delete on app close** (a few days or a size cap instead, so closing and returning an hour later does not re-download), and **very long serials cannot use this at all** — downloading a 2,000-chapter Royal Road work to read one chapter is not viable, so those need per-chapter fetching, which is why the trait still needs a chapter-content verb that AO3 will never use. **Writing actions are out entirely** — no kudos, bookmarking, posting or reading reviews — which keeps Kalam read-only against every source. **Login goes last and passwords are ruled out.** AO3's own mobile-apps post says that if a third-party app asks for your AO3 login you provide it *at your own risk*, and r/AO3 auto-replies with that link on every app question; it is a warning rather than a ban, but **we are that third party**, and there is no sanctioned route since AO3 still has no public API thirteen years after calling one "several major releases away". If accounts happen it is session-cookie-only, obtained by logging in through a real AO3 page in a WebKit window we never read the password from, stored in config rather than in a library folder so it cannot travel with copied books. Worth stating plainly: **Kalam's own follows already work across all four sources without an account**, which is a better feature than the site-side list login would buy. Also **parked for a later thread at the user's request: multiple books/readers open at once** — recorded in a new "Parked for later discussion" section so it is not rediscovered, and flagged as touching the reader, the WebView pool (which parks exactly one view today) and reading-session bookkeeping |
+| 2026-09-04 | **P7 moved behind the comics phases; P6.5 (libraries) is next; reading model settled as three tiers with per-chapter fetching.** The user: *"push this step back at the very last. this is a complex step and I am still working things out."* P7 now runs **after P8/P9** rather than before. Two reasons and the second is better: the design is still moving, and the `Source` trait gets proven against the **image** flavour first — which it has never been tested against at all, especially since MangaDex moved into the comics phase. Discussion continues; nothing is frozen. **Reading model.** Three explicit tiers: browsing keeps nothing, **Save** keeps a fic in the temp area without it becoming a library book, **Download** makes it a real book. Fetching is **per-chapter**, not whole-work — required, because a 2,000-chapter Royal Road serial cannot be downloaded to read one chapter. That has a design consequence worth writing down: **the trait needs a fetch-one-chapter verb that AO3 will never use**, because AO3 hands over a complete EPUB — so *AO3 is the unusual source, not the template*, and designing the trait around it would produce the wrong shape. **I withdrew a suggestion here and the user's model was better.** I had proposed keeping every temporary cache for a few days with a size cap instead of deleting on close; they rejected it for the explicit Save tier. They were right: time-and-size pruning means the *app* decides what to keep, disk usage drifts on its own, and "why is this still here, why did that vanish" has no answer a user can predict, whereas an explicit Save is a decision you made and can see. It also dissolved the problem I was solving — losing a big download by closing the app only bites if reading requires downloading the whole work first, which per-chapter reading removes. Still open and flagged: **what actually separates Save from Download**, since both keep the fic; the answer decides whether saved fics need their own screen. **Login stays undecided** ("we will see") and is unblocking, since it is the last stage. Also corrected while here: the top-of-file "agreed order" list was badly stale — it still showed A0 as NEXT (finished), P7 before comics, and Webnovel in scope |
