@@ -94,7 +94,14 @@ jobs:
           if git diff --quiet; then
             echo "rustfmt: clean"
             echo "dirty=0" >> "$GITHUB_OUTPUT"
-            rm -f ci-logs/rustfmt-latest.diff
+            # Leave a note rather than deleting the file. Deleting it only
+            # removed the working copy -- the stale diff stayed committed, so
+            # a later clean run still showed the previous run's complaint and
+            # read as an outstanding problem.
+            mkdir -p ci-logs
+            printf 'clean\n--- run %s ---\n' "$GITHUB_RUN_ID" \
+              > ci-logs/rustfmt-latest.diff
+            echo "dirty=1" >> "$GITHUB_OUTPUT"
           else
             echo "rustfmt: the tree is not formatted; diff follows"
             git diff | tee ci-logs/rustfmt-latest.diff
@@ -105,6 +112,8 @@ jobs:
           # than a locally reformatted copy.
           git checkout -- .
 
+      # Runs on clean runs too, so the published file always describes the
+      # latest run rather than the last untidy one.
       - name: publish the rustfmt diff
         if: steps.fmt.outputs.dirty == '1'
         run: |
