@@ -28,6 +28,34 @@ touching code:
 
 **Hard rules for every change you make:**
 
+- **Write and speak in plain, simple English.** This is a standing instruction
+  from the user, given 2026-09-04: *"I can't understand anything you said. I
+  need you to use easy and simple language to explain things."* It applies to
+  chat replies first, and to docs and comments too.
+
+  What that means in practice:
+
+  - **Explain the thing before naming it.** Not "the `PENDING_FRAMES` weak-ref
+    map breaks under recycling" — instead "each cover picture remembers which
+    book it belongs to. If we start reusing pictures for different books, a
+    slow-loading cover can land on the wrong book."
+  - **No unexplained jargon.** Words like *virtualization*, *refcount*,
+    *GObject*, *N+1*, *LRU* mean nothing on their own. Either say it in
+    ordinary words, or give a one-line explanation the first time.
+  - **Short sentences. One idea each.** Long sentences with three clauses and
+    two dashes are the main problem, not the vocabulary.
+  - **Lead with the answer**, then the reasoning. Do not make the user read a
+    wall of analysis to reach the recommendation.
+  - **Numbers need meaning.** Not "507 MB peak RSS at 2,000 books" on its own —
+    "it uses 507 MB of memory, which is a lot on a 4 GB machine."
+  - **When asking the user to choose, make the options concrete**: what changes
+    on screen, what could break, how long it takes.
+
+  Being simple is not the same as leaving things out. Keep the honesty, the
+  caveats and the numbers — just say them in words that do not need a glossary.
+  Note that this instruction is *about communication only*. It does not lower
+  the bar for the engineering, the testing, or the docs.
+
 - **Keep the docs current — always, in the same commit as the code.** When you
   finish a phase / feature / decision, update: README (status table),
   ROADMAP (phase status, changelog table, next steps), and
@@ -63,6 +91,10 @@ touching code:
 | **You** | (1) Apply workflow file changes when the agent asks (manual — App cannot push workflows). (2) Paste failed CI step logs when the agent cannot read them. (3) Run the app on Arch **once per completed phase** for UX feedback |
 
 You do **not** need to build between small commits. Only at phase boundaries.
+
+**How the agent should talk to you:** plain, simple English — see the "Write and
+speak in plain, simple English" rule in the "Read this first" block above. If a
+reply is hard to follow, say so; that is a bug in the reply, not in you.
 
 **Workflow files:** agent edits `docs/ci/github-actions-ci.yml` and gives copy
 instructions; you install into `.github/workflows/ci.yml`. See `docs/ci/README.md`.
@@ -2178,3 +2210,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-04 | **Owed write-ups paid: new pitfall §21, and the stale A0 step-7 claim corrected.** Two pieces of bookkeeping the repo's own hard rules require and I had skipped. **§21 — "when you fix the thing a check was watching, re-derive what the check proves"**, recording that my first `KALAM_ROUTE` verification reported `FAILED` on a run that had worked perfectly: the comparison asked "is the last shot different from the first", which was the right question while navigation happened *mid-run*, and became meaningless the moment the fix made the app navigate at *startup*. I changed the mechanism and carried the old oracle across unexamined. Filed as a sibling of §19 — that check couldn't tell a fixed build from a broken one by staying silent, this one couldn't either but cried wolf instead, and a check that fails on correct code is worse than no check because it teaches people to ignore it. **The A0 step-7 entry** asserted "CI has never reached the grid — `grid_build` appears in zero of the seven committed reports". True when written, false now: the 2026-09-04 run records `grid_build 28.9 ms` and `grid_cards 139` on a page proven distinct from Home. Corrected in place rather than deleted, because the *recommendation* it leads to (assert query counts, not milliseconds) is unaffected — the runner's ~60% timing variance is still the reason. What changed is only that step 7 is no longer blocked on CI being unable to reach the page. Flagged because `ROADMAP.md` tells every new chat to trust "Current trajectory" as *the* summary, so a stale line there sends someone off to solve a problem that no longer exists — the same failure recorded on 2026-09-03 when the A0 summary still said steps 4 and 5 were "not started" |
 | 2026-09-04 | **A0 step 6 (grid virtualization) REOPENED — peak memory at 2,000 books is 502 MB, not the 252 MB that closed it.** Full reasoning in [`docs/conversation.md`](./docs/conversation.md) §16. Step 6 was closed on 2026-09-03 on the finding that memory is *flat* in library size (233 MB at 139 books vs 252 MB at 2,000), so the grid does not scale badly and virtualization buys nothing. Those numbers were not mismeasured — they were **measured on a page that was never open.** The screenshot harness had never successfully navigated, so every run sampled Home. Fixing that (`KALAM_ROUTE`) changed the answer immediately: same job, same build, **226 MB before the grid was reached and 502 MB after**, with 255 MB at 139 books. Memory roughly doubles with library size, ~0.15 MB per card, for cards overwhelmingly off screen. **The cover LRU is not the cause and the earlier analysis of it was right** — that is precisely why this hid so well: a real bound was doing real work next to an unbounded cost, and made it invisible. The unbounded cost is `build_book_grid`, which constructs and attaches a widget tree for **every** book before returning. `grid_build 421 ms` at 2,000 books is now measured rather than extrapolated. **Not fixed in this pass, deliberately**: swapping `GtkGrid` for a recycling view touches the most-used screen in the app, the user is the only visual QA, and the approach should be agreed first. Corrected in all four live places (A0 summary, the step-6 entry, the step list, the phase-map diagram); the historical changelog rows are left standing as the record of what was believed when. **The lesson:** three roadmap entries revised the step-6 estimate, each more confident than the last, all three reasoning about output from a harness that never ran the code in question — and the tell (`grid_build` absent from every report) was in front of us each time |
 | 2026-09-04 | **A0 step 7 shipped — perf budgets that count SQL statements, not milliseconds.** The step as written said "seed 2,000 books; assert grid build under N ms", and that test could not have worked: the runner's wall-clock varies ~60% between identical runs (byte-identical dictionary work measured 2774 ms and 3740 ms on consecutive runs), so any ceiling loose enough to survive the noise would sail past a 2× regression. Worse, **slowness is not the bug that keeps happening here.** All three perf incidents in this repo — pitfalls §16, §18, and the cover preloader — were the same shape: a loop issuing one query per row. That is nearly invisible in a timing on a small library and fatal on a large one. So the budgets count statements. Six of them in `src/perf.rs`, using rusqlite's `trace` hook via a new `Catalog::count_queries`, and **deliberately not `#[ignore]`d** — unlike the two timing probes they sit beside, they run on every `cargo test` and gate CI, which is the entire point of a budget. **The assertions are comparisons, not literals.** Each runs the same call against a 20-book and a 60-book library and requires the counts to be *equal*; the absolute number is printed, never asserted. Hard-coding `assert_eq!(n, 2)` would bake in a free implementation choice (whether tags hydrate in one query or two), so a legitimate refactor would fail for no reason and teach the next person to edit the number until it passes — the count comparison can only be satisfied by genuinely not querying per row. Also covered: `library_stats` must serve its second call from the memo (0 statements) **and** must invalidate after a write, because a memo that never expires shows stale numbers on the dashboard. **Verified by sabotage, per §19** — a check that has never failed is not known to work. `hydrate_books` was temporarily reverted to a per-book tag query and pushed: CI went red on 4 of the 6 budgets while the other 270 tests passed, which is precisely the intended blast radius. Reverted in the following commit. This also clears the way for A0 step 6: grid virtualization now has a machine-independent before/after to be judged against, and **step 6 is the only A0 item left open** |
+| 2026-09-04 | **Standing instruction added: write and speak in plain, simple English.** The user, after a reply about grid memory: *"I can't understand anything you said. I need you to use easy and simple language to explain things. Infact add this instruction somewhere so that future chats will also follow it."* Recorded as a hard rule in the "Read this first" block, with a pointer from the working agreement, so it survives into every future chat rather than lasting one conversation. The rule spells out what actually went wrong, because "be clearer" is too vague to act on: **explain the thing before naming it** (not "the `PENDING_FRAMES` weak-ref map breaks under recycling" but "each cover picture remembers which book it belongs to; if pictures get reused for different books, a slow cover can land on the wrong one"), **no unexplained jargon** (*virtualization*, *refcount*, *GObject*, *N+1*, *LRU* mean nothing on their own), **short sentences with one idea each** — which was the real problem more than the vocabulary was — **lead with the answer** instead of making the user read the analysis to reach it, **give numbers meaning** ("507 MB, which is a lot on a 4 GB machine", not "507 MB peak RSS"), and **make choices concrete**: what changes on screen, what could break, how long it takes. Explicitly scoped: this is about *communication only*. It does not lower the bar for the engineering, the testing or the documentation — keep the caveats and the numbers, just say them in words that do not need a glossary |
