@@ -920,6 +920,19 @@ Every other auto-committing step in the same workflow already got this right:
 
 The rustfmt step predates them and was never brought in line.
 
+### The second cause, which was mine
+
+The race explanation above is real but incomplete, and the incomplete version
+sent me down another wrong path. There is a second, *deterministic* collision:
+the step immediately before rustfmt is **`Cargo.lock (generate and push if
+missing or stale)`**, which also pushes — a step I added earlier the same day.
+When it commits, rustfmt's bare push is rejected **every single time**, not
+intermittently.
+
+So an earlier fix of mine turned a rare flake into a reliable failure. Worth
+sitting with: adding a second writer to a branch is not a local change, it
+changes the failure rate of every other writer.
+
 ### Why it cost more than it should have
 
 The failure surfaces as "rustfmt failed", which reads as *your code is

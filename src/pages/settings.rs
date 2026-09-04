@@ -1037,11 +1037,11 @@ fn build_libraries(host: &gtk::Box) {
         host,
         "library-symbolic",
         "Libraries",
-        Some(
-            "A library is a folder holding its own books, covers and database. \
-             Books in one library do not appear in another. Copy the folder to \
-             another machine and it opens there.",
-        ),
+        Some(concat!(
+            "A library is a folder holding its own books, covers and database. ",
+            "Books in one library do not appear in another. Copy the folder to ",
+            "another machine and it opens there."
+        )),
     );
 
     if reg.libraries.is_empty() {
@@ -1173,8 +1173,10 @@ fn build_libraries(host: &gtk::Box) {
     setting_row(
         &body,
         "Add a library",
-        "Pick a folder. An empty folder starts a new library; an existing \
-         Kalam library folder is reopened.",
+        concat!(
+            "Pick a folder. An empty folder starts a new library; ",
+            "an existing Kalam library folder is reopened."
+        ),
         &add,
     );
 }
