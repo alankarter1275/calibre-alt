@@ -5,43 +5,40 @@ GitHub App has the `workflows` permission. The workflow body lives here instead:
 
 **Canonical file:** [`github-actions-ci.yml`](./github-actions-ci.yml)
 
-## ACTION NEEDED (2026-09-04): one new step, to commit `Cargo.lock`
+## ACTION NEEDED (2026-09-04, second one): measure the windowed grid
 
-`Cargo.lock` has been removed from `.gitignore`, but the lockfile itself does
-not exist yet and the agent cannot create it: the Arena sandbox has no network
-route to crates.io, so `cargo generate-lockfile` cannot run there. **Until this
-step is applied, nothing has actually changed** — CI keeps re-resolving every
-dependency on every run, which is what put `tinyvec 1.13.0` into a build that
-never asked for it and turned a green branch red.
+The A0 step 6 change (build only the book cards you can see) is in the code but
+**switched off by default** — it changes the most-used screen and nobody has
+looked at it yet. To find out whether it actually saves memory, CI has to run
+the 2,000-book library twice: once with the old grid, once with the new one.
 
 Copy [`github-actions-ci.yml`](./github-actions-ci.yml) over
-`.github/workflows/ci.yml` and push. The new step sits between *Cache cargo*
-and *rustfmt*, and mirrors the auto-push pattern rustfmt already uses:
+`.github/workflows/ci.yml` and push. It adds one step to the `scale` job, right
+after the existing 2,000-book run:
 
 ```yaml
-      - name: Cargo.lock (generate and push if missing or stale)
+      - name: run at 2000 books with the windowed grid
         run: |
-          cargo generate-lockfile
-          if git diff --quiet -- Cargo.lock && [ -z "$(git status --porcelain Cargo.lock)" ]; then
-            echo "Cargo.lock: unchanged"
-          else
-            echo "Cargo.lock: updating and pushing"
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
-            git add -f Cargo.lock
-            git commit -m "ci: update Cargo.lock [skip ci]"
-            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
-            git push origin "HEAD:$GITHUB_REF_NAME" || true
-          fi
+          BOOKS=2000 OUT=ci-shots-2000-windowed SETTLE=60 WINDOWED=1 \
+            docs/ci/screenshot.sh
 ```
 
-It commits on the first run and is silent on every run after that
-(`generate-lockfile` only writes when the manifest and the lock disagree), so
-it is not a permanent source of noise commits.
+and publishes a short side-by-side summary to
+`ci-logs/scale-2000-comparison.txt`.
 
-Once the lockfile is committed, the `tinyvec = ">=1.6, <1.13"` pin in
-`Cargo.toml` can come out: the lock is what holds the version, and the pin was
-only ever a stand-in for it.
+Both runs happen in the same job on the same machine, on purpose. Comparing
+against a number from a previous run would be comparing two different rented
+VMs, which is exactly the problem that made timing-based tests useless (see the
+A0 step 7 entry in the roadmap).
+
+Cost: the `scale` job takes about 2 minutes longer. It does not gate the build.
+
+---
+
+## Done: `Cargo.lock` step (applied 2026-09-04)
+
+The lockfile step is installed and has run — `Cargo.lock` is committed and the
+dependency graph is pinned. Nothing to do here; kept as a record.
 
 ## Working agreement (manual CI handoff)
 

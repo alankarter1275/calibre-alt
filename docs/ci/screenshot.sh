@@ -189,7 +189,12 @@ say "=== launching kalam ==="
 # times and still reported success.
 ROUTE="${ROUTE:-all-books}"
 say "requested route: $ROUTE"
-KALAM_ROUTE="$ROUTE" "$BIN" > "$OUT/kalam.log" 2>&1 &
+# WINDOWED=1 turns on the A0 step 6 windowed grid (KALAM_WINDOWED_GRID). It is
+# off in the app by default, so without this the job measures the old grid.
+# Passed through rather than hardcoded so one job can measure each.
+WINDOWED="${WINDOWED:-0}"
+say "windowed grid: $WINDOWED"
+KALAM_ROUTE="$ROUTE" KALAM_WINDOWED_GRID="$WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
 APP_PID=$!
 
 for _ in $(seq 1 "$SETTLE"); do
@@ -286,7 +291,7 @@ if [ "$ROUTE" != "home" ]; then
   # `sample_rss` uses `pgrep -n` (newest), so it follows this process too.
   # That keeps the peak-memory figure honest -- it is still the high-water
   # mark of a single kalam process, just possibly the second one.
-  KALAM_ROUTE=home "$BIN" > "$OUT/kalam-home.log" 2>&1 &
+  KALAM_ROUTE=home KALAM_WINDOWED_GRID="$WINDOWED" "$BIN" > "$OUT/kalam-home.log" 2>&1 &
   HOME_PID=$!
   for _ in $(seq 1 12); do sample_rss; sleep 1; done
   shot "04-home-for-comparison"
