@@ -6,12 +6,12 @@
 mod app;
 mod author;
 mod db;
-mod libraries;
 mod dict;
 mod epub;
 mod epub_book;
 mod epub_write;
 mod icons;
+mod libraries;
 mod metadata;
 mod models;
 mod notify;
