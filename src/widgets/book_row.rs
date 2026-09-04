@@ -998,10 +998,7 @@ mod tests {
 
         // At the bottom, never past the last row.
         let (_, last) = visible_rows((total * ROW_PITCH) as f64, 1000.0, total);
-        assert!(
-            last <= total - 1,
-            "built row {last}, past the end at {total}"
-        );
+        assert!(last < total, "built row {last}, past the end at {total}");
 
         // Scrolled far past the end: no rows, and crucially no panic and no
         // reversed range that would be read as "build everything".
