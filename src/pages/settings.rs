@@ -1157,11 +1157,21 @@ fn build_libraries(host: &gtk::Box) {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "Library".to_string());
 
+            // Say which of the two things just happened. "Added a library" is
+            // ambiguous between "started an empty one" and "found my books",
+            // and getting that wrong is alarming in one direction and
+            // confusing in the other.
+            let existing = crate::libraries::looks_like_a_library(&path);
+
             let mut reg = crate::libraries::load_registry();
             reg.add_or_select(&name, &path);
             match crate::libraries::save_registry(&reg) {
                 Ok(()) => crate::notify::info(
-                    "Library added",
+                    if existing {
+                        "Existing library found"
+                    } else {
+                        "New library created"
+                    },
                     &format!("“{name}” — restart Kalam to open it."),
                 ),
                 Err(err) => {

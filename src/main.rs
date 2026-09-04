@@ -44,6 +44,16 @@ fn main() {
     let style = adw::StyleManager::default();
     style.set_color_scheme(adw::ColorScheme::ForceDark);
 
+    // P6.5: put the pre-existing library into the library list, if it is not
+    // there already. Must run before anything calls `paths::data_dir()`, which
+    // caches the active library for the life of the process.
+    //
+    // Without this the user's own books are the one library that never appears
+    // in Settings — the app falls back to that folder, so everything works,
+    // but Open and Forget would apply to every library except theirs, and
+    // adding a second would make the first seem to disappear.
+    libraries::adopt_legacy_library_if_needed();
+
     // Ensure data dirs exist before the catalog is opened to read the theme.
     if let Err(err) = paths::ensure_data_dirs() {
         // Nothing will work if this failed, so say so on screen rather than

@@ -72,7 +72,17 @@ pub fn override_covers_dir() -> PathBuf {
     data_dir().join("covers")
 }
 
-/// `~/.local/share/kalam/authors` — cached author photos.
+/// Cached author photos.
+///
+/// Per-library, and that is a judgement call rather than an obvious one: these
+/// are fetched from the internet and would be identical in every library, so
+/// sharing them would save a little disk and a few refetches. They stay with
+/// the library because they are a *cache of this library's authors* — deleting
+/// a library should take its cached photos with it, and a shared folder would
+/// accumulate photos for authors nobody owns any more with nothing to prune
+/// it. Same reasoning for `series_covers_dir`. Cheap to revisit: both are
+/// caches, so moving them loses nothing but a refetch.
+///
 pub fn authors_dir() -> PathBuf {
     data_dir().join("authors")
 }
@@ -83,9 +93,30 @@ pub fn series_covers_dir() -> PathBuf {
     data_dir().join("series-covers")
 }
 
-/// `~/.local/share/kalam/dictionaries`
+/// Dictionaries — **shared by every library**, not stored inside one.
+///
+/// P6.5: this used to hang off `data_dir()`, which is now the *active
+/// library*. Left that way, switching library would look for dictionaries in
+/// the new folder, find none, and reinstall the bundled packs — about 4 MB
+/// compressed and a few seconds of work — once per library, for ever. A
+/// dictionary is a property of the installation, not of a shelf of books.
+///
+/// Lives under the shared root so an existing install keeps the packs it
+/// already has: the path is unchanged for anyone who has never switched
+/// library.
 pub fn dictionaries_dir() -> PathBuf {
-    data_dir().join("dictionaries")
+    shared_data_dir().join("dictionaries")
+}
+
+/// The root for things every library shares.
+///
+/// Always the classic location, never the active library. Kept separate from
+/// `legacy_data_dir()` by name even though they resolve alike today, because
+/// they answer different questions — "where does shared state live" versus
+/// "where did the single library used to live" — and a future change to one
+/// should not silently move the other.
+pub fn shared_data_dir() -> PathBuf {
+    legacy_data_dir()
 }
 
 /// `~/.local/share/kalam/cache/thumbs` — persistent cover thumbnails (A0 step 3).
@@ -117,14 +148,17 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
 }
 
 pub fn ensure_data_dirs() -> std::io::Result<()> {
+    // Per-library: these describe *these books* and live inside the library.
     fs::create_dir_all(data_dir())?;
     fs::create_dir_all(library_dir())?;
     fs::create_dir_all(data_dir().join("cache").join("reader"))?;
     fs::create_dir_all(thumbs_dir())?;
-    fs::create_dir_all(dictionaries_dir())?;
     fs::create_dir_all(override_covers_dir())?;
     fs::create_dir_all(authors_dir())?;
     fs::create_dir_all(series_covers_dir())?;
+
+    // Shared: installed once, used by every library. See `dictionaries_dir`.
+    fs::create_dir_all(dictionaries_dir())?;
     Ok(())
 }
 

@@ -312,6 +312,47 @@ mod tests {
     }
 }
 
+/// Does this folder already hold a Kalam library?
+///
+/// Judged by `catalog.db`, the one file a library cannot exist without. Not by
+/// the folder being non-empty: picking `~/Documents` by mistake should not be
+/// silently treated as "an existing library", and picking an empty folder is
+/// the normal way to start a new one.
+pub fn looks_like_a_library(path: &Path) -> bool {
+    path.join("catalog.db").is_file()
+}
+
+/// On first run, put the existing library into the list.
+///
+/// Before P6.5 there was exactly one library, in a fixed place, and the app
+/// still falls back to it when nothing is selected. That fallback works, but
+/// it leaves the user's own books as the one library that does not appear in
+/// the list — so "Forget" and "Open" would apply to every library except
+/// theirs, and adding a second would make the first seem to vanish.
+///
+/// Called once at startup. Does nothing if the registry already has entries,
+/// or if there is no old library to adopt (a genuinely new install).
+///
+/// Nothing is moved or copied. The folder stays exactly where it is; only the
+/// list learns about it.
+pub fn adopt_legacy_library_if_needed() {
+    let mut reg = load_registry();
+    if !reg.libraries.is_empty() {
+        return;
+    }
+    let legacy = crate::paths::legacy_data_dir();
+    if !looks_like_a_library(&legacy) {
+        return;
+    }
+    reg.add_or_select("My library", &legacy);
+    if let Err(err) = save_registry(&reg) {
+        // Not fatal: without a registry the app falls back to this very
+        // folder anyway, so the user still sees their books. They just will
+        // not see the library listed until the write succeeds.
+        eprintln!("kalam: could not record the existing library: {err}");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Global preferences — the settings that must NOT change when you switch
 // ---------------------------------------------------------------------------
@@ -465,6 +506,36 @@ mod global_pref_tests {
         // And the near-miss that started this: `theme` alone is NOT the app
         // theme -- the real key is `ui.theme`.
         assert!(!is_global_pref("theme"));
+    }
+
+    #[test]
+    fn a_library_is_recognised_by_its_catalog_file() {
+        // `catalog.db` is the one file a library cannot exist without.
+        // Deliberately not "the folder is non-empty": picking ~/Documents by
+        // mistake must not be treated as an existing library, and picking an
+        // empty folder is the normal way to start a new one.
+        let base = std::env::temp_dir().join(format!("kalam-libtest-{}", std::process::id()));
+        let empty = base.join("empty");
+        let real = base.join("real");
+        let busy = base.join("busy");
+        for d in [&empty, &real, &busy] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        std::fs::write(real.join("catalog.db"), b"x").unwrap();
+        std::fs::write(busy.join("notes.txt"), b"x").unwrap();
+
+        assert!(looks_like_a_library(&real));
+        assert!(
+            !looks_like_a_library(&empty),
+            "an empty folder starts a new library"
+        );
+        assert!(
+            !looks_like_a_library(&busy),
+            "a folder with unrelated files is not a library"
+        );
+        assert!(!looks_like_a_library(&base.join("does-not-exist")));
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
