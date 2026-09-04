@@ -892,3 +892,63 @@ broke had no coverage at all.
 proves". This is the neighbouring failure: **having tests for one half of a
 change is not having tests for the change.** The half with coverage was the
 half I found interesting, not the half most likely to be wrong.
+
+---
+
+## 23. A CI step that pushes must rebase, or it fails on someone else's commit
+
+Two runs in a row failed at `rustfmt (auto-fix and push if needed)`. Nothing
+was wrong with the code, and nothing was wrong with the formatting — the
+formatting had already been applied successfully. The step ended with:
+
+```yaml
+            git commit -m "style: rustfmt auto-fix"
+            git push
+```
+
+A bare `git push`, no rebase. Meanwhile the `screenshots` and `scale` jobs
+commit `ci-logs/` to the same branch. When one of those lands between this
+job's checkout and this step, the push is rejected, the step exits non-zero,
+and — because it has no `continue-on-error` — **the entire run fails.**
+
+Every other auto-committing step in the same workflow already got this right:
+
+```yaml
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+            git push origin "HEAD:$GITHUB_REF_NAME" || true
+```
+
+The rustfmt step predates them and was never brought in line.
+
+### Why it cost more than it should have
+
+The failure surfaces as "rustfmt failed", which reads as *your code is
+badly formatted*. I spent two pushes guessing at what rustfmt wanted and
+reformatting code by hand — including one commit whose entire message was a
+theory about a `matches!` arm. Both guesses were wrong, because there was
+nothing to fix.
+
+Two things would have cut that short:
+
+1. **Check whether the step's own action succeeded before assuming its subject
+   did.** `cargo fmt` ran fine; the *push* failed. The step name conflates the
+   two.
+2. **The diff was never published.** The sandbox cannot download Actions logs
+   (§ the whole reason `ci-logs/` exists), so a formatting failure said only
+   "failed" with no detail. Now the step writes
+   `ci-logs/rustfmt-latest.diff` — a check whose output cannot be read is
+   barely a check.
+
+### The rule
+
+**Any CI step that pushes to the branch must rebase first, and must not fail
+the build if the push loses a race.** More generally: when several jobs write
+to one branch, every writer needs the same conflict discipline. One that does
+not have it will fail intermittently, on a schedule that looks random and
+correlates with nothing in the diff.
+
+### Related
+
+§21 was about a check whose *verdict* stopped meaning anything after a change.
+This is the sibling: a check whose *failure mode* has nothing to do with what
+it checks. Both waste time by pointing the investigation at the diff.

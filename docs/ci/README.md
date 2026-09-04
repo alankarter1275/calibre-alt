@@ -5,6 +5,29 @@ GitHub App has the `workflows` permission. The workflow body lives here instead:
 
 **Canonical file:** [`github-actions-ci.yml`](./github-actions-ci.yml)
 
+## ACTION NEEDED (2026-09-04): rustfmt's push needs a rebase
+
+The `rustfmt (auto-fix and push if needed)` step ends with a bare `git push`.
+Other jobs commit `ci-logs/` to the same branch, so whenever one of those lands
+between this job's checkout and this step, the push is rejected — and since the
+step has no `continue-on-error`, **the whole run fails over formatting that was
+already applied successfully**. It reads as a code failure and is not one. It
+has now happened twice in a row.
+
+Copy [`github-actions-ci.yml`](./github-actions-ci.yml) over
+`.github/workflows/ci.yml` and push. Two changes to that one step:
+
+```yaml
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+            git push origin "HEAD:$GITHUB_REF_NAME"
+```
+
+matching what every other auto-committing step here already does, plus it now
+writes the formatting diff to `ci-logs/rustfmt-latest.diff` — the agent cannot
+download Actions logs, so "rustfmt failed" with no detail is unactionable.
+
+---
+
 ## Done: windowed-grid measurement (applied 2026-09-04)
 
 Installed and running. The `scale` job runs the 2,000-book library twice, once

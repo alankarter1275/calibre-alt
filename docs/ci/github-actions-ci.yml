@@ -63,6 +63,15 @@ jobs:
             git push origin "HEAD:$GITHUB_REF_NAME" || true
           fi
 
+      # Auto-fixes formatting and pushes the fix back.
+      #
+      # The push must rebase first. Earlier steps in *other* jobs commit
+      # ci-logs/ to the same branch, so a bare `git push` here fails whenever
+      # one of those landed between checkout and now — and because this step
+      # has no `continue-on-error`, that failed the whole run over formatting
+      # that had already been applied. It looked like a code problem and was
+      # not. Also publishes the diff, since the sandbox cannot read Actions
+      # logs and "rustfmt failed" with no detail is unactionable.
       - name: rustfmt (auto-fix and push if needed)
         run: |
           cargo fmt --all
@@ -70,11 +79,15 @@ jobs:
             echo "rustfmt: clean"
           else
             echo "rustfmt: formatting and pushing fix"
+            mkdir -p ci-logs
+            git diff > ci-logs/rustfmt-latest.diff || true
+            echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/rustfmt-latest.diff
             git config user.name "github-actions"
             git config user.email "github-actions@github.com"
             git add -A
             git commit -m "style: rustfmt auto-fix"
-            git push
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+            git push origin "HEAD:$GITHUB_REF_NAME"
           fi
 
       # The Arena sandbox cannot download Actions logs (the log host is
