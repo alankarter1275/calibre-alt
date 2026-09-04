@@ -364,7 +364,11 @@ fn visible_rows(scroll_top: f64, viewport_h: f64, total_rows: i32) -> (i32, i32)
     // A viewport height of 0 means GTK has not laid out yet. Guessing "no rows
     // are visible" would leave the page blank until the first scroll, so build
     // the top of the grid and let the first real measurement correct it.
-    let viewport_h = if viewport_h <= 1.0 { 1000.0 } else { viewport_h };
+    let viewport_h = if viewport_h <= 1.0 {
+        1000.0
+    } else {
+        viewport_h
+    };
     let scroll_top = scroll_top.max(0.0);
 
     let first = (scroll_top / ROW_PITCH as f64).floor() as i32 - OVERSCAN_ROWS;
@@ -994,7 +998,10 @@ mod tests {
 
         // At the bottom, never past the last row.
         let (_, last) = visible_rows((total * ROW_PITCH) as f64, 1000.0, total);
-        assert!(last <= total - 1, "built row {last}, past the end at {total}");
+        assert!(
+            last <= total - 1,
+            "built row {last}, past the end at {total}"
+        );
 
         // Scrolled far past the end: no rows, and crucially no panic and no
         // reversed range that would be read as "build everything".
