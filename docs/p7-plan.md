@@ -41,7 +41,17 @@ I want to flag: this is a big enough difference that the roadmap's phrasing
 
 ---
 
-## Question 1 — how search filters work
+## Question 1 — how search filters work — **DECIDED 2026-09-04**
+
+**Keep all of AO3's search, presented in our own way.** Every filter AO3 offers
+is available; the screen is ours to design, not a copy of their page.
+
+That means the trait must carry source-declared filters (AO3's set is too big
+and too specific to hard-code a common subset), but the *rendering* is Kalam's
+own, not a generic widget dump. My earlier suggestion of building only a few
+AO3 filters first is dropped — the user wants the full set.
+
+Original discussion kept below.
 
 `source-seam.md` §13 leaves this open and leans towards *source-declared
 filters*, Tachiyomi-style: the source describes its own filters and the UI
@@ -104,6 +114,16 @@ shelves.
 So the updater needs a replace path, not an import path: keep the `book_id`,
 swap the file, refresh the chapter list. Not hard, but it is real work and it
 is not currently in the roadmap's P7 scope list.
+
+### B. The annotation risk — **being solved, see `docs/p7-storage.md`**
+
+Decided 2026-09-04: highlights are re-anchored by searching the new chapter for
+the highlighted text, which we already store in `annotations.text_excerpt`.
+Ones that cannot be placed are kept and reported, never deleted. Details and
+the storage discussion that produced this are in
+[`docs/p7-storage.md`](./p7-storage.md).
+
+Original analysis below.
 
 ### B. The annotation risk is smaller than the roadmap implies, but real
 
@@ -174,13 +194,37 @@ stopped there, and that 3 is where the design risk lives.
 
 ---
 
-## Things I want your call on
+## Answers — 2026-09-04
 
-1. **Filters:** full generic system now, or AO3-shaped now and generalise at
-   the second source?
-2. **Update safety:** when a re-downloaded fic no longer lines up with the old
-   one, warn and skip, or replace anyway and accept losing highlights?
-3. **Scope:** is MangaDex part of P7, or does P7 end at "AO3 works well"?
-4. **Is the phase framed right?** The roadmap describes P7 as parsing chapter
-   content. For AO3 that is not needed. Should P7 be "AO3, done properly" with
-   other sites explicitly later?
+1. **Filters:** keep all of AO3's search, presented our way. Source-declared
+   filters in the trait; the screen is our design.
+2. **Update safety:** neither warn-and-skip nor accept-the-loss. Re-anchor
+   highlights by their saved text, keep and report the ones that cannot be
+   placed. See [`docs/p7-storage.md`](./p7-storage.md).
+3. **Scope:** MangaDex is **not** in P7 — it comes with the comics phase. So
+   P7 is text sources only, and the image half of the `Source` trait stays
+   unproven until then. Worth remembering: the two-variant `Content` enum is
+   designed but the image variant will have no implementation during P7, which
+   means it cannot land as code yet (`source-seam.md` §12, the same dead-code
+   rule that keeps the trait from landing alone).
+4. **Framing:** P7 is **AO3 plus a few other sites**, deliberately, so real
+   parsing is tested rather than assumed. AO3 alone would prove almost nothing
+   about parsing, since its EPUB endpoint means we never parse its text —
+   picking sites *without* a download endpoint is what makes the phase honest.
+
+### Follow-on question this raises
+
+Answer 4 means at least one source will have no EPUB endpoint, so for that one
+we **do** have to build an EPUB out of chapters. Two notes:
+
+- That is new code. `epub_write.rs` edits existing EPUBs; it cannot create one.
+  The zip library is already compiled with write support, so it is a contained
+  piece of work, not a new dependency.
+- It should be built once, shared, and not per source: a source hands back
+  chapter text, and one shared assembler turns chapters into an EPUB. Otherwise
+  every scraper reinvents it slightly differently.
+
+Which sites? Worth choosing on purpose rather than by habit. Royal Road and
+Scribble Hub are the usual companions to AO3 and both are plain HTML. FFN is
+the one people ask for and also the most hostile to automation, so it may be a
+poor second target even though it is an obvious one.
