@@ -990,6 +990,8 @@ fn build_paths(host: &gtk::Box) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
+    build_libraries(host);
+
     let body = section_card(
         host,
         "folder-symbolic",
@@ -1021,6 +1023,96 @@ fn build_paths(host: &gtk::Box) {
     for (title, sub, path) in items {
         setting_row(&body, title, sub, &path_box(&path));
     }
+}
+
+/// P6.5 — the libraries card: which library is open, and the ones you know.
+///
+/// Deliberately a plain list plus "Add", not a full manager. Switching
+/// re-launches rather than swapping underneath a running UI: pages hold open
+/// database handles and half-drawn covers, so repointing mid-session would
+/// leave them reading one library and writing to another.
+fn build_libraries(host: &gtk::Box) {
+    let reg = crate::libraries::load_registry();
+    let body = section_card(
+        host,
+        "library-symbolic",
+        "Libraries",
+        Some(
+            "A library is a folder holding its own books, covers and database. \
+             Books in one library do not appear in another. Copy the folder to \
+             another machine and it opens there.",
+        ),
+    );
+
+    if reg.libraries.is_empty() {
+        setting_row(
+            &body,
+            "Default library",
+            "No library has been chosen, so Kalam is using its original folder.",
+            &path_box(&crate::paths::legacy_data_dir().to_string_lossy()),
+        );
+    } else {
+        let active = reg.active;
+        for (i, lib) in reg.libraries.iter().enumerate() {
+            let open_now = active == Some(i);
+            setting_row(
+                &body,
+                &lib.name,
+                if open_now {
+                    "Open now"
+                } else {
+                    "Select to switch on next launch"
+                },
+                &path_box(&lib.path.to_string_lossy()),
+            );
+        }
+    }
+
+    // Adding a library is the one action wired up so far. Switching and
+    // forgetting need the relaunch flow and a confirmation, which come next.
+    let add = gtk::Button::with_label("Add library…");
+    add.add_css_class("kalam-btn-outlined");
+    add.set_valign(gtk::Align::Center);
+    add.connect_clicked(move |btn| {
+        // `FileDialog`, matching the rest of this file -- the older
+        // `FileChooserNative` needs the dialog kept alive by hand.
+        let dialog = gtk::FileDialog::builder()
+            .title("Choose a folder for the library")
+            .modal(true)
+            .build();
+        let window = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+        dialog.select_folder(window.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+            let Ok(folder) = res else { return };
+            let Some(path) = folder.path() else { return };
+
+            // Named after the folder: the user already chose a meaningful name
+            // when they picked where to put it, and asking twice for the same
+            // information is a step nobody wants.
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "Library".to_string());
+
+            let mut reg = crate::libraries::load_registry();
+            reg.add_or_select(&name, &path);
+            match crate::libraries::save_registry(&reg) {
+                Ok(()) => crate::notify::info(
+                    "Library added",
+                    &format!("“{name}” — restart Kalam to open it."),
+                ),
+                Err(err) => {
+                    crate::notify::error("Could not save the library list", &err.to_string());
+                }
+            }
+        });
+    });
+    setting_row(
+        &body,
+        "Add a library",
+        "Pick a folder. An empty folder starts a new library; an existing \
+         Kalam library folder is reopened.",
+        &add,
+    );
 }
 
 /// A mono path box; long paths ellipsize but stay selectable and have the
