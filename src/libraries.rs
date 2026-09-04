@@ -323,10 +323,7 @@ pub fn is_global_pref(key: &str) -> bool {
     // quietly stops following the user between libraries.
     if matches!(
         key,
-        "ui.theme"
-            | "dict_history_enabled"
-            | "dict_sense_hint"
-            | "epub.write_metadata"
+        "ui.theme" | "dict_history_enabled" | "dict_sense_hint" | "epub.write_metadata"
     ) {
         return true;
     }
