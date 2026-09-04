@@ -238,7 +238,8 @@ P9  Manga platform ──── Suwayomi-class sources, same Source trait
 P10 PDF ─────────────── MuPDF in text-reader family + basic marks
 P11 Tools ───────────── convert (external), polish, Calibre import
 A0  Architecture track ─ service layer + task manager + preloaders +
-                        thumbnails + source seam (virtualization closed)
+                        thumbnails + source seam (virtualization REOPENED
+                        2026-09-04: 502 MB at 2,000 books)
 P12 Lua plugins ─────── for surfaces that rot (scrapers, add-on metadata);
                         stable-API providers stay built-in Rust
 ```
@@ -1285,8 +1286,11 @@ runs — the constant that keeps appearing is the answer.
 ## A0 — Architecture & performance track  ◀ NEXT
 
 **Status:** decided 2026-09-02 (design in `docs/conversation.md` §§1–3).
-**Steps 1–5 are done and CI-green; step 6 is closed on measured evidence.
-Only steps 7 (perf-budget CI test) and 8 (plugin-host seam design) remain.**
+**Steps 1–5 are done and CI-green. Step 6 (grid virtualization) was closed on
+measured evidence and was REOPENED on 2026-09-04 — the measurement had been
+taken on a CI run that never reached the grid, and the real number at 2,000
+books is 502 MB, not the 252 MB that closed it. Steps 6, 7 (perf-budget CI
+test) and 8 (plugin-host seam design) are open.**
 A track, not a phase — interleaves with P6–P11.
 - **Step 1 (measure) — done.** Data layer (headless `src/perf.rs`) confirmed all
   list-page queries < ~20 ms for 2,000 books; GUI (`src/timing.rs`,
@@ -1357,12 +1361,36 @@ A track, not a phase — interleaves with P6–P11.
 - **Step 5 (preloaders) — done.** `src/preload.rs` + `tasks::spawn_stream`;
   covers decode off the UI thread and swap in per card, chapters are warmed on
   open and on every turn.
-- **Step 6 (grid virtualization) — CLOSED on evidence, 2026-09-03.** Both
-  things it would have fixed were measured and neither scales badly: build cost
-  is ~0.17 ms/card (~0.33 s at 2,000 books, and `grid_build` turned out to be
-  measuring widget construction, not cover work), and peak memory is **flat** —
-  233 MB at 139 books vs 252 MB at 2,000 — because the cover cache is a bounded
-  300-entry LRU. Reopen only if a real complaint arrives.
+- **Step 6 (grid virtualization) — ~~CLOSED~~ REOPENED 2026-09-04. The evidence
+  that closed it was measured on a run that never reached the grid.**
+  The original finding read: build cost ~0.17 ms/card, and peak memory **flat**
+  at 233 MB (139 books) vs 252 MB (2,000) because the cover cache is a bounded
+  300-entry LRU — so virtualization fixes nothing. Both halves of that came
+  from reports where `grid_build` never appears, because the screenshot harness
+  was sending Tab/Tab/Return and silently staying on Home (see pitfall §21).
+  **The memory figure was Home's, not the grid's.**
+  Now that `KALAM_ROUTE=all-books` makes CI actually open the page, the same
+  2,000-book job reports **502 MB** against 226 MB for the identical build
+  before the page was reached, and 255 MB at 139 books:
+
+  | Books | Grid reached? | Peak RSS |
+  |---|---|---|
+  | 139 | no (Home only) | 231 MB |
+  | 2,000 | no (Home only) | 226 MB |
+  | 139 | **yes** | 255 MB |
+  | 2,000 | **yes** | **502 MB** |
+
+  So memory is *not* flat in library size — it roughly doubles, +276 MB for
+  1,861 extra cards, ~0.15 MB per card. **The 300-cover LRU is not the leak
+  and was never the question**: it is working exactly as designed, and that is
+  the point — the cost is the 2,000 GTK widget trees themselves.
+  `build_book_grid` constructs one card per book unconditionally and attaches
+  them all before returning, so every book in the library holds live widgets
+  whether or not it is on screen. That is the precise thing virtualization
+  exists to fix, and the reason it was ruled out has evaporated.
+  Not yet fixed — recorded, with the correction, so the next decision is made
+  against real numbers. `grid_build 421 ms` at 2,000 books is also now a real
+  measurement rather than an extrapolation.
 - **Step 8 (plugin-host seam) — designed 2026-09-03**, written up in
   [`docs/source-seam.md`](./docs/source-seam.md). Code lands with AO3 in P7,
   deliberately (see the scope entry below).
@@ -1449,10 +1477,14 @@ fast — make it never wait"*) and lay the seams the source platform needs.
    `chapter_html`'s read is served from the page cache. Only the read is
    preloadable — the render needs a main-thread `WebView`, and the HTML
    depends on live theme/font settings, so a cached string would go stale.
-6. **Grid virtualization** — ❌ **closed 2026-09-03, the numbers did not earn
-   it.** ~0.17 ms/card build cost and flat peak memory (233 MB at 139 books,
-   252 MB at 2,000) because the cover cache is a bounded LRU. Reopen only on a
-   real complaint.
+6. **Grid virtualization** — ⚠️ **reopened 2026-09-04.** Closed on 2026-09-03
+   on "flat peak memory (233 MB at 139 books, 252 MB at 2,000)". Those runs
+   never reached the grid — the harness was stuck on Home and did not say so
+   (pitfall §21), so the flat number was Home's. With CI now opening the page:
+   **502 MB at 2,000 books** vs 255 MB at 139, i.e. ~0.15 MB per card for
+   widgets that are mostly off screen. The cover LRU is bounded and is not the
+   cause; `build_book_grid` builds and attaches a card for **every** book
+   before returning. `grid_build` is 421 ms at 2,000 books, measured.
 7. **Perf-budget CI test.** Seed 2,000 books; assert grid build under N ms.
    Catches regressions like a new `for book in books` loop.
 8. **Plugin-host seam design** (the dependency for P7/P9): ✅ **designed
@@ -2133,3 +2165,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-04 | **The screenshot job now asks the app where to go instead of guessing — new `KALAM_ROUTE` env var.** The harness had no way to say "open All books", so it sent Tab/Tab/Return and hoped the focus order matched. It did not: every run since the job was built photographed Home three times, including the run that reported the dictionary fix as verified. The report *said so* ("DID NOT REACH the grid"), which is the §19 self-reporting working — but the fix was left as "brittle by design", so the visual coverage the job exists to provide has never actually existed. `KALAM_ROUTE=all-books` navigates once the window is realized, alongside `KALAM_TIMING` / `KALAM_NO_CSS` / `KALAM_NO_PRELOAD` in the existing diagnostic-env-var convention — no argument parser, no new public surface to keep stable. Names are the words a person would say (`all-books`, `settings`, `analytics`), deliberately **not** the `Debug` spelling of the enum, so renaming a Rust variant cannot silently break every caller; an unknown name prints the known list and is ignored, because a typo in a CI script should not look like a crash. 4 tests, one of which asserts every advertised name resolves — a help message listing names that do not work is worse than no help. **The more important half is that the harness now fails loudly.** Three independent checks must agree: the app logged that it accepted the route, `grid_build` proves a grid actually rendered, and — the one that would have caught this on its own — `01-home.png` and `03-after-nav-settled.png` are compared and must differ. That evidence was already in the report as three identical `md5sum` lines and was read straight past, which is the real lesson: the check existed, nothing was gated on it |
 | 2026-09-04 | **The navigation fix worked; the check I wrote to verify it was wrong, and said FAILED on a working run.** First run with `KALAM_ROUTE=all-books`: route accepted, `grid_build 29.0 ms`, `grid_cards 139`. The page genuinely rendered — the thing that had never once happened before. But the report also said *"FAILED — 01-home and 03-after-nav-settled are byte-identical"*, because I kept the old comparison after changing what it was comparing. `KALAM_ROUTE` navigates at startup, so the shot named `01-home` **is already All-books**; all three shots match because they are correctly the same page. The check had encoded an assumption from the Tab/Tab/Return era that the fix itself made false. Two corrections. Files are now named after the route (`01-all-books`, not `01-home`) — the old names made the report lie twice, describing the wrong page *and* making a correct result look like a failure. And the differ-check now means something: it **relaunches with `KALAM_ROUTE=home`**, photographs Home as `04-home-for-comparison`, and asserts the requested page is not pixel-identical to it. That is the check that catches "the log claims it navigated but the screen never changed" — which the previous version could not, since it only ever compared a page to itself. The `grid_build` assertion is now conditional on the route actually being a grid, so `ROUTE=settings` does not cry wolf. Worth recording as the pattern rather than the incident: **when you fix the thing a test was watching, re-derive what the test now proves.** I changed the mechanism and carried the old oracle across unexamined, which is a close relative of §19 — the check ran, printed a confident verdict, and the verdict was noise |
 | 2026-09-04 | **Owed write-ups paid: new pitfall §21, and the stale A0 step-7 claim corrected.** Two pieces of bookkeeping the repo's own hard rules require and I had skipped. **§21 — "when you fix the thing a check was watching, re-derive what the check proves"**, recording that my first `KALAM_ROUTE` verification reported `FAILED` on a run that had worked perfectly: the comparison asked "is the last shot different from the first", which was the right question while navigation happened *mid-run*, and became meaningless the moment the fix made the app navigate at *startup*. I changed the mechanism and carried the old oracle across unexamined. Filed as a sibling of §19 — that check couldn't tell a fixed build from a broken one by staying silent, this one couldn't either but cried wolf instead, and a check that fails on correct code is worse than no check because it teaches people to ignore it. **The A0 step-7 entry** asserted "CI has never reached the grid — `grid_build` appears in zero of the seven committed reports". True when written, false now: the 2026-09-04 run records `grid_build 28.9 ms` and `grid_cards 139` on a page proven distinct from Home. Corrected in place rather than deleted, because the *recommendation* it leads to (assert query counts, not milliseconds) is unaffected — the runner's ~60% timing variance is still the reason. What changed is only that step 7 is no longer blocked on CI being unable to reach the page. Flagged because `ROADMAP.md` tells every new chat to trust "Current trajectory" as *the* summary, so a stale line there sends someone off to solve a problem that no longer exists — the same failure recorded on 2026-09-03 when the A0 summary still said steps 4 and 5 were "not started" |
+| 2026-09-04 | **A0 step 6 (grid virtualization) REOPENED — peak memory at 2,000 books is 502 MB, not the 252 MB that closed it.** Full reasoning in [`docs/conversation.md`](./docs/conversation.md) §16. Step 6 was closed on 2026-09-03 on the finding that memory is *flat* in library size (233 MB at 139 books vs 252 MB at 2,000), so the grid does not scale badly and virtualization buys nothing. Those numbers were not mismeasured — they were **measured on a page that was never open.** The screenshot harness had never successfully navigated, so every run sampled Home. Fixing that (`KALAM_ROUTE`) changed the answer immediately: same job, same build, **226 MB before the grid was reached and 502 MB after**, with 255 MB at 139 books. Memory roughly doubles with library size, ~0.15 MB per card, for cards overwhelmingly off screen. **The cover LRU is not the cause and the earlier analysis of it was right** — that is precisely why this hid so well: a real bound was doing real work next to an unbounded cost, and made it invisible. The unbounded cost is `build_book_grid`, which constructs and attaches a widget tree for **every** book before returning. `grid_build 421 ms` at 2,000 books is now measured rather than extrapolated. **Not fixed in this pass, deliberately**: swapping `GtkGrid` for a recycling view touches the most-used screen in the app, the user is the only visual QA, and the approach should be agreed first. Corrected in all four live places (A0 summary, the step-6 entry, the step list, the phase-map diagram); the historical changelog rows are left standing as the record of what was believed when. **The lesson:** three roadmap entries revised the step-6 estimate, each more confident than the last, all three reasoning about output from a harness that never ran the code in question — and the tell (`grid_build` absent from every report) was in front of us each time |

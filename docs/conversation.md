@@ -757,6 +757,59 @@ suite asserts IST and EST behaviour explicitly and is identical everywhere.
 
 ---
 
+## 16. A0 step 6 (grid virtualization) reopened — the evidence that closed it was measured on the wrong page (2026-09-04)
+
+Step 6 was closed on 2026-09-03 with an unusually confident entry: peak memory
+is **flat** in library size, 233 MB at 139 books versus 252 MB at 2,000, so the
+grid does not scale badly and virtualization fixes nothing. It was a good
+decision made from the numbers available.
+
+The numbers were wrong. Not mismeasured — **measured on a page that was never
+open.** The CI screenshot harness navigated by sending `Tab Tab Return` and
+had never once succeeded; every run photographed Home and sampled Home's
+memory. `grid_build` appears in none of those reports, which the roadmap
+itself noted as a curiosity without drawing the obvious conclusion: if the
+grid never built, the memory figure cannot describe the grid.
+
+Fixing navigation (`KALAM_ROUTE`, see pitfall §21) changed the measurement:
+
+| Books | Grid reached? | Peak RSS |
+|---|---|---|
+| 139 | no | 231 MB |
+| 2,000 | no | 226 MB |
+| 139 | **yes** | 255 MB |
+| 2,000 | **yes** | **502 MB** |
+
+Memory roughly doubles with library size. +276 MB for 1,861 additional cards
+is about **0.15 MB per card**, for cards that are overwhelmingly off screen.
+
+**What this is not.** It is not the cover cache. That is a bounded 300-entry
+LRU, it works, and the earlier analysis of it was correct — which is exactly
+why the flat-memory reading was so persuasive: there *was* a real bound doing
+real work, and it made an unbounded cost next to it invisible. The unbounded
+cost is the widgets. `build_book_grid` loops over every book, constructs a
+card, wraps it in a sizing cell and attaches it to the `GtkGrid` before
+returning. A 2,000-book library therefore holds 2,000 live widget trees.
+
+That is the textbook case for virtualization, and the sole reason it was ruled
+out has evaporated. Step 6 is **reopened**, and `grid_build 421 ms` at 2,000
+books is now a measurement rather than the extrapolation the estimates kept
+being revised against.
+
+**Not fixed in this pass, deliberately.** Replacing `GtkGrid` with a recycling
+view is a real change to the most-used screen in the app, the user is the only
+visual QA, and the correct next move is to agree the approach first. Recorded
+now so the decision is made against true numbers.
+
+**The lesson worth keeping.** Three separate roadmap entries revised the step-6
+estimate, each more confident than the last, and all three were reasoning about
+output from a harness that was not exercising the code under discussion. The
+tell was in every report — no `grid_build` line — and was read as noise. When a
+measurement settles an architectural question, check that the thing being
+measured actually ran.
+
+---
+
 *Last updated: 2026-09-04.*
 
 ---
