@@ -208,28 +208,37 @@ WINDOWS="$(swaymsg -t get_tree | grep -c '"app_id"' || true)"
 say "toplevel windows seen: $WINDOWS"
 swaymsg -t get_tree > "$OUT/tree.json" 2>/dev/null || true
 
-shot "01-home"
+# NOTE the file name. With KALAM_ROUTE the app opens on the requested page, so
+# this first shot is already "$ROUTE" -- it is NOT Home. Naming it 01-home
+# (as this script did until 2026-09-04) made the report lie twice over: it
+# described the wrong page, and it made the identical-fingerprint check look
+# like a navigation failure when the three shots were correctly the same page.
+shot "01-$ROUTE"
 
-# The app navigates itself now, so there is nothing to send. Focus is still
-# worth setting: without it some GTK paint paths behave differently under a
-# headless compositor, and an unfocused window is not what a user sees.
+# Focus is worth setting even though nothing needs keystrokes now: some GTK
+# paint paths differ on an unfocused window under a headless compositor, and
+# an unfocused window is not what a user sees.
 swaymsg '[app_id=".*"] focus' >/dev/null 2>&1 \
   || swaymsg focus >/dev/null 2>&1 || true
 say "focused: $(swaymsg -t get_tree | grep -c '"focused": true' || echo 0)"
 
 for _ in $(seq 1 6); do sample_rss; sleep 1; done
-shot "02-after-nav"
+shot "02-$ROUTE-settling"
 # Covers arrive in the background, so the interesting screenshot is the later
 # one: anything still grey here is a cover that is never coming.
 for _ in $(seq 1 12); do sample_rss; sleep 1; done
-shot "03-after-nav-settled"
+shot "03-$ROUTE-settled"
 
-# Three checks, because each catches a different way this can quietly fail.
+# --- did we actually render the requested page? ---------------------------
+#
+# Three checks, because each catches a different failure and the first two can
+# both pass while the screen is wrong.
 NAV_OK=1
 
-# 1. Did the app accept the route? It prints on both paths, so silence means
-#    a binary built before KALAM_ROUTE existed.
-if grep -q "KALAM_ROUTE=$ROUTE — navigating" "$OUT/kalam.log" 2>/dev/null; then
+# 1. Did the app accept the route? It prints on both paths, so silence means a
+#    binary built before KALAM_ROUTE existed.
+if grep -q "KALAM_ROUTE=$ROUTE" "$OUT/kalam.log" 2>/dev/null \
+   && ! grep -q "unknown route" "$OUT/kalam.log" 2>/dev/null; then
   say "navigation: app accepted route '$ROUTE'"
 elif grep -q "unknown route" "$OUT/kalam.log" 2>/dev/null; then
   say "navigation: FAILED -- app rejected '$ROUTE' as unknown"
@@ -240,35 +249,67 @@ else
   NAV_OK=0
 fi
 
-# 2. Did a grid actually build? Only build_book_grid emits this, so it is
-#    positive proof the page rendered rather than merely being asked for.
-if grep -q "grid_build" "$OUT/kalam.log" 2>/dev/null; then
-  say "navigation: grid_build seen -- a grid page rendered"
-else
-  say "navigation: WARNING -- no grid_build line."
-  say "  Expected for routes that are not grids; suspicious for '$ROUTE'."
-  NAV_OK=0
-fi
+# 2. Did a grid actually build? Only build_book_grid emits this, so for a grid
+#    route it is positive proof the page rendered rather than merely being
+#    asked for. Not every route is a grid, so this only judges the ones that
+#    are -- a blanket check would cry wolf on ROUTE=settings.
+case "$ROUTE" in
+  all-books|allbooks|reading-list|history|tags|shelves)
+    if grep -q "grid_build" "$OUT/kalam.log" 2>/dev/null; then
+      CARDS="$(grep "grid_cards" "$OUT/kalam.log" | tail -1 | awk '{print $NF}')"
+      say "navigation: grid rendered (grid_build seen, grid_cards=${CARDS:-?})"
+    else
+      say "navigation: FAILED -- '$ROUTE' is a grid page but no grid_build line"
+      NAV_OK=0
+    fi
+    ;;
+  *)
+    say "navigation: '$ROUTE' is not a grid page; no grid_build expected"
+    ;;
+esac
 
-# 3. Are the shots actually different? This is the check that would have
-#    caught the original defect on its own: three identical files mean the
-#    camera worked and nothing else did. Compared explicitly because the
-#    evidence was sitting in the directory listing last time and was read
-#    past (pitfalls §19).
-HOME_SUM="$(md5sum "$OUT/01-home.png" 2>/dev/null | cut -d" " -f1)"
-NAV_SUM="$(md5sum "$OUT/03-after-nav-settled.png" 2>/dev/null | cut -d" " -f1)"
-if [ -n "$HOME_SUM" ] && [ "$HOME_SUM" = "$NAV_SUM" ]; then
-  say "navigation: FAILED -- 01-home and 03-after-nav-settled are byte-identical."
-  say "  The app never left Home; every screenshot below shows the same page."
-  NAV_OK=0
-elif [ -n "$HOME_SUM" ]; then
-  say "navigation: screenshots differ, so the page did change"
+# 3. Does the requested page actually look different from Home?
+#
+#    This is the check that catches "everything above lied", and it needs a
+#    second launch to mean anything: with KALAM_ROUTE every shot in this run
+#    is the same page, so comparing them to each other proves nothing. The
+#    first version of this check did exactly that and reported FAILED on a
+#    working run -- three identical fingerprints are the *expected* result
+#    here, not a bug.
+#
+#    So: relaunch on Home, photograph it, and compare. If the pixels match,
+#    the app ignored the route no matter what its log claimed.
+if [ "$ROUTE" != "home" ]; then
+  kill "$APP_PID" 2>/dev/null || true
+  wait "$APP_PID" 2>/dev/null || true
+  sleep 2
+  # `sample_rss` uses `pgrep -n` (newest), so it follows this process too.
+  # That keeps the peak-memory figure honest -- it is still the high-water
+  # mark of a single kalam process, just possibly the second one.
+  KALAM_ROUTE=home "$BIN" > "$OUT/kalam-home.log" 2>&1 &
+  HOME_PID=$!
+  for _ in $(seq 1 12); do sample_rss; sleep 1; done
+  shot "04-home-for-comparison"
+  kill "$HOME_PID" 2>/dev/null || true
+
+  ROUTE_SUM="$(md5sum "$OUT/03-$ROUTE-settled.png" 2>/dev/null | cut -d" " -f1)"
+  HOME_SUM="$(md5sum "$OUT/04-home-for-comparison.png" 2>/dev/null | cut -d" " -f1)"
+  if [ -z "$ROUTE_SUM" ] || [ -z "$HOME_SUM" ]; then
+    say "navigation: could not compare against Home (a screenshot is missing)"
+    NAV_OK=0
+  elif [ "$ROUTE_SUM" = "$HOME_SUM" ]; then
+    say "navigation: FAILED -- '$ROUTE' is pixel-identical to Home."
+    say "  The app reported navigating but the screen never changed."
+    NAV_OK=0
+  else
+    say "navigation: '$ROUTE' differs from Home -- the page really did change"
+  fi
 fi
 
 if [ "$NAV_OK" = "1" ]; then
-  say "navigation: OK"
+  say "navigation: OK -- the images below are '$ROUTE'"
 else
-  say "navigation: NOT PROVEN -- treat the images below as Home until checked"
+  say "navigation: NOT PROVEN -- do not trust the page names below"
 fi
 
 say ""
@@ -310,7 +351,11 @@ fi
 
 say ""
 say "=== shutting down ==="
+# Both, and both tolerant of already being dead: the comparison launch kills
+# APP_PID and starts HOME_PID, so which of the two is still running depends on
+# whether that branch ran at all.
 kill "$APP_PID" 2>/dev/null || true
+kill "${HOME_PID:-}" 2>/dev/null || true
 swaymsg exit >/dev/null 2>&1 || true
 sleep 2
 kill "$SWAY_PID" 2>/dev/null || true
