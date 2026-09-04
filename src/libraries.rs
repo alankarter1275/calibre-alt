@@ -368,8 +368,11 @@ pub fn set_global_pref(key: &str, value: &str) -> std::io::Result<()> {
     std::fs::write(&tmp, json)?;
     std::fs::rename(&tmp, &final_path)?;
     Ok(())
+}
 
-    // -- the global / per-library split -----------------------------------
+#[cfg(test)]
+mod global_pref_tests {
+    use super::*;
 
     #[test]
     fn app_settings_are_shared_between_libraries() {

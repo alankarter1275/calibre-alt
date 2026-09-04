@@ -969,11 +969,39 @@ real source, and cannot fail the run. The agent applies the formatting in its
 next commit — which is where it belonged anyway, rather than arriving as a
 drive-by commit from CI that everyone then has to rebase around.
 
-### The rule
+### And then the real cause, which was none of the above
 
-**Any CI step that pushes to the branch must rebase first, and must not fail
-the build if the push loses a race.** Better still: **a cosmetic check should
-not be able to fail the build at all.** More generally: when several jobs write
+With the report-only step installed, it *still* failed — a step that only
+formats and prints. That is only possible if `cargo fmt` itself errors, and
+`cargo fmt` errors when the code **does not parse**.
+
+It did not parse. My script for appending tests finds the file's last `}` and
+splices before it. That is fine when the file ends with `mod tests`. This file
+had since grown new functions *after* its test module, so the last `}` belonged
+to `set_global_pref` — and 70 lines of `#[test]` functions were spliced **inside
+that function's body**.
+
+Braces still balanced, so my balance-checker said OK. Nothing looked wrong in a
+`tail`. It was invisible to every check I had, and the only thing that could see
+it was a parser.
+
+**Six runs**, and the first five were spent on a formatting step that was
+correctly reporting "this file is broken" in the only way it could.
+
+### The rules
+
+1. **Any CI step that pushes must rebase first, and must not fail the build if
+   the push loses a race.** Better still: **a cosmetic check should not be able
+   to fail the build at all** — while rustfmt could fail the run, it masked
+   clippy and the build entirely, so a syntax error hid behind a formatting
+   error for five runs.
+2. **Do not append code by locating the last brace.** Anchor on something that
+   identifies the *place* — the `mod tests {` line, a named marker — because
+   "the end of the file" stops meaning "the end of the test module" the moment
+   anything is added after it.
+3. **A balanced-brace check does not mean it parses.** Text surgery on source
+   needs a parser or a compiler; everything short of that will confirm a broken
+   file looks fine. More generally: when several jobs write
 to one branch, every writer needs the same conflict discipline. One that does
 not have it will fail intermittently, on a schedule that looks random and
 correlates with nothing in the diff.
