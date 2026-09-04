@@ -769,3 +769,61 @@ analogue: **what did the user actually say, and would their sentence still be
 true if I had decided the opposite?** Here it would — "not an ecosystem" is
 equally true with or without Lua, which is the tell that the sentence never
 settled the question.
+
+---
+
+## 21. When you fix the thing a check was watching, re-derive what the check proves
+
+The CI screenshot job had never actually navigated. It sent `Tab Tab Return`
+and hoped the focus order matched, and when it did not, three byte-identical
+photographs of Home were reported as a successful run. The fix was to let the
+app be told where to go (`KALAM_ROUTE=all-books`), and it worked on the first
+try: route accepted, `grid_build` emitted, 139 grid cards.
+
+The same run reported:
+
+```
+navigation: FAILED -- 01-home and 03-after-nav-settled are byte-identical.
+  The app never left Home; every screenshot below shows the same page.
+```
+
+That verdict was wrong, and I wrote it. The check compared the first
+screenshot to the last, which was the right question **while navigation
+happened part-way through the run** — the app started on Home, so a difference
+meant it had moved. `KALAM_ROUTE` navigates at *startup*. Every shot in the
+run is now the requested page, so the file named `01-home` was already
+All-books and all three fingerprints matching is the **expected** result.
+
+I changed the mechanism and carried the old oracle across without re-asking
+what it was testing. The check still ran, still printed a confident verdict,
+and the verdict was noise.
+
+Two things had to change, and the second is the one that matters:
+
+- **The filenames.** `01-home` described a page that was no longer Home, so
+  the report lied twice — wrong page name, and a correct result presented as
+  a failure.
+- **The comparison.** Proving "we are on All-books" needs something that is
+  *not* All-books to compare against. The job now relaunches with
+  `KALAM_ROUTE=home`, photographs Home as `04-home-for-comparison`, and
+  asserts the two differ. That catches the real failure — the log claiming it
+  navigated while the screen never changed — which comparing a page to itself
+  never could.
+
+### The rule
+
+**A check is a question about a mechanism. Change the mechanism and the
+question may no longer parse.** After any fix, re-read every assertion that
+watched the old behaviour and ask what each one now proves. An assertion that
+survives a refactor unexamined is not evidence that it still works; it is
+evidence that nobody looked.
+
+### Related
+
+This is §19 wearing different clothes. There the check could not distinguish a
+fixed build from a broken one; here it could not distinguish a fixed build
+from a broken one *either* — it just failed in the flattering direction
+instead, crying wolf rather than staying silent. Both failures come from not
+asking what the output would be in the other case. A check that reports
+failure on correct code teaches people to ignore it, which costs more than
+having no check at all.
