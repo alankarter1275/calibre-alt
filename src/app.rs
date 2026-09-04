@@ -1052,6 +1052,37 @@ impl Component for AppModel {
             .main_window
             .connect_realize(|_| crate::timing::now("window_shown"));
 
+        // `KALAM_ROUTE=<name>` navigates to a page once the window is up.
+        //
+        // This exists for the CI screenshot job, which had no way to ask for a
+        // page and so sent Tab/Tab/Return and hoped. That guesses the focus
+        // order, and when the guess was wrong the run still reported success
+        // while photographing Home three times -- a visual check that cannot
+        // tell "I navigated" from "I did nothing" is worth nothing
+        // (pitfalls §19). A named route removes the guess: the harness asks
+        // for `library`, and if the app does not go there the screenshot is
+        // wrong in a way somebody will see.
+        //
+        // Deliberately a diagnostic env var rather than a CLI flag or a
+        // D-Bus verb, matching KALAM_TIMING / KALAM_NO_CSS / KALAM_NO_PRELOAD:
+        // no argument parser, no new public surface to keep stable, and it
+        // costs one `var_os` on a path that already reads three others. An
+        // unknown name is reported and ignored rather than fatal -- a typo in
+        // a CI script should not look like an application crash.
+        if let Some(name) = std::env::var_os("KALAM_ROUTE") {
+            let name = name.to_string_lossy().to_string();
+            match route_by_name(&name) {
+                Some(route) => {
+                    eprintln!("kalam: KALAM_ROUTE={name} — navigating");
+                    sender.input(AppMsg::Push(route));
+                }
+                None => {
+                    eprintln!("kalam: KALAM_ROUTE={name} — unknown route, ignoring");
+                    eprintln!("  known: {}", known_route_names().join(", "));
+                }
+            }
+        }
+
         ComponentParts { model, widgets }
     }
 
@@ -1240,5 +1271,118 @@ fn update_nav_styles(container: &gtk::Box, active: NavItem) {
             }
         }
         child = widget.next_sibling();
+    }
+}
+
+/// The route a `KALAM_ROUTE=<name>` value refers to, if any.
+///
+/// Names are the lowercase page names a person would say out loud, not the
+/// `Debug` spelling of the enum: the CI harness and anyone debugging types
+/// these by hand, and coupling them to Rust identifiers would silently break
+/// every caller the next time a variant is renamed.
+///
+/// Only pages reachable without an id are listed. `BookPage` and `Reader` need
+/// a specific book, which a fixed name cannot supply.
+fn route_by_name(name: &str) -> Option<Route> {
+    let route = match name.trim().to_ascii_lowercase().as_str() {
+        "home" => Route::Module(NavItem::Home),
+        "library" => Route::Module(NavItem::Library),
+        "downloads" => Route::Module(NavItem::Downloads),
+        "comics" => Route::Module(NavItem::Comics),
+        "ao3" => Route::Module(NavItem::Ao3),
+        "fanfiction" => Route::Module(NavItem::Fanfiction),
+        "settings" => Route::Module(NavItem::Settings),
+        "shelves" => Route::ShelvesGrid,
+        "all-books" | "allbooks" => Route::LibrarySection(LibrarySection::AllBooks),
+        "reading-list" => Route::LibrarySection(LibrarySection::ReadingList),
+        "history" => Route::LibrarySection(LibrarySection::History),
+        "saved-quotes" => Route::LibrarySection(LibrarySection::SavedQuotes),
+        "saved-words" => Route::LibrarySection(LibrarySection::SavedWords),
+        "lookup-history" => Route::LibrarySection(LibrarySection::LookupHistory),
+        "tags" => Route::LibrarySection(LibrarySection::Tags),
+        "analytics" => Route::LibrarySection(LibrarySection::Analytics),
+        _ => return None,
+    };
+    Some(route)
+}
+
+/// Every name `route_by_name` accepts, for the error message. Kept next to it
+/// so the two cannot drift; a test asserts each one resolves.
+fn known_route_names() -> Vec<&'static str> {
+    vec![
+        "home",
+        "library",
+        "downloads",
+        "comics",
+        "ao3",
+        "fanfiction",
+        "settings",
+        "shelves",
+        "all-books",
+        "reading-list",
+        "history",
+        "saved-quotes",
+        "saved-words",
+        "lookup-history",
+        "tags",
+        "analytics",
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_advertised_route_name_resolves() {
+        // The error message lists these, so a name that appears there and then
+        // does not work is worse than no help at all.
+        for name in known_route_names() {
+            assert!(
+                route_by_name(name).is_some(),
+                "{name} is advertised but does not resolve"
+            );
+        }
+    }
+
+    #[test]
+    fn route_names_map_to_the_right_pages() {
+        // Spot-check across all three Route shapes, so a copy-paste slip
+        // between adjacent match arms is caught.
+        assert_eq!(route_by_name("home"), Some(Route::Module(NavItem::Home)));
+        assert_eq!(
+            route_by_name("settings"),
+            Some(Route::Module(NavItem::Settings))
+        );
+        assert_eq!(route_by_name("shelves"), Some(Route::ShelvesGrid));
+        assert_eq!(
+            route_by_name("all-books"),
+            Some(Route::LibrarySection(LibrarySection::AllBooks))
+        );
+        assert_eq!(
+            route_by_name("analytics"),
+            Some(Route::LibrarySection(LibrarySection::Analytics))
+        );
+    }
+
+    #[test]
+    fn route_names_tolerate_case_and_stray_whitespace() {
+        // These arrive from a shell variable, where a trailing space or a
+        // capital is a typo, not a different page.
+        let expected = Some(Route::LibrarySection(LibrarySection::AllBooks));
+        assert_eq!(route_by_name("All-Books"), expected);
+        assert_eq!(route_by_name("  all-books  "), expected);
+        assert_eq!(route_by_name("ALLBOOKS"), expected);
+    }
+
+    #[test]
+    fn unknown_route_names_are_rejected_not_guessed() {
+        // An unrecognised name must be `None` so the caller can say so.
+        // Silently falling back to Home is exactly the failure this whole
+        // mechanism exists to remove: the screenshot job would photograph
+        // Home and call it the library.
+        for name in ["", "libary", "book", "reader", "nav-Home", "Module(Home)"] {
+            assert_eq!(route_by_name(name), None, "{name:?} must not resolve");
+        }
     }
 }

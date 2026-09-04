@@ -425,13 +425,38 @@ fn collapse_ws(s: &str) -> String {
 }
 
 /// EPUB OPF descriptions are often HTML (`<p>`, `<b>`, …). Strip to plain text.
+///
+/// Whether removing a tag leaves a space behind depends on the tag, and
+/// getting that wrong is visible in the book description either way:
+///
+/// - **Block-level** tags are paragraph boundaries. Dropping `</p><p>` with no
+///   separator produced `…a great book.Really.` — two sentences run together
+///   with no space. Publishers very often write descriptions as a single line
+///   of HTML with no newline between paragraphs, so nothing else supplies the
+///   gap.
+/// - **Inline** tags sit *inside* words. Emphasis on a stem or an affix is
+///   common in dictionary-ish and academic blurbs (`<i>bene</i>volent`), and
+///   inserting a space there splits the word: `bene volent`.
+///
+/// So the naive fixes are both wrong — "never add a space" breaks the first
+/// case, "always add a space" breaks the second — and the tag name decides.
+/// Unrecognised tags are treated as inline, which is the safer default: a
+/// missing space between paragraphs is ugly, while a space inserted into the
+/// middle of a word is a misspelling.
 pub fn strip_html(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
+    let mut tag = String::new();
     let mut in_tag = false;
     for ch in input.chars() {
         if in_tag {
             if ch == '>' {
                 in_tag = false;
+                if is_block_tag(&tag) {
+                    out.push(' ');
+                }
+                tag.clear();
+            } else {
+                tag.push(ch);
             }
             continue;
         }
@@ -441,18 +466,59 @@ pub fn strip_html(input: &str) -> String {
         }
         out.push(ch);
     }
-    // Common entities after tag strip
+
+    // Entities are decoded *after* the tags are gone, so an escaped `&lt;p&gt;`
+    // in the source text cannot be mistaken for a real tag on the way through.
+    //
+    // `&amp;` is decoded last on purpose: doing it first would turn the
+    // literal text `&amp;lt;` into `&lt;` and then into `<`, inventing markup
+    // the author escaped precisely to avoid.
     let plain = out
-        .replace("&amp;", "&")
+        .replace("&nbsp;", " ")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
         .replace("&#39;", "'")
-        .replace("&nbsp;", " ")
-        .replace("<br/>", " ")
-        .replace("<br />", " ");
+        .replace("&amp;", "&");
     collapse_ws(&plain)
+}
+
+/// Whether a tag is block-level, i.e. removing it should leave a word break.
+///
+/// `tag` is the raw text between the angle brackets, so it still carries any
+/// closing slash and attributes: `/p`, `br /`, `div class="x"`.
+fn is_block_tag(tag: &str) -> bool {
+    let name = tag
+        .trim()
+        .trim_start_matches('/')
+        .split([' ', '\t', '\n', '/'])
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    matches!(
+        name.as_str(),
+        "p" | "br"
+            | "div"
+            | "li"
+            | "ul"
+            | "ol"
+            | "tr"
+            | "td"
+            | "th"
+            | "table"
+            | "blockquote"
+            | "section"
+            | "article"
+            | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "hr"
+            | "pre"
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -678,26 +744,66 @@ mod tests {
     }
 
     #[test]
-    fn strip_html_produces_readable_plain_text() {
-        // OPF descriptions are frequently escaped HTML, and the book page
-        // shows them as plain text.
-        // Note that removing a tag does not insert a space, so adjacent
-        // block elements run together. Recorded as the current behaviour
-        // rather than asserted as desirable: descriptions are one paragraph
-        // in practice, and inserting spaces would break mid-word <i>italics</i>.
+    fn strip_html_separates_paragraphs_but_not_words() {
+        // The whole point of the block/inline split. Publishers write
+        // descriptions as one line of HTML with no newline between
+        // paragraphs, so if `</p><p>` leaves nothing behind the sentences
+        // collide -- this used to render "A great book.Really."
         assert_eq!(
-            strip_html("<p>A <b>great</b> book.</p><p>Really.</p>"),
-            "A great book.Really."
+            strip_html("<p>A great book.</p><p>Really.</p>"),
+            "A great book. Really."
         );
+        assert_eq!(
+            strip_html("<div class=\"blurb\">One.</div><div>Two.</div>"),
+            "One. Two."
+        );
+        assert_eq!(strip_html("<h1>Title</h1>Body"), "Title Body");
+        assert_eq!(strip_html("<ul><li>One</li><li>Two</li></ul>"), "One Two");
+
+        // ...and the reason "just always insert a space" is wrong: inline
+        // emphasis lands inside a word, and a space there is a misspelling.
+        assert_eq!(strip_html("the word <i>bene</i>volent"), "the word benevolent");
+        assert_eq!(strip_html("<b>Dune</b> is a novel."), "Dune is a novel.");
+        assert_eq!(strip_html("a <span>b</span> c"), "a b c");
+    }
+
+    #[test]
+    fn strip_html_handles_br_in_all_its_spellings() {
+        // `<br/>` and `<br />` were previously "handled" by two string
+        // replacements that ran *after* tag stripping -- by which point the
+        // tags were already gone, so they never matched anything. The line
+        // break they were meant to preserve was silently lost.
+        for spelling in ["a<br>b", "a<br/>b", "a<br />b", "a<BR/>b"] {
+            assert_eq!(strip_html(spelling), "a b", "{spelling}");
+        }
+    }
+
+    #[test]
+    fn strip_html_is_case_insensitive_about_tag_names() {
+        // Uppercase tags are legal HTML and appear in older EPUBs.
+        assert_eq!(strip_html("<P>Upper.</P><P>Case.</P>"), "Upper. Case.");
+        assert_eq!(strip_html("<I>ital</I>ic"), "italic");
+    }
+
+    #[test]
+    fn strip_html_decodes_entities_without_inventing_markup() {
         assert_eq!(strip_html("Tom &amp; Jerry"), "Tom & Jerry");
-        assert_eq!(
-            strip_html("&quot;quoted&quot; &apos;and&apos;"),
-            "\"quoted\" 'and'"
-        );
+        assert_eq!(strip_html("&quot;quoted&quot; &apos;and&apos;"), "\"quoted\" 'and'");
         assert_eq!(strip_html("a&nbsp;&nbsp;b"), "a b");
-        // Whitespace from the source markup's indentation is collapsed.
-        assert_eq!(strip_html("<div>\n   spaced\n   out\n</div>"), "spaced out");
+        // `&amp;` is decoded last for this case: decoding it first turns the
+        // literal text `&amp;lt;` into `&lt;` and then into `<`, fabricating a
+        // tag the author escaped specifically to avoid.
+        assert_eq!(
+            strip_html("escaped &amp;lt;p&amp;gt; stays text"),
+            "escaped &lt;p&gt; stays text"
+        );
+    }
+
+    #[test]
+    fn strip_html_leaves_plain_text_alone() {
         assert_eq!(strip_html("no markup here"), "no markup here");
+        // Source-indentation whitespace is still collapsed.
+        assert_eq!(strip_html("<div>\n   spaced\n   out\n</div>"), "spaced out");
     }
 
     #[test]

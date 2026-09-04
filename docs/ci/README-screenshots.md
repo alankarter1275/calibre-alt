@@ -73,11 +73,29 @@ mistreating separate windows — but it is not the same thing.
 unreliable. If the reader screenshot is blank, suspect the harness before the
 app.
 
-**5. Navigation is keyboard-driven and brittle.** The app has no CLI for "go to
-All books", so the script sends Tab/Tab/Return. If the focus order changes, the
-screenshots quietly photograph the wrong page. They will still *look* wrong to
-a human, which is the safety net — but do check the page is the one named in
-the filename.
+**5. Navigation is requested, not guessed** *(fixed 2026-09-04)*. The script
+used to send Tab/Tab/Return because the app had no way to be told where to go.
+That guessed the focus order, and the first real run guessed wrong: three
+byte-identical screenshots of Home, and the job reported success. A visual
+check that cannot distinguish "I navigated" from "I did nothing" is worth
+nothing — the same rule as `pitfalls.md` §19.
+
+The app now accepts `KALAM_ROUTE=<name>` (`all-books`, `settings`, `shelves`,
+`analytics`, … — an unknown name prints the full list and is ignored rather
+than fatal). Set `ROUTE=` to change which page is photographed; it defaults to
+`all-books`.
+
+Three independent checks now have to agree before the report says navigation
+was OK, because each catches a different failure:
+
+| Check | Catches |
+|---|---|
+| `KALAM_ROUTE=… — navigating` in the log | binary predates the flag, or the name was rejected |
+| `grid_build` emitted | the route was accepted but the page never rendered |
+| `01-home.png` and `03-after-nav-settled.png` differ | everything else lied |
+
+The third would have caught the original bug on its own. The evidence was
+already in the report — three identical `md5sum`s — and was read past.
 
 **6. Timing numbers from CI are worthless.** Shared, throttled VMs. The peak
 memory number is trustworthy; the milliseconds are not. Real timings come from

@@ -158,7 +158,8 @@ shot() { # shot <name>
   fi
 }
 
-key() { swaymsg exec "wtype -k $1" >/dev/null 2>&1 || true; sleep 1; }
+# (The Tab/Tab/Return `key()` helper was removed on 2026-09-04: navigation
+# is requested with KALAM_ROUTE now, so nothing needs synthetic keystrokes.)
 
 # Sample the app's own memory. `/usr/bin/time` cannot help here: sway starts
 # kalam, so it is not a child of this script and its RSS is never reported.
@@ -181,7 +182,14 @@ say "=== launching kalam ==="
 # Run it directly rather than via `swaymsg exec`, so we own the process and
 # can read its stderr. KALAM_TIMING output lands in the log, which is how the
 # agent sees grid_build / covers_queued without downloading an artifact.
-"$BIN" > "$OUT/kalam.log" 2>&1 &
+#
+# ROUTE names a page for the app to open on its own (KALAM_ROUTE, added
+# 2026-09-04). Previously this script sent Tab/Tab/Return and hoped the focus
+# order was what it guessed; when it was not, the run photographed Home three
+# times and still reported success.
+ROUTE="${ROUTE:-all-books}"
+say "requested route: $ROUTE"
+KALAM_ROUTE="$ROUTE" "$BIN" > "$OUT/kalam.log" 2>&1 &
 APP_PID=$!
 
 for _ in $(seq 1 "$SETTLE"); do
@@ -202,19 +210,13 @@ swaymsg -t get_tree > "$OUT/tree.json" 2>/dev/null || true
 
 shot "01-home"
 
-# Home -> All books. The app has no CLI navigation, so this is keyboard-driven
-# and inherently brittle; a wrong page is obvious in the image rather than
-# silently passing.
-# Navigation. The first working run produced three byte-identical screenshots
-# and no `grid_build` line at all, which means the keystrokes went nowhere and
-# every shot was Home. Two changes: give the window focus first (a freshly
-# mapped window under a headless compositor does not necessarily have it), and
-# verify afterwards rather than assume.
+# The app navigates itself now, so there is nothing to send. Focus is still
+# worth setting: without it some GTK paint paths behave differently under a
+# headless compositor, and an unfocused window is not what a user sees.
 swaymsg '[app_id=".*"] focus' >/dev/null 2>&1 \
   || swaymsg focus >/dev/null 2>&1 || true
 say "focused: $(swaymsg -t get_tree | grep -c '"focused": true' || echo 0)"
 
-key Tab; key Tab; key Return
 for _ in $(seq 1 6); do sample_rss; sleep 1; done
 shot "02-after-nav"
 # Covers arrive in the background, so the interesting screenshot is the later
@@ -222,14 +224,51 @@ shot "02-after-nav"
 for _ in $(seq 1 12); do sample_rss; sleep 1; done
 shot "03-after-nav-settled"
 
-# Did we actually move? `grid_build` is only emitted by build_book_grid, so it
-# is proof the All-books page was reached. Without this check a harness that
-# photographs the same page three times reports success.
-if grep -q "grid_build" "$OUT/kalam.log" 2>/dev/null; then
-  say "navigation: reached a grid page (grid_build seen)"
+# Three checks, because each catches a different way this can quietly fail.
+NAV_OK=1
+
+# 1. Did the app accept the route? It prints on both paths, so silence means
+#    a binary built before KALAM_ROUTE existed.
+if grep -q "KALAM_ROUTE=$ROUTE — navigating" "$OUT/kalam.log" 2>/dev/null; then
+  say "navigation: app accepted route '$ROUTE'"
+elif grep -q "unknown route" "$OUT/kalam.log" 2>/dev/null; then
+  say "navigation: FAILED -- app rejected '$ROUTE' as unknown"
+  grep "known:" "$OUT/kalam.log" | sed 's/^/    /' | tee -a "$REPORT"
+  NAV_OK=0
 else
-  say "navigation: DID NOT REACH the grid -- every shot is probably Home."
-  say "  The keyboard route is brittle by design; see README-screenshots.md."
+  say "navigation: FAILED -- no KALAM_ROUTE line; binary predates the flag?"
+  NAV_OK=0
+fi
+
+# 2. Did a grid actually build? Only build_book_grid emits this, so it is
+#    positive proof the page rendered rather than merely being asked for.
+if grep -q "grid_build" "$OUT/kalam.log" 2>/dev/null; then
+  say "navigation: grid_build seen -- a grid page rendered"
+else
+  say "navigation: WARNING -- no grid_build line."
+  say "  Expected for routes that are not grids; suspicious for '$ROUTE'."
+  NAV_OK=0
+fi
+
+# 3. Are the shots actually different? This is the check that would have
+#    caught the original defect on its own: three identical files mean the
+#    camera worked and nothing else did. Compared explicitly because the
+#    evidence was sitting in the directory listing last time and was read
+#    past (pitfalls §19).
+HOME_SUM="$(md5sum "$OUT/01-home.png" 2>/dev/null | cut -d" " -f1)"
+NAV_SUM="$(md5sum "$OUT/03-after-nav-settled.png" 2>/dev/null | cut -d" " -f1)"
+if [ -n "$HOME_SUM" ] && [ "$HOME_SUM" = "$NAV_SUM" ]; then
+  say "navigation: FAILED -- 01-home and 03-after-nav-settled are byte-identical."
+  say "  The app never left Home; every screenshot below shows the same page."
+  NAV_OK=0
+elif [ -n "$HOME_SUM" ]; then
+  say "navigation: screenshots differ, so the page did change"
+fi
+
+if [ "$NAV_OK" = "1" ]; then
+  say "navigation: OK"
+else
+  say "navigation: NOT PROVEN -- treat the images below as Home until checked"
 fi
 
 say ""
