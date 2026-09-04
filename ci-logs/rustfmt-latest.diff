@@ -1,0 +1,17 @@
+diff --git a/src/libraries.rs b/src/libraries.rs
+index a2d19a1..646bd50 100644
+--- a/src/libraries.rs
++++ b/src/libraries.rs
+@@ -398,7 +398,10 @@ mod global_pref_tests {
+             "bundled_dictionary_english_idioms_2024",
+             "source.ao3.enabled",
+         ] {
+-            assert!(is_global_pref(key), "{key} should be shared, not per-library");
++            assert!(
++                is_global_pref(key),
++                "{key} should be shared, not per-library"
++            );
+         }
+     }
+ 
+--- run 33924773170 ---
