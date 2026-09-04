@@ -6,6 +6,7 @@
 mod app;
 mod author;
 mod db;
+mod libraries;
 mod dict;
 mod epub;
 mod epub_book;

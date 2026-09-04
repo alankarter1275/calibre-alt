@@ -3,12 +3,41 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// `~/.local/share/kalam`
+/// Where the **active library** lives — the root every other path hangs off.
+///
+/// P6.5: this used to be a fixed location. It now asks
+/// `crate::libraries` which library is open and returns that folder, falling
+/// back to the fixed location when no library has been chosen (first run, or
+/// an unreadable registry). Because ~30 helpers below are built on this one
+/// function, making libraries switchable was a change here rather than a
+/// sweep through the app.
+///
+/// The result is cached for the life of the process. Switching library
+/// re-launches rather than swapping underneath a running UI: pages hold open
+/// database handles and half-drawn covers, and repointing this mid-session
+/// would leave them reading from one library and writing to another.
 pub fn data_dir() -> PathBuf {
+    static ACTIVE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    ACTIVE
+        .get_or_init(|| {
+            crate::libraries::load_registry()
+                .active()
+                .map(|lib| lib.path.clone())
+                .unwrap_or_else(legacy_data_dir)
+        })
+        .clone()
+}
+
+/// The pre-P6.5 fixed location, `~/.local/share/kalam`.
+///
+/// Still the default when no library has been chosen, so an existing install
+/// keeps working untouched and an upgrade is a no-op until the user asks for
+/// something else.
+pub fn legacy_data_dir() -> PathBuf {
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            dirs_next_home()
+            home_dir()
                 .map(|h| h.join(".local/share"))
                 .unwrap_or_else(|| PathBuf::from("."))
         });
@@ -83,7 +112,7 @@ pub fn thumbnail_for_cover(cover: &Path) -> Option<PathBuf> {
     Some(thumbnail_path(uuid))
 }
 
-fn dirs_next_home() -> Option<PathBuf> {
+pub(crate) fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
