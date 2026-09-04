@@ -5,7 +5,15 @@ GitHub App has the `workflows` permission. The workflow body lives here instead:
 
 **Canonical file:** [`github-actions-ci.yml`](./github-actions-ci.yml)
 
-## ACTION NEEDED (2026-09-04): rustfmt's push needs a rebase
+## ACTION NEEDED (2026-09-04) — CI is red until this is installed
+
+**Three runs in a row have failed at the `rustfmt` step, and the branch cannot
+go green until this workflow file is copied over.** Nothing is wrong with the
+code: `cargo fmt` succeeds, the *push afterwards* fails, and because the step
+has no `continue-on-error` the whole run dies. The agent cannot fix this — it
+cannot push `.github/workflows/`.
+
+## The rustfmt step's push needs a rebase
 
 The `rustfmt (auto-fix and push if needed)` step ends with a bare `git push`.
 Other jobs commit `ci-logs/` to the same branch, so whenever one of those lands
@@ -13,6 +21,15 @@ between this job's checkout and this step, the push is rejected — and since th
 step has no `continue-on-error`, **the whole run fails over formatting that was
 already applied successfully**. It reads as a code failure and is not one. It
 has now happened twice in a row.
+
+There are **two** collisions, one rare and one certain:
+
+1. The `screenshots` and `scale` jobs commit `ci-logs/` to the same branch. If
+   one lands mid-run, the push is rejected. Intermittent.
+2. **The step immediately before rustfmt — `Cargo.lock (generate and push if
+   missing or stale)` — also pushes.** When it commits, rustfmt's push is
+   rejected *every time*. That step was added earlier the same day, which is
+   what turned a rare flake into a reliable failure.
 
 Copy [`github-actions-ci.yml`](./github-actions-ci.yml) over
 `.github/workflows/ci.yml` and push. Two changes to that one step:
