@@ -827,3 +827,68 @@ instead, crying wolf rather than staying silent. Both failures come from not
 asking what the output would be in the other case. A check that reports
 failure on correct code teaches people to ignore it, which costs more than
 having no check at all.
+
+---
+
+## 22. Do not let a container compute geometry from children you are removing
+
+The windowed grid (A0 step 6) builds only the book cards you can see. First
+attempt kept the existing `GtkGrid` and added one tall spacer widget in the
+last row to hold the full height open. It shipped behind a switch, the user
+turned it on, and hit three bugs in about a minute:
+
+1. The page scrolled roughly **twice as far as it should**, and everything past
+   the books was blank.
+2. **Books were missing.**
+3. After a few rows, **the covers and the scrollbar jumped around** while
+   scrolling.
+
+Three symptoms, one cause.
+
+**A `GtkGrid` row is as tall as its tallest child.** The spacer for 144 books
+was 6,532 px, and it was placed *inside* the last row — so that row became
+6,532 px tall, on top of the 23 normal rows above it. 6,796 px of content
+became 13,064 px of scrolling. That is bug 1.
+
+**The spacer occupied a real cell**, column 0 of the last row. The book that
+belonged there had nowhere to go. That is bug 2.
+
+**Rows holding no mounted cards collapsed to zero height.** As cards mounted
+and unmounted during a scroll, row heights kept changing, so the grid's total
+height changed underneath the scrollbar. That is bug 3.
+
+### The general rule
+
+**A container that derives its size from its children cannot be used to
+virtualize those children.** The entire premise of windowing is "most children
+do not exist right now", and `GtkGrid`, `GtkBox` and friends answer "how big am
+I?" by asking the children that do. Those two facts are in direct conflict, and
+no arrangement of spacers fixes it — a spacer is just another child feeding the
+same broken calculation.
+
+Use a container that does **not** infer geometry: `GtkFixed`, where every child
+is placed at an explicit x/y and the overall size is set once from the data.
+Then positions and total height depend on the *book count*, never on what is
+mounted, which is exactly the property windowing needs.
+
+### What made this expensive
+
+The arithmetic was checked before pushing — the *row* maths (which rows are
+visible) had seven tests and was correct. What was never checked was the
+**pixel** maths, because it was one line inside a function that needs a display
+and therefore "could not be tested". That was wrong: `grid_height(books)` and
+`card_position(index)` are pure integer functions. Pulling them out of the
+widget code made them testable, and the tests now written fail against the old
+implementation (13,064 px vs 6,796 px for 144 books).
+
+**If a function needs a display, the arithmetic inside it usually does not.**
+Extract the numbers and test those. See also §19: the seven row tests passed
+throughout, which made the change *feel* verified while the part that actually
+broke had no coverage at all.
+
+### Related
+
+§21 was "when you fix the thing a check was watching, re-derive what the check
+proves". This is the neighbouring failure: **having tests for one half of a
+change is not having tests for the change.** The half with coverage was the
+half I found interesting, not the half most likely to be wrong.
