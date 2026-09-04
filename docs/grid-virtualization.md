@@ -1,154 +1,152 @@
-# A0 step 6 — grid virtualization: where the memory actually goes
+# The book grid uses too much memory — what we found, and what we could do
 
-Working notes for the decision. Written before any code, because the last two
-times this step was estimated the estimate was wrong, and both times the cause
-was reasoning from a number without checking what produced it.
+Notes written before any code is changed.
 
-## The measurement
+Two earlier attempts to decide this were based on numbers that turned out to be
+measured wrong, so this time the numbers come first.
 
-From CI, same build, same job, the only difference being whether the harness
-actually opened the All-books page (it never did until `KALAM_ROUTE` landed on
-2026-09-04):
+## The problem in one line
 
-| Books | Grid reached? | Peak RSS |
+When you open the "All books" page with a big library, the app uses about
+**twice as much memory** as it should.
+
+## The numbers
+
+We measure memory in CI. Until 4 September the test never actually opened the
+All books page — it thought it did, but it stayed on Home. Now it really opens
+the page, and the numbers changed a lot:
+
+| Library size | Did the test open the book grid? | Memory used |
 |---|---|---|
-| 139 | no (Home only) | 231 MB |
-| 2,000 | no (Home only) | 226 MB |
-| 139 | **yes** | 275 MB |
-| 2,000 | **yes** | **507 MB** |
+| 139 books | No — stayed on Home | 231 MB |
+| 2,000 books | No — stayed on Home | 226 MB |
+| 139 books | **Yes** | 275 MB |
+| 2,000 books | **Yes** | **507 MB** |
 
-So: **+232 MB for +1,861 cards, ≈128 KB per card.**
+The bottom row is the problem. 507 MB is a lot on a 4 GB machine.
 
-## What 128 KB/card is made of
+Working out the cost per book:
 
-This is the part that changes the plan. A `GtkBox` with two labels is not
-128 KB — it is a few kB. The number is suspicious, and it resolves immediately:
+- 1,861 extra books cost 232 MB extra
+- That is about **128 KB of memory per book**
+
+## What that 128 KB per book is actually made of
+
+This is the part that surprised us.
+
+Each book on the page shows a small cover image, 128 by 204 pixels. Once the
+app has loaded a cover and is showing it on screen, that image sits in memory
+as raw pixels:
 
 ```
-cover slot          = COVER_W × COVER_H = 128 × 204
-one RGBA texture    = 128 × 204 × 4     = 102 KB
+128 pixels wide × 204 pixels tall × 4 bytes per pixel = 102 KB
 ```
 
-102 of the 128 KB per card is **one cover texture**. Across the delta:
+So **102 KB of the 128 KB is just the cover image**. The rest — about 26 KB —
+is the box, the title text, the author text and the click handler.
 
-```
-1,752 additional covers × 102 KB ≈ 175 MB   of the measured 232 MB
-```
+In other words: this is mostly a *pictures* problem, not a *boxes* problem.
+That is the opposite of what we assumed yesterday.
 
-The remaining ~57 MB (≈31 KB/card) is the widget tree itself — the `GtkBox`,
-the cell wrapper, two `GtkLabel`s with Pango layouts, a `GestureClick`, and a
-tooltip string.
+## Why our existing safety limit did not help
 
-## Why the 300-entry cover cache did not bound this
+The app already has a limit: it only keeps 300 cover images in its reuse pile.
+That limit is real and it works. But it does not do what we thought.
 
-`COVER_CACHE_MAX = 300` is real, correct, and does what its comment says. It
-was still not a bound on live memory, and the reason is worth writing down
-because it is the actual bug:
+Here is the catch. When the app finishes loading a cover, it hands that image
+to the book's card on screen. Now **two** things are holding the same image:
+the reuse pile, and the card.
 
-`gdk::Texture` is reference-counted. `swap_in_cover` does
+When the reuse pile gets full and throws an image away, it only lets go of its
+own hold. The card is still on screen and still holding the same image, so the
+memory is not actually freed.
 
-```rust
-frame.append(&build_picture(texture, key.1, key.2));
-```
+The limit controls **how many covers we can re-use quickly**. It does not
+control **how many covers are sitting in memory** — that is decided by how many
+cards exist. And right now the app builds one card for every book in your
+library, all of them, whether or not they are on screen.
 
-which puts a **strong** reference into a `GtkPicture` that lives inside a card
-widget. When the LRU later evicts that key, it drops *the cache's* reference —
-but the card is still alive and still holding one, so nothing is freed.
+So we had two pieces of code that were each fine on their own, but together
+they had no limit. That is why "memory is flat" looked true for a day: there
+*was* a real, working, tested limit sitting right next to the problem, and it
+made the problem look like it was already handled.
 
-The cache bounds how many textures are **re-usable**. It cannot bound how many
-are **resident**, because that is decided by how many cards exist. And
-`build_book_grid` builds one card per book, unconditionally, for the whole
-library.
+## Three ways forward
 
-So the LRU and the grid were each locally correct while jointly unbounded —
-which is exactly why "peak memory is flat" was believed for a day: there *was*
-a real, working, well-tested bound in the picture, and it made the unbounded
-thing next to it look accounted for.
+### Option A — only build cards for books you can actually see
 
-## What this means for the fix
+The proper fix. Instead of making 2,000 cards, make about 30 (enough to fill
+the screen) and reuse them as you scroll. Memory would stop growing with
+library size. The page would also open faster — right now building the grid
+takes about half a second with 2,000 books.
 
-The naive framing — "2,000 widgets is too many widgets, so recycle widgets" —
-is only ~25% of the problem. Ranked by payoff:
+**What it costs:**
 
-1. **Stop holding textures for off-screen cards** (~175 MB). This is the win.
-2. **Stop holding widgets for off-screen cards** (~57 MB). Nice, and it also
-   fixes `grid_build` (421–484 ms at 2,000 books, measured).
+- This uses a part of GTK we have never used anywhere in this app before.
+- It needs a fair amount of plumbing code to make our book data work with it.
+- **There is a real risk of covers landing on the wrong book.** Right now each
+  cover slot belongs to one book forever. If slots get reused, a cover that
+  loads slowly could arrive after its slot has been given to a different book,
+  and paint the wrong picture. We would need to handle that carefully.
+- It changes 3 pages plus the shared card code.
+- The grid currently always uses 6 columns. This approach works out the columns
+  itself, so the layout would change — probably for the better, since it would
+  adapt to the window size, but **it is a visible change you would need to
+  look at**.
 
-Both fall out of virtualization, which is the reason to do it. But they are
-separable, and (1) is available much more cheaply than (2) — see the options.
+### Option B — let go of covers for books that are scrolled off screen
 
-## Options
+Keep everything else as it is. Just make the app drop a cover image when that
+book scrolls out of view, and load it again when it comes back.
 
-### A. `GtkGridView` + `ListStore` (true virtualization)
+**What it gets:** about three quarters of the memory back — the 102 KB per
+book, which is the big part.
 
-The GTK-native answer. `GridView` recycles a pool of ~visible-count widgets
-through a `SignalListItemFactory`; both costs above become O(visible).
+**What it costs:**
 
-Cost, honestly:
+- Changes one file. No new GTK concepts. Easy to undo.
+- Does not make the page open any faster.
+- Does not recover the smaller 26 KB per book.
+- **Risk: covers might visibly flicker while you scroll fast** — grey box
+  first, then the picture. Whether that looks bad is something only you can
+  judge by using it.
 
-- **First use of GTK4 list views in this codebase.** No `GridView`, `ListView`,
-  `SelectionModel` or `SignalListItemFactory` appears anywhere in `src/` today.
-- `Book` must become a `GObject` subclass (`glib::Object` + properties) to live
-  in a `ListStore`, or be wrapped in one. That is boilerplate the repo has so
-  far avoided entirely.
-- **`PENDING_FRAMES` breaks.** It maps a cover key to a weak ref of the frame
-  waiting for it, which assumes a frame belongs to one book for its lifetime.
-  Under recycling a frame is reused for a different book mid-flight, so a
-  late-arriving decode can paint the wrong cover into a recycled slot. The
-  bind/unbind protocol has to cancel pending work per item.
-- Touches 3 call sites (`all_books`, `tags`, `shelf_detail`) plus the shared
-  widget module.
-- **`GRID_COLS = 6` is currently hardcoded**; `GridView` does its own column
-  math, which is a behaviour change (probably an improvement — it would become
-  responsive — but it is a visual change the user has to look at).
+### Option C — leave it alone for now
 
-### B. Bound the textures only (cheap, ~75% of the win)
+Your actual library is 139 books, which uses 275 MB. That is fine. The 507 MB
+only shows up at 2,000 books, which is a test library, not yours.
 
-Leave the widget tree alone. Make off-screen cards give up their texture:
-
-- Keep the LRU, but have eviction actively clear the `GtkPicture` of any card
-  holding the evicted texture (back to placeholder), so eviction really frees.
-- Or: only swap a texture into a frame that is currently within the viewport,
-  and drop back to placeholder on scroll-out.
-
-This is a change to `book_row.rs` alone — no new GTK concepts, no `GObject`
-subclassing, no changes to the three pages. It does **not** fix `grid_build`
-time or the ~57 MB of widgets.
-
-Risk: the placeholder↔cover swap becomes visible during scrolling if the
-re-decode is not fast. The thumbnail path makes it cheap, but this is exactly
-the kind of thing only the user can judge on real hardware.
-
-### C. Do nothing yet
-
-Defensible. 507 MB at 2,000 books is bad on a 4 GB machine, but the user's real
-library is 139 books → 275 MB, which is survivable. Nobody has complained.
-
-The counter-argument: the entire reason this was closed before was "the numbers
-do not justify it", the numbers turned out to be measured wrong, and 507 MB is
-a genuine number that would have justified it.
+The argument against: we closed this once already because "the numbers do not
+justify it", and those numbers were wrong. 507 MB is a real number.
 
 ## Recommendation
 
-**B first, then reassess; A only if B is not enough.**
+**Do B first. Then measure again and decide whether A is still needed.**
 
-Reasoning: B captures ~75% of the regression for a fraction of the risk, in one
-file, with no new architectural concepts, and it is reversible. A is the
-"right" long-term answer and will probably happen eventually, but it introduces
-GTK list views, `GObject` boilerplate and a recycling-correctness hazard
-(`PENDING_FRAMES`) all at once, on the most-used screen in the app, in a
-codebase whose only visual QA is one person on one machine.
+Why:
 
-Doing A first would also make it hard to attribute the improvement: if memory
-drops and scrolling feels different, we would not know which change did what.
-B is measurable in isolation against the budgets that now exist.
+- B gets most of the benefit for much less risk.
+- B changes one file, so if it goes wrong it is easy to undo.
+- A is a bigger change to the screen you use most, and you are the only person
+  who can check whether it looks right.
+- If we did A first and things improved, we would not know which part of the
+  change did the improving. Doing B alone gives a clean before-and-after.
 
-## What is already in place to judge either
+A is probably the right long-term answer. It just does not have to be first.
 
-- Query-count budgets (A0 step 7) — regression-proof, machine-independent.
-- CI reaches the grid and reports `grid_build`, `grid_cards`, peak RSS at both
-  139 and 2,000 books.
-- `04-home-for-comparison.png` proves the page under test is the real one.
+## We can measure whichever we pick
 
-Which means: whatever we pick, the before/after is already instrumented. That
-was not true a day ago.
+This is new as of yesterday and worth saying:
+
+- CI now really opens the book grid, and proves it by taking a picture of Home
+  as well and checking the two are different.
+- It reports memory used at both 139 and 2,000 books, every run.
+- It reports how long building the grid takes.
+
+So whatever we choose, we will be able to see whether it worked.
+
+## Two questions for you
+
+1. **A, B, or C?**
+2. **If B: is a brief grey flicker acceptable while scrolling fast?** This is
+   the one thing that decides whether B is workable, and only you can judge it.
