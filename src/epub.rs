@@ -762,7 +762,10 @@ mod tests {
 
         // ...and the reason "just always insert a space" is wrong: inline
         // emphasis lands inside a word, and a space there is a misspelling.
-        assert_eq!(strip_html("the word <i>bene</i>volent"), "the word benevolent");
+        assert_eq!(
+            strip_html("the word <i>bene</i>volent"),
+            "the word benevolent"
+        );
         assert_eq!(strip_html("<b>Dune</b> is a novel."), "Dune is a novel.");
         assert_eq!(strip_html("a <span>b</span> c"), "a b c");
     }
@@ -788,7 +791,10 @@ mod tests {
     #[test]
     fn strip_html_decodes_entities_without_inventing_markup() {
         assert_eq!(strip_html("Tom &amp; Jerry"), "Tom & Jerry");
-        assert_eq!(strip_html("&quot;quoted&quot; &apos;and&apos;"), "\"quoted\" 'and'");
+        assert_eq!(
+            strip_html("&quot;quoted&quot; &apos;and&apos;"),
+            "\"quoted\" 'and'"
+        );
         assert_eq!(strip_html("a&nbsp;&nbsp;b"), "a b");
         // `&amp;` is decoded last for this case: decoding it first turns the
         // literal text `&amp;lt;` into `&lt;` and then into `<`, fabricating a
