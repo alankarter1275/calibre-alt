@@ -197,6 +197,12 @@ fn perf_cover_decode() {
 // A statement count is an integer. It is identical on every machine, it does
 // not flake, and it fails the moment somebody reintroduces a per-row query.
 //
+// **These were verified by deliberately breaking the code** (pitfalls §19: a
+// check that has never failed is not known to work). `hydrate_books` was
+// temporarily changed back to a per-book tag query and pushed to CI:
+// 4 of the 6 budgets failed and the other 270 tests passed, which is exactly
+// the intended blast radius. The sabotage was reverted in the next commit.
+//
 // **These tests are NOT `#[ignore]`d** — unlike the two probes above, they run
 // on every `cargo test`, which is the entire point of a budget. They stay fast
 // by asserting on a small library where the *count* is already meaningful:

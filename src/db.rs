@@ -1188,10 +1188,6 @@ fn hydrate_books(conn: &Connection, books: &mut [Book]) -> Result<()> {
         return Ok(());
     }
 
-    // TEMPORARY SABOTAGE -- verifying the query-count budget can fail.
-    for b in books.iter_mut() {
-        b.tags = tags_for_book(conn, b.id)?;
-    }
     // One query for every book's tags, rather than one query per book. With a
     // few hundred books the old loop was the dominant cost of opening any page
     // that showed a list.
