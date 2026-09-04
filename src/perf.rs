@@ -304,7 +304,10 @@ fn recent_books_cost_does_not_depend_on_how_many_it_returns() {
         "recent_books(6) cost {six} statements and recent_books(30) cost \
          {thirty} -- the count must not depend on how many rows come back"
     );
-    assert!(six > 0, "recent_books recorded 0 statements -- counter not wired");
+    assert!(
+        six > 0,
+        "recent_books recorded 0 statements -- counter not wired"
+    );
 }
 
 #[test]
@@ -320,7 +323,11 @@ fn books_by_ids_batches_instead_of_looping() {
         .take(50)
         .map(|b| b.id)
         .collect();
-    assert_eq!(ids.len(), 50, "need 50 seeded books for this to mean anything");
+    assert_eq!(
+        ids.len(),
+        50,
+        "need 50 seeded books for this to mean anything"
+    );
 
     let one = cat.count_queries(|| cat.books_by_ids(&ids[..1]).unwrap());
     let fifty = cat.count_queries(|| cat.books_by_ids(&ids).unwrap());
@@ -330,7 +337,10 @@ fn books_by_ids_batches_instead_of_looping() {
         "books_by_ids cost {one} statements for 1 id and {fifty} for 50 -- it \
          is looping, which is the exact bug it was written to remove"
     );
-    assert!(one > 0, "books_by_ids recorded 0 statements -- counter not wired");
+    assert!(
+        one > 0,
+        "books_by_ids recorded 0 statements -- counter not wired"
+    );
 }
 
 #[test]

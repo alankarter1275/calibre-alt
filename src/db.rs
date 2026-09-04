@@ -436,8 +436,10 @@ impl Catalog {
             QUERY_COUNT.with(|c| c.set(c.get() + 1));
         }
         QUERY_COUNT.with(|c| c.set(0));
-        self.conn()
-            .trace_v2(rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT, Some(bump));
+        self.conn().trace_v2(
+            rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
+            Some(bump),
+        );
     }
 
     /// Statements executed since `start_counting_queries`.
