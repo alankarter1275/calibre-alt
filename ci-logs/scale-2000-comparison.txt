@@ -1,12 +1,12 @@
 === A0 step 6: windowed grid (shipped) vs old grid, 2,000 books ===
 windowed grid (default):
   navigation: grid rendered (grid_build seen, grid_cards=2000)
-    [timing] grid_build             17.7 ms
+    [timing] grid_build             16.4 ms
     [timing] grid_cards               48
     [timing] grid_cards_total       2000
-  books=2000 peak_rss_kb=263268 peak_rss_mb=257
+  books=2000 peak_rss_kb=272176 peak_rss_mb=265
 old build-every-card grid:
   navigation: grid rendered (grid_build seen, grid_cards=2000)
-    [timing] grid_build            155.4 ms
+    [timing] grid_build            259.9 ms
     [timing] grid_cards             2000
-  books=2000 peak_rss_kb=366984 peak_rss_mb=358
+  books=2000 peak_rss_kb=368788 peak_rss_mb=360
