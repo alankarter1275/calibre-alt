@@ -952,10 +952,28 @@ Two things would have cut that short:
    `ci-logs/rustfmt-latest.diff` — a check whose output cannot be read is
    barely a check.
 
+### Attempt two also failed, and the lesson is bigger than the rebase
+
+Adding the rebase did not fix it. The step kept failing, no `rustfmt auto-fix`
+commit landed, and no diff was published — so `git push` was still the thing
+exiting non-zero, for a reason I could not see, because the sandbox cannot
+download Actions logs.
+
+At that point I had spent **four runs** on a formatting step. The mistake was
+treating it as a puzzle to solve rather than asking why formatting was allowed
+to fail a build at all.
+
+**The right fix was to remove the failure mode, not diagnose it.** rustfmt now
+formats, prints and publishes the diff, restores the tree so clippy sees the
+real source, and cannot fail the run. The agent applies the formatting in its
+next commit — which is where it belonged anyway, rather than arriving as a
+drive-by commit from CI that everyone then has to rebase around.
+
 ### The rule
 
 **Any CI step that pushes to the branch must rebase first, and must not fail
-the build if the push loses a race.** More generally: when several jobs write
+the build if the push loses a race.** Better still: **a cosmetic check should
+not be able to fail the build at all.** More generally: when several jobs write
 to one branch, every writer needs the same conflict discipline. One that does
 not have it will fail intermittently, on a schedule that looks random and
 correlates with nothing in the diff.
