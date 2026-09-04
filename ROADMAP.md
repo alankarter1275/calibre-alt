@@ -1636,9 +1636,28 @@ Full discussion: [`docs/libraries-and-portability.md`](./docs/libraries-and-port
 
 ## P7 — Fiction platform (AO3 first, then more)
 
-**Goal:** A FanFiction.net-app-class fiction platform inside Kalam: search
-across sources with tag filters, download fics, read offline, and
-**auto-update** downloaded fics as new chapters release.
+**Goal:** A FanFiction.net-app-class fiction **client** inside Kalam — not a
+downloader. Browsing, surfing and exploring the sites from inside the app:
+category and fandom browsing, the site's own sort orders, author pages (their
+works, favourites, follows, profile), search with the site's full filters, your
+own favourites and follows, series and collections. Downloading, offline
+reading and **auto-update** of followed fics are things you can do while you
+are in there — not the point of being there.
+
+> **Scope correction, 2026-09-04.** This goal was previously written as
+> download-and-read, and the plan built from it was a downloader. The user
+> stopped it: *"not just a downloader, but surfing, exploring, etc."* The tell
+> was in `source-seam.md` §1 — its four verbs (search → detail → chapters →
+> content) all begin from "I already know which work I want", which is a
+> downloader's shape and cannot express wandering. See
+> [`docs/p7-scope-correction.md`](./docs/p7-scope-correction.md). **The `Source`
+> trait needs rewriting before any of it is built**, because retrofitting a
+> browse model onto a download-shaped API means changing every source and every
+> screen.
+
+**AO3, FanFiction.net and Literotica get full browsing**; other sources may
+support less, and the trait must let a source say "I do search but not author
+pages" with the UI adapting rather than breaking.
 
 ### Scope
 
@@ -1683,12 +1702,20 @@ across sources with tag filters, download fics, read offline, and
   export. The dependency must be visible in the UI — if FicHub is down, FFN
   stops working, and the user should know why. See
   [`docs/fichub-and-ffn.md`](./docs/fichub-and-ffn.md)
-- **The WebKit-as-fetcher idea is deferred, not rejected.** Kalam already
-  embeds a browser engine, and a page fetched through it passes Cloudflare the
-  way FicLab's extension does. It stays the fallback if FicHub ever goes away.
-  Not built now because a JSON call already solves the problem and a second
-  fetching mechanism — heavier, slower, tied to the UI thread — cannot be
-  justified against it
+- **The WebKit-as-fetcher idea is BACK IN SCOPE** (un-deferred 2026-09-04, the
+  same day it was deferred). Deferring it assumed FicHub solved FFN. It does
+  not: FicHub has exactly two endpoints, `/api/v0/epub` and `/api/v0/meta`, and
+  **both require a fic URL you already have**. There is no search, no category
+  browse, no author page. So FicHub solves *downloading* from FFN and does
+  nothing at all for *browsing* it — which is most of what this phase is.
+  Browsing FFN means fetching FFN pages, which means Cloudflare, which means
+  the browser engine we already ship. Likely both: WebKit for browsing, FicHub
+  for the download once a fic is chosen, since they already handle multi-chapter
+  assembly
+- **Login moves in-scope.** `source-seam.md` §13 parked it as "probably out of
+  scope until someone asks". Someone asked: your favourites, follows and
+  history live behind a site login. Credential storage now needs doing
+  properly rather than avoiding
 - **Structured search UI** (native): fandom, tags, characters, ships,
   rating, status — fed by plugin-parsed results (AO3 has no public API;
   plugins parse the site, Tachiyomi-style)
@@ -2345,3 +2372,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-04 | **A0 step 6 shipped and is now the default — the All-books page at 2,000 books went from 502 MB to 247 MB and from 434 ms to 12 ms.** The user checked the rebuilt (`GtkFixed`) version on a real screen and confirmed all three earlier bugs were gone: the page ends where the books end, every book is present, and the scrollbar stays steady while scrolling. That check is the one thing CI cannot do, so it was the gate. The switch flipped from opt-in `KALAM_WINDOWED_GRID=1` to opt-out **`KALAM_NO_WINDOWED_GRID=1`**, matching the shape of `KALAM_NO_PRELOAD` and `KALAM_NO_WEBVIEW_POOL` — an escape hatch is only useful if it works like the other escape hatches. Measured side by side on one machine in one run: 2,000 cards → 48, 434 ms → 12 ms, 502 MB → 247 MB, with the screenshot check reporting an identical 21.7% coloured-pixel count, i.e. the page looks exactly the same. **One trap avoided while flipping the default:** the installed workflow passes `WINDOWED=1` on one run and nothing on the other, which was right while windowed was opt-in — but "nothing" now means *windowed too*, so both runs would have measured the same thing and published a green, meaningless comparison. That is pitfall §21 exactly (change the mechanism and a check watching the old one quietly stops proving anything), caught this time by asking what the check would report *after* the change rather than after it had already lied. Rather than ask for another manual workflow install, `screenshot.sh` now infers the baseline from the output directory, so the installed copy and the updated one in `docs/ci/` are both correct — and `docs/ci/README.md` now has no outstanding ACTION NEEDED items. **This closes A0 except for step 8** (the plugin-host seam), which is designed in `docs/source-seam.md` and deliberately lands with AO3 in P7 |
 | 2026-09-04 | **P6.5 created — libraries land before P7.** Calibre-style: pick the folder, keep several, switch between them, copy one to another machine and it opens. Ordered before P7 deliberately, because P7 *adds books from new places* and this changes *where books live* — do both at once and a missing fic could be either one's fault. The user drew a distinction the roadmap had blurred: Kalam's shelves are Calibre's **virtual** libraries (a saved view over everything), while a real **library** is a hard wall — fanfiction in one, technical books in another, genuinely absent from each other. Both exist afterwards; shelves are unchanged. Reading the code first turned up two things that make this smaller than it looked: **nothing machine-specific is stored** (the `books` table holds `"book.epub"` and `"cover.jpg"`, never absolute paths — those are rebuilt at read time, so a Kalam folder is *already* portable), and **every path derives from one function**, `data_dir()`. The real work is elsewhere: the library list must live *outside* the libraries (a setting stored in a library cannot be read before the library is found), and per-library must be split from global — books and highlights travel, dictionaries and theme must not, or you reinstall dictionaries per library. Also in scope: a `kalam.json` per book folder as a **backup copy**, database still authoritative and never read from it during normal use, plus a rebuild-from-folders command — that is what makes a library self-describing if `catalog.db` is ever lost. JSON not OPF, because OPF cannot express highlights or reading sessions without abuse and nothing else reads a stray `metadata.opf`. Out of scope: two machines using one library at once. Discussion in [`docs/libraries-and-portability.md`](./docs/libraries-and-portability.md) |
 | 2026-09-04 | **P7 sources settled: AO3 → Royal Road → Literotica → FFN, each proving something different.** Webnovel dropped — nearly everything worth reading sits behind their coin paywall, so a downloader gets a few free chapters and stops, and bypassing a paywall is out of scope. The ordering is deliberate rather than by popularity: **AO3 needs no text parsing at all**, because `download.archiveofourown.org/downloads/<id>/fic.epub` is a real EPUB that AO3 builds with Calibre and lists on their own FAQ, so scraping AO3 is only for *finding* things — which means AO3 alone would prove nothing about parsing. **Royal Road is second** because it is the first source where we build an EPUB ourselves, the biggest untested piece, and it is a gentle place to get that wrong. **Literotica** stresses the assumption that every source has neat chapters. **FFN is last and goes through FicHub, not scraping** — this is the finding that changed the plan. FFN sits behind Cloudflare and FanFicFare effectively abandoned it, but [FicHub](https://fichub.net/api) has a documented public API returning metadata plus a ready-made EPUB, and absorbs the Cloudflare problem on their side. Their conditions are conditions, not suggestions: identify the project in the user-agent with contact info, **never** concurrent requests, honour `429`/`Retry-After`, no bulk export. The dependency has to be visible in the UI, because if FicHub is down FFN silently stops working and the user deserves to know why. **The WebKit-as-fetcher idea is deferred, not rejected** — it was right when FFN looked impossible, and FicLab's extension proves the browser-session route works, but building a second fetching mechanism (heavier, slower, tied to the UI thread) cannot be justified when one JSON call does the job. It stays the fallback and the reasoning is recorded so it is not rediscovered from scratch. Also settled: **one shared EPUB assembler** rather than one per source, and highlights that survive an update by re-anchoring on their saved text. See [`docs/fichub-and-ffn.md`](./docs/fichub-and-ffn.md) |
+| 2026-09-04 | **P7 scope corrected: it is a browsing client, not a downloader — and FicHub does not solve FanFiction.net after all.** The user stopped the plan: *"not just a downloader, but surfing, exploring, etc."* They were right, and the tell had been sitting in `source-seam.md` §1 the whole time. Its four verbs — search → detail → chapters → content — **all begin from "I already know which work I want"**, which is a downloader's shape and cannot express wandering. Missing entirely: category and fandom browsing, author pages (their works, favourites, follows, profile), the site's own sort orders, your favourites and follows, series and collections, reviews. **The trait must be rewritten before anything is built**, because retrofitting a browse model onto a download-shaped API means changing every source and every screen. **The correction I most need to own: FicHub does not solve FFN.** I presented it as the answer one turn earlier. It has exactly two endpoints, `/api/v0/epub` and `/api/v0/meta`, and **both require a fic URL you already have** — no search, no browse, no author pages. So it solves *downloading* from FFN and does nothing for *browsing* it, which is most of this phase. My reasoning was sound only while the goal was downloading; the moment the goal is browsing, it collapses. **The WebKit-as-fetcher idea is therefore un-deferred the same day it was deferred** — browsing FFN means fetching FFN pages, means Cloudflare, means the browser engine we already ship. Best answer is probably both: WebKit for browsing, FicHub for the download once a fic is chosen. **Login also moves in-scope**, having been parked in `source-seam.md` §13 as "probably out of scope until someone asks" — someone asked, since favourites and follows live behind a site login, so credential storage needs doing properly. AO3, FFN and Literotica get full browsing; the trait must let other sources offer less without the UI breaking. P7 is now clearly several phases of work rather than one. Full write-up in [`docs/p7-scope-correction.md`](./docs/p7-scope-correction.md) |
