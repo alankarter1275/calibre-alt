@@ -72,23 +72,49 @@ jobs:
       # that had already been applied. It looked like a code problem and was
       # not. Also publishes the diff, since the sandbox cannot read Actions
       # logs and "rustfmt failed" with no detail is unactionable.
-      - name: rustfmt (auto-fix and push if needed)
+      # Formats, and reports what it changed. Deliberately does NOT fail the
+      # run, and deliberately does not push.
+      #
+      # It used to auto-commit the fix. That failed three runs in a row for
+      # reasons that had nothing to do with the code: the push collided with
+      # the `Cargo.lock` step above (which also pushes) and with the ci-logs
+      # commits from other jobs, and a rejected push exited non-zero and killed
+      # the build. Formatting is not worth failing a build over, and a step
+      # whose failure mode is unrelated to what it checks sends every
+      # investigation to the wrong place (pitfalls §23).
+      #
+      # So: report, never gate. The diff is published by the step below, which
+      # the agent can read — it cannot download Actions logs, so a bare
+      # "rustfmt failed" was unactionable.
+      - name: rustfmt (report only)
+        id: fmt
         run: |
           cargo fmt --all
+          mkdir -p ci-logs
           if git diff --quiet; then
             echo "rustfmt: clean"
+            echo "dirty=0" >> "$GITHUB_OUTPUT"
+            rm -f ci-logs/rustfmt-latest.diff
           else
-            echo "rustfmt: formatting and pushing fix"
-            mkdir -p ci-logs
-            git diff > ci-logs/rustfmt-latest.diff || true
+            echo "rustfmt: the tree is not formatted; diff follows"
+            git diff | tee ci-logs/rustfmt-latest.diff
             echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/rustfmt-latest.diff
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
-            git add -A
-            git commit -m "style: rustfmt auto-fix"
-            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
-            git push origin "HEAD:$GITHUB_REF_NAME"
+            echo "dirty=1" >> "$GITHUB_OUTPUT"
           fi
+          # Restore, so clippy and the build see the committed source rather
+          # than a locally reformatted copy.
+          git checkout -- .
+
+      - name: publish the rustfmt diff
+        if: steps.fmt.outputs.dirty == '1'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add -f ci-logs/rustfmt-latest.diff
+          git commit -m "ci: publish rustfmt diff [skip ci]" || true
+          git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+          git push origin "HEAD:$GITHUB_REF_NAME" || true
+        continue-on-error: true
 
       # The Arena sandbox cannot download Actions logs (the log host is
       # unreachable from it), so on failure we commit the compiler output back
