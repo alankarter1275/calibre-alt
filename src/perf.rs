@@ -1,6 +1,18 @@
 //! A0 measurement harness (headless — no display needed, safe in CI).
 //!
-//! Two probes, both `#[ignore]`d so the normal `cargo test` stays fast:
+//! Two kinds of thing live here, and the difference matters:
+//!
+//! - **Query-count budgets** (A0 step 7, bottom of the file) — these are
+//!   ordinary tests. They run on every `cargo test` and they gate CI. They
+//!   assert that a call's *statement count* does not grow with the number of
+//!   rows it touches, which is the N+1 regression this repo has shipped three
+//!   times. An integer count is machine-independent, so it cannot flake.
+//! - **Timing probes** (below, `#[ignore]`d) — these only print. They are run
+//!   by hand on real hardware for a baseline. They are *not* budgets, because
+//!   the CI runner's wall-clock varies ~60% between identical runs, so any
+//!   ceiling loose enough to survive that cannot catch a real regression.
+//!
+//! The two `#[ignore]`d probes:
 //!
 //! - **Data layer** (`perf_data_layer_report`): the cost of the queries that
 //!   feed every list page, seeded with 2,000 books.
@@ -165,4 +177,202 @@ fn perf_cover_decode() {
     println!("\nGrid-slot decode of the thumbnail is the hot path after import; the full-cover decode is what a cold launch pays per card today.");
 
     let _ = std::fs::remove_dir_all(&scratch);
+}
+
+// ---------------------------------------------------------------------------
+// A0 step 7 — query-count budgets
+//
+// These are the perf-budget tests the roadmap asked for, in the shape the
+// evidence pushed them into. The original plan said "seed 2,000 books, assert
+// grid build under N ms". Two things were wrong with that:
+//
+//  1. **Time thresholds cannot work on this runner.** Byte-identical work has
+//     been measured at 2774 ms and 3740 ms on consecutive CI runs. A ceiling
+//     loose enough to survive that variance would not notice a 2× regression.
+//  2. **The bug class that actually bites is not slowness, it is N+1.** Three
+//     separate incidents in this repo (pitfalls §16, §18, and the cover
+//     preloader) were all "a loop that issues one query per row". That is
+//     invisible in a timing on 139 books and fatal at 2,000.
+//
+// A statement count is an integer. It is identical on every machine, it does
+// not flake, and it fails the moment somebody reintroduces a per-row query.
+//
+// **These tests are NOT `#[ignore]`d** — unlike the two probes above, they run
+// on every `cargo test`, which is the entire point of a budget. They stay fast
+// by asserting on a small library where the *count* is already meaningful:
+// N+1 shows up at 20 books just as clearly as at 2,000, because the assertion
+// is "does this scale with row count", not "is this fast".
+// ---------------------------------------------------------------------------
+
+/// A small library. Deliberately not 2,000: the assertions are about whether
+/// the query count grows with the number of rows, and 20 rows answers that in
+/// milliseconds. `SMALL` and `LARGER` differ so a count can be compared
+/// between two sizes.
+const SMALL: usize = 20;
+const LARGER: usize = 60;
+
+/// Seed `n` books whose ids do not collide with a previous `seed` call.
+///
+/// The `seed` used by the probes above numbers uuids from 0, so calling it
+/// twice on one catalog violates the unique constraint. Tests that need to
+/// add a book *after* measuring take this instead.
+fn seed_more(cat: &Catalog, tag: &str, n: usize) {
+    for i in 0..n {
+        cat.insert_book(
+            &format!("extra-uuid-{tag}-{i:04}"),
+            &format!("Extra {tag} {i:04}"),
+            "Extra Author",
+            None,
+            "",
+            BookFormat::Epub,
+            "book.epub",
+            &format!("extra-hash-{tag}-{i:04}"),
+            None,
+            &["scifi".to_string()],
+        )
+        .expect("seed extra book");
+    }
+}
+
+/// The invariant these budgets exist to defend: **the number of SQL statements
+/// a call issues must not depend on how many rows it touches.**
+///
+/// Deliberately expressed as a comparison between two library sizes rather
+/// than as a hard-coded number. A literal like `assert_eq!(n, 2)` bakes in an
+/// implementation detail — whether tags are hydrated in one query or two is a
+/// free choice, and a legitimate refactor would fail the test for no reason,
+/// which teaches people to edit the number until it passes. Comparing 20 books
+/// against 60 cannot be satisfied that way: the only way to pass is to not
+/// issue queries per row. The absolute count is printed, not asserted, so a
+/// change is visible in the log without being a failure.
+fn assert_constant_in_library_size(label: &str, small: usize, larger: usize) {
+    println!("{label:<44} {small} statements @{SMALL} books, {larger} @{LARGER}");
+    assert_eq!(
+        small, larger,
+        "{label}: {small} SQL statements for {SMALL} books but {larger} for \
+         {LARGER}. The count scales with row count, which is the N+1 pattern \
+         behind pitfalls §16 and §18 -- look for a query inside a loop over \
+         rows."
+    );
+    // A call that issues nothing is not evidence of anything; it usually means
+    // the measurement itself broke (pitfalls §19).
+    assert!(
+        small > 0,
+        "{label} recorded 0 statements -- the counter is not wired up, so this \
+         test cannot fail and is not a test"
+    );
+}
+
+/// Two catalogs of different sizes, for the comparison above.
+fn small_and_larger() -> (Catalog, Catalog) {
+    let small = Catalog::open_in_memory().unwrap();
+    seed(&small, SMALL);
+    let larger = Catalog::open_in_memory().unwrap();
+    seed(&larger, LARGER);
+    (small, larger)
+}
+
+#[test]
+fn list_books_does_not_scale_queries_with_library_size() {
+    // `list_books` issues one SELECT for the books and one for all their tags
+    // (`hydrate_books`). If either becomes per-book, the two counts diverge.
+    let (small, larger) = small_and_larger();
+    let a = small.count_queries(|| small.list_books(SortKey::Title, "").unwrap());
+    let b = larger.count_queries(|| larger.list_books(SortKey::Title, "").unwrap());
+    assert_constant_in_library_size("list_books(Title, \"\")", a, b);
+}
+
+#[test]
+fn list_books_search_path_does_not_scale_either() {
+    // The search branch is a separate SQL string and can regress on its own.
+    let (small, larger) = small_and_larger();
+    let a = small.count_queries(|| small.list_books(SortKey::Title, "Something").unwrap());
+    let b = larger.count_queries(|| larger.list_books(SortKey::Title, "Something").unwrap());
+    assert_constant_in_library_size("list_books(Title, search)", a, b);
+}
+
+#[test]
+fn recent_books_cost_does_not_depend_on_how_many_it_returns() {
+    // Home asks for a handful of covers. This used to load the whole library.
+    let cat = Catalog::open_in_memory().unwrap();
+    seed(&cat, LARGER);
+    let six = cat.count_queries(|| cat.recent_books(6).unwrap());
+    let thirty = cat.count_queries(|| cat.recent_books(30).unwrap());
+    println!("recent_books                                 {six} @6, {thirty} @30");
+    assert_eq!(
+        six, thirty,
+        "recent_books(6) cost {six} statements and recent_books(30) cost \
+         {thirty} -- the count must not depend on how many rows come back"
+    );
+    assert!(six > 0, "recent_books recorded 0 statements -- counter not wired");
+}
+
+#[test]
+fn books_by_ids_batches_instead_of_looping() {
+    // `books_by_ids` exists *because* callers were fetching one book at a
+    // time. It chunks at 500, so 50 ids must cost the same as 1.
+    let cat = Catalog::open_in_memory().unwrap();
+    seed(&cat, LARGER);
+    let ids: Vec<i64> = cat
+        .list_books(SortKey::Title, "")
+        .unwrap()
+        .iter()
+        .take(50)
+        .map(|b| b.id)
+        .collect();
+    assert_eq!(ids.len(), 50, "need 50 seeded books for this to mean anything");
+
+    let one = cat.count_queries(|| cat.books_by_ids(&ids[..1]).unwrap());
+    let fifty = cat.count_queries(|| cat.books_by_ids(&ids).unwrap());
+    println!("books_by_ids                                 {one} @1 id, {fifty} @50 ids");
+    assert_eq!(
+        one, fifty,
+        "books_by_ids cost {one} statements for 1 id and {fifty} for 50 -- it \
+         is looping, which is the exact bug it was written to remove"
+    );
+    assert!(one > 0, "books_by_ids recorded 0 statements -- counter not wired");
+}
+
+#[test]
+fn books_with_tag_does_not_query_per_book() {
+    // Every seeded book carries "scifi", so this returns the whole library and
+    // a per-row query is unmissable.
+    let (small, larger) = small_and_larger();
+    let a = small.count_queries(|| small.books_with_tag("scifi", SortKey::Title).unwrap());
+    let b = larger.count_queries(|| larger.books_with_tag("scifi", SortKey::Title).unwrap());
+    assert_constant_in_library_size("books_with_tag(scifi)", a, b);
+}
+
+#[test]
+fn library_stats_is_memoised_and_invalidates_on_write() {
+    // ~20 aggregates, called from Home, the Library dashboard and Analytics.
+    // The memo is keyed on total_changes(); if that wiring breaks, the cost
+    // silently triples on every page load, or -- worse -- the numbers go
+    // stale. Both directions are asserted.
+    let cat = Catalog::open_in_memory().unwrap();
+    seed(&cat, SMALL);
+
+    let cold = cat.count_queries(|| cat.library_stats().unwrap());
+    assert!(
+        cold > 1,
+        "library_stats ran {cold} statements -- expected a batch of aggregates"
+    );
+
+    let warm = cat.count_queries(|| cat.library_stats().unwrap());
+    println!("library_stats                                {cold} cold, {warm} warm");
+    assert_eq!(
+        warm, 0,
+        "the second library_stats() ran {warm} statements; it must come from \
+         the memo. Check the total_changes() cache key."
+    );
+
+    // A write must invalidate it, or the dashboard shows stale counts.
+    seed_more(&cat, "stats", 1);
+    let after_write = cat.count_queries(|| cat.library_stats().unwrap());
+    assert_eq!(
+        after_write, cold,
+        "after a write, library_stats() ran {after_write} statements but a cold \
+         call costs {cold} -- the memo did not invalidate, so the numbers on \
+         screen are now stale"
+    );
 }

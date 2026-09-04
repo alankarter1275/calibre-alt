@@ -402,6 +402,60 @@ impl HighlightColor {
     ];
 }
 
+// ---------------------------------------------------------------------------
+// A0 step 7 — query counting (test-only)
+//
+// Why counting statements rather than timing them: the CI runner's wall-clock
+// swings ~60% between identical runs (`startup_dicts`, byte-identical work,
+// measured 2774 ms and 3740 ms on consecutive runs), so any time threshold
+// loose enough not to flake is too loose to catch a real regression. A query
+// count is an integer, is identical on every machine, and catches the failure
+// that has actually bitten this repo three times (§16, §18): a loop that
+// issues one query per row.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+thread_local! {
+    /// Statements executed on this thread since the last `reset`.
+    ///
+    /// Thread-local rather than a global counter because `cargo test` runs
+    /// tests in parallel: a shared counter would make every query-count test
+    /// depend on what the others happened to be doing, which is exactly the
+    /// kind of flake this is meant to replace.
+    static QUERY_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Catalog {
+    /// Start counting SQL statements on this thread, from zero.
+    ///
+    /// `trace_v2` takes a bare `fn`, not a closure, which is why the counter
+    /// is a thread-local rather than something captured.
+    pub(crate) fn start_counting_queries(&self) {
+        fn bump(_: rusqlite::trace::TraceEvent<'_>) {
+            QUERY_COUNT.with(|c| c.set(c.get() + 1));
+        }
+        QUERY_COUNT.with(|c| c.set(0));
+        self.conn()
+            .trace_v2(rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT, Some(bump));
+    }
+
+    /// Statements executed since `start_counting_queries`.
+    pub(crate) fn queries_counted(&self) -> usize {
+        QUERY_COUNT.with(|c| c.get())
+    }
+
+    /// Count the statements one call issues.
+    pub(crate) fn count_queries<T>(&self, f: impl FnOnce() -> T) -> usize {
+        self.start_counting_queries();
+        let _ = f();
+        let n = self.queries_counted();
+        self.conn()
+            .trace_v2(rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT, None);
+        n
+    }
+}
+
 impl Catalog {
     /// Take the connection lock, recovering from poisoning.
     ///

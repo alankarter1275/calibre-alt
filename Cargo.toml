@@ -26,7 +26,12 @@ glib = "0.20"
 gio = { version = "0.20", package = "gio" }
 
 # Library / persistence
-rusqlite = { version = "0.32", features = ["bundled"] }
+# `trace` powers the A0 step 7 query-count assertions in `src/perf.rs`: it is
+# the only way to count statements from outside the call, which is what makes
+# those tests machine-independent. Compiled into all builds because feature
+# unification would pull it in for tests anyway; the callback is null unless
+# something registers one, so the cost when unused is nil.
+rusqlite = { version = "0.32", features = ["bundled", "trace"] }
 uuid = { version = "1", features = ["v4"] }
 sha2 = "0.10"
 hex = "0.4"
