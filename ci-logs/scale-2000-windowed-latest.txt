@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=2000 out=ci-shots-2000-windowed settle=60
-binary: 16051992 bytes
+binary: 16051224 bytes
 
 === seeding 2000 books ===
 seed-library: 2000 books, 1882 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.9
-SWAYSOCK=/run/user/1001/sway-ipc.1001.5121.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.5722.sock
 sway up: {
   "human_readable": "1.9",
   "variant": "sway",
@@ -21,10 +21,10 @@ WAYLAND_DISPLAY=wayland-1
 requested route: all-books
 windowed grid: 1
 toplevel windows seen: 1
-  shot: 01-all-books (66185 bytes)
+  shot: 01-all-books (67627 bytes)
 focused: 1
-  shot: 02-all-books-settling (66185 bytes)
-  shot: 03-all-books-settled (66185 bytes)
+  shot: 02-all-books-settling (67627 bytes)
+  shot: 03-all-books-settled (67627 bytes)
 navigation: app accepted route 'all-books'
 navigation: grid rendered (grid_build seen, grid_cards=2000)
   shot: 04-home-for-comparison (61550 bytes)
@@ -32,13 +32,13 @@ navigation: 'all-books' differs from Home -- the page really did change
 navigation: OK -- the images below are 'all-books'
 
 === timing lines from the app ===
-  [timing] startup_db_open         9.5 ms
+  [timing] startup_db_open         9.7 ms
   [timing] covers_queued            11
-  [timing] startup_first_page     14.0 ms
-  [timing] window_shown          127.0 ms
+  [timing] startup_first_page     13.8 ms
+  [timing] window_shown          129.1 ms
   [timing] page_cache_miss           1
   [timing] covers_queued            45
-  [timing] grid_build             19.2 ms
+  [timing] grid_build             11.7 ms
   [timing] grid_cards               48
   [timing] grid_cards_total       2000
   [timing] covers_queued             6
@@ -47,7 +47,7 @@ navigation: OK -- the images below are 'all-books'
   [timing] thumbs_backfilled       150
   [timing] thumbs_backfilled       200
   [timing] thumbs_backfilled       250
-  [timing] startup_dicts        3640.6 ms
+  [timing] startup_dicts        3799.3 ms
   [timing] thumbs_backfilled       300
   [timing] thumbs_backfilled       350
   [timing] thumbs_backfilled       400
@@ -91,33 +91,33 @@ navigation: OK -- the images below are 'all-books'
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
-  702230d95741a18f37e10e4bc5bda61c  ci-shots-2000-windowed/01-all-books.png
-  702230d95741a18f37e10e4bc5bda61c  ci-shots-2000-windowed/02-all-books-settling.png
-  702230d95741a18f37e10e4bc5bda61c  ci-shots-2000-windowed/03-all-books-settled.png
+  31f3ec136a1c46bc5d95038b5186d869  ci-shots-2000-windowed/01-all-books.png
+  31f3ec136a1c46bc5d95038b5186d869  ci-shots-2000-windowed/02-all-books-settling.png
+  31f3ec136a1c46bc5d95038b5186d869  ci-shots-2000-windowed/03-all-books-settled.png
   c3f131f88b29669ccf0cce38a9a7e34a  ci-shots-2000-windowed/04-home-for-comparison.png
 
 === app stderr (non-timing lines) ===
   
-  (kalam:5157): Gtk-WARNING **: 13:27:36.635: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (kalam:5758): Gtk-WARNING **: 13:46:42.057: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=all-books — navigating
 
 === peak memory ===
-books=2000 peak_rss_kb=262884 peak_rss_mb=256
+books=2000 peak_rss_kb=253924 peak_rss_mb=247
 
 === shutting down ===
 
 === artifacts ===
   total 300
-  drwxr-xr-x  2 runner runner  4096 Sep  4 13:29 .
-  drwxr-xr-x 14 runner runner  4096 Sep  4 13:27 ..
-  -rw-r--r--  1 runner runner 66185 Sep  4 13:28 01-all-books.png
-  -rw-r--r--  1 runner runner 66185 Sep  4 13:28 02-all-books-settling.png
-  -rw-r--r--  1 runner runner 66185 Sep  4 13:28 03-all-books-settled.png
-  -rw-r--r--  1 runner runner 61550 Sep  4 13:29 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Sep  4 13:28 grim.log
-  -rw-r--r--  1 runner runner   580 Sep  4 13:28 kalam-home.log
-  -rw-r--r--  1 runner runner  2218 Sep  4 13:27 kalam.log
-  -rw-r--r--  1 runner runner  4210 Sep  4 13:29 report.txt
-  -rw-r--r--  1 runner runner     0 Sep  4 13:27 sway.log
-  -rw-r--r--  1 runner runner  6548 Sep  4 13:28 tree.json
---- run 33877103823 ---
+  drwxr-xr-x  2 runner runner  4096 Sep  4 13:48 .
+  drwxr-xr-x 14 runner runner  4096 Sep  4 13:46 ..
+  -rw-r--r--  1 runner runner 67627 Sep  4 13:47 01-all-books.png
+  -rw-r--r--  1 runner runner 67627 Sep  4 13:47 02-all-books-settling.png
+  -rw-r--r--  1 runner runner 67627 Sep  4 13:48 03-all-books-settled.png
+  -rw-r--r--  1 runner runner 61550 Sep  4 13:48 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Sep  4 13:47 grim.log
+  -rw-r--r--  1 runner runner   580 Sep  4 13:48 kalam-home.log
+  -rw-r--r--  1 runner runner  2218 Sep  4 13:46 kalam.log
+  -rw-r--r--  1 runner runner  4210 Sep  4 13:48 report.txt
+  -rw-r--r--  1 runner runner     0 Sep  4 13:46 sway.log
+  -rw-r--r--  1 runner runner  6548 Sep  4 13:47 tree.json
+--- run 33878836322 ---
