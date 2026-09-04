@@ -1157,7 +1157,10 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for i in 0..2000 {
             let pos = card_position(i);
-            assert!(seen.insert(pos), "book {i} placed on top of another at {pos:?}");
+            assert!(
+                seen.insert(pos),
+                "book {i} placed on top of another at {pos:?}"
+            );
         }
     }
 
