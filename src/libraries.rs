@@ -119,6 +119,24 @@ pub fn config_dir() -> PathBuf {
     base.join("kalam")
 }
 
+/// Under `cargo test`, pretend there are no global preferences.
+///
+/// Without this, tests read the *developer's own* `~/.config/kalam/prefs.json`
+/// and their results depend on whose machine they run on. That is exactly the
+/// failure `docs/pitfalls.md` §19 describes: a test that passes or fails for
+/// reasons unrelated to the code. It bit immediately — making
+/// `dict_history_enabled` global broke a pre-existing service test, because
+/// `log_dict_lookup` consults that pref and the test suddenly depended on a
+/// file outside the repository.
+///
+/// A `cfg!(test)` guard rather than a temp directory: these functions are used
+/// all over, and threading a base path through every caller to serve the tests
+/// would be worse than the problem. Prefs are covered by
+/// `is_global_pref`'s own tests, which are pure and need no filesystem.
+fn skip_global_prefs_in_tests() -> bool {
+    cfg!(test)
+}
+
 /// `~/.config/kalam/libraries.json`
 pub fn registry_path() -> PathBuf {
     config_dir().join("libraries.json")
@@ -344,6 +362,9 @@ pub fn global_prefs_path() -> PathBuf {
 /// Read every global preference. Missing or corrupt file gives an empty map,
 /// for the same reason as the registry: never refuse to start.
 pub fn load_global_prefs() -> std::collections::BTreeMap<String, String> {
+    if skip_global_prefs_in_tests() {
+        return Default::default();
+    }
     let Ok(text) = std::fs::read_to_string(global_prefs_path()) else {
         return Default::default();
     };
@@ -356,6 +377,10 @@ pub fn load_global_prefs() -> std::collections::BTreeMap<String, String> {
 /// rarely and by hand, and a cached copy is one more thing that can go stale
 /// against a second window.
 pub fn set_global_pref(key: &str, value: &str) -> std::io::Result<()> {
+    if skip_global_prefs_in_tests() {
+        // Never write into a real home directory from a test run.
+        return Ok(());
+    }
     let mut all = load_global_prefs();
     all.insert(key.to_string(), value.to_string());
 
@@ -437,5 +462,25 @@ mod global_pref_tests {
         // And the near-miss that started this: `theme` alone is NOT the app
         // theme -- the real key is `ui.theme`.
         assert!(!is_global_pref("theme"));
+    }
+
+    #[test]
+    fn tests_never_touch_the_real_config_file() {
+        // This is load-bearing. Without it, every test that reads a global
+        // pref reads the developer's own ~/.config/kalam/prefs.json, and the
+        // suite passes or fails depending on whose machine it runs on
+        // (pitfalls §19). It broke a pre-existing service test the moment
+        // `dict_history_enabled` became global.
+        assert!(
+            skip_global_prefs_in_tests(),
+            "global prefs must be inert under cargo test"
+        );
+        assert!(
+            load_global_prefs().is_empty(),
+            "a test run must see no global prefs, whatever is on this machine"
+        );
+        // ...and writing must be a no-op rather than editing a real home dir.
+        assert!(set_global_pref("ui.theme", "whatever").is_ok());
+        assert!(load_global_prefs().is_empty());
     }
 }

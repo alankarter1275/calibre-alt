@@ -1011,3 +1011,46 @@ correlates with nothing in the diff.
 §21 was about a check whose *verdict* stopped meaning anything after a change.
 This is the sibling: a check whose *failure mode* has nothing to do with what
 it checks. Both waste time by pointing the investigation at the diff.
+
+---
+
+## 24. Making a setting global makes every test depend on the developer's machine
+
+P6.5 moved app-level preferences out of the library database into
+`~/.config/kalam/prefs.json`, so switching library would stop resetting your
+theme and reader settings. Correct change. It immediately broke a test that had
+nothing to do with libraries:
+
+```
+service::tests::history_and_lookup_history_return_rows_without_errors ... FAILED
+```
+
+`log_dict_lookup` skips logging when `dict_history_enabled` is off. That pref
+had just become global — so the test was now reading a JSON file in a real home
+directory, outside the repository, that the test had never heard of and could
+not control. On a machine where that setting happened to be off, the test
+failed. On a fresh CI runner it might pass. Nothing about the *code under test*
+decided the outcome.
+
+That is §19's rule from the other direction: not "a test that cannot fail", but
+**a test whose result is decided by something outside the test.** Both are
+tests in name only.
+
+### The fix
+
+Global prefs are inert under `cargo test`: reads return empty, writes are a
+no-op. A `cfg!(test)` guard rather than a temp directory, because these
+functions are called from everywhere and threading a base path through every
+caller to serve the tests would be worse than the problem. The classification
+rule itself (`is_global_pref`) is pure and keeps its own tests.
+
+There is a test asserting the guard works, which matters more than it looks —
+if it ever regresses, the symptom is not a failure but a suite that quietly
+starts depending on whoever runs it.
+
+### The rule
+
+**When you move state outside the repository — a config file, an environment
+variable, a keyring, a server — every test that touches it becomes a test of
+the machine.** Decide at that moment how tests will be isolated from it. Not
+after CI goes red for a reason that looks unrelated to the change.
