@@ -1055,15 +1055,79 @@ fn build_libraries(host: &gtk::Box) {
         let active = reg.active;
         for (i, lib) in reg.libraries.iter().enumerate() {
             let open_now = active == Some(i);
+
+            // Path, then Open / Forget. Grouped in one row so a long path
+            // cannot push the buttons off the edge.
+            let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            controls.set_valign(gtk::Align::Center);
+            controls.append(&path_box(&lib.path.to_string_lossy()));
+
+            if !open_now {
+                let open = gtk::Button::with_label("Open");
+                open.add_css_class("kalam-btn-outlined");
+                open.set_valign(gtk::Align::Center);
+                let name = lib.name.clone();
+                open.connect_clicked(move |_| {
+                    let mut reg = crate::libraries::load_registry();
+                    if !reg.select(i) {
+                        // The registry changed under us -- another window, or
+                        // a hand edit. Saying so beats silently doing nothing.
+                        crate::notify::error(
+                            "Could not switch library",
+                            "The library list changed. Reopen Settings and try again.",
+                        );
+                        return;
+                    }
+                    match crate::libraries::save_registry(&reg) {
+                        Ok(()) => crate::notify::info(
+                            "Library selected",
+                            &format!("“{name}” opens next time Kalam starts."),
+                        ),
+                        Err(err) => crate::notify::error(
+                            "Could not save the library list",
+                            &err.to_string(),
+                        ),
+                    }
+                });
+                controls.append(&open);
+            }
+
+            let forget = gtk::Button::with_label("Forget");
+            forget.add_css_class("kalam-btn-outlined");
+            forget.set_valign(gtk::Align::Center);
+            let fname = lib.name.clone();
+            forget.connect_clicked(move |_| {
+                let mut reg = crate::libraries::load_registry();
+                if !reg.forget(i) {
+                    crate::notify::error(
+                        "Could not remove that library",
+                        "The library list changed. Reopen Settings and try again.",
+                    );
+                    return;
+                }
+                match crate::libraries::save_registry(&reg) {
+                    // Say plainly that the books are untouched. "Forget" and
+                    // "delete my library" must never be confusable.
+                    Ok(()) => crate::notify::info(
+                        "Library removed from the list",
+                        &format!("“{fname}” — the folder and its books were not touched."),
+                    ),
+                    Err(err) => {
+                        crate::notify::error("Could not save the library list", &err.to_string())
+                    }
+                }
+            });
+            controls.append(&forget);
+
             setting_row(
                 &body,
                 &lib.name,
                 if open_now {
                     "Open now"
                 } else {
-                    "Select to switch on next launch"
+                    "Opens on next launch when selected"
                 },
-                &path_box(&lib.path.to_string_lossy()),
+                &controls,
             );
         }
     }
