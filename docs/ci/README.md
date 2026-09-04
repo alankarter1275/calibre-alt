@@ -35,6 +35,21 @@ Copy [`github-actions-ci.yml`](./github-actions-ci.yml) over
 
 ---
 
+## ACTION NEEDED (2026-09-04) — small follow-up to the rustfmt step
+
+Low priority; nothing is broken. The report-only rustfmt step works, but on a
+**clean** run it deletes `ci-logs/rustfmt-latest.diff` locally and never
+commits the deletion — so the stale diff from an earlier untidy run stays in
+the repository and looks like an outstanding complaint. It already fooled me
+once.
+
+Copy [`github-actions-ci.yml`](./github-actions-ci.yml) over
+`.github/workflows/ci.yml` when convenient. A clean run now writes
+`clean` plus the run id instead of deleting the file, so the published diff
+always describes the latest run.
+
+---
+
 ## Done: windowed-grid measurement (applied 2026-09-04)
 
 Installed and running. The `scale` job runs the 2,000-book library twice, once
