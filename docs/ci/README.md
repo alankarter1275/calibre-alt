@@ -5,33 +5,23 @@ GitHub App has the `workflows` permission. The workflow body lives here instead:
 
 **Canonical file:** [`github-actions-ci.yml`](./github-actions-ci.yml)
 
-## ACTION NEEDED (2026-09-04, second one): measure the windowed grid
+## Done: windowed-grid measurement (applied 2026-09-04)
 
-The A0 step 6 change (build only the book cards you can see) is in the code but
-**switched off by default** — it changes the most-used screen and nobody has
-looked at it yet. To find out whether it actually saves memory, CI has to run
-the 2,000-book library twice: once with the old grid, once with the new one.
+Installed and running. The `scale` job runs the 2,000-book library twice, once
+with each grid, and publishes a side-by-side summary to
+`ci-logs/scale-2000-comparison.txt`. Both runs happen in the same job on the
+same machine on purpose: comparing against a number from a previous run would
+be comparing two different rented VMs, which is what made timing-based tests
+useless (see the A0 step 7 entry in the roadmap).
 
-Copy [`github-actions-ci.yml`](./github-actions-ci.yml) over
-`.github/workflows/ci.yml` and push. It adds one step to the `scale` job, right
-after the existing 2,000-book run:
-
-```yaml
-      - name: run at 2000 books with the windowed grid
-        run: |
-          BOOKS=2000 OUT=ci-shots-2000-windowed SETTLE=60 WINDOWED=1 \
-            docs/ci/screenshot.sh
-```
-
-and publishes a short side-by-side summary to
-`ci-logs/scale-2000-comparison.txt`.
-
-Both runs happen in the same job on the same machine, on purpose. Comparing
-against a number from a previous run would be comparing two different rented
-VMs, which is exactly the problem that made timing-based tests useless (see the
-A0 step 7 entry in the roadmap).
-
-Cost: the `scale` job takes about 2 minutes longer. It does not gate the build.
+**No reinstall needed** even though the windowed grid later became the default.
+The version installed passes `WINDOWED=1` on one run and nothing on the other;
+"nothing" would now mean *windowed* as well, so both runs would measure the
+same thing and report a green, meaningless comparison. Rather than ask for
+another manual install, `screenshot.sh` now infers the baseline from the output
+directory: a run writing to a plain `ci-shots-*` path is the old grid unless
+told otherwise. An explicit `WINDOWED=` still wins, so the updated copy in this
+directory works too.
 
 ---
 

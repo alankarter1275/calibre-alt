@@ -303,28 +303,33 @@ pub fn build_book_card(
 // are held open by a spacer of the exact height the missing cards would have
 // occupied, so the scrollbar is the same size and in the same place as before.
 //
-// Off by default. `KALAM_WINDOWED_GRID=1` turns it on. It is a visible change
-// to the most-used screen in the app and the agent cannot see the screen, so
-// the user has to look at it before it becomes the default.
+// On by default since 2026-09-04, after the user confirmed it on a real
+// screen. `KALAM_NO_WINDOWED_GRID=1` restores the old build-every-card grid.
 // ---------------------------------------------------------------------------
 
-/// Is the windowed grid switched on?
+/// Is the windowed grid switched on? Default: yes.
 ///
-/// Opt *in*, unlike `KALAM_NO_PRELOAD` / `KALAM_NO_WEBVIEW_POOL` which are opt
-/// *out*. Those guard shipped behaviour; this guards behaviour that has never
-/// been looked at on a real screen.
+/// Was opt-in via `KALAM_WINDOWED_GRID=1` while it had never been seen on a
+/// real screen. The user checked it on 2026-09-04 — books all present, page
+/// the right length, scrollbar steady — so it is now the default and
+/// `KALAM_NO_WINDOWED_GRID=1` is the way back to building every card.
+///
+/// Same opt-*out* shape as `KALAM_NO_PRELOAD` and `KALAM_NO_WEBVIEW_POOL`,
+/// deliberately: an escape hatch is only useful if it works the way the other
+/// escape hatches in this codebase already work.
 pub fn windowed_grid_enabled() -> bool {
-    windowed_grid_enabled_for(std::env::var_os("KALAM_WINDOWED_GRID").as_deref())
+    windowed_grid_enabled_for(std::env::var_os("KALAM_NO_WINDOWED_GRID").as_deref())
 }
 
 /// The rule as a pure function, so it can be tested without touching
 /// process-wide environment state mid-run.
-fn windowed_grid_enabled_for(value: Option<&std::ffi::OsStr>) -> bool {
-    match value {
-        None => false,
-        // An empty value or "0" means off, so a stray `KALAM_WINDOWED_GRID=`
-        // in a shell profile cannot silently switch it on.
-        Some(v) => !(v.is_empty() || v == "0"),
+fn windowed_grid_enabled_for(disable: Option<&std::ffi::OsStr>) -> bool {
+    match disable {
+        None => true,
+        // Unset-but-present and an explicit "0" both mean "leave it on", so a
+        // stray `KALAM_NO_WINDOWED_GRID=` in a shell profile cannot silently
+        // switch it off. Matches `preload_enabled_for` exactly.
+        Some(v) => v.is_empty() || v == "0",
     }
 }
 
@@ -590,9 +595,9 @@ pub fn build_book_grid(
     on_full: impl Fn(i64) + Clone + 'static,
     on_float: impl Fn(i64) + Clone + 'static,
 ) -> gtk::Box {
-    // A0 step 6, opt-in for now: build only the rows on screen. Same layout,
-    // same scrollbar -- see `build_windowed_grid`. Off by default until the
-    // user has looked at it on a real machine.
+    // A0 step 6: build only the rows on screen. Same layout, same scrollbar --
+    // see `build_windowed_grid`. `KALAM_NO_WINDOWED_GRID=1` restores the old
+    // build-every-card behaviour.
     if windowed_grid_enabled() {
         return build_windowed_grid(books, on_full, on_float);
     }
@@ -1070,15 +1075,16 @@ mod tests {
     }
 
     #[test]
-    fn the_windowed_grid_is_off_unless_asked_for() {
+    fn the_windowed_grid_is_on_unless_explicitly_switched_off() {
         use std::ffi::OsStr;
-        // Opt-in: this changes the most-used screen and nobody has seen it yet.
-        assert!(!windowed_grid_enabled_for(None), "must default to off");
-        // A stray `KALAM_WINDOWED_GRID=` in a shell profile must not enable it.
-        assert!(!windowed_grid_enabled_for(Some(OsStr::new(""))));
-        assert!(!windowed_grid_enabled_for(Some(OsStr::new("0"))));
-        // ...and asking for it works.
-        assert!(windowed_grid_enabled_for(Some(OsStr::new("1"))));
+        // On by default since the user checked it on a real screen.
+        assert!(windowed_grid_enabled_for(None), "must default to on");
+        // A stray `KALAM_NO_WINDOWED_GRID=` in a shell profile must not
+        // silently disable it -- same rule as KALAM_NO_PRELOAD.
+        assert!(windowed_grid_enabled_for(Some(OsStr::new(""))));
+        assert!(windowed_grid_enabled_for(Some(OsStr::new("0"))));
+        // ...and the escape hatch works.
+        assert!(!windowed_grid_enabled_for(Some(OsStr::new("1"))));
     }
 
     // -- The three bugs the user found on 2026-09-04 ------------------------

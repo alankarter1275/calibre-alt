@@ -306,19 +306,21 @@ jobs:
       # The script samples the app's own RSS and writes peak-rss.txt; see the
       # comment in screenshot.sh for why /usr/bin/time cannot do this (sway is
       # the parent, not us). Longer settle: 2,000 covers take a while to warm.
+      # The windowed grid is the default since 2026-09-04, so this run
+      # measures shipped behaviour.
       - name: run at 2000 books and record peak memory
         run: |
           chmod +x docs/ci/screenshot.sh docs/ci/check-shot.py
-          BOOKS=2000 OUT=ci-shots-2000 SETTLE=60 docs/ci/screenshot.sh
-
-      # A0 step 6: the same library again with the windowed grid switched on,
-      # so the before/after comes from one machine in one run. Comparing
-      # against a number from a previous run would be comparing two different
-      # VMs -- the whole reason step 7 asserts query counts and not
-      # milliseconds. Both reports are published side by side below.
-      - name: run at 2000 books with the windowed grid
-        run: |
           BOOKS=2000 OUT=ci-shots-2000-windowed SETTLE=60 WINDOWED=1 \
+            docs/ci/screenshot.sh
+
+      # ...and the same library again with the old build-every-card grid, so
+      # the before/after comes from one machine in one run. Comparing against a
+      # number from a previous run would be comparing two different rented VMs
+      # -- the whole reason step 7 asserts query counts and not milliseconds.
+      - name: run at 2000 books with the old build-every-card grid
+        run: |
+          BOOKS=2000 OUT=ci-shots-2000 SETTLE=60 WINDOWED=0 \
             docs/ci/screenshot.sh
 
       - name: upload scale artifacts
@@ -349,13 +351,13 @@ jobs:
           # The one line that answers "did it work", so it is not buried in
           # two 60-line reports.
           {
-            echo "=== A0 step 6: old grid vs windowed grid, 2,000 books ==="
-            echo "old grid:"
-            grep -E "peak_rss|grid_build|grid_cards" ci-logs/scale-2000-latest.txt \
-              | sed 's/^/  /' || true
-            echo "windowed grid:"
+            echo "=== A0 step 6: windowed grid (shipped) vs old grid, 2,000 books ==="
+            echo "windowed grid (default):"
             grep -E "peak_rss|grid_build|grid_cards" \
               ci-logs/scale-2000-windowed-latest.txt | sed 's/^/  /' || true
+            echo "old build-every-card grid:"
+            grep -E "peak_rss|grid_build|grid_cards" ci-logs/scale-2000-latest.txt \
+              | sed 's/^/  /' || true
           } > ci-logs/scale-2000-comparison.txt
           cat ci-logs/scale-2000-comparison.txt
           git config user.name "github-actions"

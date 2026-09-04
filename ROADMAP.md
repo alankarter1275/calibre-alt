@@ -270,8 +270,8 @@ P9  Manga platform ──── Suwayomi-class sources, same Source trait
 P10 PDF ─────────────── MuPDF in text-reader family + basic marks
 P11 Tools ───────────── convert (external), polish, Calibre import
 A0  Architecture track ─ service layer + task manager + preloaders +
-                        thumbnails + source seam (virtualization REOPENED
-                        2026-09-04: 502 MB at 2,000 books)
+                        thumbnails + source seam + windowed grid (done);
+                        only the plugin-host seam is left, with P7
 P12 Lua plugins ─────── for surfaces that rot (scrapers, add-on metadata);
                         stable-API providers stay built-in Rust
 ```
@@ -1318,13 +1318,12 @@ runs — the constant that keeps appearing is the answer.
 ## A0 — Architecture & performance track  ◀ NEXT
 
 **Status:** decided 2026-09-02 (design in `docs/conversation.md` §§1–3).
-**Steps 1–5 are done and CI-green. Step 7 (perf-budget CI test) shipped
-2026-09-04 as query-count budgets rather than time thresholds. Step 8 is
-designed and lands with AO3 in P7. Step 6 (grid virtualization) was closed on
-measured evidence and was REOPENED on 2026-09-04 — the measurement had been
-taken on a CI run that never reached the grid, and the real number at 2,000
-books is 502 MB, not the 252 MB that closed it. **Step 6 is now the only open
-A0 item**, and it is the recommended next piece of work.**
+**A0 is done apart from step 8, which is designed and lands with AO3 in P7.**
+Steps 1–5 shipped and are CI-green. Step 7 (perf-budget CI test) shipped
+2026-09-04 as query-count budgets rather than time thresholds. Step 6 (grid
+virtualization) shipped 2026-09-04 after being wrongly closed and then
+reopened: at 2,000 books the All-books page went from 502 MB to 247 MB and from
+434 ms to 12 ms.
 A track, not a phase — interleaves with P6–P11.
 - **Step 1 (measure) — done.** Data layer (headless `src/perf.rs`) confirmed all
   list-page queries < ~20 ms for 2,000 books; GUI (`src/timing.rs`,
@@ -1395,8 +1394,11 @@ A track, not a phase — interleaves with P6–P11.
 - **Step 5 (preloaders) — done.** `src/preload.rs` + `tasks::spawn_stream`;
   covers decode off the UI thread and swap in per card, chapters are warmed on
   open and on every turn.
-- **Step 6 (grid virtualization) — ~~CLOSED~~ REOPENED 2026-09-04. The evidence
-  that closed it was measured on a run that never reached the grid.**
+- **Step 6 (grid virtualization) — ~~CLOSED~~ reopened, then ✅ DONE
+  2026-09-04. Shipped and on by default: 502 MB → 247 MB, 434 ms → 12 ms at
+  2,000 books.** The history below is kept because *how* it was wrongly closed
+  is the more useful lesson. The evidence that closed it was measured on a run
+  that never reached the grid.**
   The original finding read: build cost ~0.17 ms/card, and peak memory **flat**
   at 233 MB (139 books) vs 252 MB (2,000) because the cover cache is a bounded
   300-entry LRU — so virtualization fixes nothing. Both halves of that came
@@ -1512,14 +1514,13 @@ fast — make it never wait"*) and lay the seams the source platform needs.
    `chapter_html`'s read is served from the page cache. Only the read is
    preloadable — the render needs a main-thread `WebView`, and the HTML
    depends on live theme/font settings, so a cached string would go stale.
-6. **Grid virtualization** — ⚠️ **reopened 2026-09-04.** Closed on 2026-09-03
-   on "flat peak memory (233 MB at 139 books, 252 MB at 2,000)". Those runs
-   never reached the grid — the harness was stuck on Home and did not say so
-   (pitfall §21), so the flat number was Home's. With CI now opening the page:
-   **502 MB at 2,000 books** vs 255 MB at 139, i.e. ~0.15 MB per card for
-   widgets that are mostly off screen. The cover LRU is bounded and is not the
-   cause; `build_book_grid` builds and attaches a card for **every** book
-   before returning. `grid_build` is 421 ms at 2,000 books, measured.
+6. **Grid virtualization** — ✅ **done 2026-09-04, on by default.** Only the
+   book cards on screen are built (plus 3 rows of margin). Measured on one
+   machine in one CI run, 2,000 books: **502 MB → 247 MB**, `grid_build`
+   **434 ms → 12 ms**, 2,000 cards → 48. Layout is unchanged — `GtkFixed`
+   geometry matches the old `GtkGrid` exactly, same 6 columns, one scrollbar,
+   header still scrolls with the page — and the user confirmed it on a real
+   screen. `KALAM_NO_WINDOWED_GRID=1` restores the old behaviour.
 7. **Perf-budget CI test** — ✅ **done 2026-09-04, reshaped: query counts, not
    milliseconds.** Six budgets in `src/perf.rs`, not `#[ignore]`d, gating every
    CI run. Each asserts that a call's SQL *statement count* does not grow with
@@ -2213,3 +2214,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-04 | **Standing instruction added: write and speak in plain, simple English.** The user, after a reply about grid memory: *"I can't understand anything you said. I need you to use easy and simple language to explain things. Infact add this instruction somewhere so that future chats will also follow it."* Recorded as a hard rule in the "Read this first" block, with a pointer from the working agreement, so it survives into every future chat rather than lasting one conversation. The rule spells out what actually went wrong, because "be clearer" is too vague to act on: **explain the thing before naming it** (not "the `PENDING_FRAMES` weak-ref map breaks under recycling" but "each cover picture remembers which book it belongs to; if pictures get reused for different books, a slow cover can land on the wrong one"), **no unexplained jargon** (*virtualization*, *refcount*, *GObject*, *N+1*, *LRU* mean nothing on their own), **short sentences with one idea each** — which was the real problem more than the vocabulary was — **lead with the answer** instead of making the user read the analysis to reach it, **give numbers meaning** ("507 MB, which is a lot on a 4 GB machine", not "507 MB peak RSS"), and **make choices concrete**: what changes on screen, what could break, how long it takes. Explicitly scoped: this is about *communication only*. It does not lower the bar for the engineering, the testing or the documentation — keep the caveats and the numbers, just say them in words that do not need a glossary |
 | 2026-09-04 | **A0 step 6 first cut: the book grid now builds only the rows you can see — switched off by default, needs a look on a real screen.** Turn it on with `KALAM_WINDOWED_GRID=1`. At 2,000 books the old grid builds 2,000 cards before the page can appear (396 ms measured) and holds ~232 MB, almost all of it cover images kept alive by cards scrolled far off screen. This builds about 48: the rows in view plus three rows of margin above and below. **The first plan for this was wrong and was thrown away.** It assumed GTK's own recycling grid (`GridView`), which insists on owning the scrolling — that would have meant restructuring the page so the header and search bar stayed fixed while only the books scrolled, plus care to avoid two scrollbars. The user's reaction to that was immediate and correct: they want the page to stay as it is. So this keeps the plain `GtkGrid` exactly where it sits, in the same box, in the same page, inside the app's existing scroller. **Nothing about the layout changes** — same 6 columns, one scrollbar, header still scrolls away with the page. The trick is a spacer sized to the full height the grid would have had, so the scrollbar is the same length and in the same place; the grid then listens to the scroller it is already inside (found by walking up the widget tree, so the three call sites needed no edits at all) and mounts and unmounts cards as rows come in and out of view. Two risks the user has to judge, both visible only on a real screen: blank patches if a fast flick outruns the mounting, and covers arriving late into a slot. The overscan margin addresses the first; the second turned out to be smaller than feared, because cards are discarded rather than reused and the pending-cover list is keyed by cover path, so a late decode cannot paint onto a slot that now belongs to a different book. 7 tests on the pure row arithmetic — it is the part that can be wrong in an interesting way and needs no display: viewport coverage checked at every scroll offset across the whole range, no skipped rows between consecutive positions, both edges (negative overscroll, past-the-end), empty and small libraries, and the case where GTK has not laid out yet and reports a viewport height of zero, which if treated as "nothing is visible" would open the page blank |
 | 2026-09-04 | **Windowed grid v1 was broken on a real screen; rebuilt on `GtkFixed`.** The user switched it on and found three bugs immediately: the page scrolled about twice as far as it should with blank space past the books, some books were missing, and the covers and scrollbar jumped while scrolling. All three had one cause, now written up as pitfall §22. v1 kept the existing `GtkGrid` and added a tall spacer widget in the last row to hold the full height open. But **a grid row is as tall as its tallest child**, so the 6,532 px spacer made the last *row* 6,532 px tall on top of the 23 real rows above it — 6,796 px of books became 13,064 px of scrolling. The spacer also occupied a real cell (column 0 of the last row), so the book belonging there had nowhere to go; and rows with no mounted cards collapsed to zero height, so the total height shifted under the scrollbar as cards came and went. The general rule: **a container that derives its size from its children cannot be used to virtualize those children** — the premise is "most children do not exist", and no arrangement of spacers fixes that, since a spacer is just another child feeding the same calculation. v2 uses `GtkFixed`: every card is placed at an explicit x/y and the total size is set once from the book count, so geometry depends on the number of books and never on what is mounted. Verified pixel-identical to the existing grid — 144 books gives 6,796 px both ways. **The lesson about the testing is the part worth keeping.** The row arithmetic had seven tests and was right the whole time; the pixel arithmetic had none, because it lived inside a function that needs a display and was written off as untestable. It was not — `grid_height()` and `card_position()` are pure integer functions, and pulling them out gave 7 more tests that **fail against v1** (13,064 px vs 6,796 px). Having tests for one half of a change is not having tests for the change, and the half that had them was the half I found interesting rather than the half most likely to break |
+| 2026-09-04 | **A0 step 6 shipped and is now the default — the All-books page at 2,000 books went from 502 MB to 247 MB and from 434 ms to 12 ms.** The user checked the rebuilt (`GtkFixed`) version on a real screen and confirmed all three earlier bugs were gone: the page ends where the books end, every book is present, and the scrollbar stays steady while scrolling. That check is the one thing CI cannot do, so it was the gate. The switch flipped from opt-in `KALAM_WINDOWED_GRID=1` to opt-out **`KALAM_NO_WINDOWED_GRID=1`**, matching the shape of `KALAM_NO_PRELOAD` and `KALAM_NO_WEBVIEW_POOL` — an escape hatch is only useful if it works like the other escape hatches. Measured side by side on one machine in one run: 2,000 cards → 48, 434 ms → 12 ms, 502 MB → 247 MB, with the screenshot check reporting an identical 21.7% coloured-pixel count, i.e. the page looks exactly the same. **One trap avoided while flipping the default:** the installed workflow passes `WINDOWED=1` on one run and nothing on the other, which was right while windowed was opt-in — but "nothing" now means *windowed too*, so both runs would have measured the same thing and published a green, meaningless comparison. That is pitfall §21 exactly (change the mechanism and a check watching the old one quietly stops proving anything), caught this time by asking what the check would report *after* the change rather than after it had already lied. Rather than ask for another manual workflow install, `screenshot.sh` now infers the baseline from the output directory, so the installed copy and the updated one in `docs/ci/` are both correct — and `docs/ci/README.md` now has no outstanding ACTION NEEDED items. **This closes A0 except for step 8** (the plugin-host seam), which is designed in `docs/source-seam.md` and deliberately lands with AO3 in P7 |
