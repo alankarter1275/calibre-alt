@@ -423,7 +423,10 @@ mod global_pref_tests {
             "bundled_dictionary_english_idioms_2024",
             "source.ao3.enabled",
         ] {
-            assert!(is_global_pref(key), "{key} should be shared, not per-library");
+            assert!(
+                is_global_pref(key),
+                "{key} should be shared, not per-library"
+            );
         }
     }
 
