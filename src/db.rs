@@ -416,7 +416,7 @@ impl HighlightColor {
 
 #[cfg(test)]
 thread_local! {
-    /// Statements executed on this thread since the last `reset`.
+    /// Statements executed on this thread while a counter is installed.
     ///
     /// Thread-local rather than a global counter because `cargo test` runs
     /// tests in parallel: a shared counter would make every query-count test
@@ -427,33 +427,35 @@ thread_local! {
 
 #[cfg(test)]
 impl Catalog {
-    /// Start counting SQL statements on this thread, from zero.
+    /// Count the SQL statements one call issues.
     ///
-    /// `trace_v2` takes a bare `fn`, not a closure, which is why the counter
-    /// is a thread-local rather than something captured.
-    pub(crate) fn start_counting_queries(&self) {
-        fn bump(_: rusqlite::trace::TraceEvent<'_>) {
+    /// `Connection::trace` takes a bare `fn(&str)`, not a closure, so the
+    /// counter has to live outside it — hence the thread-local above rather
+    /// than something captured. It also needs `&mut Connection`, which the
+    /// `MutexGuard` provides through `DerefMut`.
+    ///
+    /// The hook is installed for the duration of `f` and removed afterwards,
+    /// so a test that forgets to stop counting cannot affect a later one.
+    pub(crate) fn count_queries<T>(&self, f: impl FnOnce() -> T) -> usize {
+        fn bump(_sql: &str) {
             QUERY_COUNT.with(|c| c.set(c.get() + 1));
         }
+
         QUERY_COUNT.with(|c| c.set(0));
-        self.conn().trace_v2(
-            rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
-            Some(bump),
-        );
-    }
+        // Each guard is scoped and dropped before `f` runs: `f` takes the same
+        // lock, and holding it across the call would deadlock.
+        {
+            let mut conn = self.conn();
+            conn.trace(Some(bump));
+        }
 
-    /// Statements executed since `start_counting_queries`.
-    pub(crate) fn queries_counted(&self) -> usize {
-        QUERY_COUNT.with(|c| c.get())
-    }
-
-    /// Count the statements one call issues.
-    pub(crate) fn count_queries<T>(&self, f: impl FnOnce() -> T) -> usize {
-        self.start_counting_queries();
         let _ = f();
-        let n = self.queries_counted();
-        self.conn()
-            .trace_v2(rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT, None);
+
+        let n = QUERY_COUNT.with(|c| c.get());
+        {
+            let mut conn = self.conn();
+            conn.trace(None);
+        }
         n
     }
 }
