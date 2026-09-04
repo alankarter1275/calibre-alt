@@ -5,43 +5,33 @@ GitHub App has the `workflows` permission. The workflow body lives here instead:
 
 **Canonical file:** [`github-actions-ci.yml`](./github-actions-ci.yml)
 
-## ACTION NEEDED (2026-09-04) — CI is red until this is installed
+## ACTION NEEDED (2026-09-04, third attempt) — rustfmt must stop pushing
 
-**Three runs in a row have failed at the `rustfmt` step, and the branch cannot
-go green until this workflow file is copied over.** Nothing is wrong with the
-code: `cargo fmt` succeeds, the *push afterwards* fails, and because the step
-has no `continue-on-error` the whole run dies. The agent cannot fix this — it
-cannot push `.github/workflows/`.
+Sorry, one more copy of the workflow. My previous fix was the wrong shape.
 
-## The rustfmt step's push needs a rebase
+**What happened.** The rustfmt step auto-committed the formatting fix and
+pushed it. That push kept being rejected, and because the step had no
+`continue-on-error`, **a rejected push failed the entire build** — four runs in
+a row, none of them caused by the code. Adding a rebase (attempt two) did not
+help, so the collision was not the only problem, and I could not see the real
+error: the sandbox cannot download Actions logs.
 
-The `rustfmt (auto-fix and push if needed)` step ends with a bare `git push`.
-Other jobs commit `ci-logs/` to the same branch, so whenever one of those lands
-between this job's checkout and this step, the push is rejected — and since the
-step has no `continue-on-error`, **the whole run fails over formatting that was
-already applied successfully**. It reads as a code failure and is not one. It
-has now happened twice in a row.
+**The fix is to stop pushing from that step at all.** Formatting is not worth
+failing a build over, and a step whose failure mode is unrelated to what it
+checks sends every investigation to the wrong place. It now:
 
-There are **two** collisions, one rare and one certain:
+- formats, and **reports** the diff instead of committing it
+- restores the tree afterwards, so clippy and the build see the real source
+- never fails the run
+- publishes the diff to `ci-logs/rustfmt-latest.diff` in a **separate** step
+  that is `continue-on-error`, so even a failed publish cannot break anything
 
-1. The `screenshots` and `scale` jobs commit `ci-logs/` to the same branch. If
-   one lands mid-run, the push is rejected. Intermittent.
-2. **The step immediately before rustfmt — `Cargo.lock (generate and push if
-   missing or stale)` — also pushes.** When it commits, rustfmt's push is
-   rejected *every time*. That step was added earlier the same day, which is
-   what turned a rare flake into a reliable failure.
+The agent then applies the formatting itself in the next commit, which is
+honest anyway: formatting belongs in the change that caused it, not in a
+drive-by commit from CI.
 
 Copy [`github-actions-ci.yml`](./github-actions-ci.yml) over
-`.github/workflows/ci.yml` and push. Two changes to that one step:
-
-```yaml
-            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
-            git push origin "HEAD:$GITHUB_REF_NAME"
-```
-
-matching what every other auto-committing step here already does, plus it now
-writes the formatting diff to `ci-logs/rustfmt-latest.diff` — the agent cannot
-download Actions logs, so "rustfmt failed" with no detail is unactionable.
+`.github/workflows/ci.yml` and push.
 
 ---
 
