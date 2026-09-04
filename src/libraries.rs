@@ -293,3 +293,149 @@ mod tests {
         assert_eq!(back.active, None, "no active field means nothing is open");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Global preferences — the settings that must NOT change when you switch
+// ---------------------------------------------------------------------------
+
+/// Is this preference about the *app*, or about *these books*?
+///
+/// `app_prefs` lives in `catalog.db`, which lives inside a library. That was
+/// fine when there was one library and is wrong now: switching would silently
+/// reset your theme, your reader font size, your dictionary settings and your
+/// API keys, because the new library's database has never heard of them.
+///
+/// So prefs are split by key. Global ones are mirrored into
+/// `~/.config/kalam/prefs.json`; everything else stays in the library where it
+/// belongs.
+///
+/// **Default is per-library**, deliberately. A new pref that should have been
+/// global is a mild annoyance the user can fix by setting it again. A new pref
+/// that should have been per-library but leaked to global silently applies one
+/// library's setting to another, which is data-shaped confusion and much
+/// harder to notice.
+pub fn is_global_pref(key: &str) -> bool {
+    // Every name here was read out of the code rather than guessed. Three of
+    // them are not what you would predict -- the app theme is `ui.theme`, the
+    // EPUB writeback flag is `epub.write_metadata`, and the bundled-dictionary
+    // markers are `bundled_dictionary_*`. Worth stating, because a key that is
+    // *nearly* right silently classifies as per-library and the setting
+    // quietly stops following the user between libraries.
+    if matches!(
+        key,
+        "ui.theme"
+            | "dict_history_enabled"
+            | "dict_sense_hint"
+            | "epub.write_metadata"
+    ) {
+        return true;
+    }
+    // Prefixes, so new reader settings, new bundled dictionaries and new
+    // metadata or source providers are global without anyone having to
+    // remember to come back here.
+    key.starts_with("reader.")
+        || key.starts_with("bundled_dictionary_")
+        || key.starts_with("meta.")
+        || key.starts_with("source.")
+}
+
+/// `~/.config/kalam/prefs.json`
+pub fn global_prefs_path() -> PathBuf {
+    config_dir().join("prefs.json")
+}
+
+/// Read every global preference. Missing or corrupt file gives an empty map,
+/// for the same reason as the registry: never refuse to start.
+pub fn load_global_prefs() -> std::collections::BTreeMap<String, String> {
+    let Ok(text) = std::fs::read_to_string(global_prefs_path()) else {
+        return Default::default();
+    };
+    serde_json::from_str(&text).unwrap_or_default()
+}
+
+/// Write one global preference, preserving the rest.
+///
+/// Read-modify-write rather than holding the map in memory: prefs change
+/// rarely and by hand, and a cached copy is one more thing that can go stale
+/// against a second window.
+pub fn set_global_pref(key: &str, value: &str) -> std::io::Result<()> {
+    let mut all = load_global_prefs();
+    all.insert(key.to_string(), value.to_string());
+
+    let dir = config_dir();
+    std::fs::create_dir_all(&dir)?;
+    let final_path = global_prefs_path();
+    let tmp = final_path.with_extension("json.tmp");
+    let json = serde_json::to_string_pretty(&all)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    std::fs::write(&tmp, json)?;
+    std::fs::rename(&tmp, &final_path)?;
+    Ok(())
+
+    // -- the global / per-library split -----------------------------------
+
+    #[test]
+    fn app_settings_are_shared_between_libraries() {
+        // These describe the app, not the books. If they were per-library,
+        // switching would silently reset your theme and reader settings --
+        // the user would see it as the app forgetting its configuration.
+        // Exactly the keys the code really uses -- checked against
+        // theme.rs, epub_write.rs, dict.rs, reader.rs and settings.rs, not
+        // guessed. Three are counter-intuitive and were wrong on the first
+        // attempt: `ui.theme`, `epub.write_metadata`, `bundled_dictionary_*`.
+        for key in [
+            "ui.theme",
+            "reader.theme",
+            "reader.font_px",
+            "reader.line_height",
+            "reader.column_px",
+            "dict_history_enabled",
+            "dict_sense_hint",
+            "epub.write_metadata",
+            "meta.googlebooks.key",
+            "meta.googlebooks.country",
+            "bundled_dictionary_english_wordnet_2025",
+            "bundled_dictionary_english_idioms_2024",
+            "source.ao3.enabled",
+        ] {
+            assert!(is_global_pref(key), "{key} should be shared, not per-library");
+        }
+    }
+
+    #[test]
+    fn things_about_these_books_stay_with_these_books() {
+        // A reading goal belongs to a library: 50 books in your fiction
+        // library and 12 in your research one is the point of having two.
+        for key in [
+            "goal.books_per_year",
+            "thumbs.backfill_done_count",
+            "last_opened_book",
+        ] {
+            assert!(!is_global_pref(key), "{key} should stay with its library");
+        }
+    }
+
+    #[test]
+    fn an_unrecognised_preference_stays_with_its_library() {
+        // The default matters more than it looks. A new pref that should have
+        // been global is a mild annoyance -- set it again. A new pref that
+        // leaks to global silently applies one library's setting to another,
+        // which is much harder to notice and looks like corruption.
+        assert!(!is_global_pref("something.invented.tomorrow"));
+        assert!(!is_global_pref(""));
+    }
+
+    #[test]
+    fn the_prefixes_do_not_catch_more_than_they_should() {
+        // `reader.` is a prefix rule, so check it cannot swallow a key that
+        // merely starts with the same letters.
+        assert!(is_global_pref("reader.font_px"));
+        assert!(!is_global_pref("readership_count"));
+        assert!(!is_global_pref("reader"));
+        assert!(is_global_pref("meta.openlibrary.enabled"));
+        assert!(!is_global_pref("metadata_dirty"));
+        // And the near-miss that started this: `theme` alone is NOT the app
+        // theme -- the real key is `ui.theme`.
+        assert!(!is_global_pref("theme"));
+    }
+}
