@@ -311,12 +311,24 @@ jobs:
           chmod +x docs/ci/screenshot.sh docs/ci/check-shot.py
           BOOKS=2000 OUT=ci-shots-2000 SETTLE=60 docs/ci/screenshot.sh
 
+      # A0 step 6: the same library again with the windowed grid switched on,
+      # so the before/after comes from one machine in one run. Comparing
+      # against a number from a previous run would be comparing two different
+      # VMs -- the whole reason step 7 asserts query counts and not
+      # milliseconds. Both reports are published side by side below.
+      - name: run at 2000 books with the windowed grid
+        run: |
+          BOOKS=2000 OUT=ci-shots-2000-windowed SETTLE=60 WINDOWED=1 \
+            docs/ci/screenshot.sh
+
       - name: upload scale artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: scale-2000
-          path: ci-shots-2000/
+          path: |
+            ci-shots-2000/
+            ci-shots-2000-windowed/
           retention-days: 14
           if-no-files-found: warn
 
@@ -330,9 +342,27 @@ jobs:
           cp ci-shots-2000/report.txt ci-logs/scale-2000-latest.txt 2>/dev/null \
             || echo "(no report produced)" > ci-logs/scale-2000-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/scale-2000-latest.txt
+          cp ci-shots-2000-windowed/report.txt \
+            ci-logs/scale-2000-windowed-latest.txt 2>/dev/null \
+            || echo "(no report produced)" > ci-logs/scale-2000-windowed-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/scale-2000-windowed-latest.txt
+          # The one line that answers "did it work", so it is not buried in
+          # two 60-line reports.
+          {
+            echo "=== A0 step 6: old grid vs windowed grid, 2,000 books ==="
+            echo "old grid:"
+            grep -E "peak_rss|grid_build|grid_cards" ci-logs/scale-2000-latest.txt \
+              | sed 's/^/  /' || true
+            echo "windowed grid:"
+            grep -E "peak_rss|grid_build|grid_cards" \
+              ci-logs/scale-2000-windowed-latest.txt | sed 's/^/  /' || true
+          } > ci-logs/scale-2000-comparison.txt
+          cat ci-logs/scale-2000-comparison.txt
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/scale-2000-latest.txt
+          git add -f ci-logs/scale-2000-latest.txt \
+            ci-logs/scale-2000-windowed-latest.txt \
+            ci-logs/scale-2000-comparison.txt
           git commit -m "ci: publish scale report [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
