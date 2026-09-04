@@ -120,6 +120,18 @@ instructions; you install into `.github/workflows/ci.yml`. See `docs/ci/README.m
   `docs/conversation.md` with the old position struck through and the new one
   recorded with the date.
 
+### Parked for later discussion
+
+Raised, deliberately not decided yet, and **not** dropped. Listed here so a new
+chat does not have to rediscover them.
+
+- **Multiple books/readers open at once** (raised 2026-09-04). Reading two
+  things side by side, or keeping several open and switching. Touches the
+  reader, the WebView pool (which currently parks exactly *one* view — see the
+  A0 notes), routing, and reading-session bookkeeping (two open books must not
+  both count reading time). **Discuss before designing**; the user asked to
+  return to this as its own thread.
+
 ### Non-goals (whole project)
 
 - Z-Library / unauthorized shadow libraries  
@@ -1659,6 +1671,61 @@ are in there — not the point of being there.
 support less, and the trait must let a source say "I do search but not author
 pages" with the UI adapting rather than breaking.
 
+### Split into stages (agreed 2026-09-04)
+
+P7 is several phases of work, not one. Each stage ends somewhere usable, so we
+can stop, reorder or change course without leaving a half-built thing.
+
+- **P7a — the trait, browse and search.** Rewrite `source-seam.md`'s verbs into
+  a browsing shape *first*; land them with AO3. Category/fandom browsing, the
+  site's sort orders, search with AO3's full filter set in our own
+  presentation. Ends with: you can wander AO3 inside Kalam.
+- **P7b — reading online.** Open a fic and read it without adding it to your
+  library. Temporary cache, "keep this" promotes it to a real book. Ends with:
+  Kalam is usable as a reading client.
+- **P7c — author pages and sideways links.** Their works, favourites, follows,
+  profile; series and collections. Ends with: you can follow a trail rather
+  than only search.
+- **P7d — the other sources.** Royal Road (first EPUB we build ourselves),
+  Literotica, then FFN (WebKit browsing + FicHub download). Ends with: the
+  trait is proven against four genuinely different sites.
+- **P7e — accounts, if wanted.** Site-side favourites/follows/history and
+  registered-only works. Deliberately last: everything above works logged out,
+  and doing it later means deciding with evidence about whether it is missed.
+  See [`docs/p7-login-and-reading.md`](./docs/p7-login-and-reading.md).
+- **P7f — download, follow and auto-update.** The original P7 plan, now the
+  *end* rather than the whole thing.
+
+### Reading online (decided 2026-09-04)
+
+**Read-online first**, download second. Opening a fic fetches it into a
+temporary cache and reads from there; a "keep this" action promotes it into the
+library.
+
+This costs less than it sounds: the reader **already** works this way. It never
+reads an EPUB directly — `EpubBook::open(epub, cache_dir)` unpacks into
+`cache/reader/<uuid>/` and reads the unpacked files, and `prune_reader_cache`
+already sweeps old extractions at startup. So the reader does not care whether
+the EPUB came from disk or the network. What is missing is a temporary identity
+for a fic that is not a library book, and a promote action.
+
+Two refinements on the original idea:
+
+- **Do not delete on app close.** Keep temporary caches a few days or until a
+  size cap, whichever comes first, so closing the app and returning an hour
+  later does not re-download. The pruning machinery already exists.
+- **Very long serials cannot use this.** Downloading a whole 2,000-chapter
+  Royal Road work to read one chapter is not viable, so those need per-chapter
+  fetching — which is why the trait still needs a chapter-content verb even
+  though AO3 never uses it.
+
+### Out (P7)
+
+- **Writing actions of any kind** (decided 2026-09-04): no kudos, no
+  bookmarking on the site, no posting or reading reviews/comments. This keeps
+  the app read-only against every source, which also means a leaked session
+  cannot be used through Kalam to damage an account.
+
 ### Scope
 
 - **One `Source` trait, not a separate `FictionSource`** — see
@@ -1712,10 +1779,25 @@ pages" with the UI adapting rather than breaking.
   the browser engine we already ship. Likely both: WebKit for browsing, FicHub
   for the download once a fic is chosen, since they already handle multi-chapter
   assembly
-- **Login moves in-scope.** `source-seam.md` §13 parked it as "probably out of
-  scope until someone asks". Someone asked: your favourites, follows and
-  history live behind a site login. Credential storage now needs doing
-  properly rather than avoiding
+- **Login is in-scope but LAST (P7e), and password storage is ruled out.**
+  `source-seam.md` §13 parked it as "probably out of scope until someone asks";
+  someone asked, since site-side favourites, follows, history and
+  registered-only works need an account. But everything else in this phase
+  works logged out, so it goes at the end where it can be decided with
+  evidence. **AO3's own position matters here** — their mobile-apps post says
+  plainly that if a third-party app asks for your AO3 login you are providing
+  it *at your own risk*, and r/AO3 auto-replies with that link on every app
+  question. It is a warning, not a ban (AO3 leaves unofficial apps alone unless
+  they impersonate AO3) — but **we are that third party**, and there is no
+  sanctioned route: AO3 still has no public API, thirteen years after saying
+  one was "several major releases away". So: **never store a password.** If
+  accounts happen, log in through a real AO3 page in a WebKit window, keep only
+  the session cookie, store it in config (never inside a library folder, or it
+  would travel with copied books), make log-out actually delete it, and keep
+  the whole thing read-only. Note also that Kalam's *own* follows already work
+  across all four sources without any account, which is a better feature than
+  the site-side list it would replace. Full discussion:
+  [`docs/p7-login-and-reading.md`](./docs/p7-login-and-reading.md)
 - **Structured search UI** (native): fandom, tags, characters, ships,
   rating, status — fed by plugin-parsed results (AO3 has no public API;
   plugins parse the site, Tachiyomi-style)
@@ -2373,3 +2455,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-04 | **P6.5 created — libraries land before P7.** Calibre-style: pick the folder, keep several, switch between them, copy one to another machine and it opens. Ordered before P7 deliberately, because P7 *adds books from new places* and this changes *where books live* — do both at once and a missing fic could be either one's fault. The user drew a distinction the roadmap had blurred: Kalam's shelves are Calibre's **virtual** libraries (a saved view over everything), while a real **library** is a hard wall — fanfiction in one, technical books in another, genuinely absent from each other. Both exist afterwards; shelves are unchanged. Reading the code first turned up two things that make this smaller than it looked: **nothing machine-specific is stored** (the `books` table holds `"book.epub"` and `"cover.jpg"`, never absolute paths — those are rebuilt at read time, so a Kalam folder is *already* portable), and **every path derives from one function**, `data_dir()`. The real work is elsewhere: the library list must live *outside* the libraries (a setting stored in a library cannot be read before the library is found), and per-library must be split from global — books and highlights travel, dictionaries and theme must not, or you reinstall dictionaries per library. Also in scope: a `kalam.json` per book folder as a **backup copy**, database still authoritative and never read from it during normal use, plus a rebuild-from-folders command — that is what makes a library self-describing if `catalog.db` is ever lost. JSON not OPF, because OPF cannot express highlights or reading sessions without abuse and nothing else reads a stray `metadata.opf`. Out of scope: two machines using one library at once. Discussion in [`docs/libraries-and-portability.md`](./docs/libraries-and-portability.md) |
 | 2026-09-04 | **P7 sources settled: AO3 → Royal Road → Literotica → FFN, each proving something different.** Webnovel dropped — nearly everything worth reading sits behind their coin paywall, so a downloader gets a few free chapters and stops, and bypassing a paywall is out of scope. The ordering is deliberate rather than by popularity: **AO3 needs no text parsing at all**, because `download.archiveofourown.org/downloads/<id>/fic.epub` is a real EPUB that AO3 builds with Calibre and lists on their own FAQ, so scraping AO3 is only for *finding* things — which means AO3 alone would prove nothing about parsing. **Royal Road is second** because it is the first source where we build an EPUB ourselves, the biggest untested piece, and it is a gentle place to get that wrong. **Literotica** stresses the assumption that every source has neat chapters. **FFN is last and goes through FicHub, not scraping** — this is the finding that changed the plan. FFN sits behind Cloudflare and FanFicFare effectively abandoned it, but [FicHub](https://fichub.net/api) has a documented public API returning metadata plus a ready-made EPUB, and absorbs the Cloudflare problem on their side. Their conditions are conditions, not suggestions: identify the project in the user-agent with contact info, **never** concurrent requests, honour `429`/`Retry-After`, no bulk export. The dependency has to be visible in the UI, because if FicHub is down FFN silently stops working and the user deserves to know why. **The WebKit-as-fetcher idea is deferred, not rejected** — it was right when FFN looked impossible, and FicLab's extension proves the browser-session route works, but building a second fetching mechanism (heavier, slower, tied to the UI thread) cannot be justified when one JSON call does the job. It stays the fallback and the reasoning is recorded so it is not rediscovered from scratch. Also settled: **one shared EPUB assembler** rather than one per source, and highlights that survive an update by re-anchoring on their saved text. See [`docs/fichub-and-ffn.md`](./docs/fichub-and-ffn.md) |
 | 2026-09-04 | **P7 scope corrected: it is a browsing client, not a downloader — and FicHub does not solve FanFiction.net after all.** The user stopped the plan: *"not just a downloader, but surfing, exploring, etc."* They were right, and the tell had been sitting in `source-seam.md` §1 the whole time. Its four verbs — search → detail → chapters → content — **all begin from "I already know which work I want"**, which is a downloader's shape and cannot express wandering. Missing entirely: category and fandom browsing, author pages (their works, favourites, follows, profile), the site's own sort orders, your favourites and follows, series and collections, reviews. **The trait must be rewritten before anything is built**, because retrofitting a browse model onto a download-shaped API means changing every source and every screen. **The correction I most need to own: FicHub does not solve FFN.** I presented it as the answer one turn earlier. It has exactly two endpoints, `/api/v0/epub` and `/api/v0/meta`, and **both require a fic URL you already have** — no search, no browse, no author pages. So it solves *downloading* from FFN and does nothing for *browsing* it, which is most of this phase. My reasoning was sound only while the goal was downloading; the moment the goal is browsing, it collapses. **The WebKit-as-fetcher idea is therefore un-deferred the same day it was deferred** — browsing FFN means fetching FFN pages, means Cloudflare, means the browser engine we already ship. Best answer is probably both: WebKit for browsing, FicHub for the download once a fic is chosen. **Login also moves in-scope**, having been parked in `source-seam.md` §13 as "probably out of scope until someone asks" — someone asked, since favourites and follows live behind a site login, so credential storage needs doing properly. AO3, FFN and Literotica get full browsing; the trait must let other sources offer less without the UI breaking. P7 is now clearly several phases of work rather than one. Full write-up in [`docs/p7-scope-correction.md`](./docs/p7-scope-correction.md) |
+| 2026-09-04 | **P7 split into six stages; read-online decided; login pushed last and password storage ruled out; multiple-readers parked.** The phase is several phases of work, so it is now **P7a** trait+browse+search → **P7b** reading online → **P7c** author pages → **P7d** the other three sources → **P7e** accounts (if wanted) → **P7f** download/follow/auto-update. Note the inversion: downloading, which was the entire original plan, is now the *last* stage. **Read-online costs far less than expected** because the reader already works that way — it never reads an EPUB directly, it unpacks into `cache/reader/<uuid>/` and reads the unpacked files, and `prune_reader_cache` already sweeps old ones at startup. So the reader does not care whether the EPUB came from disk or the network; what is missing is a temporary identity for a non-library fic and a "keep this" promote action. Two refinements on the user's sketch: **do not delete on app close** (a few days or a size cap instead, so closing and returning an hour later does not re-download), and **very long serials cannot use this at all** — downloading a 2,000-chapter Royal Road work to read one chapter is not viable, so those need per-chapter fetching, which is why the trait still needs a chapter-content verb that AO3 will never use. **Writing actions are out entirely** — no kudos, bookmarking, posting or reading reviews — which keeps Kalam read-only against every source. **Login goes last and passwords are ruled out.** AO3's own mobile-apps post says that if a third-party app asks for your AO3 login you provide it *at your own risk*, and r/AO3 auto-replies with that link on every app question; it is a warning rather than a ban, but **we are that third party**, and there is no sanctioned route since AO3 still has no public API thirteen years after calling one "several major releases away". If accounts happen it is session-cookie-only, obtained by logging in through a real AO3 page in a WebKit window we never read the password from, stored in config rather than in a library folder so it cannot travel with copied books. Worth stating plainly: **Kalam's own follows already work across all four sources without an account**, which is a better feature than the site-side list login would buy. Also **parked for a later thread at the user's request: multiple books/readers open at once** — recorded in a new "Parked for later discussion" section so it is not rediscovered, and flagged as touching the reader, the WebView pool (which parks exactly one view today) and reading-session bookkeeping |
