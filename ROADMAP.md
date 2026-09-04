@@ -267,6 +267,7 @@ P7  Fiction platform ── AO3 first → FFN/RoyalRoad/etc.; Lua source
 P8  Comics local ────── CBZ/CBR + Moku-style comics reader (image pager)
 P9  Manga platform ──── Suwayomi-class sources, same Source trait
                         (MangaDex API built in; scrapers via Lua)
+P6.5 Libraries ──────── pick the folder, several of them, portable
 P10 PDF ─────────────── MuPDF in text-reader family + basic marks
 P11 Tools ───────────── convert (external), polish, Calibre import
 A0  Architecture track ─ service layer + task manager + preloaders +
@@ -1564,6 +1565,75 @@ runs it on Arch.
 
 ---
 
+## P6.5 — Libraries: choose where books live, and have more than one  ◀ before P7
+
+**Goal:** Calibre-style libraries. You pick the folder. You can have several,
+completely separate from each other, and you switch between them. Copy the
+folder to another machine and it opens there.
+
+**Decided 2026-09-04.** Comes before P7 deliberately: P7 *adds books from new
+places*, this changes *where books live*, and doing both at once means a
+missing fic could be either one's fault.
+
+### Why this is not shelves
+
+Calibre has two features and Kalam had conflated them:
+
+| Calibre | What it is | Kalam |
+|---|---|---|
+| **Library** | Separate folder, separate database. Books in one are invisible in the other. | ✗ this phase |
+| **Virtual library** | A saved filter over one library. A view. | ✓ our shelves |
+
+Our shelves — manual and rule-based — are Calibre's *virtual* libraries and
+stay exactly as they are. What is missing is the hard wall: fanfiction in one
+library, technical books in another, genuinely absent from each other. A shelf
+cannot do that because a shelf is a view over everything.
+
+**Both exist afterwards.** Libraries separate; shelves organise within one.
+
+### The good news, from reading the code first
+
+- **Nothing machine-specific is stored.** `books` holds `file_name`
+  ("book.epub") and `cover_name` ("cover.jpg") — plain names, never absolute
+  paths, which are rebuilt at read time. A Kalam folder is *already* portable;
+  there is just no way to point the app at one.
+- **Every path derives from one function**, `data_dir()` in `src/paths.rs`. So
+  "let the user choose" is a small change at the root, not a sweep.
+
+### Scope
+
+- Pick a library folder; create, open and switch between several
+- A small config outside the libraries (`~/.config/kalam/`) holding the library
+  list and which was last open. It has to live outside — a setting stored *in*
+  a library cannot be read before the library is found. This is the one
+  machine-specific thing, correctly so: it is about this machine, not the books
+- **Split per-library from global.** Books, covers, highlights, shelves,
+  reading history belong to a library. Dictionaries, theme and preferences must
+  stay global or you reinstall dictionaries per library. Getting this wrong is
+  painful to undo
+- Migrate the existing fixed-location library into the new scheme as "your
+  first library"; offer to move it. Copy-verify-delete, never move-and-hope
+- **The reader's unpacked-EPUB cache must NOT travel** with a library — it is
+  throwaway and should rebuild on the new machine
+- `kalam.json` per book folder: a **backup copy** of that book's metadata
+  (title, author, tags, highlights, progress, source). Database stays the
+  source of truth and is never read from these during normal use — on conflict
+  the database wins. Makes a library self-describing and rebuildable if
+  `catalog.db` is ever lost. JSON not OPF: OPF is an ebook-packaging format and
+  cannot express highlights or reading sessions without abuse, and nothing else
+  reads a stray `metadata.opf` anyway
+- A "rebuild database from folders" command, which is what makes the backup
+  copies worth writing
+
+### Out
+
+- Sharing one library between two machines at the same time (sync/locking).
+  Copying a folder is in scope; two apps writing at once is not.
+
+Full discussion: [`docs/libraries-and-portability.md`](./docs/libraries-and-portability.md).
+
+---
+
 ## P7 — Fiction platform (AO3 first, then more)
 
 **Goal:** A FanFiction.net-app-class fiction platform inside Kalam: search
@@ -1579,8 +1649,46 @@ across sources with tag filters, download fics, read offline, and
   download queue and the follow scheduler are identical and must not be
   written twice. AO3 lands native first to prove the trait, then scrapers
   move to Lua plugins — `source-seam.md` §9a, §11
-- Sources: AO3 first, then FFN, Royal Road, Webnovel, Scribble Hub, … each
-  exposes search / detail / chapter list / chapter content (sanitized)
+- **Sources, decided 2026-09-04: AO3 → Royal Road → Literotica → FFN.**
+  Chosen so each proves something different rather than repeating the last:
+
+  | Source | How the text arrives | What it proves |
+  |---|---|---|
+  | AO3 | their own EPUB endpoint | search, filters, following |
+  | Royal Road | we parse and build the EPUB | the assembler, real parsing |
+  | Literotica | we parse and build the EPUB | messy structure, no clean chapters |
+  | FanFiction.net | the FicHub API | using a third-party bridge |
+
+  **AO3 needs no text parsing at all** — `download.archiveofourown.org/downloads/<id>/fic.epub`
+  is a real EPUB, built by AO3 with Calibre and listed on their own FAQ. So
+  scraping AO3 is only for *finding* things. That is why AO3 alone would prove
+  nothing about parsing, and why the other three matter.
+  **Royal Road is second on purpose**: it is the first source where we build an
+  EPUB ourselves, which is the biggest untested piece, and it is a gentle place
+  to get that wrong.
+  **Webnovel dropped** (2026-09-04): almost everything worth reading is behind
+  their coin paywall, so a downloader gets a handful of free chapters and
+  stops. Bypassing a paywall is out of scope.
+- **One shared EPUB assembler**, not one per source: a source returns chapter
+  text, one common builder turns chapters into an EPUB. Otherwise every scraper
+  reinvents it slightly differently. This is new code — `epub_write.rs` *edits*
+  existing EPUBs and cannot create one — but `zip` is already compiled with
+  write support, so it is contained
+- **FFN goes through [FicHub](https://fichub.net/api), not scraping.** FFN sits
+  behind Cloudflare and the established tool (FanFicFare) effectively gave up
+  on it. FicHub has a documented public API returning metadata plus a ready
+  EPUB, and deals with Cloudflare on their side. Their rules are conditions of
+  use, not suggestions: identify ourselves in the user-agent with contact info,
+  **never** issue concurrent requests, honour `429`/`Retry-After`, and no bulk
+  export. The dependency must be visible in the UI — if FicHub is down, FFN
+  stops working, and the user should know why. See
+  [`docs/fichub-and-ffn.md`](./docs/fichub-and-ffn.md)
+- **The WebKit-as-fetcher idea is deferred, not rejected.** Kalam already
+  embeds a browser engine, and a page fetched through it passes Cloudflare the
+  way FicLab's extension does. It stays the fallback if FicHub ever goes away.
+  Not built now because a JSON call already solves the problem and a second
+  fetching mechanism — heavier, slower, tied to the UI thread — cannot be
+  justified against it
 - **Structured search UI** (native): fandom, tags, characters, ships,
   rating, status — fed by plugin-parsed results (AO3 has no public API;
   plugins parse the site, Tachiyomi-style)
@@ -1589,8 +1697,28 @@ across sources with tag filters, download fics, read offline, and
   glib timers) polls followed fics, downloads new chapters, notifies
   (replaces "Manual Check updates")
 - Rate limits / clear errors / polite polling (respect sites)
-- Caveat (existing risk): annotations anchor to spine — re-downloaded fics
-  may lose anchors; best-effort
+- **Highlights survive an update** (decided 2026-09-04, replaces the old
+  "best-effort, may lose anchors" caveat). Annotations already store
+  `text_excerpt`, the highlighted words themselves. Positions break when a file
+  changes; words do not. So on replace, re-find each highlight by searching the
+  new chapter for its saved text; anything that cannot be placed is **kept and
+  reported, never deleted**. No storage change and no migration — the data is
+  already there. AO3 appends chapters at the end, so most highlights re-anchor
+  trivially. See [`docs/p7-storage.md`](./docs/p7-storage.md)
+- **`source` + `remote_id` columns on `books`.** Today "do I have this?" is
+  answered by hashing the file, so a fic that gained a chapter looks like a
+  different book and imports as a **second copy**. Recording where a book came
+  from makes it a lookup, and lets the updater replace in place while keeping
+  the book's id, reading position, highlights and shelves. `source-seam.md` §6
+  already calls `remote_id` load-bearing
+- **Search: all of AO3's filters, presented our way** (decided 2026-09-04).
+  Source-declared filters in the trait, since AO3's set is too large and too
+  specific to hard-code a common subset — but the screen is Kalam's own design,
+  not a generic widget dump of their search page
+- MangaDex is **not** in P7 — it moves to the comics phase (decided
+  2026-09-04). So P7 is text-only, and the image half of the two-variant
+  `Content` enum stays unimplemented until then, which by the `source-seam.md`
+  §12 dead-code rule means it cannot land as code during this phase
 
 ### Out
 
@@ -2215,3 +2343,5 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-04 | **A0 step 6 first cut: the book grid now builds only the rows you can see — switched off by default, needs a look on a real screen.** Turn it on with `KALAM_WINDOWED_GRID=1`. At 2,000 books the old grid builds 2,000 cards before the page can appear (396 ms measured) and holds ~232 MB, almost all of it cover images kept alive by cards scrolled far off screen. This builds about 48: the rows in view plus three rows of margin above and below. **The first plan for this was wrong and was thrown away.** It assumed GTK's own recycling grid (`GridView`), which insists on owning the scrolling — that would have meant restructuring the page so the header and search bar stayed fixed while only the books scrolled, plus care to avoid two scrollbars. The user's reaction to that was immediate and correct: they want the page to stay as it is. So this keeps the plain `GtkGrid` exactly where it sits, in the same box, in the same page, inside the app's existing scroller. **Nothing about the layout changes** — same 6 columns, one scrollbar, header still scrolls away with the page. The trick is a spacer sized to the full height the grid would have had, so the scrollbar is the same length and in the same place; the grid then listens to the scroller it is already inside (found by walking up the widget tree, so the three call sites needed no edits at all) and mounts and unmounts cards as rows come in and out of view. Two risks the user has to judge, both visible only on a real screen: blank patches if a fast flick outruns the mounting, and covers arriving late into a slot. The overscan margin addresses the first; the second turned out to be smaller than feared, because cards are discarded rather than reused and the pending-cover list is keyed by cover path, so a late decode cannot paint onto a slot that now belongs to a different book. 7 tests on the pure row arithmetic — it is the part that can be wrong in an interesting way and needs no display: viewport coverage checked at every scroll offset across the whole range, no skipped rows between consecutive positions, both edges (negative overscroll, past-the-end), empty and small libraries, and the case where GTK has not laid out yet and reports a viewport height of zero, which if treated as "nothing is visible" would open the page blank |
 | 2026-09-04 | **Windowed grid v1 was broken on a real screen; rebuilt on `GtkFixed`.** The user switched it on and found three bugs immediately: the page scrolled about twice as far as it should with blank space past the books, some books were missing, and the covers and scrollbar jumped while scrolling. All three had one cause, now written up as pitfall §22. v1 kept the existing `GtkGrid` and added a tall spacer widget in the last row to hold the full height open. But **a grid row is as tall as its tallest child**, so the 6,532 px spacer made the last *row* 6,532 px tall on top of the 23 real rows above it — 6,796 px of books became 13,064 px of scrolling. The spacer also occupied a real cell (column 0 of the last row), so the book belonging there had nowhere to go; and rows with no mounted cards collapsed to zero height, so the total height shifted under the scrollbar as cards came and went. The general rule: **a container that derives its size from its children cannot be used to virtualize those children** — the premise is "most children do not exist", and no arrangement of spacers fixes that, since a spacer is just another child feeding the same calculation. v2 uses `GtkFixed`: every card is placed at an explicit x/y and the total size is set once from the book count, so geometry depends on the number of books and never on what is mounted. Verified pixel-identical to the existing grid — 144 books gives 6,796 px both ways. **The lesson about the testing is the part worth keeping.** The row arithmetic had seven tests and was right the whole time; the pixel arithmetic had none, because it lived inside a function that needs a display and was written off as untestable. It was not — `grid_height()` and `card_position()` are pure integer functions, and pulling them out gave 7 more tests that **fail against v1** (13,064 px vs 6,796 px). Having tests for one half of a change is not having tests for the change, and the half that had them was the half I found interesting rather than the half most likely to break |
 | 2026-09-04 | **A0 step 6 shipped and is now the default — the All-books page at 2,000 books went from 502 MB to 247 MB and from 434 ms to 12 ms.** The user checked the rebuilt (`GtkFixed`) version on a real screen and confirmed all three earlier bugs were gone: the page ends where the books end, every book is present, and the scrollbar stays steady while scrolling. That check is the one thing CI cannot do, so it was the gate. The switch flipped from opt-in `KALAM_WINDOWED_GRID=1` to opt-out **`KALAM_NO_WINDOWED_GRID=1`**, matching the shape of `KALAM_NO_PRELOAD` and `KALAM_NO_WEBVIEW_POOL` — an escape hatch is only useful if it works like the other escape hatches. Measured side by side on one machine in one run: 2,000 cards → 48, 434 ms → 12 ms, 502 MB → 247 MB, with the screenshot check reporting an identical 21.7% coloured-pixel count, i.e. the page looks exactly the same. **One trap avoided while flipping the default:** the installed workflow passes `WINDOWED=1` on one run and nothing on the other, which was right while windowed was opt-in — but "nothing" now means *windowed too*, so both runs would have measured the same thing and published a green, meaningless comparison. That is pitfall §21 exactly (change the mechanism and a check watching the old one quietly stops proving anything), caught this time by asking what the check would report *after* the change rather than after it had already lied. Rather than ask for another manual workflow install, `screenshot.sh` now infers the baseline from the output directory, so the installed copy and the updated one in `docs/ci/` are both correct — and `docs/ci/README.md` now has no outstanding ACTION NEEDED items. **This closes A0 except for step 8** (the plugin-host seam), which is designed in `docs/source-seam.md` and deliberately lands with AO3 in P7 |
+| 2026-09-04 | **P6.5 created — libraries land before P7.** Calibre-style: pick the folder, keep several, switch between them, copy one to another machine and it opens. Ordered before P7 deliberately, because P7 *adds books from new places* and this changes *where books live* — do both at once and a missing fic could be either one's fault. The user drew a distinction the roadmap had blurred: Kalam's shelves are Calibre's **virtual** libraries (a saved view over everything), while a real **library** is a hard wall — fanfiction in one, technical books in another, genuinely absent from each other. Both exist afterwards; shelves are unchanged. Reading the code first turned up two things that make this smaller than it looked: **nothing machine-specific is stored** (the `books` table holds `"book.epub"` and `"cover.jpg"`, never absolute paths — those are rebuilt at read time, so a Kalam folder is *already* portable), and **every path derives from one function**, `data_dir()`. The real work is elsewhere: the library list must live *outside* the libraries (a setting stored in a library cannot be read before the library is found), and per-library must be split from global — books and highlights travel, dictionaries and theme must not, or you reinstall dictionaries per library. Also in scope: a `kalam.json` per book folder as a **backup copy**, database still authoritative and never read from it during normal use, plus a rebuild-from-folders command — that is what makes a library self-describing if `catalog.db` is ever lost. JSON not OPF, because OPF cannot express highlights or reading sessions without abuse and nothing else reads a stray `metadata.opf`. Out of scope: two machines using one library at once. Discussion in [`docs/libraries-and-portability.md`](./docs/libraries-and-portability.md) |
+| 2026-09-04 | **P7 sources settled: AO3 → Royal Road → Literotica → FFN, each proving something different.** Webnovel dropped — nearly everything worth reading sits behind their coin paywall, so a downloader gets a few free chapters and stops, and bypassing a paywall is out of scope. The ordering is deliberate rather than by popularity: **AO3 needs no text parsing at all**, because `download.archiveofourown.org/downloads/<id>/fic.epub` is a real EPUB that AO3 builds with Calibre and lists on their own FAQ, so scraping AO3 is only for *finding* things — which means AO3 alone would prove nothing about parsing. **Royal Road is second** because it is the first source where we build an EPUB ourselves, the biggest untested piece, and it is a gentle place to get that wrong. **Literotica** stresses the assumption that every source has neat chapters. **FFN is last and goes through FicHub, not scraping** — this is the finding that changed the plan. FFN sits behind Cloudflare and FanFicFare effectively abandoned it, but [FicHub](https://fichub.net/api) has a documented public API returning metadata plus a ready-made EPUB, and absorbs the Cloudflare problem on their side. Their conditions are conditions, not suggestions: identify the project in the user-agent with contact info, **never** concurrent requests, honour `429`/`Retry-After`, no bulk export. The dependency has to be visible in the UI, because if FicHub is down FFN silently stops working and the user deserves to know why. **The WebKit-as-fetcher idea is deferred, not rejected** — it was right when FFN looked impossible, and FicLab's extension proves the browser-session route works, but building a second fetching mechanism (heavier, slower, tied to the UI thread) cannot be justified when one JSON call does the job. It stays the fallback and the reasoning is recorded so it is not rediscovered from scratch. Also settled: **one shared EPUB assembler** rather than one per source, and highlights that survive an update by re-anchoring on their saved text. See [`docs/fichub-and-ffn.md`](./docs/fichub-and-ffn.md) |
