@@ -1,7 +1,24 @@
-[1m[92m  Downloaded[0m quick-error v2.0.1
-[1m[92m  Downloaded[0m thiserror-impl v2.0.20
-[1m[92m  Downloaded[0m thiserror v2.0.20
-[1m[92m   Compiling[0m thiserror v2.0.20
-[1m[92m   Compiling[0m thiserror-impl v2.0.20
-[1m[92m    Checking[0m quick-error v2.0.1
---- run 33945343087 ---
+src/pages/comics_reader/mod.rs:13:21: [1m[91merror[0m: unused imports: `extract_comic_page` and `list_comic_pages`
+src/pages/comics_reader/mod.rs:14:5: [1m[91merror[0m: unused import: `crate::db::Catalog`
+src/pages/comics_reader/mod.rs:15:5: [1m[91merror[0m: unused import: `crate::models::Book`
+src/pages/browse.rs:1:5: [1m[91merror[0m: unused import: `crate::models::NavItem`
+src/pages/remote_detail.rs:1:71: [1m[91merror[0m: unused import: `Source`
+src/models.rs:83:5: [1m[91merror[0m: variant `RemoteReader` is never constructed
+src/pages/comics_reader/types.rs:94:10: [1m[91merror[0m: enum `ReaderContext` is never used
+src/pages/comics_reader/provider.rs:4:10: [1m[91merror[0m: enum `ImageState` is never used
+src/pages/comics_reader/provider.rs:15:8: [1m[91merror[0m: method `has_page` is never used
+src/pages/browse.rs:21:5: [1m[91merror[0m: field `manager` is never read
+src/pages/remote_detail.rs:9:18: [1m[91merror[0m: fields `source_id` and `chapter_id` are never read
+src/sources/mangadex.rs:48:5: [1m[91merror[0m: field `id` is never read
+src/sources/scraper.rs:101:5: [1m[91merror[0m: field `name` is never read
+src/sources/traits.rs:9:5: [1m[91merror[0m: variant `Html` is never constructed
+src/sources/traits.rs:17:9: [1m[91merror[0m: fields `author` and `cover_url` are never read
+src/sources/traits.rs:24:9: [1m[91merror[0m: fields `remote_id`, `cover_url`, `tags`, and `status` are never read
+src/sources/traits.rs:39:9: [1m[91merror[0m: fields `volume` and `url` are never read
+src/sources/traits.rs:46:5: [1m[91merror[0m: variants `TagsInclude`, `TagsExclude`, and `OngoingOnly` are never constructed
+src/sources/traits.rs:55:9: [1m[91merror[0m: field `has_more` is never read
+src/sources/traits.rs:65:8: [1m[91merror[0m: method `name` is never used
+src/comics.rs:65:5: [1m[91merror[0m: consider using `sort_by_key`
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 21 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 21 previous errors
+--- run 33971290949 ---
