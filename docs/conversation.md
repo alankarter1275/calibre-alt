@@ -1554,5 +1554,26 @@ Came out of the low-priority pass in the code review (Batch 3).
 
 ---
 
+## 19. Phase 8 (P8) — Comics Local & Moku-Style Reader (2026-09-05)
+
+Implemented local comic archive reading and interactive Relm4 comics viewer component on dedicated branch `p8-comics-local`.
+
+1. **CBZ / CBR Local Archive Parsing (`src/comics.rs`):**
+   Added zip archive reading for `.cbz` / `.cbr` files. Integrated natural alphanumeric sorting helper (`page2.jpg` < `page10.jpg`) to order archive image entries naturally regardless of digit padding. Added `extract_comic_page` and `extract_comic_cover` with robust unit tests (`image_filename_filtering`, `natural_sorting_orders_numbers_correctly`, `natural_sorting_handles_nested_paths`).
+
+2. **Moku-Style Interactive Reader (`src/pages/comics_reader/`):**
+   Created `ComicsReaderModel` Relm4 component with dark stage styling (`.kalam-comics-stage`), auto-hiding chrome top bar and bottom bar.
+   - Top Bar: Close button, title + page count display (`Page X of Y`), reading direction toggle (LTR, RTL / Manga, Webtoon vertical scroll), fit mode toggle (Fit Width, Fit Height, Original).
+   - Bottom Bar: Prev/Next page navigation, interactive page scrubber `gtk::Scale`.
+
+3. **Viewport Memory Safety:**
+   Implemented lazy image texture decoding for `current_page ± 2` adjacent pages into `HashMap<usize, gdk::Texture>`. Texture entries outside the active window are discarded to keep memory usage strictly bounded even when reading high-resolution multi-hundred-page comic archives.
+
+4. **App Routing Integration (`src/app.rs`):**
+   Updated `AppMsg::OpenReader` to check format; CBZ and CBR books automatically route to `Route::ComicsReader { book_id }` while EPUB/text books route to `Route::Reader`. Added `Route::ComicsReader { .. } => None` cache key to ensure reader pages are unmounted cleanly when closing.
+
+---
+
 *Last updated: 2026-09-05.*
+
 

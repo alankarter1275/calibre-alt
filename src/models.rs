@@ -80,6 +80,10 @@ pub enum Route {
     Reader {
         book_id: i64,
     },
+    /// Immersive Comics reader (P8).
+    ComicsReader {
+        book_id: i64,
+    },
 }
 
 impl Route {
@@ -89,12 +93,12 @@ impl Route {
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
             Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,
-            Route::BookPage { .. } | Route::Reader { .. } => NavItem::Library,
+            Route::BookPage { .. } | Route::Reader { .. } | Route::ComicsReader { .. } => NavItem::Library,
         }
     }
 
     pub fn is_reader(&self) -> bool {
-        matches!(self, Route::Reader { .. })
+        matches!(self, Route::Reader { .. } | Route::ComicsReader { .. })
     }
 }
 

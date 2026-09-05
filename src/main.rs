@@ -5,6 +5,7 @@
 
 mod app;
 mod author;
+mod comics;
 mod db;
 mod dict;
 mod epub;

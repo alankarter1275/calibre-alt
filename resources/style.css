@@ -3571,4 +3571,28 @@ button.kalam-lib-play {
     font-size: 0.7rem;
     color: @kalam_accent;
 }
-"#;
+
+/* ── Moku-style Comics Reader Stage ──────────────────── */
+.kalam-comics-stage {
+    background: #090a0d;
+}
+
+.kalam-comics-topbar {
+    background: alpha(#0f1117, 0.94);
+    border-bottom: 1px solid alpha(#252a36, 0.8);
+    padding: 10px 18px;
+    min-height: 48px;
+}
+
+.kalam-comics-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.kalam-comics-bottombar {
+    background: alpha(#0f1117, 0.94);
+    border-top: 1px solid alpha(#252a36, 0.8);
+    padding: 10px 18px;
+    min-height: 48px;
+}

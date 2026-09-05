@@ -17,6 +17,7 @@ pub mod analytics;
 pub mod author;
 pub mod book;
 pub mod book_float;
+pub mod comics_reader;
 pub mod history;
 pub mod home;
 pub mod library;

@@ -8,6 +8,7 @@ use crate::pages::{
     author::{AuthorPageModel, AuthorPageOut},
     book::{BookPageModel, BookPageOut},
     book_float::{BookFloatModel, BookFloatOut},
+    comics_reader::{ComicsReaderModel, ComicsReaderOut},
     history::{HistoryModel, HistoryOut},
     home::{HomeOut, HomePageModel},
     library::{LibraryOut, LibraryPageModel},
@@ -84,6 +85,7 @@ enum PageSlot {
     Author(Controller<AuthorPageModel>),
     Book(Controller<BookPageModel>),
     Reader(Controller<ReaderModel>),
+    ComicsReader(Controller<ComicsReaderModel>),
     Settings(Controller<SettingsPageModel>),
     Placeholder(Controller<PlaceholderPageModel>),
 }
@@ -107,6 +109,7 @@ impl PageSlot {
             PageSlot::Author(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
             PageSlot::Reader(c) => c.widget().clone().upcast(),
+            PageSlot::ComicsReader(c) => c.widget().clone().upcast(),
             PageSlot::Settings(c) => c.widget().clone().upcast(),
             PageSlot::Placeholder(c) => c.widget().clone().upcast(),
         }
@@ -172,7 +175,8 @@ fn cache_key(route: &Route) -> Option<String> {
         | Route::TagBooks { .. }
         | Route::AuthorPage { .. }
         | Route::BookPage { .. }
-        | Route::Reader { .. } => None,
+        | Route::Reader { .. }
+        | Route::ComicsReader { .. } => None,
     }
 }
 
@@ -537,6 +541,15 @@ impl AppModel {
                         }
                     });
                 PageSlot::Reader(ctrl)
+            }
+            Route::ComicsReader { book_id } => {
+                let id = *book_id;
+                let ctrl = ComicsReaderModel::builder()
+                    .launch((catalog.clone(), id))
+                    .forward(sender.input_sender(), |out| match out {
+                        ComicsReaderOut::Close => AppMsg::Back,
+                    });
+                PageSlot::ComicsReader(ctrl)
             }
             Route::Module(NavItem::Settings) => {
                 let ctrl = SettingsPageModel::builder()
@@ -1176,9 +1189,18 @@ impl Component for AppModel {
             }
             AppMsg::OpenReader { book_id } => {
                 self.close_floating();
+                let route = if let Ok(Some(book)) = self.catalog.get_book(book_id) {
+                    if matches!(book.format, crate::models::BookFormat::Cbz | crate::models::BookFormat::Cbr) {
+                        Route::ComicsReader { book_id }
+                    } else {
+                        Route::Reader { book_id }
+                    }
+                } else {
+                    Route::Reader { book_id }
+                };
                 self.swap_page(
                     &widgets.content_host,
-                    Route::Reader { book_id },
+                    route,
                     true,
                     &sender,
                 );
