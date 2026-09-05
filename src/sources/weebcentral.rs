@@ -41,7 +41,7 @@ impl Source for WeebCentralSource {
         let doc = Html::parse_document(&resp);
         
         let item_sel = Selector::parse("article.bg-base-300").unwrap();
-        let link_sel = Selector::parse("a.text-white[href*=\"/series/\"]").unwrap();
+        let link_sel = Selector::parse("a.link-hover[href*=\"/series/\"]").unwrap();
         let img_sel = Selector::parse("picture source").unwrap();
 
         let mut results = Vec::new();
