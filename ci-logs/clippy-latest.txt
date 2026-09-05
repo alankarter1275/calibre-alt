@@ -1,3 +1,4 @@
-src/tasks.rs:76:9: [1m[91merror[0m: fields `done`, `total`, and `detail` are never read
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
---- run 33731854149 ---
+(no lines matched; last 100 lines of output)
+[1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/calibre-alt/calibre-alt)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 7.31s
+--- run 33942807969 ---

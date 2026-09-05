@@ -1728,6 +1728,23 @@ impl ReaderModel {
             .auto_finish_if_complete(self.book_id, pct);
     }
 
+    /// Write the elapsed time of the session that is still open.
+    ///
+    /// Cheap and idempotent: it is the same row every time, and the session
+    /// stays open (`ended_at` NULL) so the startup reaper can still recognise
+    /// it if we never get to `close_session`.
+    fn checkpoint_session(&self) {
+        let Some(session_id) = self.session_id else {
+            return;
+        };
+        let seconds = self.session_start.elapsed().as_secs() as i64;
+        let _ = self.service.catalog().checkpoint_reading_session(
+            session_id,
+            seconds,
+            self.progress_pct(),
+        );
+    }
+
     fn close_session(&mut self) {
         let Some(session_id) = self.session_id.take() else {
             return;
@@ -2119,6 +2136,18 @@ impl ReaderModel {
                 if let Some(f) = payload.fraction {
                     self.fraction = f.clamp(0.0, 1.0);
                 }
+                // Checkpoint the live reading session. Without this the
+                // session's `seconds` were only ever written by `shutdown()`,
+                // so a crash, an OOM kill or a power cut lost the entire
+                // session — and because the streak query ignores rows with
+                // `seconds = 0`, it also lost a day the user had genuinely
+                // read. Now a crash costs at most the time since the last
+                // scroll.
+                //
+                // The JS bridge only sends `progress` once the reader has
+                // moved 1% (see `pingProgress` in `epub_book.rs`), so this is
+                // a single-row update at a human rate, not per frame.
+                self.checkpoint_session();
             }
             "next" => {
                 sender.input(ReaderMsg::NextChapter);
@@ -4294,11 +4323,25 @@ fn load_chapter(model: &ReaderModel) {
     }
 }
 
+/// Shorten a definition to `n` **characters** for a one-line label.
+///
+/// Counts and slices by `char`, not by byte. `&s[..n]` panics unless `n`
+/// lands on a UTF-8 character boundary, and this is called on dictionary
+/// content — definitions full of em-dashes, curly quotes, IPA and non-Latin
+/// script, i.e. precisely where a multi-byte character straddles byte 180.
+///
+/// The panic was not survivable: this runs while building reader widgets,
+/// inside a GTK signal callback, where a panic cannot unwind and aborts the
+/// process (`docs/pitfalls.md` §1a, §21).
 fn truncate_def(s: &str, n: usize) -> String {
-    if s.len() <= n {
-        s.to_string()
+    let mut chars = s.chars();
+    let head: String = chars.by_ref().take(n).collect();
+    // Pulling one more char is how we learn there was a rest, without
+    // counting the whole string first.
+    if chars.next().is_none() {
+        head
     } else {
-        format!("{}…", &s[..n])
+        format!("{head}…")
     }
 }
 
@@ -4350,4 +4393,60 @@ fn chrono_now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_def_keeps_short_text_untouched() {
+        assert_eq!(truncate_def("short", 180), "short");
+        // Exactly at the limit: no ellipsis, because nothing was cut.
+        assert_eq!(truncate_def("abcde", 5), "abcde");
+    }
+
+    #[test]
+    fn truncate_def_cuts_long_text_and_marks_it() {
+        assert_eq!(truncate_def("abcdef", 5), "abcde…");
+    }
+
+    #[test]
+    fn truncate_def_does_not_panic_on_multibyte_text() {
+        // The regression. `&s[..n]` panicked whenever byte n fell inside a
+        // character, which for dictionary content is the common case, not an
+        // exotic one: em-dashes, curly quotes, IPA, accents, CJK.
+        //
+        // Each of these is deliberately built so the byte at the cut index is
+        // a UTF-8 continuation byte -- the exact condition that aborted the
+        // process.
+        let cases = [
+            "café — a small restaurant serving coffee", // em-dash, accent
+            "\u{2018}bank\u{2019} the side of a river", // curly quotes
+            "/ˈbæŋk/ pronunciation of the headword",    // IPA
+            "銀行 — a financial institution",           // CJK
+            "ααααααααααααααααααααααααααααα",            // all 2-byte
+        ];
+        for case in cases {
+            for n in 0..12 {
+                // Must not panic at any cut point.
+                let out = truncate_def(case, n);
+                let expected: String = case.chars().take(n).collect();
+                assert!(
+                    out.starts_with(&expected),
+                    "truncate_def({case:?}, {n}) = {out:?} lost the prefix"
+                );
+                // And the result must still be valid text of the right length.
+                assert!(out.chars().count() <= n + 1, "cut {n} produced {out:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn truncate_def_counts_characters_not_bytes() {
+        // Five 2-byte characters are 10 bytes. A byte-based limit of 5 would
+        // both cut in the wrong place and (before the fix) panic.
+        assert_eq!(truncate_def("ααααα", 5), "ααααα");
+        assert_eq!(truncate_def("αααααα", 5), "ααααα…");
+    }
 }

@@ -5,6 +5,93 @@ GitHub App has the `workflows` permission. The workflow body lives here instead:
 
 **Canonical file:** [`github-actions-ci.yml`](./github-actions-ci.yml)
 
+## ACTION NEEDED (2026-09-04, third attempt) — rustfmt must stop pushing
+
+Sorry, one more copy of the workflow. My previous fix was the wrong shape.
+
+**What happened.** The rustfmt step auto-committed the formatting fix and
+pushed it. That push kept being rejected, and because the step had no
+`continue-on-error`, **a rejected push failed the entire build** — four runs in
+a row, none of them caused by the code. Adding a rebase (attempt two) did not
+help, so the collision was not the only problem, and I could not see the real
+error: the sandbox cannot download Actions logs.
+
+**The fix is to stop pushing from that step at all.** Formatting is not worth
+failing a build over, and a step whose failure mode is unrelated to what it
+checks sends every investigation to the wrong place. It now:
+
+- formats, and **reports** the diff instead of committing it
+- restores the tree afterwards, so clippy and the build see the real source
+- never fails the run
+- publishes the diff to `ci-logs/rustfmt-latest.diff` in a **separate** step
+  that is `continue-on-error`, so even a failed publish cannot break anything
+
+The agent then applies the formatting itself in the next commit, which is
+honest anyway: formatting belongs in the change that caused it, not in a
+drive-by commit from CI.
+
+Copy [`github-actions-ci.yml`](./github-actions-ci.yml) over
+`.github/workflows/ci.yml` and push.
+
+---
+
+## ACTION NEEDED (2026-09-04) — small follow-up to the rustfmt step
+
+Low priority; nothing is broken. The report-only rustfmt step works, but on a
+**clean** run it deletes `ci-logs/rustfmt-latest.diff` locally and never
+commits the deletion — so the stale diff from an earlier untidy run stays in
+the repository and looks like an outstanding complaint. It already fooled me
+once.
+
+Copy [`github-actions-ci.yml`](./github-actions-ci.yml) over
+`.github/workflows/ci.yml` when convenient. A clean run now writes
+`clean` plus the run id instead of deleting the file, so the published diff
+always describes the latest run.
+
+---
+
+## ACTION NEEDED (2026-09-04) — publish the CI logs on success too
+
+Low priority; nothing is broken, but the current behaviour is actively
+misleading.
+
+`ci-logs/test-latest.txt` and `ci-logs/clippy-latest.txt` are only written when
+that step **fails**. So after a failure is fixed, the old failing log stays
+committed and a later green run still shows red. It fooled me three separate
+times — most recently reading "1 failed" from a run two hours dead while the
+current run was green.
+
+Copy [`github-actions-ci.yml`](./github-actions-ci.yml) over
+`.github/workflows/ci.yml`. Both steps now run on success as well, so the
+published file always describes the latest run. Same fix as the rustfmt diff.
+
+---
+
+## Done: windowed-grid measurement (applied 2026-09-04)
+
+Installed and running. The `scale` job runs the 2,000-book library twice, once
+with each grid, and publishes a side-by-side summary to
+`ci-logs/scale-2000-comparison.txt`. Both runs happen in the same job on the
+same machine on purpose: comparing against a number from a previous run would
+be comparing two different rented VMs, which is what made timing-based tests
+useless (see the A0 step 7 entry in the roadmap).
+
+**No reinstall needed** even though the windowed grid later became the default.
+The version installed passes `WINDOWED=1` on one run and nothing on the other;
+"nothing" would now mean *windowed* as well, so both runs would measure the
+same thing and report a green, meaningless comparison. Rather than ask for
+another manual install, `screenshot.sh` now infers the baseline from the output
+directory: a run writing to a plain `ci-shots-*` path is the old grid unless
+told otherwise. An explicit `WINDOWED=` still wins, so the updated copy in this
+directory works too.
+
+---
+
+## Done: `Cargo.lock` step (applied 2026-09-04)
+
+The lockfile step is installed and has run — `Cargo.lock` is committed and the
+dependency graph is pinned. Nothing to do here; kept as a record.
+
 ## Working agreement (manual CI handoff)
 
 The Arena agent **cannot** create or update `.github/workflows/*` (GitHub App

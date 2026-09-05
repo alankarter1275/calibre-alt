@@ -769,3 +769,322 @@ analogue: **what did the user actually say, and would their sentence still be
 true if I had decided the opposite?** Here it would — "not an ecosystem" is
 equally true with or without Lua, which is the tell that the sentence never
 settled the question.
+
+---
+
+## 21. When you fix the thing a check was watching, re-derive what the check proves
+
+The CI screenshot job had never actually navigated. It sent `Tab Tab Return`
+and hoped the focus order matched, and when it did not, three byte-identical
+photographs of Home were reported as a successful run. The fix was to let the
+app be told where to go (`KALAM_ROUTE=all-books`), and it worked on the first
+try: route accepted, `grid_build` emitted, 139 grid cards.
+
+The same run reported:
+
+```
+navigation: FAILED -- 01-home and 03-after-nav-settled are byte-identical.
+  The app never left Home; every screenshot below shows the same page.
+```
+
+That verdict was wrong, and I wrote it. The check compared the first
+screenshot to the last, which was the right question **while navigation
+happened part-way through the run** — the app started on Home, so a difference
+meant it had moved. `KALAM_ROUTE` navigates at *startup*. Every shot in the
+run is now the requested page, so the file named `01-home` was already
+All-books and all three fingerprints matching is the **expected** result.
+
+I changed the mechanism and carried the old oracle across without re-asking
+what it was testing. The check still ran, still printed a confident verdict,
+and the verdict was noise.
+
+Two things had to change, and the second is the one that matters:
+
+- **The filenames.** `01-home` described a page that was no longer Home, so
+  the report lied twice — wrong page name, and a correct result presented as
+  a failure.
+- **The comparison.** Proving "we are on All-books" needs something that is
+  *not* All-books to compare against. The job now relaunches with
+  `KALAM_ROUTE=home`, photographs Home as `04-home-for-comparison`, and
+  asserts the two differ. That catches the real failure — the log claiming it
+  navigated while the screen never changed — which comparing a page to itself
+  never could.
+
+### The rule
+
+**A check is a question about a mechanism. Change the mechanism and the
+question may no longer parse.** After any fix, re-read every assertion that
+watched the old behaviour and ask what each one now proves. An assertion that
+survives a refactor unexamined is not evidence that it still works; it is
+evidence that nobody looked.
+
+### Related
+
+This is §19 wearing different clothes. There the check could not distinguish a
+fixed build from a broken one; here it could not distinguish a fixed build
+from a broken one *either* — it just failed in the flattering direction
+instead, crying wolf rather than staying silent. Both failures come from not
+asking what the output would be in the other case. A check that reports
+failure on correct code teaches people to ignore it, which costs more than
+having no check at all.
+
+---
+
+## 22. Do not let a container compute geometry from children you are removing
+
+The windowed grid (A0 step 6) builds only the book cards you can see. First
+attempt kept the existing `GtkGrid` and added one tall spacer widget in the
+last row to hold the full height open. It shipped behind a switch, the user
+turned it on, and hit three bugs in about a minute:
+
+1. The page scrolled roughly **twice as far as it should**, and everything past
+   the books was blank.
+2. **Books were missing.**
+3. After a few rows, **the covers and the scrollbar jumped around** while
+   scrolling.
+
+Three symptoms, one cause.
+
+**A `GtkGrid` row is as tall as its tallest child.** The spacer for 144 books
+was 6,532 px, and it was placed *inside* the last row — so that row became
+6,532 px tall, on top of the 23 normal rows above it. 6,796 px of content
+became 13,064 px of scrolling. That is bug 1.
+
+**The spacer occupied a real cell**, column 0 of the last row. The book that
+belonged there had nowhere to go. That is bug 2.
+
+**Rows holding no mounted cards collapsed to zero height.** As cards mounted
+and unmounted during a scroll, row heights kept changing, so the grid's total
+height changed underneath the scrollbar. That is bug 3.
+
+### The general rule
+
+**A container that derives its size from its children cannot be used to
+virtualize those children.** The entire premise of windowing is "most children
+do not exist right now", and `GtkGrid`, `GtkBox` and friends answer "how big am
+I?" by asking the children that do. Those two facts are in direct conflict, and
+no arrangement of spacers fixes it — a spacer is just another child feeding the
+same broken calculation.
+
+Use a container that does **not** infer geometry: `GtkFixed`, where every child
+is placed at an explicit x/y and the overall size is set once from the data.
+Then positions and total height depend on the *book count*, never on what is
+mounted, which is exactly the property windowing needs.
+
+### What made this expensive
+
+The arithmetic was checked before pushing — the *row* maths (which rows are
+visible) had seven tests and was correct. What was never checked was the
+**pixel** maths, because it was one line inside a function that needs a display
+and therefore "could not be tested". That was wrong: `grid_height(books)` and
+`card_position(index)` are pure integer functions. Pulling them out of the
+widget code made them testable, and the tests now written fail against the old
+implementation (13,064 px vs 6,796 px for 144 books).
+
+**If a function needs a display, the arithmetic inside it usually does not.**
+Extract the numbers and test those. See also §19: the seven row tests passed
+throughout, which made the change *feel* verified while the part that actually
+broke had no coverage at all.
+
+### Related
+
+§21 was "when you fix the thing a check was watching, re-derive what the check
+proves". This is the neighbouring failure: **having tests for one half of a
+change is not having tests for the change.** The half with coverage was the
+half I found interesting, not the half most likely to be wrong.
+
+---
+
+## 23. A CI step that pushes must rebase, or it fails on someone else's commit
+
+Two runs in a row failed at `rustfmt (auto-fix and push if needed)`. Nothing
+was wrong with the code, and nothing was wrong with the formatting — the
+formatting had already been applied successfully. The step ended with:
+
+```yaml
+            git commit -m "style: rustfmt auto-fix"
+            git push
+```
+
+A bare `git push`, no rebase. Meanwhile the `screenshots` and `scale` jobs
+commit `ci-logs/` to the same branch. When one of those lands between this
+job's checkout and this step, the push is rejected, the step exits non-zero,
+and — because it has no `continue-on-error` — **the entire run fails.**
+
+Every other auto-committing step in the same workflow already got this right:
+
+```yaml
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
+            git push origin "HEAD:$GITHUB_REF_NAME" || true
+```
+
+The rustfmt step predates them and was never brought in line.
+
+### The second cause, which was mine
+
+The race explanation above is real but incomplete, and the incomplete version
+sent me down another wrong path. There is a second, *deterministic* collision:
+the step immediately before rustfmt is **`Cargo.lock (generate and push if
+missing or stale)`**, which also pushes — a step I added earlier the same day.
+When it commits, rustfmt's bare push is rejected **every single time**, not
+intermittently.
+
+So an earlier fix of mine turned a rare flake into a reliable failure. Worth
+sitting with: adding a second writer to a branch is not a local change, it
+changes the failure rate of every other writer.
+
+### Why it cost more than it should have
+
+The failure surfaces as "rustfmt failed", which reads as *your code is
+badly formatted*. I spent two pushes guessing at what rustfmt wanted and
+reformatting code by hand — including one commit whose entire message was a
+theory about a `matches!` arm. Both guesses were wrong, because there was
+nothing to fix.
+
+Two things would have cut that short:
+
+1. **Check whether the step's own action succeeded before assuming its subject
+   did.** `cargo fmt` ran fine; the *push* failed. The step name conflates the
+   two.
+2. **The diff was never published.** The sandbox cannot download Actions logs
+   (§ the whole reason `ci-logs/` exists), so a formatting failure said only
+   "failed" with no detail. Now the step writes
+   `ci-logs/rustfmt-latest.diff` — a check whose output cannot be read is
+   barely a check.
+
+### Attempt two also failed, and the lesson is bigger than the rebase
+
+Adding the rebase did not fix it. The step kept failing, no `rustfmt auto-fix`
+commit landed, and no diff was published — so `git push` was still the thing
+exiting non-zero, for a reason I could not see, because the sandbox cannot
+download Actions logs.
+
+At that point I had spent **four runs** on a formatting step. The mistake was
+treating it as a puzzle to solve rather than asking why formatting was allowed
+to fail a build at all.
+
+**The right fix was to remove the failure mode, not diagnose it.** rustfmt now
+formats, prints and publishes the diff, restores the tree so clippy sees the
+real source, and cannot fail the run. The agent applies the formatting in its
+next commit — which is where it belonged anyway, rather than arriving as a
+drive-by commit from CI that everyone then has to rebase around.
+
+### And then the real cause, which was none of the above
+
+With the report-only step installed, it *still* failed — a step that only
+formats and prints. That is only possible if `cargo fmt` itself errors, and
+`cargo fmt` errors when the code **does not parse**.
+
+It did not parse. My script for appending tests finds the file's last `}` and
+splices before it. That is fine when the file ends with `mod tests`. This file
+had since grown new functions *after* its test module, so the last `}` belonged
+to `set_global_pref` — and 70 lines of `#[test]` functions were spliced **inside
+that function's body**.
+
+Braces still balanced, so my balance-checker said OK. Nothing looked wrong in a
+`tail`. It was invisible to every check I had, and the only thing that could see
+it was a parser.
+
+**Six runs**, and the first five were spent on a formatting step that was
+correctly reporting "this file is broken" in the only way it could.
+
+### The rules
+
+1. **Any CI step that pushes must rebase first, and must not fail the build if
+   the push loses a race.** Better still: **a cosmetic check should not be able
+   to fail the build at all** — while rustfmt could fail the run, it masked
+   clippy and the build entirely, so a syntax error hid behind a formatting
+   error for five runs.
+2. **Do not append code by locating the last brace.** Anchor on something that
+   identifies the *place* — the `mod tests {` line, a named marker — because
+   "the end of the file" stops meaning "the end of the test module" the moment
+   anything is added after it.
+3. **A balanced-brace check does not mean it parses.** Text surgery on source
+   needs a parser or a compiler; everything short of that will confirm a broken
+   file looks fine. More generally: when several jobs write
+to one branch, every writer needs the same conflict discipline. One that does
+not have it will fail intermittently, on a schedule that looks random and
+correlates with nothing in the diff.
+
+### Related
+
+§21 was about a check whose *verdict* stopped meaning anything after a change.
+This is the sibling: a check whose *failure mode* has nothing to do with what
+it checks. Both waste time by pointing the investigation at the diff.
+
+---
+
+## 24. Making a setting global makes every test depend on the developer's machine
+
+P6.5 moved app-level preferences out of the library database into
+`~/.config/kalam/prefs.json`, so switching library would stop resetting your
+theme and reader settings. Correct change. It immediately broke a test that had
+nothing to do with libraries:
+
+```
+service::tests::history_and_lookup_history_return_rows_without_errors ... FAILED
+```
+
+`log_dict_lookup` skips logging when `dict_history_enabled` is off. That pref
+had just become global — so the test was now reading a JSON file in a real home
+directory, outside the repository, that the test had never heard of and could
+not control. On a machine where that setting happened to be off, the test
+failed. On a fresh CI runner it might pass. Nothing about the *code under test*
+decided the outcome.
+
+That is §19's rule from the other direction: not "a test that cannot fail", but
+**a test whose result is decided by something outside the test.** Both are
+tests in name only.
+
+### The fix
+
+Global prefs are inert under `cargo test`: reads return empty, writes are a
+no-op. A `cfg!(test)` guard rather than a temp directory, because these
+functions are called from everywhere and threading a base path through every
+caller to serve the tests would be worse than the problem. The classification
+rule itself (`is_global_pref`) is pure and keeps its own tests.
+
+There is a test asserting the guard works, which matters more than it looks —
+if it ever regresses, the symptom is not a failure but a suite that quietly
+starts depending on whoever runs it.
+
+### The rule
+
+**When you move state outside the repository — a config file, an environment
+variable, a keyring, a server — every test that touches it becomes a test of
+the machine.** Decide at that moment how tests will be isolated from it. Not
+after CI goes red for a reason that looks unrelated to the change.
+
+---
+
+## 25. A log published only on failure will outlive the failure
+
+`ci-logs/test-latest.txt` and `ci-logs/clippy-latest.txt` were written only
+when their step failed. That sounds economical and is a trap: once the problem
+is fixed, the *old failing log stays committed*. Every later green run still
+shows a red file.
+
+It misled me three times in one session. The last was reading
+`test result: FAILED. 301 passed; 1 failed` and starting to investigate,
+before noticing the run id at the bottom belonged to a run two hours dead while
+the current one was green.
+
+The `--- run <id> ---` footer is what saved it each time, and it only worked
+because I thought to check. A file that requires you to remember to check
+whether it is current is a booby trap, not a diagnostic.
+
+### The rule
+
+**A published artifact must always describe the latest run.** Write it on
+success too — "clean" is information. If a file can be stale, someone will
+read it as current, and the more convincing it looks the longer they will
+believe it.
+
+### Related
+
+Same shape as §21 and §23: a check whose *output* stops corresponding to
+reality. §21 was a verdict that no longer matched what it measured, §23 a
+failure whose cause was unrelated to what it checked, and this is a result that
+outlives the run that produced it. In all three the investigation goes to the
+wrong place, and in all three the fix is to make the signal honest rather than
+to get better at interpreting a dishonest one.

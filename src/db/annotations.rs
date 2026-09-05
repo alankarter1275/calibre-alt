@@ -45,7 +45,12 @@ impl Catalog {
                 now
             ],
         )?;
-        Ok(conn.last_insert_rowid())
+        let id = conn.last_insert_rowid();
+        // Drop the connection lock before refreshing the sidecar: that reads
+        // the book and its annotations back, which takes the same lock.
+        drop(conn);
+        crate::sidecar::refresh_for_book(self, book_id);
+        Ok(id)
     }
 
     pub fn get_annotations_for_book(&self, book_id: i64) -> Result<Vec<Annotation>> {
@@ -160,7 +165,20 @@ impl Catalog {
 
     pub fn delete_annotation(&self, id: i64) -> Result<()> {
         let conn = self.conn();
+        // Which book this belonged to, read *before* the delete removes the
+        // row that says so.
+        let book_id: Option<i64> = conn
+            .query_row(
+                "SELECT book_id FROM annotations WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()?;
         conn.execute("DELETE FROM annotations WHERE id = ?1", params![id])?;
+        drop(conn);
+        if let Some(book_id) = book_id {
+            crate::sidecar::refresh_for_book(self, book_id);
+        }
         Ok(())
     }
 
@@ -171,6 +189,8 @@ impl Catalog {
             "UPDATE annotations SET note = ?1, updated_at = ?2 WHERE id = ?3",
             params![note, now, id],
         )?;
+        drop(conn);
+        self.refresh_sidecar_for_annotation(id);
         Ok(())
     }
 
@@ -181,7 +201,29 @@ impl Catalog {
             "UPDATE annotations SET color = ?1, updated_at = ?2 WHERE id = ?3",
             params![color, now, id],
         )?;
+        drop(conn);
+        self.refresh_sidecar_for_annotation(id);
         Ok(())
+    }
+
+    /// Refresh the backup for whichever book owns this annotation.
+    ///
+    /// Best-effort, like every other sidecar write: an annotation that has
+    /// already gone simply has nothing to refresh.
+    fn refresh_sidecar_for_annotation(&self, annotation_id: i64) {
+        let book_id: Option<i64> = self
+            .conn()
+            .query_row(
+                "SELECT book_id FROM annotations WHERE id = ?1",
+                params![annotation_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        if let Some(book_id) = book_id {
+            crate::sidecar::refresh_for_book(self, book_id);
+        }
     }
 
     // -----------------------------------------------------------------------

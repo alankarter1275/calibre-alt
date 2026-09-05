@@ -1,5 +1,4 @@
 //! Offline dictionary handling — StarDict + Kalam SQLite packs.
-#![allow(dead_code)]
 //!
 //! StarDict format (minimal parser):
 //!   .ifo – metadata (wordcount)
@@ -7,6 +6,14 @@
 //!   .dict / .dict.dz – concatenated definitions
 //! For simplicity P3 supports uncompressed .dict; .dict.dz is decompressed via flate2 if present.
 //! SQLite pack: a SQLite file with table entries(word TEXT, definition TEXT) or (word, definition) naming variations.
+
+// Module-wide because the StarDict reader exposes a complete parse of the
+// format (64-bit offsets, `sametypesequence` variants) of which the app
+// currently calls only part, and CI runs `-D warnings`. Narrow this to the
+// specific items when the dictionary work next lands: a module-level allow
+// also hides anything that becomes dead *later*, which is exactly what it
+// should not do.
+#![allow(dead_code)]
 
 use crate::db::{
     Catalog, BUNDLED_ANTONYMS_NAME, BUNDLED_IDIOMS_NAME, BUNDLED_SYNONYMS_NAME,
@@ -168,7 +175,25 @@ fn install_bundled_tsv(
 /// - SQLite file with entries table.
 ///
 /// Returns the dictionary name and entry count.
+///
+/// Convenience wrapper for callers with no UI to report to (tests, the
+/// bundled-pack installer). Import progress is discarded; use
+/// [`import_dictionary_with_progress`] to drive a toast.
 pub fn import_dictionary(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
+    import_dictionary_with_progress(catalog, path, &|_| {})
+}
+
+/// As [`import_dictionary`], reporting entries written so far.
+///
+/// `progress` is called once per flushed batch (every [`IMPORT_BATCH`]
+/// entries) with the running total. It runs on whatever thread is doing the
+/// import — a worker — so it must not touch GTK or `notify`; hand the number
+/// back through `tasks::Reporter` instead.
+pub fn import_dictionary_with_progress(
+    catalog: &Catalog,
+    path: &Path,
+    progress: &dyn Fn(usize),
+) -> Result<(String, i64)> {
     // Guard: importing Kalam's own catalog database as a "dictionary pack"
     // would read the app's tables as entries. Compare canonical paths so
     // ~, symlinks and relative paths all resolve.
@@ -190,7 +215,7 @@ pub fn import_dictionary(catalog: &Catalog, path: &Path) -> Result<(String, i64)
         import_stardict(catalog, path)
     } else if is_sqlite_file(path)? {
         // Try SQLite detection: file starts with "SQLite format 3\0"
-        import_sqlite_pack(catalog, path)
+        import_sqlite_pack(catalog, path, progress)
     } else if path
         .file_name()
         .and_then(|n| n.to_str())
@@ -201,7 +226,7 @@ pub fn import_dictionary(catalog: &Catalog, path: &Path) -> Result<(String, i64)
         import_stardict(catalog, path)
     } else if ext == "txt" || ext == "tab" || ext == "tsv" {
         // Last try: plain text tab-separated dictionary (word<TAB>definition)
-        import_tsv(catalog, path)
+        import_tsv(catalog, path, progress)
     } else {
         let hint = match ext.as_str() {
             "db" | "sqlite" | "sqlite3" => "a SQLite dictionary pack",
@@ -240,7 +265,11 @@ fn is_sqlite_file(path: &Path) -> Result<bool> {
 }
 
 /// Import SQLite pack: look for table `entries` or `dict` or `words`
-fn import_sqlite_pack(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
+fn import_sqlite_pack(
+    catalog: &Catalog,
+    path: &Path,
+    progress: &dyn Fn(usize),
+) -> Result<(String, i64)> {
     use rusqlite::Connection;
 
     // Read-only: an import must never modify the pack file (and never
@@ -278,32 +307,39 @@ fn import_sqlite_pack(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
     for r in columns_stmt.query_map([], |row| row.get::<_, String>(1))? {
         cols.push(r?);
     }
-    let word_col = if cols.iter().any(|c| c.eq_ignore_ascii_case("word")) {
+    // Pick the headword and definition columns by name, falling back to
+    // position. Written as `find(...).or_else(...)` rather than the previous
+    // `if any(..) { find(..).unwrap() }` chain for two reasons: it searches
+    // once instead of twice, and it has no `unwrap()` to audit.
+    //
+    // The fallbacks used to index `cols[0]` / `cols[1]` directly, which
+    // panics when `cols` is empty. That is reachable from a *user-chosen*
+    // file: `PRAGMA table_info` returns zero rows for a virtual table whose
+    // module is not loaded, and `chosen` can be such a table because the last
+    // resort is "whatever `sqlite_master` lists first". A panic here happens
+    // on the import worker thread and replaces the careful error message
+    // below with a backtrace.
+    let pick = |names: &[&str]| -> Option<&String> {
         cols.iter()
-            .find(|c| c.eq_ignore_ascii_case("word"))
-            .unwrap()
-    } else if cols.iter().any(|c| c.eq_ignore_ascii_case("term")) {
-        cols.iter()
-            .find(|c| c.eq_ignore_ascii_case("term"))
-            .unwrap()
-    } else {
-        &cols[0]
+            .find(|c| names.iter().any(|n| c.eq_ignore_ascii_case(n)))
     };
-    let def_col = if cols.iter().any(|c| c.eq_ignore_ascii_case("definition")) {
-        cols.iter()
-            .find(|c| c.eq_ignore_ascii_case("definition"))
-            .unwrap()
-    } else if cols.iter().any(|c| c.eq_ignore_ascii_case("meaning")) {
-        cols.iter()
-            .find(|c| c.eq_ignore_ascii_case("meaning"))
-            .unwrap()
-    } else if cols.iter().any(|c| c.eq_ignore_ascii_case("def")) {
-        cols.iter().find(|c| c.eq_ignore_ascii_case("def")).unwrap()
-    } else if cols.len() >= 2 {
-        &cols[1]
-    } else {
-        &cols[0]
-    };
+    let word_col = pick(&["word", "term"])
+        .or_else(|| cols.first())
+        .ok_or_else(|| {
+            anyhow!(
+                "table '{chosen}' in {} has no columns to read a dictionary from",
+                path.display()
+            )
+        })?;
+    let def_col = pick(&["definition", "meaning", "def"])
+        .or_else(|| cols.get(1))
+        .or_else(|| cols.first())
+        .ok_or_else(|| {
+            anyhow!(
+                "table '{chosen}' in {} has no definition column",
+                path.display()
+            )
+        })?;
 
     let sql = format!(
         "SELECT {}, {} FROM {}",
@@ -311,31 +347,49 @@ fn import_sqlite_pack(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
         quote_ident(def_col),
         chosen_ident
     );
-    let mut stmt = conn.prepare(&sql)?;
-    let mut entries = Vec::new();
-    for r in stmt.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-    })? {
-        let (w, d) = r?;
-        let w = w.trim();
-        let d = d.trim();
-        if !w.is_empty() && !d.is_empty() {
-            entries.push((w.to_string(), d.to_string()));
-        }
-    }
-
-    if entries.is_empty() {
-        return Err(anyhow!("sqlite dict {} has no entries", path.display()));
-    }
-
     let dict_name = path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("ImportedDict")
         .to_string();
 
-    insert_imported_entries(catalog, &dict_name, None, &entries)?;
-    Ok((dict_name, entries.len() as i64))
+    // Streamed straight from the source cursor into batched inserts: the pack
+    // is never held in memory as a whole. See `EntrySink`.
+    let mut stmt = conn.prepare(&sql)?;
+    let mut sink = EntrySink::new(catalog, &dict_name, None, progress)?;
+    let mut rows = stmt.query([])?;
+    loop {
+        let row = match rows.next() {
+            Ok(Some(row)) => row,
+            Ok(None) => break,
+            Err(e) => {
+                sink.abort();
+                return Err(e.into());
+            }
+        };
+        let w: String = match row.get(0) {
+            Ok(w) => w,
+            Err(e) => {
+                sink.abort();
+                return Err(e.into());
+            }
+        };
+        let d: String = match row.get(1) {
+            Ok(d) => d,
+            Err(e) => {
+                sink.abort();
+                return Err(e.into());
+            }
+        };
+        let (w, d) = (w.trim(), d.trim());
+        if !w.is_empty() && !d.is_empty() {
+            sink.push(w.to_string(), d.to_string())?;
+        }
+    }
+    let count = sink
+        .finish()
+        .map_err(|e| anyhow!("sqlite dict {}: {e}", path.display()))?;
+    Ok((dict_name, count))
 }
 
 /// Double-quote a SQLite identifier, doubling any embedded quotes so a
@@ -344,45 +398,169 @@ fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
-fn import_tsv(catalog: &Catalog, path: &Path) -> Result<(String, i64)> {
+fn import_tsv(catalog: &Catalog, path: &Path, progress: &dyn Fn(usize)) -> Result<(String, i64)> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
-    let mut entries = Vec::new();
-    for line in std::io::BufRead::lines(reader) {
-        let line = line?;
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some(tab) = line.find('\t') {
-            let w = line[..tab].trim();
-            let d = line[tab + 1..].trim();
-            if !w.is_empty() && !d.is_empty() {
-                entries.push((w.to_string(), d.to_string()));
-            }
-        } else if let Some(sep) = line.find("  ") {
-            let w = line[..sep].trim();
-            let d = line[sep..].trim();
-            if !w.is_empty() && !d.is_empty() {
-                entries.push((w.to_string(), d.to_string()));
-            }
-        }
-    }
-    if entries.is_empty() {
-        return Err(anyhow!("TSV dict empty"));
-    }
     let dict_name = path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("TSVDict")
         .to_string();
-    insert_imported_entries(catalog, &dict_name, None, &entries)?;
-    Ok((dict_name, entries.len() as i64))
+
+    // Streamed line by line — a TSV pack is the largest thing a user is
+    // likely to import, and it used to be fully materialised before the
+    // first row was written. See `EntrySink`.
+    let mut sink = EntrySink::new(catalog, &dict_name, None, progress)?;
+    for line in std::io::BufRead::lines(reader) {
+        let line = match line {
+            Ok(line) => line,
+            Err(e) => {
+                sink.abort();
+                return Err(e.into());
+            }
+        };
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let split = line
+            .find('\t')
+            .map(|tab| (&line[..tab], line[tab + 1..].trim()))
+            .or_else(|| {
+                line.find("  ")
+                    .map(|sep| (&line[..sep], line[sep..].trim()))
+            });
+        if let Some((w, d)) = split {
+            let w = w.trim();
+            if !w.is_empty() && !d.is_empty() {
+                sink.push(w.to_string(), d.to_string())?;
+            }
+        }
+    }
+    let count = sink.finish().map_err(|_| anyhow!("TSV dict empty"))?;
+    Ok((dict_name, count))
+}
+
+/// How many entries to hold in memory before flushing to SQLite.
+///
+/// Matches the batch size `install_bundled_dictionaries` already uses. The
+/// number is a memory bound, not a throughput knob: 2,000 entries is a few
+/// hundred KB, where a whole WordNet-class pack held at once is a few hundred
+/// **MB** on a machine with 4 GB.
+const IMPORT_BATCH: usize = 2_000;
+
+/// Streams dictionary entries into the catalog in bounded batches.
+///
+/// # Why this exists
+///
+/// The SQLite and TSV importers used to build a `Vec<(String, String)>` of
+/// the *entire* pack and hand it over at the end. A 500k-entry pack is
+/// therefore several hundred MB resident before a single row is written —
+/// on the 4 GB laptop this app targets, next to a WebKit process. Worse, the
+/// user saw one "Importing…" toast and then nothing at all, because there was
+/// no progress to report until the whole file had been parsed.
+///
+/// This flushes every [`IMPORT_BATCH`] entries and reports as it goes, so
+/// peak memory is a constant and the toast actually moves.
+///
+/// # Failure behaviour
+///
+/// Same contract as before: if anything fails part-way, the dictionary's meta
+/// row is removed. A half-imported dictionary would otherwise occupy its name
+/// (blocking a re-import) and report a wrong entry count. Call [`finish`] to
+/// commit; dropping without it leaves the rows but is only reachable on an
+/// error path that has already deleted the dictionary.
+struct EntrySink<'a> {
+    catalog: &'a Catalog,
+    dict_id: i64,
+    buffer: Vec<(String, String)>,
+    total: i64,
+    progress: &'a dyn Fn(usize),
+}
+
+impl<'a> EntrySink<'a> {
+    /// Register the dictionary and prepare to stream into it.
+    fn new(
+        catalog: &'a Catalog,
+        name: &str,
+        lang: Option<&str>,
+        progress: &'a dyn Fn(usize),
+    ) -> Result<Self> {
+        // The real count is not known until the stream ends, so record 0 and
+        // correct it in `finish`.
+        let dict_id = catalog
+            .insert_dictionary(name, lang, 0)
+            .map_err(|e| anyhow!("insert dict meta: {e}"))?;
+        // Clear first so re-importing an existing dictionary replaces its
+        // entries instead of duplicating them.
+        if let Err(e) = catalog.clear_dict_entries(dict_id) {
+            let _ = catalog.delete_dictionary(dict_id);
+            return Err(anyhow!("clear dict: {e}"));
+        }
+        Ok(Self {
+            catalog,
+            dict_id,
+            buffer: Vec::with_capacity(IMPORT_BATCH),
+            total: 0,
+            progress,
+        })
+    }
+
+    fn push(&mut self, word: String, definition: String) -> Result<()> {
+        self.buffer.push((word, definition));
+        if self.buffer.len() >= IMPORT_BATCH {
+            self.flush()?;
+        }
+        Ok(())
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        if self.buffer.is_empty() {
+            return Ok(());
+        }
+        if let Err(e) = self
+            .catalog
+            .batch_insert_dict_entries(self.dict_id, &self.buffer)
+        {
+            self.abort();
+            return Err(anyhow!("batch insert: {e}"));
+        }
+        self.total += self.buffer.len() as i64;
+        self.buffer.clear();
+        (self.progress)(self.total as usize);
+        Ok(())
+    }
+
+    /// Remove the dictionary row after a failed import.
+    fn abort(&self) {
+        let _ = self.catalog.delete_dictionary(self.dict_id);
+    }
+
+    /// Flush the tail and write the true entry count. Returns the count.
+    fn finish(mut self) -> Result<i64> {
+        self.flush()?;
+        if self.total == 0 {
+            self.abort();
+            return Err(anyhow!("dictionary pack has no usable entries"));
+        }
+        if let Err(e) = self
+            .catalog
+            .set_dictionary_entry_count(self.dict_id, self.total)
+        {
+            self.abort();
+            return Err(anyhow!("set entry count: {e}"));
+        }
+        Ok(self.total)
+    }
 }
 
 /// Register a dictionary and bulk-insert its entries, removing the meta row
 /// again if the insert fails — a half-imported dictionary would otherwise
 /// occupy its name (blocking a re-import) and report a wrong entry count.
+///
+/// Kept for callers that genuinely have the whole set in memory already (the
+/// StarDict reader, which must seek around its `.dict` blob anyway). New
+/// streaming callers should use [`EntrySink`].
 fn insert_imported_entries(
     catalog: &Catalog,
     name: &str,

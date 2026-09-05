@@ -695,7 +695,122 @@ it; Poppler/GPL is the alternative if we ever want to avoid AGPL).
 
 ---
 
-*Last updated: 2026-09-02.*
+## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
+
+Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+finding 5. Every reading statistic — the 14-day chart, "days active", the
+reading streak, "finished this year", the per-book day breakdown — bucketed by
+`substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
+
+**The bug is not cosmetic and it is worst for the heaviest users.** At UTC+05:30
+every session between local midnight and 05:30 is filed under the *previous*
+day. Reading at 1 a.m. on consecutive nights produces a chart with holes in it
+and, far more annoyingly, **breaks a streak the user genuinely earned** — the
+one number in the app whose entire value is that it is not wrong. Anywhere west
+of UTC the error runs the other way: late-evening reading is credited to
+tomorrow.
+
+Three options were considered.
+
+1. **Store local time instead.** Rejected outright. Timestamps that carry no
+   zone and are not UTC are unorderable across a move or a DST change, and the
+   damage is permanent and silent — a row written before the change cannot be
+   distinguished from one written after.
+2. **Add `chrono`/`time` and do it properly.** The correct answer in general.
+   Rejected *here* because the dependency exists solely to answer "what is the
+   UTC offset right now", which the process already has an answer for.
+3. **Ask SQLite.** Adopted. It is already linked, already reads the OS
+   timezone, and `strftime('%s','now','localtime') - strftime('%s','now')`
+   yields the current offset in seconds.
+
+**The decisions inside option 3, which are the part worth recording:**
+
+*The offset is cached in a `OnceLock`.* It is read once, from a scratch
+in-memory connection, and never re-read. This means **a DST transition while
+the app is running is wrong until the next restart** — for at most one evening,
+in the two regions-worth of the year that observe one, on a chart. Accepted
+deliberately: the alternative is carrying a timezone database to be right about
+a boundary the user crosses twice a year while an ebook reader happens to be
+open. If it ever bites, the fix is to invalidate the `OnceLock` on resume, not
+to add a dependency.
+
+*The SQL embeds a literal `'{offset:+} seconds'` modifier rather than using
+`datetime(col, 'localtime')`.* This is the more important of the two. Both
+would work, but they would be **two independent sources of truth for where the
+day starts** — SQLite's own conversion for the bucketing, and Rust's arithmetic
+for the labels the zero-fill loop matches against. Any disagreement between
+them shows up as a chart bar that is silently always empty, because the label
+never matches a bucket. Sharing one number makes that class of bug
+unrepresentable. The cost is that these statements cannot use `prepare_cached`
+(the SQL text now varies), which is noted at each call site.
+
+*`added_by_month` stays UTC.* Month boundaries are not what anyone is looking
+at on that chart, and leaving it alone keeps the diff to the queries where the
+bug is observable.
+
+*The tests inject the clock and the offset.* A test that simply calls the real
+functions would pass on the broken code in a UTC CI container and fail on the
+developer's machine in IST — [`pitfalls.md`](./pitfalls.md) §19, the rule that
+a check which cannot distinguish the fixed build from the broken one is not a
+test. Private `*_at(days, now, offset)` cores take both as parameters, so the
+suite asserts IST and EST behaviour explicitly and is identical everywhere.
+
+---
+
+## 16. A0 step 6 (grid virtualization) reopened — the evidence that closed it was measured on the wrong page (2026-09-04)
+
+Step 6 was closed on 2026-09-03 with an unusually confident entry: peak memory
+is **flat** in library size, 233 MB at 139 books versus 252 MB at 2,000, so the
+grid does not scale badly and virtualization fixes nothing. It was a good
+decision made from the numbers available.
+
+The numbers were wrong. Not mismeasured — **measured on a page that was never
+open.** The CI screenshot harness navigated by sending `Tab Tab Return` and
+had never once succeeded; every run photographed Home and sampled Home's
+memory. `grid_build` appears in none of those reports, which the roadmap
+itself noted as a curiosity without drawing the obvious conclusion: if the
+grid never built, the memory figure cannot describe the grid.
+
+Fixing navigation (`KALAM_ROUTE`, see pitfall §21) changed the measurement:
+
+| Books | Grid reached? | Peak RSS |
+|---|---|---|
+| 139 | no | 231 MB |
+| 2,000 | no | 226 MB |
+| 139 | **yes** | 255 MB |
+| 2,000 | **yes** | **502 MB** |
+
+Memory roughly doubles with library size. +276 MB for 1,861 additional cards
+is about **0.15 MB per card**, for cards that are overwhelmingly off screen.
+
+**What this is not.** It is not the cover cache. That is a bounded 300-entry
+LRU, it works, and the earlier analysis of it was correct — which is exactly
+why the flat-memory reading was so persuasive: there *was* a real bound doing
+real work, and it made an unbounded cost next to it invisible. The unbounded
+cost is the widgets. `build_book_grid` loops over every book, constructs a
+card, wraps it in a sizing cell and attaches it to the `GtkGrid` before
+returning. A 2,000-book library therefore holds 2,000 live widget trees.
+
+That is the textbook case for virtualization, and the sole reason it was ruled
+out has evaporated. Step 6 is **reopened**, and `grid_build 421 ms` at 2,000
+books is now a measurement rather than the extrapolation the estimates kept
+being revised against.
+
+**Not fixed in this pass, deliberately.** Replacing `GtkGrid` with a recycling
+view is a real change to the most-used screen in the app, the user is the only
+visual QA, and the correct next move is to agree the approach first. Recorded
+now so the decision is made against true numbers.
+
+**The lesson worth keeping.** Three separate roadmap entries revised the step-6
+estimate, each more confident than the last, and all three were reasoning about
+output from a harness that was not exercising the code under discussion. The
+tell was in every report — no `grid_build` line — and was read as noise. When a
+measurement settles an architectural question, check that the thing being
+measured actually ran.
+
+---
+
+*Last updated: 2026-09-04.*
 
 ---
 
@@ -731,7 +846,69 @@ much time do you reckon it will take you?"
 
 ---
 
-*Last updated: 2026-09-02.*
+## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
+
+Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+finding 5. Every reading statistic — the 14-day chart, "days active", the
+reading streak, "finished this year", the per-book day breakdown — bucketed by
+`substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
+
+**The bug is not cosmetic and it is worst for the heaviest users.** At UTC+05:30
+every session between local midnight and 05:30 is filed under the *previous*
+day. Reading at 1 a.m. on consecutive nights produces a chart with holes in it
+and, far more annoyingly, **breaks a streak the user genuinely earned** — the
+one number in the app whose entire value is that it is not wrong. Anywhere west
+of UTC the error runs the other way: late-evening reading is credited to
+tomorrow.
+
+Three options were considered.
+
+1. **Store local time instead.** Rejected outright. Timestamps that carry no
+   zone and are not UTC are unorderable across a move or a DST change, and the
+   damage is permanent and silent — a row written before the change cannot be
+   distinguished from one written after.
+2. **Add `chrono`/`time` and do it properly.** The correct answer in general.
+   Rejected *here* because the dependency exists solely to answer "what is the
+   UTC offset right now", which the process already has an answer for.
+3. **Ask SQLite.** Adopted. It is already linked, already reads the OS
+   timezone, and `strftime('%s','now','localtime') - strftime('%s','now')`
+   yields the current offset in seconds.
+
+**The decisions inside option 3, which are the part worth recording:**
+
+*The offset is cached in a `OnceLock`.* It is read once, from a scratch
+in-memory connection, and never re-read. This means **a DST transition while
+the app is running is wrong until the next restart** — for at most one evening,
+in the two regions-worth of the year that observe one, on a chart. Accepted
+deliberately: the alternative is carrying a timezone database to be right about
+a boundary the user crosses twice a year while an ebook reader happens to be
+open. If it ever bites, the fix is to invalidate the `OnceLock` on resume, not
+to add a dependency.
+
+*The SQL embeds a literal `'{offset:+} seconds'` modifier rather than using
+`datetime(col, 'localtime')`.* This is the more important of the two. Both
+would work, but they would be **two independent sources of truth for where the
+day starts** — SQLite's own conversion for the bucketing, and Rust's arithmetic
+for the labels the zero-fill loop matches against. Any disagreement between
+them shows up as a chart bar that is silently always empty, because the label
+never matches a bucket. Sharing one number makes that class of bug
+unrepresentable. The cost is that these statements cannot use `prepare_cached`
+(the SQL text now varies), which is noted at each call site.
+
+*`added_by_month` stays UTC.* Month boundaries are not what anyone is looking
+at on that chart, and leaving it alone keeps the diff to the queries where the
+bug is observable.
+
+*The tests inject the clock and the offset.* A test that simply calls the real
+functions would pass on the broken code in a UTC CI container and fail on the
+developer's machine in IST — [`pitfalls.md`](./pitfalls.md) §19, the rule that
+a check which cannot distinguish the fixed build from the broken one is not a
+test. Private `*_at(days, now, offset)` cores take both as parameters, so the
+suite asserts IST and EST behaviour explicitly and is identical everywhere.
+
+---
+
+*Last updated: 2026-09-04.*
 
 ---
 
@@ -782,7 +959,69 @@ much time do you reckon it will take you?"
 
 ---
 
-*Last updated: 2026-09-02.*
+## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
+
+Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+finding 5. Every reading statistic — the 14-day chart, "days active", the
+reading streak, "finished this year", the per-book day breakdown — bucketed by
+`substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
+
+**The bug is not cosmetic and it is worst for the heaviest users.** At UTC+05:30
+every session between local midnight and 05:30 is filed under the *previous*
+day. Reading at 1 a.m. on consecutive nights produces a chart with holes in it
+and, far more annoyingly, **breaks a streak the user genuinely earned** — the
+one number in the app whose entire value is that it is not wrong. Anywhere west
+of UTC the error runs the other way: late-evening reading is credited to
+tomorrow.
+
+Three options were considered.
+
+1. **Store local time instead.** Rejected outright. Timestamps that carry no
+   zone and are not UTC are unorderable across a move or a DST change, and the
+   damage is permanent and silent — a row written before the change cannot be
+   distinguished from one written after.
+2. **Add `chrono`/`time` and do it properly.** The correct answer in general.
+   Rejected *here* because the dependency exists solely to answer "what is the
+   UTC offset right now", which the process already has an answer for.
+3. **Ask SQLite.** Adopted. It is already linked, already reads the OS
+   timezone, and `strftime('%s','now','localtime') - strftime('%s','now')`
+   yields the current offset in seconds.
+
+**The decisions inside option 3, which are the part worth recording:**
+
+*The offset is cached in a `OnceLock`.* It is read once, from a scratch
+in-memory connection, and never re-read. This means **a DST transition while
+the app is running is wrong until the next restart** — for at most one evening,
+in the two regions-worth of the year that observe one, on a chart. Accepted
+deliberately: the alternative is carrying a timezone database to be right about
+a boundary the user crosses twice a year while an ebook reader happens to be
+open. If it ever bites, the fix is to invalidate the `OnceLock` on resume, not
+to add a dependency.
+
+*The SQL embeds a literal `'{offset:+} seconds'` modifier rather than using
+`datetime(col, 'localtime')`.* This is the more important of the two. Both
+would work, but they would be **two independent sources of truth for where the
+day starts** — SQLite's own conversion for the bucketing, and Rust's arithmetic
+for the labels the zero-fill loop matches against. Any disagreement between
+them shows up as a chart bar that is silently always empty, because the label
+never matches a bucket. Sharing one number makes that class of bug
+unrepresentable. The cost is that these statements cannot use `prepare_cached`
+(the SQL text now varies), which is noted at each call site.
+
+*`added_by_month` stays UTC.* Month boundaries are not what anyone is looking
+at on that chart, and leaving it alone keeps the diff to the queries where the
+bug is observable.
+
+*The tests inject the clock and the offset.* A test that simply calls the real
+functions would pass on the broken code in a UTC CI container and fail on the
+developer's machine in IST — [`pitfalls.md`](./pitfalls.md) §19, the rule that
+a check which cannot distinguish the fixed build from the broken one is not a
+test. Private `*_at(days, now, offset)` cores take both as parameters, so the
+suite asserts IST and EST behaviour explicitly and is identical everywhere.
+
+---
+
+*Last updated: 2026-09-04.*
 
 ---
 
@@ -854,7 +1093,69 @@ fallback.
 
 ---
 
-*Last updated: 2026-09-02.*
+## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
+
+Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+finding 5. Every reading statistic — the 14-day chart, "days active", the
+reading streak, "finished this year", the per-book day breakdown — bucketed by
+`substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
+
+**The bug is not cosmetic and it is worst for the heaviest users.** At UTC+05:30
+every session between local midnight and 05:30 is filed under the *previous*
+day. Reading at 1 a.m. on consecutive nights produces a chart with holes in it
+and, far more annoyingly, **breaks a streak the user genuinely earned** — the
+one number in the app whose entire value is that it is not wrong. Anywhere west
+of UTC the error runs the other way: late-evening reading is credited to
+tomorrow.
+
+Three options were considered.
+
+1. **Store local time instead.** Rejected outright. Timestamps that carry no
+   zone and are not UTC are unorderable across a move or a DST change, and the
+   damage is permanent and silent — a row written before the change cannot be
+   distinguished from one written after.
+2. **Add `chrono`/`time` and do it properly.** The correct answer in general.
+   Rejected *here* because the dependency exists solely to answer "what is the
+   UTC offset right now", which the process already has an answer for.
+3. **Ask SQLite.** Adopted. It is already linked, already reads the OS
+   timezone, and `strftime('%s','now','localtime') - strftime('%s','now')`
+   yields the current offset in seconds.
+
+**The decisions inside option 3, which are the part worth recording:**
+
+*The offset is cached in a `OnceLock`.* It is read once, from a scratch
+in-memory connection, and never re-read. This means **a DST transition while
+the app is running is wrong until the next restart** — for at most one evening,
+in the two regions-worth of the year that observe one, on a chart. Accepted
+deliberately: the alternative is carrying a timezone database to be right about
+a boundary the user crosses twice a year while an ebook reader happens to be
+open. If it ever bites, the fix is to invalidate the `OnceLock` on resume, not
+to add a dependency.
+
+*The SQL embeds a literal `'{offset:+} seconds'` modifier rather than using
+`datetime(col, 'localtime')`.* This is the more important of the two. Both
+would work, but they would be **two independent sources of truth for where the
+day starts** — SQLite's own conversion for the bucketing, and Rust's arithmetic
+for the labels the zero-fill loop matches against. Any disagreement between
+them shows up as a chart bar that is silently always empty, because the label
+never matches a bucket. Sharing one number makes that class of bug
+unrepresentable. The cost is that these statements cannot use `prepare_cached`
+(the SQL text now varies), which is noted at each call site.
+
+*`added_by_month` stays UTC.* Month boundaries are not what anyone is looking
+at on that chart, and leaving it alone keeps the diff to the queries where the
+bug is observable.
+
+*The tests inject the clock and the offset.* A test that simply calls the real
+functions would pass on the broken code in a UTC CI container and fail on the
+developer's machine in IST — [`pitfalls.md`](./pitfalls.md) §19, the rule that
+a check which cannot distinguish the fixed build from the broken one is not a
+test. Private `*_at(days, now, offset)` cores take both as parameters, so the
+suite asserts IST and EST behaviour explicitly and is identical everywhere.
+
+---
+
+*Last updated: 2026-09-04.*
 
 ---
 
@@ -912,7 +1213,69 @@ exists?
 
 ---
 
-*Last updated: 2026-09-02.*
+## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
+
+Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+finding 5. Every reading statistic — the 14-day chart, "days active", the
+reading streak, "finished this year", the per-book day breakdown — bucketed by
+`substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
+
+**The bug is not cosmetic and it is worst for the heaviest users.** At UTC+05:30
+every session between local midnight and 05:30 is filed under the *previous*
+day. Reading at 1 a.m. on consecutive nights produces a chart with holes in it
+and, far more annoyingly, **breaks a streak the user genuinely earned** — the
+one number in the app whose entire value is that it is not wrong. Anywhere west
+of UTC the error runs the other way: late-evening reading is credited to
+tomorrow.
+
+Three options were considered.
+
+1. **Store local time instead.** Rejected outright. Timestamps that carry no
+   zone and are not UTC are unorderable across a move or a DST change, and the
+   damage is permanent and silent — a row written before the change cannot be
+   distinguished from one written after.
+2. **Add `chrono`/`time` and do it properly.** The correct answer in general.
+   Rejected *here* because the dependency exists solely to answer "what is the
+   UTC offset right now", which the process already has an answer for.
+3. **Ask SQLite.** Adopted. It is already linked, already reads the OS
+   timezone, and `strftime('%s','now','localtime') - strftime('%s','now')`
+   yields the current offset in seconds.
+
+**The decisions inside option 3, which are the part worth recording:**
+
+*The offset is cached in a `OnceLock`.* It is read once, from a scratch
+in-memory connection, and never re-read. This means **a DST transition while
+the app is running is wrong until the next restart** — for at most one evening,
+in the two regions-worth of the year that observe one, on a chart. Accepted
+deliberately: the alternative is carrying a timezone database to be right about
+a boundary the user crosses twice a year while an ebook reader happens to be
+open. If it ever bites, the fix is to invalidate the `OnceLock` on resume, not
+to add a dependency.
+
+*The SQL embeds a literal `'{offset:+} seconds'` modifier rather than using
+`datetime(col, 'localtime')`.* This is the more important of the two. Both
+would work, but they would be **two independent sources of truth for where the
+day starts** — SQLite's own conversion for the bucketing, and Rust's arithmetic
+for the labels the zero-fill loop matches against. Any disagreement between
+them shows up as a chart bar that is silently always empty, because the label
+never matches a bucket. Sharing one number makes that class of bug
+unrepresentable. The cost is that these statements cannot use `prepare_cached`
+(the SQL text now varies), which is noted at each call site.
+
+*`added_by_month` stays UTC.* Month boundaries are not what anyone is looking
+at on that chart, and leaving it alone keeps the diff to the queries where the
+bug is observable.
+
+*The tests inject the clock and the offset.* A test that simply calls the real
+functions would pass on the broken code in a UTC CI container and fail on the
+developer's machine in IST — [`pitfalls.md`](./pitfalls.md) §19, the rule that
+a check which cannot distinguish the fixed build from the broken one is not a
+test. Private `*_at(days, now, offset)` cores take both as parameters, so the
+suite asserts IST and EST behaviour explicitly and is identical everywhere.
+
+---
+
+*Last updated: 2026-09-04.*
 
 ---
 
@@ -953,7 +1316,69 @@ last thing to arrive; nothing before it waits for it.
 
 ---
 
-*Last updated: 2026-09-02.*
+## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
+
+Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+finding 5. Every reading statistic — the 14-day chart, "days active", the
+reading streak, "finished this year", the per-book day breakdown — bucketed by
+`substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
+
+**The bug is not cosmetic and it is worst for the heaviest users.** At UTC+05:30
+every session between local midnight and 05:30 is filed under the *previous*
+day. Reading at 1 a.m. on consecutive nights produces a chart with holes in it
+and, far more annoyingly, **breaks a streak the user genuinely earned** — the
+one number in the app whose entire value is that it is not wrong. Anywhere west
+of UTC the error runs the other way: late-evening reading is credited to
+tomorrow.
+
+Three options were considered.
+
+1. **Store local time instead.** Rejected outright. Timestamps that carry no
+   zone and are not UTC are unorderable across a move or a DST change, and the
+   damage is permanent and silent — a row written before the change cannot be
+   distinguished from one written after.
+2. **Add `chrono`/`time` and do it properly.** The correct answer in general.
+   Rejected *here* because the dependency exists solely to answer "what is the
+   UTC offset right now", which the process already has an answer for.
+3. **Ask SQLite.** Adopted. It is already linked, already reads the OS
+   timezone, and `strftime('%s','now','localtime') - strftime('%s','now')`
+   yields the current offset in seconds.
+
+**The decisions inside option 3, which are the part worth recording:**
+
+*The offset is cached in a `OnceLock`.* It is read once, from a scratch
+in-memory connection, and never re-read. This means **a DST transition while
+the app is running is wrong until the next restart** — for at most one evening,
+in the two regions-worth of the year that observe one, on a chart. Accepted
+deliberately: the alternative is carrying a timezone database to be right about
+a boundary the user crosses twice a year while an ebook reader happens to be
+open. If it ever bites, the fix is to invalidate the `OnceLock` on resume, not
+to add a dependency.
+
+*The SQL embeds a literal `'{offset:+} seconds'` modifier rather than using
+`datetime(col, 'localtime')`.* This is the more important of the two. Both
+would work, but they would be **two independent sources of truth for where the
+day starts** — SQLite's own conversion for the bucketing, and Rust's arithmetic
+for the labels the zero-fill loop matches against. Any disagreement between
+them shows up as a chart bar that is silently always empty, because the label
+never matches a bucket. Sharing one number makes that class of bug
+unrepresentable. The cost is that these statements cannot use `prepare_cached`
+(the SQL text now varies), which is noted at each call site.
+
+*`added_by_month` stays UTC.* Month boundaries are not what anyone is looking
+at on that chart, and leaving it alone keeps the diff to the queries where the
+bug is observable.
+
+*The tests inject the clock and the offset.* A test that simply calls the real
+functions would pass on the broken code in a UTC CI container and fail on the
+developer's machine in IST — [`pitfalls.md`](./pitfalls.md) §19, the rule that
+a check which cannot distinguish the fixed build from the broken one is not a
+test. Private `*_at(days, now, offset)` cores take both as parameters, so the
+suite asserts IST and EST behaviour explicitly and is identical everywhere.
+
+---
+
+*Last updated: 2026-09-04.*
 
 ---
 
@@ -1019,4 +1444,66 @@ content ⇒ a box model over clean markup, not "write a browser."
 
 ---
 
-*Last updated: 2026-09-02.*
+## 15. Timestamps stay UTC; only bucketing goes local (2026-09-04)
+
+Came out of the code review in [`review-2026-09-04.md`](./review-2026-09-04.md),
+finding 5. Every reading statistic — the 14-day chart, "days active", the
+reading streak, "finished this year", the per-book day breakdown — bucketed by
+`substr(started_at, 1, 10)`, and `started_at` is stored as ISO-8601 **UTC**.
+
+**The bug is not cosmetic and it is worst for the heaviest users.** At UTC+05:30
+every session between local midnight and 05:30 is filed under the *previous*
+day. Reading at 1 a.m. on consecutive nights produces a chart with holes in it
+and, far more annoyingly, **breaks a streak the user genuinely earned** — the
+one number in the app whose entire value is that it is not wrong. Anywhere west
+of UTC the error runs the other way: late-evening reading is credited to
+tomorrow.
+
+Three options were considered.
+
+1. **Store local time instead.** Rejected outright. Timestamps that carry no
+   zone and are not UTC are unorderable across a move or a DST change, and the
+   damage is permanent and silent — a row written before the change cannot be
+   distinguished from one written after.
+2. **Add `chrono`/`time` and do it properly.** The correct answer in general.
+   Rejected *here* because the dependency exists solely to answer "what is the
+   UTC offset right now", which the process already has an answer for.
+3. **Ask SQLite.** Adopted. It is already linked, already reads the OS
+   timezone, and `strftime('%s','now','localtime') - strftime('%s','now')`
+   yields the current offset in seconds.
+
+**The decisions inside option 3, which are the part worth recording:**
+
+*The offset is cached in a `OnceLock`.* It is read once, from a scratch
+in-memory connection, and never re-read. This means **a DST transition while
+the app is running is wrong until the next restart** — for at most one evening,
+in the two regions-worth of the year that observe one, on a chart. Accepted
+deliberately: the alternative is carrying a timezone database to be right about
+a boundary the user crosses twice a year while an ebook reader happens to be
+open. If it ever bites, the fix is to invalidate the `OnceLock` on resume, not
+to add a dependency.
+
+*The SQL embeds a literal `'{offset:+} seconds'` modifier rather than using
+`datetime(col, 'localtime')`.* This is the more important of the two. Both
+would work, but they would be **two independent sources of truth for where the
+day starts** — SQLite's own conversion for the bucketing, and Rust's arithmetic
+for the labels the zero-fill loop matches against. Any disagreement between
+them shows up as a chart bar that is silently always empty, because the label
+never matches a bucket. Sharing one number makes that class of bug
+unrepresentable. The cost is that these statements cannot use `prepare_cached`
+(the SQL text now varies), which is noted at each call site.
+
+*`added_by_month` stays UTC.* Month boundaries are not what anyone is looking
+at on that chart, and leaving it alone keeps the diff to the queries where the
+bug is observable.
+
+*The tests inject the clock and the offset.* A test that simply calls the real
+functions would pass on the broken code in a UTC CI container and fail on the
+developer's machine in IST — [`pitfalls.md`](./pitfalls.md) §19, the rule that
+a check which cannot distinguish the fixed build from the broken one is not a
+test. Private `*_at(days, now, offset)` cores take both as parameters, so the
+suite asserts IST and EST behaviour explicitly and is identical everywhere.
+
+---
+
+*Last updated: 2026-09-04.*

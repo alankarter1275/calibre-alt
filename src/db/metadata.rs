@@ -74,6 +74,10 @@ impl Catalog {
         // Remember the result so removing and re-importing this file does not
         // silently discard the edit.
         self.remember_overrides(book_id)?;
+
+        // Keep the per-book kalam.json in step. Best-effort: a stale backup
+        // deserves a log line, never a failed edit.
+        crate::sidecar::refresh_for_book(self, book_id);
         Ok(())
     }
 
@@ -102,6 +106,7 @@ impl Catalog {
 
         self.prune_orphan_tags()?;
         self.remember_overrides(book_id)?;
+        crate::sidecar::refresh_for_book(self, book_id);
         Ok(())
     }
 
@@ -122,6 +127,7 @@ impl Catalog {
 
         self.prune_orphan_tags()?;
         self.remember_overrides(book_id)?;
+        crate::sidecar::refresh_for_book(self, book_id);
         Ok(())
     }
 
@@ -423,7 +429,10 @@ impl Catalog {
 
     /// Books finished since 1 January of the current year.
     pub fn finished_this_year(&self) -> i64 {
-        let year = &chrono_like_now()[..4];
+        // The user's current year, not UTC's -- on 1 January this is the
+        // difference between "0 books this year" and the right answer.
+        let local_today = crate::db::local_today();
+        let year = &local_today[..4];
         let conn = match self.conn.lock() {
             Ok(c) => c,
             Err(_) => return 0,
@@ -445,10 +454,12 @@ impl Catalog {
             return out;
         };
         let cutoff = iso_days_ago(6);
-        let Ok(mut stmt) = conn.prepare_cached(
-            "SELECT DISTINCT substr(started_at, 1, 10) FROM reading_sessions
+        let sql = format!(
+            "SELECT DISTINCT {} FROM reading_sessions
              WHERE started_at >= ?1 AND seconds > 0",
-        ) else {
+            crate::db::local_day_sql("started_at")
+        );
+        let Ok(mut stmt) = conn.prepare(&sql) else {
             return out;
         };
         let Ok(rows) = stmt.query_map(params![cutoff], |r| r.get::<_, String>(0)) else {
@@ -456,7 +467,7 @@ impl Catalog {
         };
         let days: Vec<String> = rows.flatten().collect();
         for (i, slot) in out.iter_mut().enumerate() {
-            let key = iso_days_ago(6 - i as i64)[..10].to_string();
+            let key = crate::db::local_day_ago(6 - i as i64);
             *slot = days.contains(&key);
         }
         out

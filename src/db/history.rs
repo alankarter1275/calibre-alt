@@ -254,8 +254,70 @@ impl Catalog {
         Ok(conn.last_insert_rowid())
     }
 
-    /// Close a session. Absurd durations (laptop suspended with the reader
-    /// open) are clamped so one forgotten window can't claim 14 hours read.
+    /// Close sessions that were never closed, because the process died.
+    ///
+    /// `start_reading_session` writes a row with `ended_at = NULL, seconds =
+    /// 0` and the reader's `shutdown()` fills it in. `shutdown()` does not run
+    /// if the app is killed, panics, or the machine loses power — so the row
+    /// stays open for ever. Nothing reaped these, so they accumulated for the
+    /// life of the database.
+    ///
+    /// Two things went wrong because of that. The book page counted a session
+    /// that contributed no time. Worse, the streak query filters
+    /// `seconds > 0`, so a crash silently *broke a streak the user had
+    /// actually earned* — the one number in the app people care about
+    /// defending.
+    ///
+    /// Any row still open when the app starts belongs to a session that ended
+    /// when the previous process did, so `ended_at` is set to `started_at`.
+    /// `seconds` is deliberately left alone: the honest answer to "how long
+    /// was that session" is whatever was last checkpointed, and inventing a
+    /// duration would put fictional minutes into the statistics. Returns how
+    /// many rows were closed.
+    pub fn close_orphaned_sessions(&self) -> Result<usize> {
+        let conn = self.conn();
+        let n = conn.execute(
+            "UPDATE reading_sessions
+             SET ended_at = started_at
+             WHERE ended_at IS NULL",
+            [],
+        )?;
+        Ok(n)
+    }
+
+    /// Update a live session's elapsed time without closing it.
+    ///
+    /// Checkpointing while reading is what makes a crash cost seconds instead
+    /// of the whole session. Called from the reader's progress tick, which the
+    /// JS bridge already throttles to 1% of scroll movement, so this is a
+    /// cheap single-row update at a human rate rather than per frame.
+    ///
+    /// `ended_at` stays NULL: the session is still open, and leaving it NULL
+    /// is what lets [`close_orphaned_sessions`] recognise it after a crash.
+    pub fn checkpoint_reading_session(
+        &self,
+        session_id: i64,
+        seconds: i64,
+        pct: i64,
+    ) -> Result<()> {
+        let conn = self.conn();
+        let clamped = seconds.clamp(0, MAX_SESSION_SECONDS);
+        conn.execute(
+            "UPDATE reading_sessions SET seconds = ?2, end_pct = ?3 WHERE id = ?1",
+            params![session_id, clamped, pct],
+        )?;
+        Ok(())
+    }
+
+    /// Close a session. Absurd durations are clamped so one forgotten window
+    /// can't claim 14 hours read.
+    ///
+    /// Note on what the clamp is really for: `session_start.elapsed()` is an
+    /// `Instant`, i.e. `CLOCK_MONOTONIC` on Linux, which does **not** advance
+    /// while the machine is suspended. So this does not catch "laptop
+    /// suspended with the reader open" (an earlier comment here claimed it
+    /// did). What it catches is a window genuinely left open for hours while
+    /// the machine is awake, which is the common case anyway.
     pub fn end_reading_session(&self, session_id: i64, seconds: i64, end_pct: i64) -> Result<()> {
         let conn = self.conn();
         let clamped = seconds.clamp(0, MAX_SESSION_SECONDS);
@@ -291,7 +353,7 @@ impl Catalog {
         Ok(n)
     }
 
-    /// Seconds read per UTC day for the last `days` days, oldest first.
+    /// Seconds read per **local** day for the last `days` days, oldest first.
     ///
     /// Missing days are filled with 0 so the chart always has `days` bars.
     /// Used by the "Last 7 days" mini chart on the book page.
@@ -300,12 +362,16 @@ impl Catalog {
         let since = iso_days_ago(days - 1);
         let conn = self.conn();
 
-        let mut stmt = conn.prepare_cached(
-            "SELECT substr(started_at, 1, 10) AS day, SUM(seconds) AS total
+        // Local day buckets -- see `crate::db::local_day_sql`. Not cached:
+        // the SQL carries the timezone offset.
+        let sql = format!(
+            "SELECT {} AS day, SUM(seconds) AS total
              FROM reading_sessions
              WHERE book_id = ?1 AND started_at >= ?2
              GROUP BY day",
-        )?;
+            crate::db::local_day_sql("started_at")
+        );
+        let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![book_id, since], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
         })?;
@@ -319,10 +385,10 @@ impl Catalog {
         // Walk the window oldest → newest, filling gaps.
         let mut out = Vec::with_capacity(days as usize);
         for ago in (0..days).rev() {
-            let day = iso_days_ago(ago);
-            let key = &day[..10];
-            let total = by_day.remove(key).unwrap_or(0);
-            out.push((key.to_string(), total));
+            // The local day label, matching the buckets above.
+            let key = crate::db::local_day_ago(ago);
+            let total = by_day.remove(&key).unwrap_or(0);
+            out.push((key, total));
         }
         Ok(out)
     }
@@ -391,5 +457,127 @@ impl Catalog {
             |r| r.get(0),
         )?;
         Ok(row)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MAX_SESSION_SECONDS;
+    use crate::db::Catalog;
+    use crate::models::BookFormat;
+
+    fn catalog_with_book() -> (Catalog, i64) {
+        let cat = Catalog::open_in_memory().expect("in-memory catalog");
+        let id = cat
+            .insert_book(
+                "uuid-session-test",
+                "A Book",
+                "An Author",
+                None,
+                "",
+                BookFormat::Epub,
+                "book.epub",
+                "hash-session-test",
+                None,
+                &[],
+            )
+            .expect("insert book");
+        (cat, id)
+    }
+
+    #[test]
+    fn an_unclosed_session_is_reaped_at_startup() {
+        // The crash case: `start_reading_session` wrote the row, the process
+        // died, `end_reading_session` never ran.
+        let (cat, book_id) = catalog_with_book();
+        let session = cat.start_reading_session(book_id, 0).expect("start");
+
+        let open_before: i64 = cat
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM reading_sessions WHERE ended_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(open_before, 1, "the session should start out open");
+
+        let reaped = cat.close_orphaned_sessions().expect("reap");
+        assert_eq!(reaped, 1);
+
+        let (ended, started): (Option<String>, String) = cat
+            .conn()
+            .query_row(
+                "SELECT ended_at, started_at FROM reading_sessions WHERE id = ?1",
+                [session],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            ended.as_deref(),
+            Some(started.as_str()),
+            "a reaped session ends when it started -- we cannot know better, \
+             and inventing a duration would put fictional minutes into the stats"
+        );
+    }
+
+    #[test]
+    fn reaping_leaves_properly_closed_sessions_alone() {
+        let (cat, book_id) = catalog_with_book();
+        let session = cat.start_reading_session(book_id, 0).expect("start");
+        cat.end_reading_session(session, 120, 10).expect("end");
+
+        assert_eq!(
+            cat.close_orphaned_sessions().expect("reap"),
+            0,
+            "a closed session must not be touched"
+        );
+        assert_eq!(
+            cat.total_reading_seconds(book_id).expect("total"),
+            120,
+            "reaping must not alter recorded time"
+        );
+    }
+
+    #[test]
+    fn a_checkpoint_preserves_time_across_a_crash() {
+        // The whole point of checkpointing: the seconds survive even though
+        // nothing ever called `end_reading_session`.
+        let (cat, book_id) = catalog_with_book();
+        let session = cat.start_reading_session(book_id, 0).expect("start");
+        cat.checkpoint_reading_session(session, 95, 42)
+            .expect("checkpoint");
+
+        // Still open, so the reaper can still find it.
+        let open: i64 = cat
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM reading_sessions WHERE ended_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(open, 1, "a checkpoint must not close the session");
+
+        cat.close_orphaned_sessions().expect("reap");
+        assert_eq!(
+            cat.total_reading_seconds(book_id).expect("total"),
+            95,
+            "checkpointed time must survive the crash and the reap"
+        );
+    }
+
+    #[test]
+    fn a_checkpoint_is_clamped_like_a_close() {
+        let (cat, book_id) = catalog_with_book();
+        let session = cat.start_reading_session(book_id, 0).expect("start");
+        // A week. Same absurd-duration guard as `end_reading_session`.
+        cat.checkpoint_reading_session(session, 7 * 24 * 60 * 60, 50)
+            .expect("checkpoint");
+        assert_eq!(
+            cat.total_reading_seconds(book_id).expect("total"),
+            MAX_SESSION_SECONDS,
+            "an absurd checkpoint must be clamped, not recorded"
+        );
     }
 }

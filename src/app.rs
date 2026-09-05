@@ -637,16 +637,32 @@ impl AppModel {
         if let Some(key) = cache_key(&self.route) {
             if let Some(idx) = self.cache.iter().position(|(k, _)| *k == key) {
                 let (_, page) = self.cache.remove(idx);
+                crate::timing::note("page_cache_hit", 1);
                 return page;
             }
         }
+        // Instrumented because the hit rate is in doubt and should be
+        // measured before this cache is either tuned or deleted. The token is
+        // `total_changes()`, which *every* write bumps — including the
+        // reading-progress save on each 1% of scroll — so ten minutes in the
+        // reader is expected to evict everything on the way back out. Under
+        // `KALAM_TIMING=1` these two counters say whether the cache is
+        // earning its keep or is dead weight.
+        crate::timing::note("page_cache_miss", 1);
         Self::build_page(&self.catalog, &self.route, sender)
     }
 }
 
 #[relm4::component(pub)]
 impl Component for AppModel {
-    type Init = ();
+    /// The catalog, opened once in `main()`.
+    ///
+    /// It used to be `()` and `init` opened its own handle — the third of
+    /// three opens in one startup (`main` checked the database, then
+    /// `startup_theme` opened it again to read the theme, then this one).
+    /// Each open runs the whole of `migrate()`. Passing the handle in makes
+    /// it one.
+    type Init = Arc<Catalog>;
     type Input = AppMsg;
     type Output = ();
     type CommandOutput = ();
@@ -820,32 +836,16 @@ impl Component for AppModel {
     }
 
     fn init(
-        _init: Self::Init,
+        catalog: Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        // Cold start is one number until it is broken down, and the first
-        // measurement on a real library came back at 8 s. These three spans
-        // split `window_shown` into the work that precedes first paint, so the
-        // next run says which part to fix instead of inviting a guess.
-        crate::timing::span("startup_db_open");
-        // `main()` already proved the catalog opens and exits cleanly if it
-        // does not, so reaching the error arm here means the database broke
-        // between that check and now. There is no useful fallback: the old
-        // code "handled" it by calling the same failing function again and
-        // `.expect()`ing it, which is a guaranteed panic — and because init()
-        // runs inside a GTK callback that panic cannot unwind, so it aborted
-        // with a core dump. Say what happened and leave, in one piece.
-        let catalog = match Catalog::open() {
-            Ok(c) => Arc::new(c),
-            Err(err) => {
-                eprintln!("kalam: the library database became unreadable during startup.");
-                eprintln!("  {err}");
-                eprintln!("  file: {}", crate::paths::catalog_db().display());
-                std::process::exit(1);
-            }
-        };
-        crate::timing::span_end("startup_db_open");
+        // The catalog arrives already open from `main()`, which is also where
+        // a failure to open it is reported and exits. Opening it here as well
+        // meant running `migrate()` — its full CREATE TABLE batch, eight
+        // `PRAGMA table_info` probes and two `COUNT(*)`s over the dictionary
+        // tables — for the third time in one startup, and gave first launch
+        // two connections racing to build the merged dictionary store.
         // A0 step 3: give books imported before thumbnails existed a thumbnail
         // without re-importing. Off the UI thread so first paint is not delayed;
         // only missing files are generated, so it is cheap after the first pass.
@@ -1001,6 +1001,16 @@ impl Component for AppModel {
         // From here on, any notify::* call lands on screen.
         crate::notify::attach(widgets.toast_host.clone());
 
+        // Any reading session still marked open belongs to a previous process
+        // that died before it could close one. Reap them now, before anything
+        // reads the statistics — an open row silently breaks the reading
+        // streak it was part of. See `close_orphaned_sessions`.
+        match model.catalog.close_orphaned_sessions() {
+            Ok(0) => {}
+            Ok(n) => crate::timing::note("sessions_reaped", n),
+            Err(err) => eprintln!("kalam: could not close orphaned reading sessions: {err}"),
+        }
+
         // Extracted-book caches are rebuilt on demand, so anything orphaned or
         // untouched for a fortnight is pure waste on a small disk.
         {
@@ -1041,6 +1051,37 @@ impl Component for AppModel {
         widgets
             .main_window
             .connect_realize(|_| crate::timing::now("window_shown"));
+
+        // `KALAM_ROUTE=<name>` navigates to a page once the window is up.
+        //
+        // This exists for the CI screenshot job, which had no way to ask for a
+        // page and so sent Tab/Tab/Return and hoped. That guesses the focus
+        // order, and when the guess was wrong the run still reported success
+        // while photographing Home three times -- a visual check that cannot
+        // tell "I navigated" from "I did nothing" is worth nothing
+        // (pitfalls §19). A named route removes the guess: the harness asks
+        // for `library`, and if the app does not go there the screenshot is
+        // wrong in a way somebody will see.
+        //
+        // Deliberately a diagnostic env var rather than a CLI flag or a
+        // D-Bus verb, matching KALAM_TIMING / KALAM_NO_CSS / KALAM_NO_PRELOAD:
+        // no argument parser, no new public surface to keep stable, and it
+        // costs one `var_os` on a path that already reads three others. An
+        // unknown name is reported and ignored rather than fatal -- a typo in
+        // a CI script should not look like an application crash.
+        if let Some(name) = std::env::var_os("KALAM_ROUTE") {
+            let name = name.to_string_lossy().to_string();
+            match route_by_name(&name) {
+                Some(route) => {
+                    eprintln!("kalam: KALAM_ROUTE={name} — navigating");
+                    sender.input(AppMsg::Push(route));
+                }
+                None => {
+                    eprintln!("kalam: KALAM_ROUTE={name} — unknown route, ignoring");
+                    eprintln!("  known: {}", known_route_names().join(", "));
+                }
+            }
+        }
 
         ComponentParts { model, widgets }
     }
@@ -1230,5 +1271,118 @@ fn update_nav_styles(container: &gtk::Box, active: NavItem) {
             }
         }
         child = widget.next_sibling();
+    }
+}
+
+/// The route a `KALAM_ROUTE=<name>` value refers to, if any.
+///
+/// Names are the lowercase page names a person would say out loud, not the
+/// `Debug` spelling of the enum: the CI harness and anyone debugging types
+/// these by hand, and coupling them to Rust identifiers would silently break
+/// every caller the next time a variant is renamed.
+///
+/// Only pages reachable without an id are listed. `BookPage` and `Reader` need
+/// a specific book, which a fixed name cannot supply.
+fn route_by_name(name: &str) -> Option<Route> {
+    let route = match name.trim().to_ascii_lowercase().as_str() {
+        "home" => Route::Module(NavItem::Home),
+        "library" => Route::Module(NavItem::Library),
+        "downloads" => Route::Module(NavItem::Downloads),
+        "comics" => Route::Module(NavItem::Comics),
+        "ao3" => Route::Module(NavItem::Ao3),
+        "fanfiction" => Route::Module(NavItem::Fanfiction),
+        "settings" => Route::Module(NavItem::Settings),
+        "shelves" => Route::ShelvesGrid,
+        "all-books" | "allbooks" => Route::LibrarySection(LibrarySection::AllBooks),
+        "reading-list" => Route::LibrarySection(LibrarySection::ReadingList),
+        "history" => Route::LibrarySection(LibrarySection::History),
+        "saved-quotes" => Route::LibrarySection(LibrarySection::SavedQuotes),
+        "saved-words" => Route::LibrarySection(LibrarySection::SavedWords),
+        "lookup-history" => Route::LibrarySection(LibrarySection::LookupHistory),
+        "tags" => Route::LibrarySection(LibrarySection::Tags),
+        "analytics" => Route::LibrarySection(LibrarySection::Analytics),
+        _ => return None,
+    };
+    Some(route)
+}
+
+/// Every name `route_by_name` accepts, for the error message. Kept next to it
+/// so the two cannot drift; a test asserts each one resolves.
+fn known_route_names() -> Vec<&'static str> {
+    vec![
+        "home",
+        "library",
+        "downloads",
+        "comics",
+        "ao3",
+        "fanfiction",
+        "settings",
+        "shelves",
+        "all-books",
+        "reading-list",
+        "history",
+        "saved-quotes",
+        "saved-words",
+        "lookup-history",
+        "tags",
+        "analytics",
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_advertised_route_name_resolves() {
+        // The error message lists these, so a name that appears there and then
+        // does not work is worse than no help at all.
+        for name in known_route_names() {
+            assert!(
+                route_by_name(name).is_some(),
+                "{name} is advertised but does not resolve"
+            );
+        }
+    }
+
+    #[test]
+    fn route_names_map_to_the_right_pages() {
+        // Spot-check across all three Route shapes, so a copy-paste slip
+        // between adjacent match arms is caught.
+        assert_eq!(route_by_name("home"), Some(Route::Module(NavItem::Home)));
+        assert_eq!(
+            route_by_name("settings"),
+            Some(Route::Module(NavItem::Settings))
+        );
+        assert_eq!(route_by_name("shelves"), Some(Route::ShelvesGrid));
+        assert_eq!(
+            route_by_name("all-books"),
+            Some(Route::LibrarySection(LibrarySection::AllBooks))
+        );
+        assert_eq!(
+            route_by_name("analytics"),
+            Some(Route::LibrarySection(LibrarySection::Analytics))
+        );
+    }
+
+    #[test]
+    fn route_names_tolerate_case_and_stray_whitespace() {
+        // These arrive from a shell variable, where a trailing space or a
+        // capital is a typo, not a different page.
+        let expected = Some(Route::LibrarySection(LibrarySection::AllBooks));
+        assert_eq!(route_by_name("All-Books"), expected);
+        assert_eq!(route_by_name("  all-books  "), expected);
+        assert_eq!(route_by_name("ALLBOOKS"), expected);
+    }
+
+    #[test]
+    fn unknown_route_names_are_rejected_not_guessed() {
+        // An unrecognised name must be `None` so the caller can say so.
+        // Silently falling back to Home is exactly the failure this whole
+        // mechanism exists to remove: the screenshot job would photograph
+        // Home and call it the library.
+        for name in ["", "libary", "book", "reader", "nav-Home", "Module(Home)"] {
+            assert_eq!(route_by_name(name), None, "{name:?} must not resolve");
+        }
     }
 }

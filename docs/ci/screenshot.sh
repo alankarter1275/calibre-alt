@@ -158,7 +158,8 @@ shot() { # shot <name>
   fi
 }
 
-key() { swaymsg exec "wtype -k $1" >/dev/null 2>&1 || true; sleep 1; }
+# (The Tab/Tab/Return `key()` helper was removed on 2026-09-04: navigation
+# is requested with KALAM_ROUTE now, so nothing needs synthetic keystrokes.)
 
 # Sample the app's own memory. `/usr/bin/time` cannot help here: sway starts
 # kalam, so it is not a child of this script and its RSS is never reported.
@@ -181,7 +182,40 @@ say "=== launching kalam ==="
 # Run it directly rather than via `swaymsg exec`, so we own the process and
 # can read its stderr. KALAM_TIMING output lands in the log, which is how the
 # agent sees grid_build / covers_queued without downloading an artifact.
-"$BIN" > "$OUT/kalam.log" 2>&1 &
+#
+# ROUTE names a page for the app to open on its own (KALAM_ROUTE, added
+# 2026-09-04). Previously this script sent Tab/Tab/Return and hoped the focus
+# order was what it guessed; when it was not, the run photographed Home three
+# times and still reported success.
+ROUTE="${ROUTE:-all-books}"
+say "requested route: $ROUTE"
+# WINDOWED controls the A0 step 6 windowed grid (build only the cards on
+# screen). It became the default on 2026-09-04, so the app flag is now the
+# negative one, KALAM_NO_WINDOWED_GRID.
+#
+# Back-compat matters here. The installed workflow was written while the grid
+# was opt-in: its baseline run passes nothing and its comparison run passes
+# WINDOWED=1. Now that windowed is the default, "nothing" would mean windowed
+# too -- both runs would measure the same thing and publish a green,
+# meaningless comparison. That is the pitfalls §21 failure exactly. So the
+# *output directory* picks the baseline: a run writing to a plain `ci-shots-*`
+# path (not `-windowed`, and not the 139-book `ci-shots`) is the old grid
+# unless told otherwise. An explicit WINDOWED= always wins, so the updated
+# workflow in this directory works unchanged too.
+if [ -n "${WINDOWED:-}" ]; then
+  :
+elif [ "${OUT%-windowed}" = "$OUT" ] && [ "$OUT" != "ci-shots" ]; then
+  WINDOWED=0
+else
+  WINDOWED=1
+fi
+if [ "$WINDOWED" = "0" ]; then
+  NO_WINDOWED=1
+else
+  NO_WINDOWED=0
+fi
+say "windowed grid: $WINDOWED (KALAM_NO_WINDOWED_GRID=$NO_WINDOWED)"
+KALAM_ROUTE="$ROUTE" KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam.log" 2>&1 &
 APP_PID=$!
 
 for _ in $(seq 1 "$SETTLE"); do
@@ -200,36 +234,108 @@ WINDOWS="$(swaymsg -t get_tree | grep -c '"app_id"' || true)"
 say "toplevel windows seen: $WINDOWS"
 swaymsg -t get_tree > "$OUT/tree.json" 2>/dev/null || true
 
-shot "01-home"
+# NOTE the file name. With KALAM_ROUTE the app opens on the requested page, so
+# this first shot is already "$ROUTE" -- it is NOT Home. Naming it 01-home
+# (as this script did until 2026-09-04) made the report lie twice over: it
+# described the wrong page, and it made the identical-fingerprint check look
+# like a navigation failure when the three shots were correctly the same page.
+shot "01-$ROUTE"
 
-# Home -> All books. The app has no CLI navigation, so this is keyboard-driven
-# and inherently brittle; a wrong page is obvious in the image rather than
-# silently passing.
-# Navigation. The first working run produced three byte-identical screenshots
-# and no `grid_build` line at all, which means the keystrokes went nowhere and
-# every shot was Home. Two changes: give the window focus first (a freshly
-# mapped window under a headless compositor does not necessarily have it), and
-# verify afterwards rather than assume.
+# Focus is worth setting even though nothing needs keystrokes now: some GTK
+# paint paths differ on an unfocused window under a headless compositor, and
+# an unfocused window is not what a user sees.
 swaymsg '[app_id=".*"] focus' >/dev/null 2>&1 \
   || swaymsg focus >/dev/null 2>&1 || true
 say "focused: $(swaymsg -t get_tree | grep -c '"focused": true' || echo 0)"
 
-key Tab; key Tab; key Return
 for _ in $(seq 1 6); do sample_rss; sleep 1; done
-shot "02-after-nav"
+shot "02-$ROUTE-settling"
 # Covers arrive in the background, so the interesting screenshot is the later
 # one: anything still grey here is a cover that is never coming.
 for _ in $(seq 1 12); do sample_rss; sleep 1; done
-shot "03-after-nav-settled"
+shot "03-$ROUTE-settled"
 
-# Did we actually move? `grid_build` is only emitted by build_book_grid, so it
-# is proof the All-books page was reached. Without this check a harness that
-# photographs the same page three times reports success.
-if grep -q "grid_build" "$OUT/kalam.log" 2>/dev/null; then
-  say "navigation: reached a grid page (grid_build seen)"
+# --- did we actually render the requested page? ---------------------------
+#
+# Three checks, because each catches a different failure and the first two can
+# both pass while the screen is wrong.
+NAV_OK=1
+
+# 1. Did the app accept the route? It prints on both paths, so silence means a
+#    binary built before KALAM_ROUTE existed.
+if grep -q "KALAM_ROUTE=$ROUTE" "$OUT/kalam.log" 2>/dev/null \
+   && ! grep -q "unknown route" "$OUT/kalam.log" 2>/dev/null; then
+  say "navigation: app accepted route '$ROUTE'"
+elif grep -q "unknown route" "$OUT/kalam.log" 2>/dev/null; then
+  say "navigation: FAILED -- app rejected '$ROUTE' as unknown"
+  grep "known:" "$OUT/kalam.log" | sed 's/^/    /' | tee -a "$REPORT"
+  NAV_OK=0
 else
-  say "navigation: DID NOT REACH the grid -- every shot is probably Home."
-  say "  The keyboard route is brittle by design; see README-screenshots.md."
+  say "navigation: FAILED -- no KALAM_ROUTE line; binary predates the flag?"
+  NAV_OK=0
+fi
+
+# 2. Did a grid actually build? Only build_book_grid emits this, so for a grid
+#    route it is positive proof the page rendered rather than merely being
+#    asked for. Not every route is a grid, so this only judges the ones that
+#    are -- a blanket check would cry wolf on ROUTE=settings.
+case "$ROUTE" in
+  all-books|allbooks|reading-list|history|tags|shelves)
+    if grep -q "grid_build" "$OUT/kalam.log" 2>/dev/null; then
+      CARDS="$(grep "grid_cards" "$OUT/kalam.log" | tail -1 | awk '{print $NF}')"
+      say "navigation: grid rendered (grid_build seen, grid_cards=${CARDS:-?})"
+    else
+      say "navigation: FAILED -- '$ROUTE' is a grid page but no grid_build line"
+      NAV_OK=0
+    fi
+    ;;
+  *)
+    say "navigation: '$ROUTE' is not a grid page; no grid_build expected"
+    ;;
+esac
+
+# 3. Does the requested page actually look different from Home?
+#
+#    This is the check that catches "everything above lied", and it needs a
+#    second launch to mean anything: with KALAM_ROUTE every shot in this run
+#    is the same page, so comparing them to each other proves nothing. The
+#    first version of this check did exactly that and reported FAILED on a
+#    working run -- three identical fingerprints are the *expected* result
+#    here, not a bug.
+#
+#    So: relaunch on Home, photograph it, and compare. If the pixels match,
+#    the app ignored the route no matter what its log claimed.
+if [ "$ROUTE" != "home" ]; then
+  kill "$APP_PID" 2>/dev/null || true
+  wait "$APP_PID" 2>/dev/null || true
+  sleep 2
+  # `sample_rss` uses `pgrep -n` (newest), so it follows this process too.
+  # That keeps the peak-memory figure honest -- it is still the high-water
+  # mark of a single kalam process, just possibly the second one.
+  KALAM_ROUTE=home KALAM_NO_WINDOWED_GRID="$NO_WINDOWED" "$BIN" > "$OUT/kalam-home.log" 2>&1 &
+  HOME_PID=$!
+  for _ in $(seq 1 12); do sample_rss; sleep 1; done
+  shot "04-home-for-comparison"
+  kill "$HOME_PID" 2>/dev/null || true
+
+  ROUTE_SUM="$(md5sum "$OUT/03-$ROUTE-settled.png" 2>/dev/null | cut -d" " -f1)"
+  HOME_SUM="$(md5sum "$OUT/04-home-for-comparison.png" 2>/dev/null | cut -d" " -f1)"
+  if [ -z "$ROUTE_SUM" ] || [ -z "$HOME_SUM" ]; then
+    say "navigation: could not compare against Home (a screenshot is missing)"
+    NAV_OK=0
+  elif [ "$ROUTE_SUM" = "$HOME_SUM" ]; then
+    say "navigation: FAILED -- '$ROUTE' is pixel-identical to Home."
+    say "  The app reported navigating but the screen never changed."
+    NAV_OK=0
+  else
+    say "navigation: '$ROUTE' differs from Home -- the page really did change"
+  fi
+fi
+
+if [ "$NAV_OK" = "1" ]; then
+  say "navigation: OK -- the images below are '$ROUTE'"
+else
+  say "navigation: NOT PROVEN -- do not trust the page names below"
 fi
 
 say ""
@@ -271,7 +377,11 @@ fi
 
 say ""
 say "=== shutting down ==="
+# Both, and both tolerant of already being dead: the comparison launch kills
+# APP_PID and starts HOME_PID, so which of the two is still running depends on
+# whether that branch ran at all.
 kill "$APP_PID" 2>/dev/null || true
+kill "${HOME_PID:-}" 2>/dev/null || true
 swaymsg exit >/dev/null 2>&1 || true
 sleep 2
 kill "$SWAY_PID" 2>/dev/null || true
