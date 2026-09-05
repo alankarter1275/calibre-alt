@@ -1,9 +1,14 @@
 src/sources/manganato.rs:5:5: [1m[91merror[0m: unused import: `std::sync::Arc`
 src/sources/weebcentral.rs:5:5: [1m[91merror[0m: unused import: `std::sync::Arc`
+src/sources/royalroad.rs:6:5: [1m[91merror[0m: unused import: `std::sync::Arc`
+src/app.rs:696:13: [1m[91merror[0m: unreachable pattern: no value can reach this
+src/downloads.rs:20:9: [1m[91merror[0m: fields `id`, `source_id`, and `remote_id` are never read
+src/pages/comics.rs:36:5: [1m[91merror[0m: variant `CoverLoaded` is never constructed
 src/pages/comics_reader/types.rs:94:10: [1m[91merror[0m: enum `ReaderContext` is never used
 src/pages/comics_reader/provider.rs:4:10: [1m[91merror[0m: enum `ImageState` is never used
 src/pages/comics_reader/provider.rs:15:8: [1m[91merror[0m: method `has_page` is never used
-src/pages/browse.rs:21:5: [1m[91merror[0m: field `manager` is never read
+src/pages/browse.rs:30:5: [1m[91merror[0m: field `manager` is never read
+src/sources/mod.rs:48:12: [1m[91merror[0m: method `all` is never used
 src/sources/mangadex.rs:48:5: [1m[91merror[0m: field `id` is never read
 src/sources/manganato.rs:7:12: [1m[91merror[0m: struct `ManganatoSource` is never constructed
 src/sources/manganato.rs:12:12: [1m[91merror[0m: associated function `new` is never used
@@ -16,15 +21,15 @@ src/sources/scraper.rs:48:8: [1m[91merror[0m: struct `CompiledSelectors` is n
 src/sources/scraper.rs:67:8: [1m[91merror[0m: associated function `new` is never used
 src/sources/scraper.rs:96:12: [1m[91merror[0m: struct `GenericScraperSource` is never constructed
 src/sources/scraper.rs:106:12: [1m[91merror[0m: associated items `new`, `text`, `attr`, and `resolve_url` are never used
-src/sources/traits.rs:9:5: [1m[91merror[0m: variant `Html` is never constructed
 src/sources/traits.rs:29:9: [1m[91merror[0m: field `tags` is never read
-src/sources/traits.rs:46:5: [1m[91merror[0m: variants `TagsInclude`, `TagsExclude`, and `OngoingOnly` are never constructed
-src/sources/traits.rs:55:9: [1m[91merror[0m: field `has_more` is never read
-src/sources/traits.rs:65:8: [1m[91merror[0m: method `name` is never used
+src/sources/traits.rs:47:5: [1m[91merror[0m: variants `TagsExclude` and `OngoingOnly` are never constructed
+src/sources/traits.rs:66:8: [1m[91merror[0m: method `name` is never used
 src/comics.rs:65:5: [1m[91merror[0m: consider using `sort_by_key`
-src/pages/remote_detail.rs:401:61: [1m[91merror[0m: the borrowed expression implements the required traits: help: change this to: `format!("xdg-open '{}'", url)`
+src/downloads.rs:136:9: [1m[91merror[0m: consider using `sort_by_key`
+src/pages/comics.rs:14:1: [1m[91merror[0m: all variants have the same prefix: `Open`
+src/pages/remote_detail.rs:501:61: [1m[91merror[0m: the borrowed expression implements the required traits: help: change this to: `format!("xdg-open '{}'", url)`
 src/sources/manganato.rs:56:29: [1m[91merror[0m: called `Iterator::last` on a `DoubleEndedIterator`; this will needlessly iterate the entire iterator
 src/sources/weebcentral.rs:127:30: [1m[91merror[0m: called `Iterator::last` on a `DoubleEndedIterator`; this will needlessly iterate the entire iterator
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 27 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 27 previous errors
---- run 33983761900 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 32 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 32 previous errors
+--- run 33998390783 ---
