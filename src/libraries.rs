@@ -380,8 +380,6 @@ pub fn missing_active_library() -> Option<PathBuf> {
 }
 
 /// Restart Kalam so a newly selected library takes effect.
-
-/// Restart Kalam so a newly selected library takes effect.
 ///
 /// **Why restart rather than switch in place.** `paths::data_dir()` caches the
 /// active library for the life of the process, and deliberately so: pages hold
