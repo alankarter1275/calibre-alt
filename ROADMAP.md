@@ -173,8 +173,9 @@ architecture.
    with its first implementation, not before.
 2. **P6.5 — Libraries** — ✅ **done 2026-09-04.** Pick the folder, keep several
    libraries, switch between them, copy one to another machine and it opens.
-3. **P8 — Comics local** — ✅ **done 2026-09-05** (image pager — decode + paint, no engine)
-   and **P9 — Manga platform** (same `Source` trait, `ContentKind::Images`;
+3. **P8 — Comics local** — ✅ **done 2026-09-05** (CBZ/CBR import + Moku-style image
+   pager; cover-format fix; Webtoon + LTR/RTL drawer; all loose ends tied). Next:
+   **P9 — Manga platform** (same `Source` trait, `ContentKind::Images`;
    MangaDex official API built in — moved here from P7 on 2026-09-04 — then
    Komga/Kavita/OPDS clients, scraped sites as Lua plugins later).
 4. **P6 + P7 — Downloads hub and the fiction client**, **combined 2026-09-04**
@@ -284,7 +285,7 @@ P3  Annotations ─────── highlights, quotes, offline dictionary    
 P4  Library depth ───── shelves engine, lists, tags, analytics    ✅ done
 P5  Metadata ────────── edit metadata, cover pick, Open Library      ✅ done
 P6.5 Libraries ──────── pick the folder, several of them, portable  ✅ done
-P8  Comics local ────── CBZ/CBR + Moku-style comics reader (image pager)
+P8  Comics local ────── CBZ/CBR + Moku-style comics reader           ✅ done
 P9  Manga platform ──── Suwayomi-class sources, same Source trait
                         (MangaDex API built in; scrapers via Lua)
 P6+P7 Downloads +────── combined 2026-09-04, built together: unified queue

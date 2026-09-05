@@ -366,7 +366,7 @@ impl Component for ComicsReaderModel {
                                     set_homogeneous: true,
 
                                     gtk::Button {
-                                        set_label: "Left to Right",
+                                        set_label: "L → R",
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.direction == ReadingDirection::Ltr {
@@ -374,11 +374,12 @@ impl Component for ComicsReaderModel {
                                         } else {
                                             &["kalam-comics-seg-btn"]
                                         },
+                                        set_tooltip_text: Some("Left to Right"),
                                         connect_clicked => ComicsReaderMsg::SetDirection(ReadingDirection::Ltr),
                                     },
 
                                     gtk::Button {
-                                        set_label: "Right to Left",
+                                        set_label: "R → L",
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.direction == ReadingDirection::Rtl {
@@ -386,7 +387,21 @@ impl Component for ComicsReaderModel {
                                         } else {
                                             &["kalam-comics-seg-btn"]
                                         },
+                                        set_tooltip_text: Some("Right to Left (Manga)"),
                                         connect_clicked => ComicsReaderMsg::SetDirection(ReadingDirection::Rtl),
+                                    },
+
+                                    gtk::Button {
+                                        set_label: "Webtoon",
+                                        add_css_class: "kalam-comics-seg-btn",
+                                        #[watch]
+                                        set_css_classes: if model.direction == ReadingDirection::Webtoon {
+                                            &["kalam-comics-seg-btn", "active"]
+                                        } else {
+                                            &["kalam-comics-seg-btn"]
+                                        },
+                                        set_tooltip_text: Some("Webtoon (Vertical strip)"),
+                                        connect_clicked => ComicsReaderMsg::SetDirection(ReadingDirection::Webtoon),
                                     },
                                 },
                             },
