@@ -170,9 +170,9 @@ architecture.
    12 ms) → perf-budget CI test (query counts, not milliseconds). The
    **plugin-host seam** is designed in `docs/source-seam.md` and lands as code
    with its first implementation, not before.
-2. **P6.5 — Libraries** ◀ **NEXT.** Pick the folder, keep several libraries,
-   switch between them, copy one to another machine and it opens.
-3. **P6 — Downloads hub** (queue + folder watch).
+2. **P6.5 — Libraries** — ✅ **done 2026-09-04.** Pick the folder, keep several
+   libraries, switch between them, copy one to another machine and it opens.
+3. **P6 — Downloads hub** ◀ **NEXT** (queue + folder watch).
 4. **P8 — Comics local** (image pager — decode + paint, no engine) and
    **P9 — Manga platform** (same `Source` trait, `ContentKind::Images`;
    MangaDex official API built in — moved here from P7 on 2026-09-04 — then
@@ -284,7 +284,7 @@ P7  Fiction platform ── AO3 first → FFN/RoyalRoad/etc.; Lua source
 P8  Comics local ────── CBZ/CBR + Moku-style comics reader (image pager)
 P9  Manga platform ──── Suwayomi-class sources, same Source trait
                         (MangaDex API built in; scrapers via Lua)
-P6.5 Libraries ──────── pick the folder, several of them, portable  ◀ NEXT
+P6.5 Libraries ──────── pick the folder, several of them, portable  ✅ done
 P10 PDF ─────────────── MuPDF in text-reader family + basic marks
 P11 Tools ───────────── convert (external), polish, Calibre import
 A0  Architecture track ─ service layer + task manager + preloaders +
@@ -1582,7 +1582,7 @@ runs it on Arch.
 
 ---
 
-## P6.5 — Libraries: choose where books live, and have more than one  ◀ NEXT
+## P6.5 — Libraries: choose where books live, and have more than one  ✅ done
 
 **Goal:** Calibre-style libraries. You pick the folder. You can have several,
 completely separate from each other, and you switch between them. Copy the
@@ -1660,8 +1660,37 @@ cannot do that because a shelf is a view over everything.
   folder is non-empty": picking `~/Documents` by mistake must not read as an
   existing library, and picking an empty folder is how you start a new one.
   Add-library now says which of the two happened.
-- ⬜ Next: the relaunch flow (selecting currently takes effect on next start),
-  and `kalam.json` per book.
+- ✅ **Switching restarts the app** (2026-09-04). Selecting a library used to
+  take effect "next launch", which is an odd thing to ask of someone who just
+  clicked Open. It now confirms, saves the choice, then re-execs. `exec` rather
+  than spawn-then-quit, so there is never a second Kalam alive with the same
+  catalog open. A restart rather than switching in place because `data_dir()`
+  is cached for the process and pages hold open database handles — repointing
+  mid-session would leave some of them reading the old library and writing the
+  new one, which corrupts rather than merely looking wrong. The choice is saved
+  *before* the restart; the other order would reopen the old library and look
+  like the click did nothing.
+- ✅ **`kalam.json` beside every book** (`src/sidecar.rs`). Title, authors,
+  series, tags, rating, reading position and highlights — including each
+  highlight's text, which is the field that lets it be found again after a file
+  changes. **A backup, never the truth:** the database stays authoritative and
+  these are never read during normal operation, so cross-book screens stay one
+  query and there is no question of which copy wins. Written on import, on
+  metadata edits and when a highlight is added; best-effort throughout, since a
+  stale backup deserves a log line and never a failed edit. Stores *names*, not
+  paths, or the folder would stop being portable the moment it moved.
+- ✅ **A recovery card in Settings.** Shows how many books have a backup copy
+  and writes the missing ones. This exists because "your library describes
+  itself" is worth nothing unless it is checkable — the sidecars are written on
+  code paths that could quietly stop running, and the failure would be
+  invisible until the day someone needed them (§19).
+
+### Still open
+
+- Nothing blocking. Possible follow-ups when wanted: an actual
+  rebuild-from-folders command (the survey proves the data is there; nothing
+  consumes it yet), and moving a library's folder from inside the app rather
+  than by hand.
 
 **A note on how this went — eight red runs, three separate causes.** Worth
 reading before the next phase, because only one of the three was about the code
@@ -2571,3 +2600,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-04 | **P6.5 started: the library registry and the Libraries settings card are in, CI green.** `~/.config/kalam/libraries.json` records every library and which one is open, and `paths::data_dir()` now reads it — so the ~30 path helpers built on that one function follow automatically, which is why making libraries switchable was a change at the root rather than a sweep through the app. **Existing installs are untouched**: with no library chosen it falls back to the old fixed location, so an upgrade is a no-op until the user asks for something else. The registry is written temp-file-then-rename, the same rule `epub_write.rs` follows, because a truncated write here would lose the record of where every library lives. Settings → Storage now has a Libraries card with Add / Open / Forget; Forget removes the list entry only and the message says plainly that the folder and books were not touched, since "forget" and "delete my library" must never be confusable. 10 tests, deliberately concentrated on the index arithmetic — `active` is an index into the list, so forgetting an *earlier* entry shifts it, and an off-by-one there does not crash, it silently opens somebody else's library. **Worth recording how this went:** the first two pushes failed CI on dead code, because `-D warnings` rejects methods with no caller — precisely the rule `source-seam.md` §12 gives for why the `Source` trait cannot land before its first implementation. The fix both times was to build the caller rather than silence the lint, which is the right pressure: no API lands in this repo without something that uses it. Still to come: the relaunch flow (selecting currently takes effect on next start), migrating an existing library into the scheme, the per-library/global split so dictionaries stay shared, and the `kalam.json` per-book backup |
 | 2026-09-04 | **P6.5 green: the per-library/global preference split is in, and CI is healthy again after eight red runs from three unrelated causes.** The split matters because `app_prefs` lives in `catalog.db`, i.e. *inside* a library — so without it, switching library would silently reset the theme, reader font size, dictionary settings and API keys, since the new library's database has never heard of them. App-level prefs now mirror to `~/.config/kalam/prefs.json`, read from there first, falling back to the library so existing installs carry across untouched. Unknown keys default to **per-library** on purpose: a global pref that should have been per-library silently applies one library's value to another and reads as corruption, while the reverse is merely "set it again". Three of the key names were wrong on the first attempt — the app theme is `ui.theme` not `theme`, the writeback flag is `epub.write_metadata`, dictionary markers are `bundled_dictionary_*` — all now read out of the code rather than guessed, because a *nearly* right key classifies as per-library and the setting quietly stops following the user. **The eight red runs are the more useful record.** Two were dead code (`-D warnings` rejecting methods with no caller, the same rule that keeps the `Source` trait from landing early). **Five were a formatting step failing the build** — rustfmt auto-committed and pushed, the push was rejected, and a non-zero exit killed the run, so a cosmetic check masked clippy, the tests *and* the build. The real defect sat behind it untouched for all five: my append-tests script cuts at the file's last `}`, which stopped being the test module's once functions were added after it, so 70 lines of `#[test]` were spliced **inside `set_global_pref`'s body** — braces balanced, so nothing short of a parser could see it. rustfmt is now report-only, publishes its diff to `ci-logs/`, and cannot fail a run (§23). The last was a pre-existing service test that began reading the developer's own `~/.config/kalam/prefs.json` the moment `dict_history_enabled` became global, making its result depend on the machine rather than the code (§24). Three lessons: a cosmetic check must never gate a build; do not append code by locating the last brace; and moving state outside the repository turns every test that touches it into a test of the machine unless you isolate it in the same change |
 | 2026-09-04 | **P6.5: dictionaries no longer live inside a library, and the existing library now appears in the list.** Two fixes, the first caught by reading the paths module rather than by a failing test — which is the only way it *would* have been caught, since nothing breaks until someone actually switches library. `dictionaries_dir()` hung off `data_dir()`, and `data_dir()` is now the **active library**. Left alone, switching would have looked for dictionaries in the new folder, found none, and reinstalled the bundled packs — roughly 4 MB compressed and several seconds of import — **once per library, permanently**. Exactly the "you would reinstall dictionaries every time you switched" failure the phase description warned about, quietly reintroduced by the change that made libraries switchable. They now hang off a shared root, and the path is unchanged for anyone who never switches. The neighbouring judgement call is recorded in the code: **author photos and series covers stay per-library**, even though they are internet-fetched and would be byte-identical everywhere, because they are caches of *this library's* authors — deleting a library should take its cached photos with it, and a shared folder would accumulate photos for authors nobody owns any more with nothing to prune it. Both are caches, so the decision costs only a refetch to reverse. Second: **the pre-existing library is now adopted into the registry at startup.** The fallback already made it work, but it left the user's own books as the single library absent from Settings, so Open and Forget applied to every library except theirs and adding a second would make the first appear to vanish. Nothing is moved or copied — only the list learns the folder exists. A folder is judged a library by containing `catalog.db`, deliberately not by being non-empty: picking `~/Documents` by mistake must not be treated as an existing library, while picking an empty folder is the normal way to start a new one. The Add button now reports which of the two happened, since "library added" is ambiguous between "created an empty one" and "found my books" — alarming in one direction, confusing in the other. CI green first try |
+| 2026-09-04 | **P6.5 complete — libraries are switchable, portable and self-describing. Next is P6 (Downloads hub).** Two final pieces. **Switching now restarts the app** instead of taking effect "next launch", which was an odd thing to ask of someone who had just clicked Open. It confirms first (a restart closes whatever you are reading), saves the choice, *then* re-execs — that order matters, because restarting first would reopen the old library and look like the click did nothing. `exec` rather than spawn-then-quit, so two Kalams never hold the same catalog open at once; and a restart rather than repointing in place, because `data_dir()` is cached for the process and pages hold live database handles, so switching underneath them would leave some reading the old library while writing the new one — corruption rather than a visual glitch. **And `kalam.json` beside every book** (`src/sidecar.rs`): title, authors, series, tags, rating, reading position and highlights, each highlight carrying its own text — the field that makes it findable again after a file changes, the same insight as the P7 re-anchoring plan. Explicitly a **backup, never the truth**: the database stays authoritative and these are never read during normal operation, so cross-book screens remain one query and no conflict rule is needed. Names not paths, or a copied folder would be full of wrong locations. **A clippy dead-code error turned out to be the useful part of this commit.** `read_sidecar` had no caller outside tests — and that was not a lint technicality, it was the observation that I had built a backup with no way to check or complete it. The fix was a Settings card showing how many books have a backup copy, plus a button to write the missing ones. That matters on its own terms: "your library describes itself" is worth nothing unless it is verifiable, since sidecars are written on code paths that could quietly stop running and the failure would stay invisible until the day someone actually needed them (§19). Left deliberately unbuilt: the rebuild-from-folders command itself. The survey proves the data is there; nothing consumes it yet, and inventing that flow before anyone has lost a database would be guessing at the recovery experience |
