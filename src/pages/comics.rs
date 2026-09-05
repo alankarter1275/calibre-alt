@@ -14,6 +14,7 @@ use std::sync::Arc;
 pub enum ComicsOut {
     OpenComic { book_id: i64 },
     OpenBookDialog { book_id: i64 },
+    OpenRemoteManga { source_id: String, remote_id: String },
 }
 
 #[derive(Debug)]
@@ -31,11 +32,14 @@ pub enum ComicsMsg {
     ImportFinished(ImportTally),
     OpenComic(i64),
     OpenBookDialog(i64),
+    OpenRemoteManga(String),
+    CoverLoaded { remote_id: String, bytes: Vec<u8> },
 }
 
 pub struct ComicsModel {
     service: LibraryService,
     comics: Vec<Book>,
+    remote_manga: Vec<crate::sources::RemoteBookDetails>,
     filtered: Vec<Book>,
     search_query: String,
     status: String,
@@ -47,6 +51,7 @@ impl ComicsModel {
         let mut model = Self {
             service,
             comics: Vec::new(),
+            remote_manga: Vec::new(),
             filtered: Vec::new(),
             search_query: String::new(),
             status: String::new(),
@@ -64,6 +69,7 @@ impl ComicsModel {
         } else {
             self.comics = Vec::new();
         }
+        self.remote_manga = self.service.catalog().list_remote_books(Some("weebcentral")).unwrap_or_default();
         self.apply_filter();
         self.update_status();
     }
@@ -87,12 +93,18 @@ impl ComicsModel {
 
     fn update_status(&mut self) {
         let count = self.comics.len();
-        self.status = if count == 0 {
-            "No comic archives imported yet".to_string()
-        } else if count == 1 {
-            "1 comic in library".to_string()
+        let m_count = self.remote_manga.len();
+        self.status = if count == 0 && m_count == 0 {
+            "No comics or manga in library yet".to_string()
         } else {
-            format!("{count} comics in library")
+            let mut parts = Vec::new();
+            if count > 0 {
+                parts.push(format!("{count} local comic{}", if count == 1 { "" } else { "s" }));
+            }
+            if m_count > 0 {
+                parts.push(format!("{m_count} saved manga"));
+            }
+            parts.join(", ")
         };
     }
 }
@@ -114,7 +126,7 @@ fn build_empty_state(sender: &ComponentSender<ComicsModel>) -> gtk::Box {
     empty_box.append(&title);
 
     let subtitle = gtk::Label::new(Some(
-        "Import local CBZ or CBR archive files to read comics with the Moku viewer.",
+        "Import local CBZ or CBR archive files to read comics with the Moku viewer, or browse online manga.",
     ));
     subtitle.add_css_class("kalam-subtitle-muted");
     empty_box.append(&subtitle);
@@ -122,11 +134,128 @@ fn build_empty_state(sender: &ComponentSender<ComicsModel>) -> gtk::Box {
     let btn = gtk::Button::with_label("Import Comics");
     btn.add_css_class("kalam-btn-filled");
     btn.set_halign(gtk::Align::Center);
-    let s = sender.clone();
-    btn.connect_clicked(move |_| s.input(ComicsMsg::PickFiles));
+    btn.connect_clicked({
+        let s = sender.clone();
+        move |_| s.input(ComicsMsg::PickFiles)
+    });
     empty_box.append(&btn);
 
     empty_box
+}
+
+fn rebuild_comics_view(model: &ComicsModel, sender: &ComponentSender<ComicsModel>) -> gtk::Widget {
+    if model.comics.is_empty() && model.remote_manga.is_empty() {
+        return build_empty_state(sender).upcast();
+    }
+
+    let root_box = gtk::Box::new(gtk::Orientation::Vertical, 20);
+    root_box.set_margin_start(16);
+    root_box.set_margin_end(16);
+    root_box.set_margin_top(12);
+    root_box.set_margin_bottom(24);
+
+    if !model.remote_manga.is_empty() {
+        let sec_header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let title = gtk::Label::new(Some("Saved Online Manga"));
+        title.add_css_class("kalam-title-medium");
+        title.set_halign(gtk::Align::Start);
+        sec_header.append(&title);
+        root_box.append(&sec_header);
+
+        let flow = gtk::FlowBox::new();
+        flow.set_selection_mode(gtk::SelectionMode::None);
+        flow.set_valign(gtk::Align::Start);
+        flow.set_max_children_per_line(6);
+        flow.set_min_children_per_line(2);
+        flow.set_row_spacing(16);
+        flow.set_column_spacing(16);
+
+        for m in &model.remote_manga {
+            let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
+            card.set_size_request(150, -1);
+            card.add_css_class("kalam-card");
+            card.set_cursor_from_name(Some("pointer"));
+
+            let pic = gtk::Picture::new();
+            pic.set_size_request(150, 210);
+            pic.set_content_fit(gtk::ContentFit::Cover);
+            pic.add_css_class("kalam-book-card");
+            card.append(&pic);
+
+            if let Some(cover_url) = &m.cover_url {
+                let url = cover_url.clone();
+                let pic_weak = pic.downgrade();
+                crate::tasks::spawn(
+                    move |_| -> anyhow::Result<Vec<u8>> {
+                        let mut reader = ureq::get(&url)
+                            .set("User-Agent", "Mozilla/5.0")
+                            .call()?
+                            .into_reader();
+                        let mut buf = Vec::new();
+                        std::io::Read::read_to_end(&mut reader, &mut buf)?;
+                        Ok(buf)
+                    },
+                    |_| {},
+                    move |res| {
+                        if let Ok(bytes) = res {
+                            if let Some(pic) = pic_weak.upgrade() {
+                                if let Ok(tex) = gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from(&bytes)) {
+                                    pic.set_paintable(Some(&tex));
+                                }
+                            }
+                        }
+                    },
+                );
+            }
+
+            let title_lbl = gtk::Label::new(Some(&m.title));
+            title_lbl.set_wrap(true);
+            title_lbl.set_max_width_chars(18);
+            title_lbl.set_lines(2);
+            title_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            title_lbl.add_css_class("kalam-title-small");
+            title_lbl.set_halign(gtk::Align::Start);
+            card.append(&title_lbl);
+
+            let s = sender.clone();
+            let rid = m.remote_id.clone();
+            let click = gtk::GestureClick::new();
+            click.connect_released(move |_, _, _, _| {
+                s.input(ComicsMsg::OpenRemoteManga(rid.clone()));
+            });
+            card.add_controller(click);
+
+            flow.append(&card);
+        }
+        root_box.append(&flow);
+    }
+
+    if !model.filtered.is_empty() {
+        if !model.remote_manga.is_empty() {
+            let sec_header = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            sec_header.set_margin_top(16);
+            let title = gtk::Label::new(Some("Local Comic Archives"));
+            title.add_css_class("kalam-title-medium");
+            title.set_halign(gtk::Align::Start);
+            sec_header.append(&title);
+            root_box.append(&sec_header);
+        }
+
+        let s_click = sender.clone();
+        let s_float = sender.clone();
+        let grid = build_book_grid(
+            &model.filtered,
+            move |id| {
+                s_click.input(ComicsMsg::OpenComic(id));
+            },
+            move |id| {
+                s_float.input(ComicsMsg::OpenBookDialog(id));
+            },
+        );
+        root_box.append(&grid);
+    }
+
+    root_box.upcast()
 }
 
 #[relm4::component(pub)]
@@ -183,7 +312,7 @@ impl Component for ComicsModel {
 
                 // Search Bar (visible if comics exist)
                 #[watch]
-                set_visible: !model.comics.is_empty(),
+                set_visible: !model.comics.is_empty() || !model.remote_manga.is_empty(),
 
                 gtk::SearchEntry {
                     set_placeholder_text: Some("Search comics by title or author…"),
@@ -210,23 +339,8 @@ impl Component for ComicsModel {
         let model = ComicsModel::new(catalog);
         let widgets = view_output!();
 
-        if model.comics.is_empty() {
-            let empty_box = build_empty_state(&sender);
-            widgets.scrolled_window.set_child(Some(&empty_box));
-        } else {
-            let s_click = sender.clone();
-            let s_float = sender.clone();
-            let grid = build_book_grid(
-                &model.filtered,
-                move |id| {
-                    s_click.input(ComicsMsg::OpenComic(id));
-                },
-                move |id| {
-                    s_float.input(ComicsMsg::OpenBookDialog(id));
-                },
-            );
-            widgets.scrolled_window.set_child(Some(&grid));
-        }
+        let child = rebuild_comics_view(&model, &sender);
+        widgets.scrolled_window.set_child(Some(&child));
 
         ComponentParts { model, widgets }
     }
@@ -278,32 +392,33 @@ impl Component for ComicsModel {
                             let mut paths = Vec::new();
                             for i in 0..files.n_items() {
                                 if let Some(file) =
-                                    files.item(i).and_then(|obj| obj.downcast::<gtk::gio::File>().ok())
+                                    files.item(i).and_then(|o| o.downcast::<gtk::gio::File>().ok())
                                 {
-                                    if let Some(path) = file.path() {
-                                        paths.push(path);
+                                    if let Some(p) = file.path() {
+                                        paths.push(p);
                                     }
                                 }
                             }
-                            if !paths.is_empty() {
-                                s.input(ComicsMsg::FilesChosen(paths));
-                            }
+                            s.input(ComicsMsg::FilesChosen(paths));
                         }
                     },
                 );
             }
             ComicsMsg::FilesChosen(paths) => {
-                let s1 = sender.clone();
-                let s2 = sender.clone();
-                let catalog = self.service.catalog().clone();
+                let total = paths.len();
+                if total == 0 {
+                    return;
+                }
+                let s_progress = sender.clone();
+                let s_done = sender.clone();
                 spawn_import(
-                    catalog,
+                    self.service.catalog().clone(),
                     paths,
                     move |done, total, title| {
-                        s1.input(ComicsMsg::ImportStep { done, total, title });
+                        s_progress.input(ComicsMsg::ImportStep { done, total, title });
                     },
                     move |tally| {
-                        s2.input(ComicsMsg::ImportFinished(tally));
+                        s_done.input(ComicsMsg::ImportFinished(tally));
                     },
                 );
             }
@@ -320,26 +435,17 @@ impl Component for ComicsModel {
             ComicsMsg::OpenBookDialog(id) => {
                 let _ = sender.output(ComicsOut::OpenBookDialog { book_id: id });
             }
+            ComicsMsg::OpenRemoteManga(remote_id) => {
+                let _ = sender.output(ComicsOut::OpenRemoteManga {
+                    source_id: "weebcentral".to_string(),
+                    remote_id,
+                });
+            }
+            ComicsMsg::CoverLoaded { .. } => {}
         }
 
-        // Rebuild or update scrolled_window child after message
-        if self.comics.is_empty() {
-            let empty_box = build_empty_state(&sender);
-            widgets.scrolled_window.set_child(Some(&empty_box));
-        } else {
-            let s_click = sender.clone();
-            let s_float = sender.clone();
-            let grid = build_book_grid(
-                &self.filtered,
-                move |id| {
-                    s_click.input(ComicsMsg::OpenComic(id));
-                },
-                move |id| {
-                    s_float.input(ComicsMsg::OpenBookDialog(id));
-                },
-            );
-            widgets.scrolled_window.set_child(Some(&grid));
-        }
+        let child = rebuild_comics_view(self, &sender);
+        widgets.scrolled_window.set_child(Some(&child));
 
         self.update_view(widgets, sender);
     }

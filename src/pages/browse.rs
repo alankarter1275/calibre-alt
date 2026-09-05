@@ -11,38 +11,92 @@ pub enum BrowseOut {
 #[derive(Debug)]
 pub enum BrowseMsg {
     Search(String),
+    TagSelected(String),
+    OrderSelected(String),
+    LoadMore,
     SearchSuccess(SearchPage),
     SearchFailed(String),
     OpenBook(String), // remote_id
     CoverLoaded { remote_id: String, bytes: Vec<u8> },
 }
 
+pub struct BrowseInit {
+    pub manager: Arc<SourceManager>,
+    pub source_id: String,
+    pub initial_query: Option<String>,
+}
+
 pub struct BrowseModel {
     manager: Arc<SourceManager>,
+    source_id: String,
     active_source: Option<Arc<dyn Source>>,
     query: String,
+    selected_tag: Option<String>,
+    selected_order: String,
+    page: u32,
+    has_more: bool,
     results: Vec<RemoteBookCard>,
     status: String,
     is_loading: bool,
 }
 
 impl BrowseModel {
-    pub fn new(manager: Arc<SourceManager>) -> Self {
-        let active = manager.all().into_iter().next();
+    pub fn new(init: BrowseInit) -> Self {
+        let active = init.manager.get(&init.source_id);
+        let q = init.initial_query.unwrap_or_default();
         Self {
-            manager,
+            manager: init.manager,
+            source_id: init.source_id.clone(),
             active_source: active,
-            query: String::new(),
+            query: q,
+            selected_tag: None,
+            selected_order: "popularity".to_string(),
+            page: 1,
+            has_more: false,
             results: Vec::new(),
-            status: "Search to find manga.".to_string(),
+            status: "Loading…".to_string(),
             is_loading: false,
+        }
+    }
+
+    fn trigger_search(&mut self, sender: &ComponentSender<Self>) {
+        if let Some(source) = self.active_source.clone() {
+            self.is_loading = true;
+            self.status = "Searching…".to_string();
+            if self.page == 1 {
+                self.results.clear();
+            }
+
+            let mut filters = Vec::new();
+            if let Some(tag) = &self.selected_tag {
+                if !tag.is_empty() && tag != "All" {
+                    filters.push(crate::sources::SearchFilter::TagsInclude(vec![tag.clone()]));
+                }
+            }
+            if !self.selected_order.is_empty() {
+                filters.push(crate::sources::SearchFilter::OrderBy(self.selected_order.clone()));
+            }
+
+            let s = sender.clone();
+            let page_num = self.page;
+            let q = self.query.clone();
+            crate::tasks::spawn(
+                move |_| source.search(&q, page_num, &filters),
+                |_| {},
+                move |res| match res {
+                    Ok(page) => s.input(BrowseMsg::SearchSuccess(page)),
+                    Err(e)   => s.input(BrowseMsg::SearchFailed(e.to_string())),
+                },
+            );
+        } else {
+            self.status = "No sources available.".to_string();
         }
     }
 }
 
 #[relm4::component(pub)]
 impl Component for BrowseModel {
-    type Init = Arc<SourceManager>;
+    type Init = BrowseInit;
     type Input = BrowseMsg;
     type Output = BrowseOut;
     type CommandOutput = ();
@@ -78,6 +132,29 @@ impl Component for BrowseModel {
                 },
             },
 
+            // ── Filters & Sort bar ────────────────────────────────────────────────
+            gtk::Box {
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 10,
+                #[watch]
+                set_visible: model.source_id == "royalroad",
+
+                gtk::Label {
+                    set_label: "Tag:",
+                    add_css_class: "kalam-subtitle-muted",
+                },
+                #[name = "tag_combo"]
+                gtk::DropDown::from_strings(&["All", "Fantasy", "Action", "Adventure", "Sci-Fi", "Magic", "Comedy", "Romance"]),
+
+                gtk::Label {
+                    set_label: "Sort By:",
+                    add_css_class: "kalam-subtitle-muted",
+                    set_margin_start: 12,
+                },
+                #[name = "sort_combo"]
+                gtk::DropDown::from_strings(&["Popularity", "Best Rated", "Latest Updates"]),
+            },
+
             // ── Status line (shows while loading / empty / error) ────────────────
             gtk::Label {
                 #[watch]
@@ -94,27 +171,63 @@ impl Component for BrowseModel {
                 #[watch]
                 set_visible: !model.results.is_empty(),
 
-                #[name = "grid_box"]
-                gtk::FlowBox {
-                    set_selection_mode: gtk::SelectionMode::None,
-                    set_valign: gtk::Align::Start,
-                    set_homogeneous: true,
-                    set_max_children_per_line: 6,
-                    set_min_children_per_line: 2,
-                    set_row_spacing: 12,
-                    set_column_spacing: 12,
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 16,
+                    
+                    #[name = "grid_box"]
+                    gtk::FlowBox {
+                        set_selection_mode: gtk::SelectionMode::None,
+                        set_valign: gtk::Align::Start,
+                        set_homogeneous: true,
+                        set_max_children_per_line: 6,
+                        set_min_children_per_line: 2,
+                        set_row_spacing: 12,
+                        set_column_spacing: 12,
+                    },
+                    
+                    gtk::Button {
+                        set_label: "Load More",
+                        add_css_class: "suggested-action",
+                        set_halign: gtk::Align::Center,
+                        #[watch]
+                        set_visible: model.has_more && !model.is_loading,
+                        connect_clicked => BrowseMsg::LoadMore,
+                    }
                 }
             }
         }
     }
 
     fn init(
-        manager: Self::Init,
+        init_data: Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = BrowseModel::new(manager);
+        let model = BrowseModel::new(init_data);
         let widgets = view_output!();
+
+        let s_tag = sender.clone();
+        widgets.tag_combo.connect_selected_notify(move |combo| {
+            let tags = ["All", "Fantasy", "Action", "Adventure", "Sci-Fi", "Magic", "Comedy", "Romance"];
+            let idx = combo.selected() as usize;
+            if let Some(t) = tags.get(idx) {
+                s_tag.input(BrowseMsg::TagSelected(t.to_string()));
+            }
+        });
+
+        let s_sort = sender.clone();
+        widgets.sort_combo.connect_selected_notify(move |combo| {
+            let orders = ["popularity", "rating", "last_update"];
+            let idx = combo.selected() as usize;
+            if let Some(o) = orders.get(idx) {
+                s_sort.input(BrowseMsg::OrderSelected(o.to_string()));
+            }
+        });
+
+        // Trigger initial search to display trending content immediately
+        sender.input(BrowseMsg::Search(model.query.clone()));
+
         ComponentParts { model, widgets }
     }
 
@@ -128,38 +241,42 @@ impl Component for BrowseModel {
         match msg {
             // ── Search triggered ──────────────────────────────────────────────────
             BrowseMsg::Search(q) => {
-                self.query = q.clone();
-                if q.is_empty() {
-                    self.results.clear();
-                    self.status = "Search to find manga.".to_string();
-                    self.is_loading = false;
-                    self.update_view(widgets, sender);
-                    return;
-                }
+                self.query = q;
+                self.page = 1;
+                self.trigger_search(&sender);
+            }
 
-                if let Some(source) = self.active_source.clone() {
-                    self.is_loading = true;
-                    self.status = "Searching…".to_string();
-                    self.results.clear();
+            BrowseMsg::TagSelected(t) => {
+                self.selected_tag = if t == "All" { None } else { Some(t) };
+                self.page = 1;
+                self.trigger_search(&sender);
+            }
 
-                    let s = sender.clone();
-                    crate::tasks::spawn(
-                        move |_| source.search(&q, 1, &[]),
-                        |_| {},
-                        move |res| match res {
-                            Ok(page) => s.input(BrowseMsg::SearchSuccess(page)),
-                            Err(e)   => s.input(BrowseMsg::SearchFailed(e.to_string())),
-                        },
-                    );
-                } else {
-                    self.status = "No sources available.".to_string();
-                }
+            BrowseMsg::OrderSelected(o) => {
+                self.selected_order = o;
+                self.page = 1;
+                self.trigger_search(&sender);
+            }
+
+            BrowseMsg::LoadMore => {
+                self.page += 1;
+                self.trigger_search(&sender);
             }
 
             // ── Results arrived ───────────────────────────────────────────────────
             BrowseMsg::SearchSuccess(page) => {
                 self.is_loading = false;
-                self.results = page.results;
+                self.has_more = page.has_more;
+                
+                if self.page == 1 {
+                    self.results = page.results.clone();
+                    // Clear previous grid children
+                    while let Some(child) = widgets.grid_box.first_child() {
+                        widgets.grid_box.remove(&child);
+                    }
+                } else {
+                    self.results.extend(page.results.clone());
+                }
 
                 self.status = if self.results.is_empty() {
                     "No results found.".to_string()
@@ -167,12 +284,8 @@ impl Component for BrowseModel {
                     format!("{} results", self.results.len())
                 };
 
-                // Clear previous grid children
-                while let Some(child) = widgets.grid_box.first_child() {
-                    widgets.grid_box.remove(&child);
-                }
-
-                for res in &self.results {
+                // Append only the NEW results if paginating
+                for res in page.results {
                     // ── Card: 160×240 cover + title + author + button ──────────────
                     let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
                     card.set_size_request(160, -1);

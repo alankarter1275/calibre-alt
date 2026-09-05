@@ -1,6 +1,7 @@
 pub mod mangadex;
 pub mod manganato;
 pub mod weebcentral;
+pub mod royalroad;
 pub mod scraper;
 pub mod traits;
 
@@ -21,11 +22,13 @@ impl SourceManager {
             sources: Vec::new(),
         };
 
-        // Register WeebCentral first so it is the default source.
-        // It provides raw images for official chapters without Cloudflare.
+        // Register WeebCentral first so it is the default source for Manga.
         manager.register(Arc::new(weebcentral::WeebCentralSource::new()));
 
-        // Register MangaDex second.
+        // Register RoyalRoad as the default source for Fiction.
+        manager.register(Arc::new(royalroad::RoyalRoadSource::new()));
+
+        // Register MangaDex.
         manager.register(Arc::new(mangadex::MangaDexSource::new()));
 
         manager

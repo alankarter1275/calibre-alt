@@ -46,6 +46,7 @@ pub enum SearchFilter {
     TagsInclude(Vec<String>),
     TagsExclude(Vec<String>),
     OngoingOnly(bool),
+    OrderBy(String),
 }
 
 /// A paginated page of search results.

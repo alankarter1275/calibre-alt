@@ -2,7 +2,7 @@
 
 use crate::db::Catalog;
 use crate::models::{LibrarySection, NavItem, Route};
-use crate::pages::{
+use crate::pages::{downloads::DownloadsModel, 
     all_books::{AllBooksModel, AllBooksOut},
     analytics::AnalyticsModel,
     author::{AuthorPageModel, AuthorPageOut},
@@ -94,11 +94,13 @@ enum PageSlot {
     RemoteDetail(Controller<RemoteDetailModel>),
     Settings(Controller<SettingsPageModel>),
     Placeholder(Controller<PlaceholderPageModel>),
+    Downloads(Controller<DownloadsModel>),
 }
 
 impl PageSlot {
     fn widget(&self) -> gtk::Widget {
         match self {
+            PageSlot::Downloads(c) => c.widget().clone().upcast(),
             PageSlot::Home(c) => c.widget().clone().upcast(),
             PageSlot::Library(c) => c.widget().clone().upcast(),
             PageSlot::AllBooks(c) => c.widget().clone().upcast(),
@@ -188,7 +190,8 @@ fn cache_key(route: &Route) -> Option<String> {
         | Route::Reader { .. }
         | Route::ComicsReader { .. }
         | Route::RemoteDetail { .. }
-        | Route::RemoteReader { .. } => None,
+        | Route::RemoteReader { .. }
+        | Route::RemoteSearch { .. } => None,
     }
 }
 
@@ -606,8 +609,15 @@ impl AppModel {
                     .forward(sender.input_sender(), |out| match out {
                         ComicsOut::OpenComic { book_id } => AppMsg::OpenReader { book_id },
                         ComicsOut::OpenBookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
+                        ComicsOut::OpenRemoteManga { source_id, remote_id } => {
+                            AppMsg::Push(Route::RemoteDetail { source_id, remote_id })
+                        }
                     });
                 PageSlot::Comics(ctrl)
+            }
+            Route::Module(NavItem::Downloads) => {
+                let ctrl = DownloadsModel::builder().launch(()).detach();
+                PageSlot::Downloads(ctrl)
             }
             Route::Module(NavItem::Settings) => {
                 let ctrl = SettingsPageModel::builder()
@@ -616,8 +626,43 @@ impl AppModel {
                 PageSlot::Settings(ctrl)
             }
             Route::Module(NavItem::RemoteBrowse) => {
+                let init = crate::pages::browse::BrowseInit {
+                    manager: source_manager.clone(),
+                    source_id: "weebcentral".to_string(),
+                    initial_query: None,
+                };
                 let ctrl = BrowseModel::builder()
-                    .launch(source_manager.clone())
+                    .launch(init)
+                    .forward(sender.input_sender(), |out| match out {
+                        BrowseOut::OpenRemoteBook { source_id, remote_id } => {
+                            AppMsg::Push(Route::RemoteDetail { source_id, remote_id })
+                        }
+                    });
+                PageSlot::RemoteBrowse(ctrl)
+            }
+            Route::Module(NavItem::Fanfiction) => {
+                let init = crate::pages::browse::BrowseInit {
+                    manager: source_manager.clone(),
+                    source_id: "royalroad".to_string(),
+                    initial_query: None,
+                };
+                let ctrl = BrowseModel::builder()
+                    .launch(init)
+                    .forward(sender.input_sender(), |out| match out {
+                        BrowseOut::OpenRemoteBook { source_id, remote_id } => {
+                            AppMsg::Push(Route::RemoteDetail { source_id, remote_id })
+                        }
+                    });
+                PageSlot::RemoteBrowse(ctrl) // Reuse the same page slot for both!
+            }
+            Route::RemoteSearch { source_id, query } => {
+                let init = crate::pages::browse::BrowseInit {
+                    manager: source_manager.clone(),
+                    source_id: source_id.clone(),
+                    initial_query: Some(query.clone()),
+                };
+                let ctrl = BrowseModel::builder()
+                    .launch(init)
                     .forward(sender.input_sender(), |out| match out {
                         BrowseOut::OpenRemoteBook { source_id, remote_id } => {
                             AppMsg::Push(Route::RemoteDetail { source_id, remote_id })
@@ -638,6 +683,12 @@ impl AppModel {
                         RemoteDetailOut::Back => AppMsg::Back,
                         RemoteDetailOut::OpenReader { source_id, chapter_id, title } => {
                             AppMsg::Push(Route::RemoteReader { source_id, chapter_id, title })
+                        }
+                        RemoteDetailOut::OpenBook { book_id } => {
+                            AppMsg::Push(Route::Reader { book_id })
+                        }
+                        RemoteDetailOut::OpenAuthor { source_id, author } => {
+                            AppMsg::Push(Route::RemoteSearch { source_id, query: author })
                         }
                     });
                 PageSlot::RemoteDetail(ctrl)
@@ -868,6 +919,34 @@ impl Component for AppModel {
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Vertical,
                                 set_spacing: 0,
+                                
+                                #[name = "download_indicator"]
+                                gtk::MenuButton {
+                                    set_icon_name: "emblem-downloads-symbolic",
+                                    add_css_class: "kalam-nav-btn",
+                                    set_tooltip_text: Some("Active Downloads"),
+                                    #[name = "download_popover"]
+                                    #[wrap(Some)]
+                                    set_popover = &gtk::Popover {
+                                        set_position: gtk::PositionType::Right,
+                                        gtk::Box {
+                                            set_orientation: gtk::Orientation::Vertical,
+                                            set_margin_all: 12,
+                                            set_spacing: 8,
+                                            set_size_request: (260, -1),
+                                            gtk::Label {
+                                                set_label: "Downloads",
+                                                add_css_class: "kalam-title-small",
+                                                set_halign: gtk::Align::Start,
+                                            },
+                                            #[name = "download_popover_list"]
+                                            gtk::Box {
+                                                set_orientation: gtk::Orientation::Vertical,
+                                                set_spacing: 6,
+                                            }
+                                        }
+                                    }
+                                }
                             },
                         },
                     },
@@ -1013,6 +1092,8 @@ impl Component for AppModel {
         );
 
         let source_manager = std::sync::Arc::new(crate::sources::SourceManager::new());
+        let dl_mgr = std::sync::Arc::new(crate::downloads::DownloadManager::new(source_manager.clone(), catalog.clone()));
+        let _ = crate::downloads::DOWNLOAD_MANAGER.set(dl_mgr);
         let initial_route = Route::Module(NavItem::Home);
         crate::timing::span("startup_first_page");
         let page = Self::build_page(&catalog, &source_manager, &initial_route, &sender);
@@ -1134,6 +1215,45 @@ impl Component for AppModel {
         }
 
         widgets.brand.append(&brand_logo());
+
+        let popover_list = widgets.download_popover_list.clone();
+        widgets.download_popover.connect_visible_notify(move |popover| {
+            if popover.is_visible() {
+                while let Some(child) = popover_list.first_child() {
+                    popover_list.remove(&child);
+                }
+                let jobs = crate::downloads::DOWNLOAD_MANAGER.get()
+                    .map(|m| m.get_jobs())
+                    .unwrap_or_default();
+                if jobs.is_empty() {
+                    let lbl = gtk::Label::new(Some("No downloads tracked."));
+                    lbl.add_css_class("kalam-subtitle-muted");
+                    popover_list.append(&lbl);
+                } else {
+                    for job in jobs.iter().take(6) {
+                        let row = gtk::Box::new(gtk::Orientation::Vertical, 2);
+                        let title = gtk::Label::new(Some(&job.title));
+                        title.set_halign(gtk::Align::Start);
+                        title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                        title.add_css_class("kalam-subtitle-bold");
+                        row.append(&title);
+
+                        let status_str = match &job.status {
+                            crate::downloads::JobStatus::Pending => "Queued".to_string(),
+                            crate::downloads::JobStatus::Downloading { chapter_idx, total } => format!("Downloading {chapter_idx}/{total}"),
+                            crate::downloads::JobStatus::Packaging => "Packaging EPUB...".to_string(),
+                            crate::downloads::JobStatus::Done => "✓ Completed".to_string(),
+                            crate::downloads::JobStatus::Failed(e) => format!("Failed: {e}"),
+                        };
+                        let status_lbl = gtk::Label::new(Some(&status_str));
+                        status_lbl.set_halign(gtk::Align::Start);
+                        status_lbl.add_css_class("kalam-badge");
+                        row.append(&status_lbl);
+                        popover_list.append(&row);
+                    }
+                }
+            }
+        });
 
         for item in NavItem::ALL {
             let btn = make_nav_button(*item, *item == NavItem::Home);

@@ -11,6 +11,13 @@ pub enum RemoteDetailOut {
         chapter_id: String,
         title: String,
     },
+    OpenBook {
+        book_id: i64,
+    },
+    OpenAuthor {
+        source_id: String,
+        author: String,
+    },
 }
 
 #[derive(Debug)]
@@ -20,6 +27,9 @@ pub enum RemoteDetailMsg {
     InfoFailed(String),
     AddToLibrary,
     ReadChapter { chapter_id: String, title: String },
+    ChapterReady(i64),
+    ChapterFailed(String),
+    ClickedAuthor,
     OpenExternalUrl(String),
 }
 
@@ -159,15 +169,15 @@ impl Component for RemoteDetailModel {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_spacing: 12,
 
-                        gtk::Label {
+                        gtk::Button {
                             #[watch]
                             set_label: if let Some(d) = &model.details {
                                 if d.author.is_empty() { "Unknown Author" } else { &d.author }
                             } else {
                                 ""
                             },
-                            add_css_class: "kalam-subtitle-muted",
-                            set_halign: gtk::Align::Start,
+                            add_css_class: "kalam-btn-subtle",
+                            connect_clicked => RemoteDetailMsg::ClickedAuthor,
                         },
 
                         gtk::Label {
@@ -374,26 +384,116 @@ impl Component for RemoteDetailModel {
 
             RemoteDetailMsg::AddToLibrary => {
                 if let Some(details) = &self.details {
-                    let res1 = self.catalog.add_remote_book(details, &self.source_id);
-                    let res2 = self.catalog.add_remote_chapters(&self.remote_id, &self.source_id, &self.chapters);
-
-                    if let Err(e) = res1 {
-                        self.status = format!("Error adding to library: {}", e);
-                    } else if let Err(e) = res2 {
-                        self.status = format!("Error saving chapters: {}", e);
+                    if self.source_id == "royalroad" {
+                        if let Some(dl_mgr) = crate::downloads::DOWNLOAD_MANAGER.get() {
+                            dl_mgr.queue_download(&details.title, &self.source_id, &self.remote_id);
+                            self.is_in_library = true;
+                            self.status = "Queued for background download!".to_string();
+                        }
                     } else {
-                        self.is_in_library = true;
-                        self.status = "Added to library!".to_string();
+                        let res1 = self.catalog.add_remote_book(details, &self.source_id);
+                        let res2 = self.catalog.add_remote_chapters(&self.remote_id, &self.source_id, &self.chapters);
+    
+                        if let Err(e) = res1 {
+                            self.status = format!("Error adding to library: {}", e);
+                        } else if let Err(e) = res2 {
+                            self.status = format!("Error saving chapters: {}", e);
+                        } else {
+                            self.is_in_library = true;
+                            self.status = "Added to library!".to_string();
+                        }
                     }
                 }
             }
 
             RemoteDetailMsg::ReadChapter { chapter_id, title } => {
+                if self.source_id == "royalroad" {
+                    if let Some(details) = &self.details {
+                        if let Ok(books) = self.catalog.list_books(crate::db::SortKey::Added, "") {
+                            if let Some(b) = books.into_iter().find(|b| b.title.eq_ignore_ascii_case(&details.title)) {
+                                let idx = self.chapters.iter().position(|c| c.chapter_id == chapter_id).unwrap_or(0);
+                                let _ = self.catalog.set_reading_progress(b.id, idx, 0.0, self.chapters.len());
+                                let _ = sender.output(RemoteDetailOut::OpenBook { book_id: b.id });
+                                return;
+                            }
+                        }
+
+                        // Not in library yet: fetch chapter HTML and generate single-chapter EPUB
+                        self.is_loading = true;
+                        self.status = format!("Loading {}…", title);
+                        let s = sender.clone();
+                        let source_mgr = self.manager.clone();
+                        let source_id = self.source_id.clone();
+                        let chap_id = chapter_id.clone();
+                        let chap_title = title.clone();
+                        let b_title = details.title.clone();
+                        let b_author = details.author.clone();
+                        let cover_url = details.cover_url.clone();
+                        let catalog = self.catalog.clone();
+
+                        crate::tasks::spawn(
+                            move |_| -> anyhow::Result<i64> {
+                                let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
+                                let content = source.get_chapter_content(&chap_id)?;
+                                let html = match content {
+                                    crate::sources::ChapterContent::Html(h) => h,
+                                    _ => return Err(anyhow::anyhow!("Expected HTML chapter")),
+                                };
+                                let cover_bytes = if let Some(u) = cover_url {
+                                    source.fetch_image(&u).ok()
+                                } else {
+                                    None
+                                };
+                                let out_dir = std::env::temp_dir().join("kalam_downloads");
+                                std::fs::create_dir_all(&out_dir)?;
+                                let temp_file = out_dir.join(format!("{}.epub", uuid::Uuid::new_v4()));
+                                let web_chapters = vec![crate::epub_writer::WebChapter {
+                                    title: chap_title,
+                                    html_content: html,
+                                }];
+                                crate::epub_writer::generate_epub(&temp_file, &b_title, &b_author, cover_bytes.as_deref(), web_chapters)?;
+                                let res = crate::epub::import_epub(&catalog, &temp_file)?;
+                                let _ = std::fs::remove_file(&temp_file);
+                                Ok(res.book_id)
+                            },
+                            |_| {},
+                            move |res| match res {
+                                Ok(book_id) => s.input(RemoteDetailMsg::ChapterReady(book_id)),
+                                Err(e) => s.input(RemoteDetailMsg::ChapterFailed(e.to_string())),
+                            },
+                        );
+                        return;
+                    }
+                }
+
+                // Default / Manga: stream images via ComicsReader
                 let _ = sender.output(RemoteDetailOut::OpenReader {
                     source_id: self.source_id.clone(),
                     chapter_id,
                     title,
                 });
+            }
+
+            RemoteDetailMsg::ChapterReady(book_id) => {
+                self.is_loading = false;
+                self.status.clear();
+                let _ = sender.output(RemoteDetailOut::OpenBook { book_id });
+            }
+
+            RemoteDetailMsg::ChapterFailed(err) => {
+                self.is_loading = false;
+                self.status = format!("Failed to open chapter: {err}");
+            }
+
+            RemoteDetailMsg::ClickedAuthor => {
+                if let Some(d) = &self.details {
+                    if !d.author.is_empty() {
+                        let _ = sender.output(RemoteDetailOut::OpenAuthor {
+                            source_id: self.source_id.clone(),
+                            author: d.author.clone(),
+                        });
+                    }
+                }
             }
 
             RemoteDetailMsg::OpenExternalUrl(url) => {

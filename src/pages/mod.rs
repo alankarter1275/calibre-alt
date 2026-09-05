@@ -37,3 +37,4 @@ pub mod shelves_grid;
 pub mod tags;
 pub mod browse;
 pub mod remote_detail;
+pub mod downloads;

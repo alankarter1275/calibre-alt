@@ -1008,6 +1008,34 @@ impl Catalog {
         Ok(())
     }
 
+    pub fn list_remote_books(&self, source_id_filter: Option<&str>) -> anyhow::Result<Vec<crate::sources::RemoteBookDetails>> {
+        let conn = self.conn.lock().unwrap();
+        let mut sql = "SELECT source_id, remote_id, title, author, description, cover_url, status FROM remote_books".to_string();
+        if let Some(src) = source_id_filter {
+            sql.push_str(&format!(" WHERE source_id = '{src}'"));
+        }
+        sql.push_str(" ORDER BY added_at DESC");
+        
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |row| {
+            Ok(crate::sources::RemoteBookDetails {
+                remote_id: row.get(1)?,
+                title: row.get(2)?,
+                author: row.get(3)?,
+                description: row.get(4)?,
+                cover_url: row.get(5)?,
+                status: row.get(6)?,
+                tags: Vec::new(),
+            })
+        })?;
+        
+        let mut res = Vec::new();
+        for r in rows {
+            res.push(r?);
+        }
+        Ok(res)
+    }
+
     pub fn add_remote_chapters(&self, book_remote_id: &str, source_id: &str, chapters: &[crate::sources::RemoteChapter]) -> anyhow::Result<()> {
         let book_id_str = format!("{}-{}", source_id, book_remote_id);
         

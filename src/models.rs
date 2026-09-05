@@ -93,6 +93,10 @@ pub enum Route {
     ComicsReader {
         book_id: i64,
     },
+    RemoteSearch {
+        source_id: String,
+        query: String,
+    },
 }
 
 impl Route {
@@ -104,6 +108,13 @@ impl Route {
             Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,
             Route::BookPage { .. } | Route::Reader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
             Route::RemoteDetail { .. } => NavItem::RemoteBrowse,
+            Route::RemoteSearch { source_id, .. } => {
+                if source_id == "royalroad" {
+                    NavItem::Fanfiction
+                } else {
+                    NavItem::RemoteBrowse
+                }
+            }
         }
     }
 
