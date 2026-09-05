@@ -556,23 +556,31 @@ impl AppModel {
                 PageSlot::Reader(ctrl)
             }
 
-            Route::RemoteReader { source_id, chapter_id } => {
-                let init = crate::pages::comics_reader::types::ComicsReaderInit {
-                    title: format!("Chapter {}", chapter_id),
-                    provider: std::sync::Arc::new(
-                        crate::pages::comics_reader::providers::RemoteProvider::new(
-                            source_manager.clone(),
-                            source_id.clone(),
-                            chapter_id.clone(),
-                        ).unwrap()
-                    ),
-                };
-                let ctrl = ComicsReaderModel::builder()
-                    .launch(init)
-                    .forward(sender.input_sender(), |out| match out {
-                        ComicsReaderOut::Close => AppMsg::Back,
-                    });
-                PageSlot::ComicsReader(ctrl)
+            Route::RemoteReader { source_id, chapter_id, title } => {
+                match crate::pages::comics_reader::providers::RemoteProvider::new(
+                    source_manager.clone(),
+                    source_id.clone(),
+                    chapter_id.clone(),
+                ) {
+                    Ok(provider) => {
+                        let init = crate::pages::comics_reader::types::ComicsReaderInit {
+                            title: title.clone(),
+                            provider: std::sync::Arc::new(provider),
+                        };
+                        let ctrl = ComicsReaderModel::builder()
+                            .launch(init)
+                            .forward(sender.input_sender(), |out| match out {
+                                ComicsReaderOut::Close => AppMsg::Back,
+                            });
+                        PageSlot::ComicsReader(ctrl)
+                    }
+                    Err(err) => {
+                        eprintln!("Failed to open remote reader: {}", err);
+                        sender.input(AppMsg::Back);
+                        let ctrl = PlaceholderPageModel::builder().launch(NavItem::RemoteBrowse).detach();
+                        PageSlot::Placeholder(ctrl)
+                    }
+                }
             }
 
             Route::ComicsReader { book_id } => {
@@ -628,8 +636,8 @@ impl AppModel {
                     .launch(init)
                     .forward(sender.input_sender(), |out| match out {
                         RemoteDetailOut::Back => AppMsg::Back,
-                        RemoteDetailOut::OpenReader { source_id, chapter_id } => {
-                            AppMsg::Push(Route::RemoteReader { source_id, chapter_id })
+                        RemoteDetailOut::OpenReader { source_id, chapter_id, title } => {
+                            AppMsg::Push(Route::RemoteReader { source_id, chapter_id, title })
                         }
                     });
                 PageSlot::RemoteDetail(ctrl)

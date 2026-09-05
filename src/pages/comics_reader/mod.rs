@@ -10,9 +10,6 @@ pub mod providers;
 
 pub use types::*;
 
-use crate::comics::{extract_comic_page, list_comic_pages};
-use crate::db::Catalog;
-use crate::models::Book;
 use gtk::gdk;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -156,12 +153,22 @@ impl Component for ComicsReaderModel {
                     set_hexpand: true,
                     set_vexpand: true,
 
+                    gtk::Spinner {
+                        #[watch]
+                        set_spinning: !model.textures.contains_key(&model.current_page),
+                        #[watch]
+                        set_visible: !model.textures.contains_key(&model.current_page),
+                        set_size_request: (48, 48),
+                    },
+
                     #[name = "picture"]
                     gtk::Picture {
                         set_can_shrink: true,
                         set_content_fit: gtk::ContentFit::Contain,
                         set_halign: gtk::Align::Center,
                         set_valign: gtk::Align::Center,
+                        #[watch]
+                        set_visible: model.textures.contains_key(&model.current_page),
                     },
                 },
             },

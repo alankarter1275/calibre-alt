@@ -83,6 +83,7 @@ pub enum Route {
     RemoteReader {
         source_id: String,
         chapter_id: String,
+        title: String,
     },
     /// Immersive EPUB reader.
     Reader {
