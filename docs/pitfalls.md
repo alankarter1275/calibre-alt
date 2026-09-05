@@ -1054,3 +1054,37 @@ starts depending on whoever runs it.
 variable, a keyring, a server — every test that touches it becomes a test of
 the machine.** Decide at that moment how tests will be isolated from it. Not
 after CI goes red for a reason that looks unrelated to the change.
+
+---
+
+## 25. A log published only on failure will outlive the failure
+
+`ci-logs/test-latest.txt` and `ci-logs/clippy-latest.txt` were written only
+when their step failed. That sounds economical and is a trap: once the problem
+is fixed, the *old failing log stays committed*. Every later green run still
+shows a red file.
+
+It misled me three times in one session. The last was reading
+`test result: FAILED. 301 passed; 1 failed` and starting to investigate,
+before noticing the run id at the bottom belonged to a run two hours dead while
+the current one was green.
+
+The `--- run <id> ---` footer is what saved it each time, and it only worked
+because I thought to check. A file that requires you to remember to check
+whether it is current is a booby trap, not a diagnostic.
+
+### The rule
+
+**A published artifact must always describe the latest run.** Write it on
+success too — "clean" is information. If a file can be stale, someone will
+read it as current, and the more convincing it looks the longer they will
+believe it.
+
+### Related
+
+Same shape as §21 and §23: a check whose *output* stops corresponding to
+reality. §21 was a verdict that no longer matched what it measured, §23 a
+failure whose cause was unrelated to what it checked, and this is a result that
+outlives the run that produced it. In all three the investigation goes to the
+wrong place, and in all three the fix is to make the signal honest rather than
+to get better at interpreting a dishonest one.

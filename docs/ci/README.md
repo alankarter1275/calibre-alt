@@ -50,6 +50,23 @@ always describes the latest run.
 
 ---
 
+## ACTION NEEDED (2026-09-04) — publish the CI logs on success too
+
+Low priority; nothing is broken, but the current behaviour is actively
+misleading.
+
+`ci-logs/test-latest.txt` and `ci-logs/clippy-latest.txt` are only written when
+that step **fails**. So after a failure is fixed, the old failing log stays
+committed and a later green run still shows red. It fooled me three separate
+times — most recently reading "1 failed" from a run two hours dead while the
+current run was green.
+
+Copy [`github-actions-ci.yml`](./github-actions-ci.yml) over
+`.github/workflows/ci.yml`. Both steps now run on success as well, so the
+published file always describes the latest run. Same fix as the rustfmt diff.
+
+---
+
 ## Done: windowed-grid measurement (applied 2026-09-04)
 
 Installed and running. The `scale` job runs the 2,000-book library twice, once
