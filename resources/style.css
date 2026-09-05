@@ -3573,26 +3573,184 @@ button.kalam-lib-play {
 }
 
 /* ── Moku-style Comics Reader Stage ──────────────────── */
-.kalam-comics-stage {
+.kalam-comics-overlay {
+    background: #090a0d;
+}
+
+.kalam-comics-viewport {
     background: #090a0d;
 }
 
 .kalam-comics-topbar {
-    background: alpha(#0f1117, 0.94);
-    border-bottom: 1px solid alpha(#252a36, 0.8);
-    padding: 10px 18px;
+    background: alpha(#0d0f14, 0.94);
+    border-bottom: 1px solid alpha(#252a36, 0.7);
+    padding: 8px 16px;
     min-height: 48px;
 }
 
 .kalam-comics-title {
-    font-size: 0.95rem;
+    font-size: 0.94rem;
     font-weight: 600;
+    color: #f1f5f9;
+}
+
+.kalam-comics-separator {
+    color: #64748b;
+    font-size: 0.9rem;
+}
+
+.kalam-comics-page-count {
+    font-size: 0.86rem;
+    color: #94a3b8;
+}
+
+.kalam-comics-icon-btn {
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    padding: 7px;
+    min-width: 32px;
+    min-height: 32px;
+    color: #94a3b8;
+    transition: background 120ms ease, color 120ms ease;
+}
+
+.kalam-comics-icon-btn:hover {
+    background: alpha(#ffffff, 0.1);
+    color: #ffffff;
+}
+
+.kalam-comics-badge-btn {
+    background: alpha(#ffffff, 0.08);
+    border: 1px solid alpha(#ffffff, 0.12);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #cbd5e1;
+    transition: background 120ms ease;
+}
+
+.kalam-comics-badge-btn:hover {
+    background: alpha(#ffffff, 0.16);
+    color: #ffffff;
+}
+
+/* Floating bottom dock */
+.kalam-comics-bottom-dock {
+    margin-bottom: 24px;
+    background: alpha(#0d0f14, 0.94);
+    border: 1px solid alpha(#252a36, 0.85);
+    border-radius: 999px;
+    padding: 6px 16px;
+    box-shadow: 0 8px 30px alpha(#000000, 0.7);
+}
+
+.kalam-comics-pill-nav {
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    padding: 6px;
+    min-width: 30px;
+    min-height: 30px;
+    color: #cbd5e1;
+    transition: background 120ms ease, color 120ms ease;
+}
+
+.kalam-comics-pill-nav:hover {
+    background: alpha(#ffffff, 0.12);
+    color: #ffffff;
+}
+
+.kalam-comics-pill-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #cbd5e1;
+    min-width: 48px;
+}
+
+.kalam-comics-slider scale trough {
+    min-height: 4px;
+    border-radius: 2px;
+    background: alpha(#ffffff, 0.18);
+}
+
+.kalam-comics-slider scale highlight {
+    background: @kalam_accent;
+    border-radius: 2px;
+}
+
+.kalam-comics-slider scale slider {
+    min-width: 14px;
+    min-height: 14px;
+    border-radius: 999px;
+    background: #ffffff;
+    border: 2px solid @kalam_accent;
+    margin: -5px 0;
+}
+
+/* Slide-out Settings Drawer */
+.kalam-comics-settings-drawer {
+    background: #111318;
+    border-left: 1px solid alpha(#252a36, 0.8);
+    box-shadow: -10px 0 35px alpha(#000000, 0.7);
+}
+
+.kalam-comics-drawer-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid alpha(#252a36, 0.7);
+}
+
+.kalam-comics-drawer-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+.kalam-comics-drawer-body {
+    padding: 20px 18px;
+}
+
+.kalam-comics-section-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: 0.08em;
+}
+
+.kalam-comics-seg-btn {
+    background: #191c24;
+    border: 1px solid alpha(#2e3444, 0.8);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: #94a3b8;
+    transition: all 120ms ease;
+}
+
+.kalam-comics-seg-btn:hover {
+    background: #232834;
     color: #e2e8f0;
 }
 
-.kalam-comics-bottombar {
-    background: alpha(#0f1117, 0.94);
-    border-top: 1px solid alpha(#252a36, 0.8);
-    padding: 10px 18px;
-    min-height: 48px;
+.kalam-comics-seg-btn.active {
+    background: alpha(@kalam_accent, 0.18);
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+    font-weight: 600;
+}
+
+.kalam-comics-shortcuts-box {
+    background: #161820;
+    border-radius: 8px;
+    padding: 12px 14px;
+    border: 1px solid alpha(#252a36, 0.5);
+}
+
+.kalam-comics-shortcut-text {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    font-family: monospace;
+    line-height: 1.4;
 }

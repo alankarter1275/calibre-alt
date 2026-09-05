@@ -29,7 +29,12 @@ pub fn generate_thumbnail(source: &Path, dest: &Path) -> bool {
     if !source.is_file() {
         return false;
     }
-    let Ok(img) = image::open(source) else {
+    let img = image::ImageReader::open(source)
+        .ok()
+        .and_then(|r| r.with_guessed_format().ok())
+        .and_then(|r| r.decode().ok())
+        .or_else(|| image::open(source).ok());
+    let Some(img) = img else {
         return false;
     };
     let resized = img.resize_exact(THUMB_W, THUMB_H, image::imageops::FilterType::Triangle);
@@ -292,5 +297,16 @@ mod tests {
         // exactly the case a `> 0` guard would break.
         assert!(should_skip(Some("0"), 0));
         assert!(!should_skip(None, 0), "but not before the first pass");
+    }
+
+    #[test]
+    fn mismatched_extension_is_thumbnailed_successfully() {
+        let dir = Scratch::new();
+        let src = dir.join("cover.jpg"); // Named .jpg, but actual content is PNG
+        let dst = dir.join("thumb.png");
+        let img = image::RgbaImage::new(10, 10);
+        img.save_with_format(&src, image::ImageFormat::Png).unwrap();
+        assert!(generate_thumbnail(&src, &dst));
+        assert!(dst.is_file());
     }
 }

@@ -78,9 +78,10 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
             let file_name = format!("book.{ext}");
 
             let cover_name = if let Ok(cover_bytes) = crate::comics::extract_comic_cover(source) {
-                let cover_file = "cover.jpg";
+                let img_ext = guess_image_ext(&cover_bytes);
+                let cover_file = format!("cover.{img_ext}");
                 // Will be written once dest_dir is created below
-                Some((cover_file.to_string(), cover_bytes))
+                Some((cover_file, cover_bytes))
             } else {
                 None
             };

@@ -90,7 +90,11 @@ pub fn decode_rgba(path: &Path, w: i32, h: i32) -> Option<DecodedCover> {
     if w <= 0 || h <= 0 || !path.is_file() {
         return None;
     }
-    let img = image::open(path).ok()?;
+    let img = image::ImageReader::open(path)
+        .ok()
+        .and_then(|r| r.with_guessed_format().ok())
+        .and_then(|r| r.decode().ok())
+        .or_else(|| image::open(path).ok())?;
     let resized = img.resize_exact(w as u32, h as u32, image::imageops::FilterType::Triangle);
     Some(DecodedCover {
         cover: path.to_path_buf(),

@@ -11,9 +11,17 @@ pub enum ReadingDirection {
 impl ReadingDirection {
     pub fn label(self) -> &'static str {
         match self {
-            ReadingDirection::Ltr => "LTR (Left → Right)",
-            ReadingDirection::Rtl => "RTL (Right → Left / Manga)",
-            ReadingDirection::Webtoon => "Webtoon (Vertical Scroll)",
+            ReadingDirection::Ltr => "Left → Right",
+            ReadingDirection::Rtl => "Right → Left (Manga)",
+            ReadingDirection::Webtoon => "Webtoon (Vertical)",
+        }
+    }
+
+    pub fn short_label(self) -> &'static str {
+        match self {
+            ReadingDirection::Ltr => "LTR",
+            ReadingDirection::Rtl => "RTL",
+            ReadingDirection::Webtoon => "Webtoon",
         }
     }
 
@@ -39,7 +47,15 @@ impl FitMode {
         match self {
             FitMode::Width => "Fit Width",
             FitMode::Height => "Fit Height",
-            FitMode::Original => "Original Size",
+            FitMode::Original => "Original",
+        }
+    }
+
+    pub fn icon(self) -> &'static str {
+        match self {
+            FitMode::Width => "zoom-fit-best-symbolic",
+            FitMode::Height => "view-fullscreen-symbolic",
+            FitMode::Original => "zoom-original-symbolic",
         }
     }
 
@@ -58,9 +74,12 @@ pub enum ComicsReaderMsg {
     NextPage,
     PrevPage,
     ToggleDirection,
+    SetDirection(ReadingDirection),
     ToggleFitMode,
-    #[allow(dead_code)]
+    SetFitMode(FitMode),
     ToggleChrome,
+    ToggleSettings,
+    CloseSettings,
     Close,
     #[allow(dead_code)]
     PageLoaded { index: usize, data: Vec<u8> },
@@ -70,3 +89,4 @@ pub enum ComicsReaderMsg {
 pub enum ComicsReaderOut {
     Close,
 }
+
