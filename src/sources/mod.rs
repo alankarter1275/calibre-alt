@@ -1,4 +1,5 @@
 pub mod mangadex;
+pub mod manganato;
 pub mod scraper;
 pub mod traits;
 
@@ -19,16 +20,12 @@ impl SourceManager {
             sources: Vec::new(),
         };
 
-        // Register MangaDex first so it is always the default source.
-        manager.register(Arc::new(mangadex::MangaDexSource::new()));
+        // Register Manganato first so it is the default source.
+        // It provides raw images for official chapters.
+        manager.register(Arc::new(manganato::ManganatoSource::new()));
 
-        // Generic scrapers via TOML. Only added if the TOML parses correctly.
-        // MangaBall is kept as a config example but disabled since its domain is dead.
-        // Uncomment and update the base_url if you find a working mirror:
-        //
-        // if let Ok(src) = scraper::GenericScraperSource::new(include_str!("scrapers/mangaball.toml")) {
-        //     manager.register(Arc::new(src));
-        // }
+        // Register MangaDex second.
+        manager.register(Arc::new(mangadex::MangaDexSource::new()));
 
         manager
     }
