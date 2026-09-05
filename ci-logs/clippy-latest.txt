@@ -27,4 +27,4 @@ src/sources/manganato.rs:56:29: [1m[91merror[0m: called `Iterator::last` on a
 src/sources/weebcentral.rs:127:30: [1m[91merror[0m: called `Iterator::last` on a `DoubleEndedIterator`; this will needlessly iterate the entire iterator
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 27 previous errors
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 27 previous errors
---- run 33983110600 ---
+--- run 33983761900 ---
