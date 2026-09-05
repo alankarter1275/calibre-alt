@@ -45,7 +45,12 @@ impl Catalog {
                 now
             ],
         )?;
-        Ok(conn.last_insert_rowid())
+        let id = conn.last_insert_rowid();
+        // Drop the connection lock before refreshing the sidecar: that reads
+        // the book and its annotations back, which takes the same lock.
+        drop(conn);
+        crate::sidecar::refresh_for_book(self, book_id);
+        Ok(id)
     }
 
     pub fn get_annotations_for_book(&self, book_id: i64) -> Result<Vec<Annotation>> {

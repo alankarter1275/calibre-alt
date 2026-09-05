@@ -74,6 +74,10 @@ impl Catalog {
         // Remember the result so removing and re-importing this file does not
         // silently discard the edit.
         self.remember_overrides(book_id)?;
+
+        // Keep the per-book kalam.json in step. Best-effort: a stale backup
+        // deserves a log line, never a failed edit.
+        crate::sidecar::refresh_for_book(self, book_id);
         Ok(())
     }
 

@@ -21,6 +21,7 @@ mod perf;
 mod preload;
 mod service;
 mod shelf_rules;
+mod sidecar;
 mod style;
 mod tasks;
 mod theme;

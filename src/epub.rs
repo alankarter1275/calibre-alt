@@ -138,6 +138,10 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         title
     };
 
+    // Write the book's kalam.json now, so a library is self-describing from
+    // the moment a book enters it rather than only after its first edit.
+    crate::sidecar::refresh_for_book(catalog, id);
+
     Ok(ImportResult {
         book_id: id,
         title,
