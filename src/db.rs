@@ -432,6 +432,11 @@ thread_local! {
 
 #[cfg(test)]
 impl Catalog {
+
+
+
+
+
     /// Count the SQL statements one call issues.
     ///
     /// `Connection::trace` takes a bare `fn(&str)`, not a closure, so the
@@ -979,6 +984,52 @@ impl Catalog {
         let mut books = rows.collect::<std::result::Result<Vec<_>, _>>()?;
         hydrate_books(&conn, &mut books)?;
         Ok(books)
+    }
+
+    pub fn add_remote_book(&self, book: &crate::sources::RemoteBookDetails, source_id: &str) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "INSERT OR REPLACE INTO remote_books (id, source_id, remote_id, title, author, description, cover_url, added_at, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'), ?8)"
+        )?;
+        
+        let id_str = format!("{}-{}", source_id, book.remote_id);
+        
+        stmt.execute(rusqlite::params![
+            id_str,
+            source_id,
+            book.remote_id,
+            book.title,
+            book.author,
+            book.description,
+            book.cover_url,
+            book.status,
+        ])?;
+        Ok(())
+    }
+
+    pub fn add_remote_chapters(&self, book_remote_id: &str, source_id: &str, chapters: &[crate::sources::RemoteChapter]) -> anyhow::Result<()> {
+        let book_id_str = format!("{}-{}", source_id, book_remote_id);
+        
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "INSERT OR REPLACE INTO remote_chapters (id, book_id, chapter_id, title, number, volume, url, fetched_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'))"
+        )?;
+
+        for ch in chapters {
+            let ch_id_str = format!("{}-{}", book_id_str, ch.chapter_id);
+            stmt.execute(rusqlite::params![
+                ch_id_str,
+                book_id_str,
+                ch.chapter_id,
+                ch.title,
+                ch.number,
+                ch.volume,
+                ch.url,
+            ])?;
+        }
+        Ok(())
     }
 
     pub fn get_book(&self, id: i64) -> Result<Option<Book>> {

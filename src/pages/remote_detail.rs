@@ -20,12 +20,14 @@ pub enum RemoteDetailMsg {
 
 pub struct RemoteDetailInit {
     pub manager: Arc<SourceManager>,
+    pub catalog: Arc<crate::db::Catalog>,
     pub source_id: String,
     pub remote_id: String,
 }
 
 pub struct RemoteDetailModel {
     manager: Arc<SourceManager>,
+    catalog: Arc<crate::db::Catalog>,
     source_id: String,
     remote_id: String,
     
@@ -40,6 +42,7 @@ impl RemoteDetailModel {
     pub fn new(init: RemoteDetailInit) -> Self {
         Self {
             manager: init.manager,
+            catalog: init.catalog,
             source_id: init.source_id,
             remote_id: init.remote_id,
             details: None,
@@ -105,23 +108,35 @@ impl Component for RemoteDetailModel {
 
             // Metadata Box
             gtk::Box {
-                set_orientation: gtk::Orientation::Vertical,
-                set_spacing: 4,
+                set_orientation: gtk::Orientation::Horizontal,
+                set_spacing: 16,
                 #[watch]
                 set_visible: model.details.is_some(),
                 
-                gtk::Label {
-                    #[watch]
-                    set_label: if let Some(d) = &model.details { &d.author } else { "" },
-                    add_css_class: "kalam-subtitle-muted",
-                    set_halign: gtk::Align::Start,
+                #[name = "cover_pic"]
+                gtk::Picture {
+                    set_content_fit: gtk::ContentFit::Cover,
+                    set_size_request: (160, 240),
+                    add_css_class: "kalam-book-card",
                 },
-                gtk::Label {
-                    #[watch]
-                    set_label: if let Some(d) = &model.details { &d.description } else { "" },
-                    set_wrap: true,
-                    set_halign: gtk::Align::Start,
-                },
+
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+                    set_spacing: 8,
+                    
+                    gtk::Label {
+                        #[watch]
+                        set_label: if let Some(d) = &model.details { &d.author } else { "" },
+                        add_css_class: "kalam-subtitle-muted",
+                        set_halign: gtk::Align::Start,
+                    },
+                    gtk::Label {
+                        #[watch]
+                        set_label: if let Some(d) = &model.details { &d.description } else { "" },
+                        set_wrap: true,
+                        set_halign: gtk::Align::Start,
+                    },
+                }
             },
 
             // Chapters Grid
@@ -191,6 +206,23 @@ impl Component for RemoteDetailModel {
             }
             RemoteDetailMsg::InfoSuccess(details, chapters) => {
                 self.is_loading = false;
+                
+                if let (Some(url), Some(source)) = (&details.cover_url, self.manager.get(&self.source_id)) {
+                    let u = url.clone();
+                    let pic = widgets.cover_pic.clone();
+                    crate::tasks::spawn(
+                        move |_| source.fetch_image(&u).ok(),
+                        |_| {},
+                        move |bytes| {
+                            if let Some(b) = bytes {
+                                if let Ok(tex) = gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from(&b)) {
+                                    pic.set_paintable(Some(&tex));
+                                }
+                            }
+                        }
+                    );
+                }
+                
                 self.details = Some(details);
                 self.chapters = chapters;
                 
@@ -228,8 +260,18 @@ impl Component for RemoteDetailModel {
                 self.status = format!("Failed to load: {}", err);
             }
             RemoteDetailMsg::AddToLibrary => {
-                // TODO: Save to `remote_books` and `remote_chapters` DB table.
-                println!("Added to library (Stub)");
+                if let Some(details) = &self.details {
+                    // Assuming AppModel handles catalog, wait RemoteDetailModel needs Catalog
+                    // Let's print a warning if we don't have catalog.
+                    // Wait! Let's pass the catalog in RemoteDetailInit so we can save it.
+                    if let Err(e) = self.catalog.add_remote_book(details, &self.source_id) {
+                        self.status = format!("Failed to save: {}", e);
+                    } else if let Err(e) = self.catalog.add_remote_chapters(&self.remote_id, &self.source_id, &self.chapters) {
+                        self.status = format!("Failed to save chapters: {}", e);
+                    } else {
+                        self.status = "Added to library successfully!".to_string();
+                    }
+                }
             }
             RemoteDetailMsg::ReadChapter(chapter_id) => {
                 let _ = sender.output(RemoteDetailOut::OpenReader {

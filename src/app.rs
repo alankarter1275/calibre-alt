@@ -620,6 +620,7 @@ impl AppModel {
             Route::RemoteDetail { source_id, remote_id } => {
                 let init = RemoteDetailInit {
                     manager: source_manager.clone(),
+                    catalog: catalog.clone(),
                     source_id: source_id.clone(),
                     remote_id: remote_id.clone(),
                 };
@@ -627,10 +628,8 @@ impl AppModel {
                     .launch(init)
                     .forward(sender.input_sender(), |out| match out {
                         RemoteDetailOut::Back => AppMsg::Back,
-                        RemoteDetailOut::OpenReader { .. } => {
-                            // Stub for now. We will wire it up in Step 6.
-                            println!("Reading remote chapters is not yet implemented in reader!");
-                            AppMsg::Back // Just go back for now
+                        RemoteDetailOut::OpenReader { source_id, chapter_id } => {
+                            AppMsg::Push(Route::RemoteReader { source_id, chapter_id })
                         }
                     });
                 PageSlot::RemoteDetail(ctrl)

@@ -95,9 +95,13 @@ impl Component for BrowseModel {
                 set_visible: !model.results.is_empty(),
                 
                 #[name = "grid_box"]
-                gtk::Box {
-                    set_orientation: gtk::Orientation::Vertical,
-                    set_spacing: 12,
+                gtk::FlowBox {
+                    set_selection_mode: gtk::SelectionMode::None,
+                    set_valign: gtk::Align::Start,
+                    set_max_children_per_line: 10,
+                    set_min_children_per_line: 2,
+                    set_row_spacing: 16,
+                    set_column_spacing: 16,
                 }
             }
         }
