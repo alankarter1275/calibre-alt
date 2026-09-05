@@ -59,7 +59,7 @@ fn placeholder_copy(item: NavItem) -> String {
         NavItem::Comics => "Comics hub (local CBZ/CBR first, catalogue later).\n\n\
              Suwayomi-like browsing will live here without leaving Kalam."
             .into(),
-        NavItem::Ao3 => "Archive of Our Own — search, download EPUB, track updates.\n\n\
+        NavItem::RemoteBrowse => "Archive of Our Own — search, download EPUB, track updates.\n\n\
              Source adapter lands after the local reader is solid."
             .into(),
         NavItem::Fanfiction => "Other fanfiction sources, same adapter pattern as AO3.\n\n\

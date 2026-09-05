@@ -177,7 +177,7 @@ architecture.
    pager; cover-format fix; Webtoon + LTR/RTL drawer; all loose ends tied). Next:
    **P9 — Manga platform** (same `Source` trait, `ContentKind::Images`;
    MangaDex official API built in — moved here from P7 on 2026-09-04 — then
-   Komga/Kavita/OPDS clients, scraped sites as Lua plugins later).
+   Komga/Kavita/OPDS clients, scraped sites as pure Rust + TOML config).
 4. **P6 + P7 — Downloads hub and the fiction client**, **combined 2026-09-04**
    and done together: a queue with nothing to download is a shell, and a client
    that fetches things needs somewhere for those jobs to live. Building them

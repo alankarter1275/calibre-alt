@@ -9,7 +9,7 @@ pub enum NavItem {
     Shelves,
     Downloads,
     Comics,
-    Ao3,
+    RemoteBrowse,
     Fanfiction,
     Settings,
 }
@@ -21,7 +21,7 @@ impl NavItem {
         NavItem::Shelves,
         NavItem::Downloads,
         NavItem::Comics,
-        NavItem::Ao3,
+        NavItem::RemoteBrowse,
         NavItem::Fanfiction,
         NavItem::Settings,
     ];
@@ -33,7 +33,7 @@ impl NavItem {
             NavItem::Shelves => "Shelves",
             NavItem::Downloads => "Downloads",
             NavItem::Comics => "Comics",
-            NavItem::Ao3 => "AO3",
+            NavItem::RemoteBrowse => "Browse",
             NavItem::Fanfiction => "Fanfic",
             NavItem::Settings => "Settings",
         }
@@ -46,7 +46,7 @@ impl NavItem {
             NavItem::Shelves => "view-grid-symbolic",
             NavItem::Downloads => "folder-download-symbolic",
             NavItem::Comics => "image-x-generic-symbolic",
-            NavItem::Ao3 => "internet-web-browser-symbolic",
+            NavItem::RemoteBrowse => "network-workgroup-symbolic",
             NavItem::Fanfiction => "document-edit-symbolic",
             NavItem::Settings => "emblem-system-symbolic",
         }
@@ -76,6 +76,14 @@ pub enum Route {
     BookPage {
         book_id: i64,
     },
+    RemoteDetail {
+        source_id: String,
+        remote_id: String,
+    },
+    RemoteReader {
+        source_id: String,
+        chapter_id: String,
+    },
     /// Immersive EPUB reader.
     Reader {
         book_id: i64,
@@ -93,12 +101,13 @@ impl Route {
             Route::LibrarySection(_) => NavItem::Library,
             Route::ShelvesGrid | Route::ShelfDetail { .. } => NavItem::Shelves,
             Route::TagBooks { .. } | Route::AuthorPage { .. } => NavItem::Library,
-            Route::BookPage { .. } | Route::Reader { .. } | Route::ComicsReader { .. } => NavItem::Library,
+            Route::BookPage { .. } | Route::Reader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. } => NavItem::Library,
+            Route::RemoteDetail { .. } => NavItem::RemoteBrowse,
         }
     }
 
     pub fn is_reader(&self) -> bool {
-        matches!(self, Route::Reader { .. } | Route::ComicsReader { .. })
+        matches!(self, Route::Reader { .. } | Route::ComicsReader { .. } | Route::RemoteReader { .. })
     }
 }
 

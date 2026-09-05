@@ -9,6 +9,8 @@ use crate::pages::{
     book::{BookPageModel, BookPageOut},
     book_float::{BookFloatModel, BookFloatOut},
     comics::{ComicsModel, ComicsOut},
+    browse::{BrowseModel, BrowseOut},
+    remote_detail::{RemoteDetailModel, RemoteDetailOut, RemoteDetailInit},
     comics_reader::{ComicsReaderModel, ComicsReaderOut},
     history::{HistoryModel, HistoryOut},
     home::{HomeOut, HomePageModel},
@@ -88,6 +90,8 @@ enum PageSlot {
     Reader(Controller<ReaderModel>),
     Comics(Controller<ComicsModel>),
     ComicsReader(Controller<ComicsReaderModel>),
+    RemoteBrowse(Controller<BrowseModel>),
+    RemoteDetail(Controller<RemoteDetailModel>),
     Settings(Controller<SettingsPageModel>),
     Placeholder(Controller<PlaceholderPageModel>),
 }
@@ -113,6 +117,8 @@ impl PageSlot {
             PageSlot::Reader(c) => c.widget().clone().upcast(),
             PageSlot::Comics(c) => c.widget().clone().upcast(),
             PageSlot::ComicsReader(c) => c.widget().clone().upcast(),
+            PageSlot::RemoteBrowse(c) => c.widget().clone().upcast(),
+            PageSlot::RemoteDetail(c) => c.widget().clone().upcast(),
             PageSlot::Settings(c) => c.widget().clone().upcast(),
             PageSlot::Placeholder(c) => c.widget().clone().upcast(),
         }
@@ -139,6 +145,7 @@ enum Floating {
 
 pub struct AppModel {
     catalog: Arc<Catalog>,
+    source_manager: Arc<crate::sources::SourceManager>,
     route: Route,
     history: Vec<Route>,
     sidebar_override: Option<NavItem>,
@@ -179,7 +186,9 @@ fn cache_key(route: &Route) -> Option<String> {
         | Route::AuthorPage { .. }
         | Route::BookPage { .. }
         | Route::Reader { .. }
-        | Route::ComicsReader { .. } => None,
+        | Route::ComicsReader { .. }
+        | Route::RemoteDetail { .. }
+        | Route::RemoteReader { .. } => None,
     }
 }
 
@@ -344,6 +353,7 @@ impl AppModel {
 
     fn build_page(
         catalog: &Arc<Catalog>,
+        source_manager: &Arc<crate::sources::SourceManager>,
         route: &Route,
         sender: &ComponentSender<Self>,
     ) -> PageSlot {
@@ -545,10 +555,38 @@ impl AppModel {
                     });
                 PageSlot::Reader(ctrl)
             }
+
+            Route::RemoteReader { source_id, chapter_id } => {
+                let init = crate::pages::comics_reader::types::ComicsReaderInit {
+                    title: format!("Chapter {}", chapter_id),
+                    provider: std::sync::Arc::new(
+                        crate::pages::comics_reader::providers::RemoteProvider::new(
+                            source_manager.clone(),
+                            source_id.clone(),
+                            chapter_id.clone(),
+                        ).unwrap()
+                    ),
+                };
+                let ctrl = ComicsReaderModel::builder()
+                    .launch(init)
+                    .forward(sender.input_sender(), |out| match out {
+                        ComicsReaderOut::Close => AppMsg::Back,
+                    });
+                PageSlot::ComicsReader(ctrl)
+            }
+
             Route::ComicsReader { book_id } => {
                 let id = *book_id;
+                let book = catalog.get_book(id).unwrap().unwrap();
+                let provider = std::sync::Arc::new(
+                    crate::pages::comics_reader::providers::LocalProvider::new(book.file_path.clone()).unwrap()
+                );
+                let init = crate::pages::comics_reader::types::ComicsReaderInit {
+                    title: book.title.clone(),
+                    provider,
+                };
                 let ctrl = ComicsReaderModel::builder()
-                    .launch((catalog.clone(), id))
+                    .launch(init)
                     .forward(sender.input_sender(), |out| match out {
                         ComicsReaderOut::Close => AppMsg::Back,
                     });
@@ -568,6 +606,34 @@ impl AppModel {
                     .launch(catalog.clone())
                     .detach();
                 PageSlot::Settings(ctrl)
+            }
+            Route::Module(NavItem::RemoteBrowse) => {
+                let ctrl = BrowseModel::builder()
+                    .launch(source_manager.clone())
+                    .forward(sender.input_sender(), |out| match out {
+                        BrowseOut::OpenRemoteBook { source_id, remote_id } => {
+                            AppMsg::Push(Route::RemoteDetail { source_id, remote_id })
+                        }
+                    });
+                PageSlot::RemoteBrowse(ctrl)
+            }
+            Route::RemoteDetail { source_id, remote_id } => {
+                let init = RemoteDetailInit {
+                    manager: source_manager.clone(),
+                    source_id: source_id.clone(),
+                    remote_id: remote_id.clone(),
+                };
+                let ctrl = RemoteDetailModel::builder()
+                    .launch(init)
+                    .forward(sender.input_sender(), |out| match out {
+                        RemoteDetailOut::Back => AppMsg::Back,
+                        RemoteDetailOut::OpenReader { .. } => {
+                            // Stub for now. We will wire it up in Step 6.
+                            println!("Reading remote chapters is not yet implemented in reader!");
+                            AppMsg::Back // Just go back for now
+                        }
+                    });
+                PageSlot::RemoteDetail(ctrl)
             }
             Route::Module(item) => {
                 let ctrl = PlaceholderPageModel::builder().launch(*item).detach();
@@ -644,7 +710,7 @@ impl AppModel {
         self.cache_token = token;
 
         // Rebuild the same route in place — no history push.
-        let page = Self::build_page(&self.catalog, &self.route, sender);
+        let page = Self::build_page(&self.catalog, &self.source_manager, &self.route, sender);
         content_host.append(&page.widget());
         self.page = Some(page);
     }
@@ -674,7 +740,7 @@ impl AppModel {
         // `KALAM_TIMING=1` these two counters say whether the cache is
         // earning its keep or is dead weight.
         crate::timing::note("page_cache_miss", 1);
-        Self::build_page(&self.catalog, &self.route, sender)
+        Self::build_page(&self.catalog, &self.source_manager, &self.route, sender)
     }
 }
 
@@ -939,9 +1005,10 @@ impl Component for AppModel {
             },
         );
 
+        let source_manager = std::sync::Arc::new(crate::sources::SourceManager::new());
         let initial_route = Route::Module(NavItem::Home);
         crate::timing::span("startup_first_page");
-        let page = Self::build_page(&catalog, &initial_route, &sender);
+        let page = Self::build_page(&catalog, &source_manager, &initial_route, &sender);
         crate::timing::span_end("startup_first_page");
 
         let float_scrim = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -969,6 +1036,7 @@ impl Component for AppModel {
         let cache_token = catalog.change_token();
         let model = AppModel {
             catalog,
+            source_manager,
             route: initial_route,
             history: Vec::new(),
             sidebar_override: None,
@@ -1331,7 +1399,7 @@ fn route_by_name(name: &str) -> Option<Route> {
         "library" => Route::Module(NavItem::Library),
         "downloads" => Route::Module(NavItem::Downloads),
         "comics" => Route::Module(NavItem::Comics),
-        "ao3" => Route::Module(NavItem::Ao3),
+        "browse" => Route::Module(NavItem::RemoteBrowse),
         "fanfiction" => Route::Module(NavItem::Fanfiction),
         "settings" => Route::Module(NavItem::Settings),
         "shelves" => Route::ShelvesGrid,
@@ -1356,7 +1424,7 @@ fn known_route_names() -> Vec<&'static str> {
         "library",
         "downloads",
         "comics",
-        "ao3",
+        "browse",
         "fanfiction",
         "settings",
         "shelves",

@@ -774,6 +774,38 @@ impl Catalog {
                 fetched_at TEXT NOT NULL,
                 works_json TEXT NOT NULL
             );
+            -- v11: remote content platform (Manga/Fiction)
+            CREATE TABLE IF NOT EXISTS remote_books (
+                id             TEXT PRIMARY KEY, -- uuid
+                source_id      TEXT NOT NULL,    -- e.g. "mangadex"
+                remote_id      TEXT NOT NULL,    -- unique ID from the source
+                title          TEXT NOT NULL,
+                author         TEXT NOT NULL,
+                description    TEXT NOT NULL,
+                cover_url      TEXT,
+                added_at       TEXT NOT NULL,
+                last_update_at TEXT,
+                status         TEXT NOT NULL DEFAULT 'Ongoing'
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_remote_books_source_remote 
+                ON remote_books(source_id, remote_id);
+
+            CREATE TABLE IF NOT EXISTS remote_chapters (
+                id             TEXT PRIMARY KEY, -- uuid
+                book_id        TEXT NOT NULL REFERENCES remote_books(id) ON DELETE CASCADE,
+                chapter_id     TEXT NOT NULL,    -- remote chapter ID
+                title          TEXT NOT NULL,
+                number         REAL NOT NULL,    -- FLOAT
+                volume         REAL,             -- FLOAT
+                url            TEXT,
+                read_status    TEXT NOT NULL DEFAULT 'Unread', -- 'Unread', 'Reading', 'Read'
+                fetched_at     TEXT NOT NULL,
+                downloaded_path TEXT             -- Future proofing for local CBZ downloads
+            );
+            CREATE INDEX IF NOT EXISTS idx_remote_chapters_book 
+                ON remote_chapters(book_id);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_remote_chapters_book_chapter
+                ON remote_chapters(book_id, chapter_id);
             "#,
         )?;
 

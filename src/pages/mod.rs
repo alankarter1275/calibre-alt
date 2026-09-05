@@ -35,3 +35,5 @@ pub mod shelf_detail;
 pub mod shelf_editor;
 pub mod shelves_grid;
 pub mod tags;
+pub mod browse;
+pub mod remote_detail;

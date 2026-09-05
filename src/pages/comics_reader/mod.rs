@@ -5,6 +5,8 @@
 //! floating minimal chrome, and bounded memory caching.
 
 pub mod types;
+pub mod provider;
+pub mod providers;
 
 pub use types::*;
 
@@ -18,11 +20,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub struct ComicsReaderModel {
-    catalog: Arc<Catalog>,
-    #[allow(dead_code)]
-    pub book_id: i64,
-    pub book: Option<Book>,
-    pub pages: Vec<String>,
+    pub title: String,
+    pub provider: Arc<dyn provider::ImageProvider>,
     pub current_page: usize,
     pub direction: ReadingDirection,
     pub fit_mode: FitMode,
@@ -32,19 +31,10 @@ pub struct ComicsReaderModel {
 }
 
 impl ComicsReaderModel {
-    pub fn new(catalog: Arc<Catalog>, book_id: i64) -> Self {
-        let book = catalog.get_book(book_id).ok().flatten();
-        let pages = if let Some(ref b) = book {
-            list_comic_pages(&b.file_path).unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-
-        let mut model = Self {
-            catalog,
-            book_id,
-            book,
-            pages,
+    pub fn new(init: types::ComicsReaderInit) -> Self {
+        let model = Self {
+            title: init.title,
+            provider: init.provider,
             current_page: 0,
             direction: ReadingDirection::Ltr,
             fit_mode: FitMode::Width,
@@ -53,57 +43,80 @@ impl ComicsReaderModel {
             textures: HashMap::new(),
         };
 
-        model.preload_nearby_pages();
+        // Note: we can't spawn tasks directly from new without the sender,
+        // so preload_nearby_pages must be called from `init` trait method,
+        // or we handle loading synchronously if it's local.
+        // For now we just return the model and let `init` trigger the fetch.
         model
     }
 
-    /// Keep memory bounded: decode only current_page ± 2 adjacent pages.
-    fn preload_nearby_pages(&mut self) {
-        if self.pages.is_empty() {
-            return;
+    /// Ask the provider for images in the window `curr ± 2`.
+    /// Note: this now returns a list of indices we need to fetch via a task.
+    fn get_missing_pages(&mut self) -> Vec<usize> {
+        let total = self.provider.page_count();
+        if total == 0 {
+            return Vec::new();
         }
-        let total = self.pages.len();
         let curr = self.current_page;
-
         let min_keep = curr.saturating_sub(2);
         let max_keep = (curr + 2).min(total.saturating_sub(1));
 
         // Retain only textures inside [min_keep, max_keep]
         self.textures.retain(|&idx, _| idx >= min_keep && idx <= max_keep);
 
-        // Load missing textures in window
-        if let Some(ref b) = self.book {
-            for idx in min_keep..=max_keep {
-                if !self.textures.contains_key(&idx) {
-                    if let Some(page_name) = self.pages.get(idx) {
-                        if let Ok(bytes) = extract_comic_page(&b.file_path, page_name) {
-                            let gbytes = glib::Bytes::from(&bytes);
-                            if let Ok(tex) = gdk::Texture::from_bytes(&gbytes) {
-                                self.textures.insert(idx, tex);
-                            }
-                        }
-                    }
-                }
+        let mut missing = Vec::new();
+        for idx in min_keep..=max_keep {
+            if !self.textures.contains_key(&idx) {
+                missing.push(idx);
             }
         }
+        missing
     }
 
     pub fn set_page(&mut self, idx: usize) {
-        if self.pages.is_empty() {
+        let total = self.provider.page_count();
+        if total == 0 {
             return;
         }
-        let clamped = idx.clamp(0, self.pages.len() - 1);
+        let clamped = idx.clamp(0, total - 1);
         self.current_page = clamped;
-        self.preload_nearby_pages();
+        
+        // Note: DB progress saving will need to be re-added via the new abstraction later
+    }
 
-        // Save progress to database
-        if let Some(ref b) = self.book {
-            let _ = self.catalog.set_reading_progress(b.id, clamped, 0.0, self.pages.len());
+    pub fn trigger_loads(&mut self, sender: &relm4::ComponentSender<Self>) {
+        let missing = self.get_missing_pages();
+        let provider = self.provider.clone();
+
+        for idx in missing {
+            // Insert a dummy texture or mark as loading if we wanted to be strict.
+            // For now, just spawn the task if it's not already in textures.
+            // If it's already fetching, it might fetch twice if we change pages fast.
+            let s = sender.clone();
+            let prov = provider.clone();
+            crate::tasks::spawn(
+                move |_| {
+                    prov.fetch_page(idx).ok()
+                },
+                |_| {},
+                move |bytes| {
+                    if let Some(b) = bytes {
+                        let gbytes = glib::Bytes::from(&b);
+                        if let Ok(tex) = gdk::Texture::from_bytes(&gbytes) {
+                            s.input(types::ComicsReaderMsg::PageLoaded(idx, Some(tex)));
+                        } else {
+                            s.input(types::ComicsReaderMsg::PageLoaded(idx, None));
+                        }
+                    } else {
+                        s.input(types::ComicsReaderMsg::PageLoaded(idx, None));
+                    }
+                }
+            );
         }
     }
 
     pub fn next_page(&mut self) {
-        if self.current_page + 1 < self.pages.len() {
+        if self.current_page + 1 < self.provider.page_count() {
             self.set_page(self.current_page + 1);
         }
     }
@@ -117,7 +130,7 @@ impl ComicsReaderModel {
 
 #[relm4::component(pub)]
 impl Component for ComicsReaderModel {
-    type Init = (Arc<Catalog>, i64);
+    type Init = types::ComicsReaderInit;
     type Input = ComicsReaderMsg;
     type Output = ComicsReaderOut;
     type CommandOutput = ();
@@ -196,7 +209,7 @@ impl Component for ComicsReaderModel {
 
                         gtk::Label {
                             #[watch]
-                            set_label: model.book.as_ref().map(|b| b.title.as_str()).unwrap_or("Comic"),
+                            set_label: &model.title,
                             add_css_class: "kalam-comics-title",
                             set_ellipsize: gtk::pango::EllipsizeMode::End,
                             set_halign: gtk::Align::Start,
@@ -212,7 +225,7 @@ impl Component for ComicsReaderModel {
                             set_label: &format!(
                                 "Page {} of {}",
                                 model.current_page + 1,
-                                model.pages.len().max(1)
+                                model.provider.page_count().max(1)
                             ),
                             add_css_class: "kalam-comics-page-count",
                         },
@@ -277,7 +290,7 @@ impl Component for ComicsReaderModel {
                         set_draw_value: false,
                         add_css_class: "kalam-comics-slider",
                         #[watch]
-                        set_range: (0.0, (model.pages.len().saturating_sub(1)) as f64),
+                        set_range: (0.0, (model.provider.page_count().saturating_sub(1)) as f64),
                         #[watch]
                         set_value: model.current_page as f64,
                         connect_value_changed[sender] => move |scale| {
@@ -289,7 +302,7 @@ impl Component for ComicsReaderModel {
                     // Page indicator pill
                     gtk::Label {
                         #[watch]
-                        set_label: &format!("{}/{}", model.current_page + 1, model.pages.len().max(1)),
+                        set_label: &format!("{}/{}", model.current_page + 1, model.provider.page_count().max(1)),
                         add_css_class: "kalam-comics-pill-label",
                         set_valign: gtk::Align::Center,
                     },
@@ -486,11 +499,12 @@ impl Component for ComicsReaderModel {
     }
 
     fn init(
-        (catalog, book_id): Self::Init,
+        init: Self::Init,
         root: Self::Root,
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
-        let model = ComicsReaderModel::new(catalog, book_id);
+        let mut model = ComicsReaderModel::new(init);
+        model.trigger_loads(&sender);
         let widgets = view_output!();
 
         // Paint current page texture if available
@@ -545,17 +559,25 @@ impl Component for ComicsReaderModel {
         match msg {
             ComicsReaderMsg::SetPage(idx) => {
                 self.set_page(idx);
+                self.trigger_loads(&sender);
             }
             ComicsReaderMsg::NextPage => {
                 match self.direction {
                     ReadingDirection::Ltr | ReadingDirection::Webtoon => self.next_page(),
                     ReadingDirection::Rtl => self.prev_page(),
                 }
+                self.trigger_loads(&sender);
             }
             ComicsReaderMsg::PrevPage => {
                 match self.direction {
                     ReadingDirection::Ltr | ReadingDirection::Webtoon => self.prev_page(),
                     ReadingDirection::Rtl => self.next_page(),
+                }
+                self.trigger_loads(&sender);
+            }
+            ComicsReaderMsg::PageLoaded(idx, maybe_tex) => {
+                if let Some(tex) = maybe_tex {
+                    self.textures.insert(idx, tex);
                 }
             }
             ComicsReaderMsg::ToggleDirection => {
@@ -596,12 +618,7 @@ impl Component for ComicsReaderModel {
                     let _ = sender.output(ComicsReaderOut::Close);
                 }
             }
-            ComicsReaderMsg::PageLoaded { index, data } => {
-                let gbytes = glib::Bytes::from(&data);
-                if let Ok(tex) = gdk::Texture::from_bytes(&gbytes) {
-                    self.textures.insert(index, tex);
-                }
-            }
+
         }
 
         // Update active texture on picture widget

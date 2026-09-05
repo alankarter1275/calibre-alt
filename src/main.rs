@@ -23,6 +23,7 @@ mod preload;
 mod service;
 mod shelf_rules;
 mod sidecar;
+mod sources;
 mod style;
 mod tasks;
 mod theme;

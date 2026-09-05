@@ -70,6 +70,7 @@ impl FitMode {
 
 #[derive(Debug)]
 pub enum ComicsReaderMsg {
+    PageLoaded(usize, Option<gtk::gdk::Texture>),
     SetPage(usize),
     NextPage,
     PrevPage,
@@ -81,8 +82,7 @@ pub enum ComicsReaderMsg {
     ToggleSettings,
     CloseSettings,
     Close,
-    #[allow(dead_code)]
-    PageLoaded { index: usize, data: Vec<u8> },
+
 }
 
 #[derive(Debug)]
@@ -90,3 +90,13 @@ pub enum ComicsReaderOut {
     Close,
 }
 
+
+pub enum ReaderContext {
+    Local(i64), // book_id
+    Remote { source_id: String, chapter_id: String },
+}
+
+pub struct ComicsReaderInit {
+    pub title: String,
+    pub provider: std::sync::Arc<dyn super::provider::ImageProvider>,
+}
