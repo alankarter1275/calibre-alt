@@ -1,3 +1,3 @@
-src/libraries.rs:79:12: [1m[91merror[0m: methods `forget` and `select` are never used
+src/sidecar.rs:160:8: [1m[91merror[0m: function `read_sidecar` is never used
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
---- run 33911173448 ---
+--- run 33935177155 ---
