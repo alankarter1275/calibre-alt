@@ -1,4 +1,4 @@
 (no lines matched; last 100 lines of output)
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/calibre-alt/calibre-alt)
-[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 6.47s
---- run 33941422336 ---
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 7.31s
+--- run 33942807969 ---
