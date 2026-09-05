@@ -45,8 +45,8 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if ext != "epub" {
-        return Err(anyhow!("only .epub is supported in P1 (got .{ext})"));
+    if ext != "epub" && ext != "cbz" && ext != "cbr" {
+        return Err(anyhow!("unsupported file format .{ext} (expected .epub, .cbz, or .cbr)"));
     }
 
     let hash = db::hash_file(source)?;
@@ -63,43 +63,95 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         });
     }
 
-    let meta = parse_epub_meta(source)?;
-    let title = meta
-        .title
-        .as_ref()
-        .map(|t| t.trim())
-        .filter(|t| !t.is_empty())
-        .map(|t| t.to_string())
-        .unwrap_or_else(|| {
-            source
+    let (title, authors, description, series, tags, format, file_name, cover_name) =
+        if ext == "cbz" || ext == "cbr" {
+            let title = source
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "Untitled".into())
-        });
-    let authors = if meta.authors.is_empty() {
-        "Unknown".to_string()
-    } else {
-        meta.authors.join(", ")
-    };
-    let description = strip_html(&meta.description.clone().unwrap_or_default());
-    let series = meta.series.clone();
-    let tags = meta.subjects.clone();
+                .unwrap_or_else(|| "Untitled Comic".into());
+            let authors = "Unknown".to_string();
+            let format = if ext == "cbz" {
+                BookFormat::Cbz
+            } else {
+                BookFormat::Cbr
+            };
+            let file_name = format!("book.{ext}");
+
+            let cover_name = if let Ok(cover_bytes) = crate::comics::extract_comic_cover(source) {
+                let cover_file = "cover.jpg";
+                // Will be written once dest_dir is created below
+                Some((cover_file.to_string(), cover_bytes))
+            } else {
+                None
+            };
+
+            (
+                title,
+                authors,
+                String::new(),
+                None,
+                Vec::new(),
+                format,
+                file_name,
+                cover_name,
+            )
+        } else {
+            let meta = parse_epub_meta(source)?;
+            let title = meta
+                .title
+                .as_ref()
+                .map(|t| t.trim())
+                .filter(|t| !t.is_empty())
+                .map(|t| t.to_string())
+                .unwrap_or_else(|| {
+                    source
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "Untitled".into())
+                });
+            let authors = if meta.authors.is_empty() {
+                "Unknown".to_string()
+            } else {
+                meta.authors.join(", ")
+            };
+            let description = strip_html(&meta.description.clone().unwrap_or_default());
+            let series = meta.series.clone();
+            let tags = meta.subjects.clone();
+
+            (
+                title,
+                authors,
+                description,
+                series,
+                tags,
+                BookFormat::Epub,
+                "book.epub".to_string(),
+                None,
+            )
+        };
 
     let uuid = Uuid::new_v4().to_string();
     let dest_dir = book_dir(&uuid);
     fs::create_dir_all(&dest_dir)?;
 
-    let file_name = "book.epub";
-    let dest_epub = dest_dir.join(file_name);
-    fs::copy(source, &dest_epub)
-        .with_context(|| format!("copy {} → {}", source.display(), dest_epub.display()))?;
+    let dest_file = dest_dir.join(&file_name);
+    fs::copy(source, &dest_file)
+        .with_context(|| format!("copy {} → {}", source.display(), dest_file.display()))?;
 
-    let cover_name = extract_cover(source, &meta, &dest_dir)?;
+    let final_cover_name = if format == BookFormat::Epub {
+        let meta = parse_epub_meta(source)?;
+        extract_cover(source, &meta, &dest_dir)?
+    } else if let Some((cover_filename, cover_bytes)) = cover_name {
+        if fs::write(dest_dir.join(&cover_filename), cover_bytes).is_ok() {
+            Some(cover_filename)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
 
-    // A0 step 3: generate a persistent thumbnail at import so the grid decodes
-    // a tiny PNG instead of the full cover. Best-effort — a failure here just
-    // means the grid falls back to the full cover.
-    if let Some(cover) = &cover_name {
+    if let Some(cover) = &final_cover_name {
         crate::thumbs::generate_thumbnail(
             &dest_dir.join(cover),
             &crate::paths::thumbnail_path(&uuid),
@@ -112,10 +164,10 @@ pub fn import_epub(catalog: &Catalog, source: &Path) -> Result<ImportResult> {
         &authors,
         series.as_deref(),
         &description,
-        BookFormat::Epub,
-        file_name,
+        format,
+        &file_name,
         &hash,
-        cover_name.as_deref(),
+        final_cover_name.as_deref(),
         &tags,
     )?;
 
@@ -898,5 +950,15 @@ mod tests {
     fn normalize_zip_name_strips_leading_dot_slash_and_backslashes() {
         assert_eq!(normalize_zip_name("./OEBPS\\content.opf"), "oebps/content.opf");
         assert_eq!(normalize_zip_name("OEBPS/content.opf"), "oebps/content.opf");
+    }
+
+    #[test]
+    fn import_epub_rejects_unsupported_extensions() {
+        let cat = Catalog::open_in_memory().unwrap();
+        let unsupported = std::env::temp_dir().join("test_unsupported.txt");
+        std::fs::write(&unsupported, b"hello").unwrap();
+        let err = import_epub(&cat, &unsupported).unwrap_err();
+        assert!(err.to_string().contains("unsupported file format"));
+        let _ = std::fs::remove_file(&unsupported);
     }
 }

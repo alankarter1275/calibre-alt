@@ -8,6 +8,7 @@ use crate::pages::{
     author::{AuthorPageModel, AuthorPageOut},
     book::{BookPageModel, BookPageOut},
     book_float::{BookFloatModel, BookFloatOut},
+    comics::{ComicsModel, ComicsOut},
     comics_reader::{ComicsReaderModel, ComicsReaderOut},
     history::{HistoryModel, HistoryOut},
     home::{HomeOut, HomePageModel},
@@ -85,6 +86,7 @@ enum PageSlot {
     Author(Controller<AuthorPageModel>),
     Book(Controller<BookPageModel>),
     Reader(Controller<ReaderModel>),
+    Comics(Controller<ComicsModel>),
     ComicsReader(Controller<ComicsReaderModel>),
     Settings(Controller<SettingsPageModel>),
     Placeholder(Controller<PlaceholderPageModel>),
@@ -109,6 +111,7 @@ impl PageSlot {
             PageSlot::Author(c) => c.widget().clone().upcast(),
             PageSlot::Book(c) => c.widget().clone().upcast(),
             PageSlot::Reader(c) => c.widget().clone().upcast(),
+            PageSlot::Comics(c) => c.widget().clone().upcast(),
             PageSlot::ComicsReader(c) => c.widget().clone().upcast(),
             PageSlot::Settings(c) => c.widget().clone().upcast(),
             PageSlot::Placeholder(c) => c.widget().clone().upcast(),
@@ -550,6 +553,15 @@ impl AppModel {
                         ComicsReaderOut::Close => AppMsg::Back,
                     });
                 PageSlot::ComicsReader(ctrl)
+            }
+            Route::Module(NavItem::Comics) => {
+                let ctrl = ComicsModel::builder()
+                    .launch(catalog.clone())
+                    .forward(sender.input_sender(), |out| match out {
+                        ComicsOut::OpenComic { book_id } => AppMsg::OpenReader { book_id },
+                        ComicsOut::OpenBookDialog { book_id } => AppMsg::OpenBookDialog { book_id },
+                    });
+                PageSlot::Comics(ctrl)
             }
             Route::Module(NavItem::Settings) => {
                 let ctrl = SettingsPageModel::builder()

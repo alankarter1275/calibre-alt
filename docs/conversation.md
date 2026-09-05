@@ -1569,8 +1569,11 @@ Implemented local comic archive reading and interactive Relm4 comics viewer comp
 3. **Viewport Memory Safety:**
    Implemented lazy image texture decoding for `current_page ± 2` adjacent pages into `HashMap<usize, gdk::Texture>`. Texture entries outside the active window are discarded to keep memory usage strictly bounded even when reading high-resolution multi-hundred-page comic archives.
 
-4. **App Routing Integration (`src/app.rs`):**
-   Updated `AppMsg::OpenReader` to check format; CBZ and CBR books automatically route to `Route::ComicsReader { book_id }` while EPUB/text books route to `Route::Reader`. Added `Route::ComicsReader { .. } => None` cache key to ensure reader pages are unmounted cleanly when closing.
+5. **CBZ / CBR Import Support (`src/epub.rs` & file pickers):**
+   Updated `import_epub` to accept `.cbz` and `.cbr` comic archives alongside `.epub`. Covers are automatically extracted from the first page of the comic archive via `extract_comic_cover` and thumbnail PNGs are generated. GTK file filters in `all_books.rs`, `home.rs`, and `comics.rs` updated to filter `*.cbz` and `*.cbr`.
+
+6. **Dedicated Comics Hub Page (`src/pages/comics.rs`):**
+   Replaced the placeholder page for `NavItem::Comics` with a dedicated `ComicsModel` Relm4 page. Features a header with book count status, "+ Import Comics" button, empty state view with call-to-action, search entry, and book grid. Clicking any comic card opens book details or directly launches the `ComicsReader`.
 
 ---
 
