@@ -1,0 +1,3574 @@
+/* ── base font ──────────────────────────────────────── */
+/* Nerd Fonts "Propo" (proportional) variants first, so UI text and
+ * fallback glyphs (✓, →, ·) never come from a mono-width nerd face;
+ * clean proportional fallbacks if none are installed. */
+* {
+    font-family: "JetBrains Mono Nerd Font Propo", "JetBrainsMono Nerd Font Propo",
+                 "Cascadia Code Nerd Font Propo", "FiraCode Nerd Font Propo",
+                 "Hack Nerd Font Propo", "Source Code Pro Nerd Font Propo",
+                 "Cantarell", "Noto Sans", sans-serif;
+}
+
+/* ── window ─────────────────────────────────────────── */
+window.kalam-window {
+    background: @kalam_bg;
+}
+
+/* ── scrollbars ─────────────────────────────────────── */
+/*  ⚠  READ src/style.rs's header before touching this block.  ⚠
+ *  ⚠  See also docs/pitfalls.md §5 — this trap has been walked into twice. ⚠
+ *
+ * A 5px pill, no outline, invisible until the pointer reaches the edge.
+ * Every line here exists because of a specific bug. In short:
+ *
+ *   - No `opacity` below 1, ever. It makes GTK render through an offscreen
+ *     surface, and a collapsed overlay scrollbar's surface is zero-sized:
+ *         *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
+ *     Hiding is done by making the slider's BACKGROUND transparent instead,
+ *     which costs nothing and cannot produce an invalid surface.
+ *
+ *   - `margin`, `border` and `padding` on the slider are all zeroed. GTK
+ *     subtracts them from the allocation, and Adwaita ships `margin: 4px` plus
+ *     `border: 4px solid transparent` — 16px total, which is exactly what made
+ *     every min-width I tried come out negative.
+ *
+ *   - Short selectors only. This sheet loads at APPLICATION priority (600) and
+ *     Adwaita at THEME (200), so `scrollbar slider` already wins; long
+ *     `:not()` chains are unnecessary and risk GTK dropping the whole rule.
+ *
+ *   - Reveal is driven by `scrollbar:hover`, never `scrolledwindow:hover`.
+ *     A scrolledwindow is the entire content area, so that lights the bar up
+ *     whenever the pointer is anywhere in the page. */
+scrollbar {
+    background: transparent;
+    border: none;
+}
+
+scrollbar trough {
+    background: transparent;
+    border: none;
+    margin: 0;
+}
+
+/* Transparent at rest: present and grabbable, simply unpainted. */
+scrollbar slider {
+    margin: 0;
+    border: none;
+    padding: 0;
+    min-width: 5px;
+    min-height: 36px;
+    border-radius: 999px;
+    background-color: transparent;
+    transition: background-color 130ms ease;
+}
+
+scrollbar.horizontal slider {
+    min-width: 36px;
+    min-height: 5px;
+}
+
+/* Visible only with the pointer on the bar. `.hovering` is GTK's own class for
+   the pointer being over the scrollbar; scrolling alone never sets it, so a
+   wheel or two-finger scroll shows nothing. */
+scrollbar:hover slider,
+scrollbar.hovering slider {
+    background-color: alpha(@kalam_text_dim, 0.55);
+}
+
+/* Theme accent while actually dragging the bar. */
+scrollbar.dragging slider,
+scrollbar slider:active {
+    background-color: @kalam_accent;
+}
+
+/* ── slim sidebar ───────────────────────────────────── */
+.kalam-sidebar {
+    background: @kalam_sidebar;
+    border-right: 1px solid @kalam_border;
+    /* Icon-only rail: 34px disc + 7px either side. */
+    min-width: 48px;
+    padding: 8px 0;
+}
+
+.kalam-sidebar-inner {
+    padding: 0 6px;
+}
+
+.kalam-brand {
+    padding: 2px 0 10px 0;
+}
+
+/* No size here on purpose. The exact size is set in code with
+   gtk::Image::set_pixel_size; a CSS min-width would only act as a floor and
+   could push the mark larger again. */
+
+.kalam-nav-btn {
+    padding: 0;
+    /* A circle, not a rounded square: width and height match, so a fully
+       round radius reads as a disc behind the glyph. */
+    border-radius: 999px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    background: transparent;
+    border: none;
+    color: @kalam_text_dim;
+    min-width: 34px;
+    min-height: 34px;
+}
+
+.kalam-nav-btn:hover {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+}
+
+.kalam-nav-btn.active {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    font-weight: 600;
+}
+
+.kalam-nav-icon {
+    color: inherit;
+    -gtk-icon-size: 18px;
+}
+
+.kalam-nav-spacer {
+    min-height: 0;
+}
+
+/* ── main column ────────────────────────────────────── */
+.kalam-main {
+    background: @kalam_bg;
+}
+
+.kalam-topbar {
+    background: @kalam_surface;
+    border-bottom: 1px solid @kalam_border;
+    padding: 10px 18px;
+    min-height: 52px;
+}
+
+.kalam-topbar-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-topbar-subtitle {
+    font-size: 0.8rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-content {
+    padding: 20px 24px;
+    background: @kalam_bg;
+    min-width: 0;
+}
+
+.kalam-content.kalam-content-with-back {
+    padding-top: 72px;
+}
+
+/* ── breadcrumbs / back ─────────────────────────────── */
+.kalam-back-btn {
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: @kalam_surface_2;
+    color: @kalam_text;
+    border: 1px solid @kalam_border;
+    font-size: 0.85rem;
+}
+
+.kalam-back-btn:hover {
+    background: @kalam_border;
+}
+
+.kalam-back-float {
+    background: alpha(@kalam_surface, 0.92);
+    box-shadow: 0 10px 26px alpha(#000, 0.28);
+}
+
+.kalam-back-float image {
+    color: inherit;
+    -gtk-icon-size: 16px;
+}
+
+/* ── page headings ──────────────────────────────────── */
+.kalam-page-title {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: @kalam_text;
+    margin-bottom: 4px;
+}
+
+.kalam-page-sub {
+    font-size: 0.9rem;
+    color: @kalam_text_dim;
+    margin-bottom: 18px;
+}
+
+/* ── cards (shelves grid, book cards, hub tiles) ─────── */
+.kalam-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 16px;
+    min-height: 96px;
+}
+
+.kalam-card:hover {
+    border-color: @kalam_accent;
+    background: @kalam_surface_2;
+}
+
+.kalam-card-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-card-meta {
+    font-size: 0.82rem;
+    color: @kalam_text_dim;
+    margin-top: 4px;
+}
+
+.kalam-card-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: @kalam_accent;
+    background: @kalam_accent_dim;
+    border-radius: 999px;
+    padding: 2px 8px;
+}
+
+/* ── hub tiles inside My Library ────────────────────── */
+.kalam-hub-grid {
+    margin-top: 8px;
+}
+
+.kalam-hub-tile {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 18px 14px;
+    min-width: 120px;
+}
+
+.kalam-hub-tile:hover {
+    border-color: @kalam_accent;
+}
+
+.kalam-hub-tile-icon {
+    font-size: 1.4rem;
+    margin-bottom: 6px;
+}
+
+.kalam-hub-tile-label {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-hub-tile-count {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: @kalam_accent;
+    margin-bottom: 2px;
+}
+
+.kalam-hub-tile-meta {
+    font-size: 0.75rem;
+    color: @kalam_text_dim;
+}
+
+/* ── book row in shelf list ─────────────────────────── */
+.kalam-cover-frame {
+    border-radius: 6px;
+    background: @kalam_surface_2;
+    padding: 0;
+    margin: 0;
+    border: none;
+    box-shadow: 0 2px 10px alpha(#000, 0.35);
+}
+
+.kalam-cover-placeholder {
+    background: linear-gradient(160deg, @kalam_surface_2 0%, @kalam_surface 100%);
+    border-radius: 6px;
+}
+
+.kalam-cover-img {
+    border-radius: 6px;
+}
+
+.kalam-progress {
+    font-size: 0.75rem;
+    color: @kalam_accent;
+}
+
+/* ── book detail page ───────────────────────────────── */
+.kalam-detail-cover {
+    border-radius: 10px;
+}
+
+.kalam-detail-title {
+    font-size: 1.7rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-detail-author {
+    font-size: 1.05rem;
+    color: @kalam_accent;
+    margin-bottom: 8px;
+}
+
+.kalam-author-links {
+    min-width: 0;
+}
+
+button.kalam-author-link {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    color: @kalam_accent;
+    padding: 0;
+    min-width: 0;
+    min-height: 0;
+}
+
+button.kalam-author-link label {
+    margin-top: 1px;
+    margin-bottom: 1px;
+}
+
+button.kalam-author-link:hover {
+    background: transparent;
+    color: @kalam_text;
+}
+
+button.kalam-author-link-detail {
+    font-size: 1.05rem;
+}
+
+button.kalam-author-link-float {
+    font-size: 0.94rem;
+    padding-top: 1px;
+    padding-bottom: 1px;
+    min-height: 24px;
+}
+
+button.kalam-author-link-float label {
+    padding-top: 1px;
+    padding-bottom: 1px;
+}
+
+button.kalam-author-link-reader {
+    font-size: 0.84rem;
+    color: @kalam_text_dim;
+}
+
+button.kalam-author-link-reader:hover {
+    color: @kalam_text;
+}
+
+.kalam-author-sep {
+    color: @kalam_text_dim;
+}
+
+.kalam-detail-section-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: @kalam_text_dim;
+    margin-top: 14px;
+    margin-bottom: 4px;
+}
+
+.kalam-chip {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 0.78rem;
+    border: 1px solid @kalam_border;
+}
+
+.kalam-primary-btn {
+    background: @kalam_accent;
+    color: @kalam_bg;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 10px 22px;
+    border: none;
+}
+
+.kalam-primary-btn:hover {
+    filter: brightness(1.08);
+}
+
+.kalam-secondary-btn {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+    border-radius: 999px;
+    padding: 10px 18px;
+    border: 1px solid @kalam_border;
+}
+
+.kalam-secondary-btn:hover {
+    border-color: @kalam_accent;
+}
+
+/* ── empty / placeholder ────────────────────────────── */
+.kalam-placeholder {
+    color: @kalam_text_dim;
+    font-size: 0.95rem;
+    padding: 24px;
+    border: 1px dashed @kalam_border;
+    border-radius: 12px;
+    background: alpha(@kalam_surface, 0.5);
+}
+
+.kalam-muted {
+    color: @kalam_text_dim;
+}
+
+.kalam-home-continue {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 16px;
+    padding: 20px;
+}
+
+.kalam-section-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    color: @kalam_text_dim;
+    margin-bottom: 10px;
+    margin-top: 8px;
+}
+
+.kalam-author-hero {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 22px;
+    padding: 24px 26px;
+}
+
+.kalam-author-side {
+    min-width: 240px;
+}
+
+.kalam-author-name {
+    font-size: 2.25rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-author-facts {
+    margin-top: 2px;
+}
+
+.kalam-author-fact-row {
+    min-height: 22px;
+}
+
+.kalam-author-fact-key {
+    min-width: 108px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: @kalam_text_dim;
+}
+
+.kalam-author-fact-val {
+    font-size: 0.92rem;
+    color: @kalam_text;
+}
+
+.kalam-author-bio {
+    margin-top: 8px;
+    font-size: 0.96rem;
+    color: @kalam_text;
+    line-height: 1.6;
+}
+
+.kalam-author-photo-wrap {
+    min-width: 220px;
+    min-height: 220px;
+}
+
+.kalam-author-photo-shell,
+.kalam-author-photo,
+.kalam-author-photo-shell .kalam-cover-img {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    border-radius: 999px;
+}
+
+.kalam-author-photo-placeholder {
+    background: linear-gradient(160deg, @kalam_surface_2 0%, @kalam_surface 100%);
+    border: none;
+    border-radius: 999px;
+}
+
+.kalam-author-photo-initials {
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+button.kalam-author-photo-refresh {
+    min-width: 38px;
+    min-height: 38px;
+    padding: 0;
+    margin: 0 10px 10px 0;
+    border: none;
+    border-radius: 999px;
+    background: alpha(@kalam_surface, 0.94);
+    color: @kalam_text;
+    box-shadow: 0 10px 20px alpha(#000, 0.28);
+}
+
+button.kalam-author-photo-refresh:hover {
+    background: @kalam_surface;
+    color: @kalam_accent;
+}
+
+.kalam-author-photo-refresh image {
+    -gtk-icon-size: 16px;
+}
+
+.kalam-author-stats-grid {
+    margin-top: 2px;
+}
+
+.kalam-author-stat-disc {
+    border-radius: 999px;
+    padding: 0;
+}
+
+.kalam-author-stat-disc-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: inherit;
+}
+
+.kalam-author-stat-disc-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: inherit;
+}
+
+.kalam-author-stat-owned {
+    background: alpha(@kalam_accent, 0.18);
+    color: @kalam_accent;
+}
+
+.kalam-author-stat-finished {
+    background: alpha(@kalam_success, 0.18);
+    color: @kalam_success;
+}
+
+.kalam-author-stat-reading {
+    background: alpha(@kalam_warning, 0.18);
+    color: @kalam_warning;
+}
+
+.kalam-author-stat-unread {
+    background: alpha(@kalam_text_dim, 0.14);
+    color: @kalam_text_dim;
+}
+
+.kalam-author-series-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 18px;
+    padding: 14px;
+}
+
+.kalam-author-series-title {
+    font-size: 1.02rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-author-series-meta {
+    font-size: 0.8rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-author-series-status {
+    margin-top: 2px;
+    font-size: 0.86rem;
+    color: @kalam_text;
+}
+
+.kalam-author-books-rail,
+.kalam-author-books-rail viewport {
+    background: transparent;
+}
+
+.kalam-author-books-strip {
+    padding-bottom: 4px;
+}
+
+.kalam-author-discovery-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 18px;
+    padding: 14px;
+}
+
+.kalam-author-discovery-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-author-discovery-meta {
+    font-size: 0.76rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-author-empty {
+    font-size: 0.9rem;
+    color: @kalam_text_dim;
+    padding-left: 2px;
+}
+
+/* ── cover cards (Goodreads-style bookshelf grid) ───── */
+.kalam-book-grid {
+    margin-top: 4px;
+}
+
+.kalam-book-grid-shell {
+}
+
+.kalam-book-card {
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+.kalam-book-card:hover .kalam-cover-frame {
+    box-shadow: 0 6px 18px alpha(#000, 0.5);
+}
+
+.kalam-book-card-title {
+    font-weight: 600;
+    font-size: 0.78rem;
+    color: @kalam_text;
+    min-width: 0;
+}
+
+.kalam-book-card-author {
+    font-size: 0.7rem;
+    color: @kalam_text_dim;
+    min-width: 0;
+}
+
+/* ── floating book panel ────────────────────────────── */
+.kalam-float-scrim {
+    background: alpha(@kalam_bg, 0.62);
+}
+
+.kalam-float-stage {
+    background: transparent;
+}
+
+/* In-app dialogs (A1): same shell as a float, but sized by content rather
+ * than the fixed 700x368 a book float needs. */
+.kalam-in-app-dialog {
+    min-width: 0px;
+    min-height: 0px;
+}
+
+.kalam-in-app-dialog-head {
+    padding: 14px 16px 10px 18px;
+}
+
+.kalam-in-app-dialog-body {
+    padding: 0px 18px 18px 18px;
+}
+
+.kalam-float {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 20px;
+    box-shadow: 0 30px 80px alpha(#000, 0.46), 0 8px 24px alpha(#000, 0.26);
+    padding: 0px;
+    min-width: 700px;
+    min-height: 368px;
+}
+
+.kalam-float-cover-col {
+    background: @kalam_surface_2;
+    border-right: 1px solid @kalam_border;
+    padding-top: 18px;
+    padding-right: 8px;
+    padding-bottom: 16px;
+    padding-left: 8px;
+}
+
+.kalam-float-cover-col,
+.kalam-float-right {
+    min-height: 0;
+}
+
+.kalam-float-cover-host {
+    min-height: 0;
+}
+
+.kalam-float-book-shell {
+    min-width: 126px;
+    min-height: 182px;
+}
+
+.kalam-float-book-edge {
+    background: alpha(@kalam_bg, 0.14);
+    border-radius: 5px;
+}
+
+.kalam-float-cover.kalam-cover-frame,
+.kalam-float-cover .kalam-cover-img,
+.kalam-float-cover .kalam-cover-placeholder {
+    border-radius: 8px;
+}
+
+.kalam-float-cover.kalam-cover-frame {
+    box-shadow: 0 12px 28px alpha(#000, 0.36);
+}
+
+.kalam-float-progress-wrap {
+    min-width: 0;
+}
+
+.kalam-float-progress-row {
+    min-height: 24px;
+}
+
+.kalam-float-progress-pct {
+    font-family: monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: @kalam_accent;
+    min-height: 18px;
+    padding-top: 3px;
+    padding-bottom: 1px;
+}
+
+.kalam-float-progress-loc {
+    font-family: monospace;
+    font-size: 0.66rem;
+    color: @kalam_text_dim;
+    min-height: 18px;
+    padding-top: 3px;
+    padding-bottom: 1px;
+}
+
+progressbar.kalam-float-progress {
+    min-height: 3px;
+}
+
+progressbar.kalam-float-progress trough {
+    background: @kalam_border;
+    border: none;
+    min-height: 3px;
+    border-radius: 999px;
+}
+
+progressbar.kalam-float-progress progress {
+    background: @kalam_accent;
+    min-height: 3px;
+    min-width: 3px;
+    border-radius: 999px;
+}
+
+.kalam-float-facts {
+    min-width: 0;
+}
+
+.kalam-float-fact {
+    min-width: 0;
+}
+
+.kalam-float-fact-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: @kalam_text_dim;
+    min-height: 0;
+    padding-top: 2px;
+    padding-bottom: 0;
+}
+
+.kalam-float-fact-val {
+    font-size: 0.76rem;
+    color: @kalam_text;
+    min-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.kalam-float-right {
+    background: @kalam_surface;
+    min-width: 0;
+}
+
+.kalam-float-topbar {
+    padding-top: 18px;
+    padding-right: 20px;
+    padding-bottom: 0;
+    padding-left: 20px;
+}
+
+.kalam-float-title {
+    font-size: 1.28rem;
+    font-weight: 600;
+    color: @kalam_text;
+    line-height: 1.24;
+    padding-top: 2px;
+    padding-right: 12px;
+}
+
+.kalam-float-series {
+    font-size: 0.75rem;
+    color: @kalam_text_dim;
+    margin-top: 2px;
+}
+
+.kalam-float-body {
+    padding-top: 10px;
+    padding-right: 22px;
+    padding-bottom: 18px;
+    padding-left: 20px;
+}
+
+.kalam-float-rating {
+    margin-top: 2px;
+}
+
+.kalam-float-rating-text {
+    font-size: 0.66rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-float-desc-scroll,
+.kalam-float-desc-scroll viewport {
+    background: transparent;
+    border: none;
+}
+
+.kalam-float-desc {
+    font-size: 0.82rem;
+    line-height: 1.62;
+    color: alpha(@kalam_text, 0.78);
+    padding-top: 2px;
+}
+
+/* The tag row scrolls sideways on one line — see the note in book_float.rs.
+ * The scroller owns the margins now; the inner box just holds the chips.
+ *
+ * No visible scrollbar, by request. `PolicyType::External` already stops GTK
+ * allocating one; the rule below makes certain nothing is painted if a theme
+ * puts one back. The row still scrolls by wheel, touchpad and drag.
+ *
+ * Note it hides by making the slider's BACKGROUND transparent, NOT with
+ * `opacity: 0` — see the scrollbar block at the top of this file: opacity
+ * renders through an offscreen surface, and a collapsed scrollbar's surface
+ * is zero-sized, which trips `pixman_region32_init_rect: Invalid rectangle`. */
+.kalam-float-tags-scroll {
+    margin-top: 0;
+    margin-bottom: 0;
+    background: transparent;
+}
+
+.kalam-float-tags-scroll > scrollbar,
+.kalam-float-tags-scroll > scrollbar slider {
+    background: transparent;
+    background-color: transparent;
+    border: none;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+}
+
+.kalam-float-tags {
+    background: transparent;
+}
+
+/* Tight against the tag row above it: the body already supplies 10px of
+ * spacing, and the description section takes all the slack, so extra padding
+ * here just reopens the gap the user asked to close. */
+.kalam-float-actions {
+    padding-top: 0;
+}
+
+button.kalam-float-read {
+    font-size: 0.85rem;
+    min-width: 0;
+    min-height: 40px;
+    padding-top: 0;
+    padding-right: 18px;
+    padding-bottom: 0;
+    padding-left: 18px;
+}
+
+button.kalam-float-icon-btn {
+    box-shadow: none;
+}
+
+button.kalam-float-icon-btn.active {
+    background: @kalam_accent_dim;
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+button.kalam-float-icon-btn.done-active {
+    background: alpha(@kalam_success, 0.14);
+    border-color: alpha(@kalam_success, 0.44);
+    color: @kalam_success;
+}
+
+button.kalam-float-icon-btn:focus {
+    box-shadow: none;
+}
+
+button.kalam-float-icon-btn.kalam-float-icon-btn-danger {
+    color: @kalam_danger;
+    border-color: alpha(@kalam_danger, 0.38);
+}
+
+button.kalam-float-icon-btn.kalam-float-icon-btn-danger:hover {
+    background: alpha(@kalam_danger, 0.09);
+    border-color: @kalam_danger;
+    color: @kalam_danger;
+}
+
+/* ── reader (mockup shell) ───────────────────────────── */
+.kalam-content.kalam-content-reader,
+.kalam-content.kalam-content-flush {
+    padding: 0;
+}
+
+.kalam-reader,
+.kalam-reader-stage,
+.kalam-reader-stage.kalam-reader-paper-light,
+.kalam-reader-stage.kalam-reader-paper-sepia,
+.kalam-reader-stage.kalam-reader-paper-dark,
+.kalam-reader-stage.kalam-reader-paper-ink {
+    background: @kalam_bg;
+}
+
+button.kalam-reader-dim {
+    background: alpha(@kalam_bg, 0.22);
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.kalam-reader-hover-edge {
+    background: transparent;
+}
+
+.kalam-reader-sidebar {
+    background: alpha(@kalam_sidebar, 0.97);
+    border: 1px solid alpha(@kalam_border, 0.95);
+    border-radius: 20px;
+    box-shadow: 0 22px 52px alpha(#000, 0.42);
+    padding: 0;
+}
+
+.kalam-reader-sidebar-left,
+.kalam-reader-sidebar-right {
+    border-radius: 20px;
+}
+
+.kalam-reader-book-head {
+    padding: 22px 18px 16px;
+    border-bottom: 1px solid alpha(@kalam_border, 0.9);
+}
+
+.kalam-reader-cover-slot {
+    min-width: 48px;
+}
+
+.kalam-reader-book-title {
+    font-size: 1.08rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-reader-book-author {
+    font-size: 0.84rem;
+    color: @kalam_text_dim;
+}
+
+progressbar.kalam-reader-progress {
+    min-height: 4px;
+    margin-top: 4px;
+}
+
+progressbar.kalam-reader-progress trough {
+    background: alpha(@kalam_border, 0.8);
+    border: none;
+    min-height: 4px;
+    border-radius: 999px;
+}
+
+progressbar.kalam-reader-progress progress {
+    background: @kalam_accent;
+    min-height: 4px;
+    min-width: 4px;
+    border-radius: 999px;
+}
+
+.kalam-reader-tabbar {
+    padding: 10px 10px 12px;
+    border-top: 1px solid alpha(@kalam_border, 0.9);
+}
+
+button.kalam-reader-tab {
+    background: transparent;
+    border: none;
+    border-radius: 12px;
+    color: @kalam_text_dim;
+    padding: 10px 4px;
+}
+
+button.kalam-reader-tab:hover {
+    background: alpha(@kalam_surface_2, 0.92);
+    color: @kalam_text;
+}
+
+button.kalam-reader-tab.active {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+}
+
+.kalam-reader-tab image {
+    -gtk-icon-size: 17px;
+}
+
+button.kalam-reader-tab > box {
+    min-width: 0;
+}
+
+button.kalam-reader-back {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    color: @kalam_text;
+    padding: 7px 11px 7px 8px;
+    box-shadow: 0 8px 22px alpha(#000, 0.24);
+}
+
+button.kalam-reader-back:hover {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+}
+
+.kalam-reader-back image {
+    -gtk-icon-size: 16px;
+}
+
+.kalam-reader-bottom-dock {
+    background: transparent;
+}
+
+.kalam-reader-bottom-pill {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    padding: 5px 6px;
+    box-shadow: 0 8px 24px alpha(#000, 0.26);
+}
+
+button.kalam-reader-pill-nav {
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0 11px;
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    color: @kalam_text;
+}
+
+button.kalam-reader-pill-nav:hover {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+}
+
+.kalam-reader-pill-nav image {
+    -gtk-icon-size: 15px;
+}
+
+.kalam-reader-pill-info {
+    padding: 0 12px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.kalam-reader-pill-pages {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: @kalam_accent;
+}
+
+.kalam-reader-pill-chapter {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-reader-panel-scroll,
+.kalam-reader-panel-scroll viewport {
+    background: transparent;
+}
+
+.kalam-reader-section {
+    padding: 14px 16px 8px;
+}
+
+.kalam-reader-section-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: @kalam_text_dim;
+}
+
+.kalam-reader-panel-divider {
+    background: alpha(@kalam_border, 0.9);
+    margin: 4px 16px;
+}
+
+.kalam-reader-setting-row {
+    min-height: 36px;
+}
+
+.kalam-reader-setting-name {
+    font-size: 0.84rem;
+    color: @kalam_text;
+}
+
+.kalam-reader-stepper {
+    background: transparent;
+}
+
+button.kalam-reader-stepper-btn {
+    min-width: 30px;
+    min-height: 30px;
+    padding: 0;
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    color: @kalam_text;
+}
+
+button.kalam-reader-stepper-btn image {
+    -gtk-icon-size: 14px;
+}
+
+button.kalam-reader-stepper-btn > box {
+    min-width: 0;
+    min-height: 0;
+}
+
+button.kalam-reader-stepper-btn:hover {
+    background: @kalam_surface;
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+.kalam-reader-stepper-value {
+    min-width: 34px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-reader-settings-switcher {
+    padding-bottom: 2px;
+}
+
+button.kalam-reader-settings-switch {
+    background: transparent;
+    border: 1px solid alpha(@kalam_border, 0.95);
+    border-radius: 999px;
+    color: @kalam_text_dim;
+    padding: 7px 10px;
+    font-size: 0.76rem;
+}
+
+button.kalam-reader-settings-switch:hover {
+    background: alpha(@kalam_surface_2, 0.85);
+    color: @kalam_text;
+}
+
+button.kalam-reader-settings-switch.active {
+    background: @kalam_accent_dim;
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+.kalam-reader-ui-setting {
+    padding-top: 2px;
+}
+
+.kalam-reader-ui-setting-head {
+    min-height: 20px;
+}
+
+.kalam-reader-ui-setting-label {
+    font-size: 0.82rem;
+    color: @kalam_text;
+}
+
+button.kalam-reader-ui-preset {
+    min-width: 64px;
+    min-height: 28px;
+    padding: 4px 0;
+    font-size: 0.68rem;
+}
+
+button.kalam-reader-ui-preset.kalam-reader-ui-preset-custom.active {
+    color: @kalam_text;
+}
+
+.kalam-reader-ui-control-row {
+    padding-top: 2px;
+}
+
+entry.kalam-reader-ui-value-entry {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: @kalam_text;
+    min-width: 0;
+    padding: 4px 0;
+}
+
+entry.kalam-reader-ui-value-entry:focus,
+entry.kalam-reader-ui-value-entry:focus-within {
+    border: none;
+    box-shadow: none;
+}
+
+entry.kalam-reader-ui-value-entry > text {
+    color: @kalam_text;
+}
+
+.kalam-reader-ui-unit {
+    color: @kalam_text_dim;
+    font-size: 0.76rem;
+    font-weight: 600;
+}
+
+button.kalam-reader-theme-dot {
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 999px;
+    box-shadow: none;
+}
+
+button.kalam-reader-theme-dot.active {
+    border-color: @kalam_accent;
+}
+
+button.kalam-reader-theme-dot.kalam-reader-theme-dot-light {
+    background: #faf8f5;
+}
+
+button.kalam-reader-theme-dot.kalam-reader-theme-dot-sepia {
+    background: #f4ecd8;
+}
+
+button.kalam-reader-theme-dot.kalam-reader-theme-dot-dark {
+    background: #1a1b1e;
+}
+
+button.kalam-reader-theme-dot.kalam-reader-theme-dot-ink {
+    background: #0d0d0d;
+}
+
+.kalam-reader-filter-row {
+    padding: 10px 12px;
+    border-bottom: 1px solid alpha(@kalam_border, 0.9);
+}
+
+button.kalam-reader-filter-chip {
+    background: transparent;
+    border: 1px solid alpha(@kalam_border, 0.95);
+    border-radius: 999px;
+    color: @kalam_text_dim;
+    padding: 3px 10px;
+    font-size: 0.72rem;
+}
+
+button.kalam-reader-filter-chip:hover {
+    background: alpha(@kalam_surface_2, 0.85);
+    color: @kalam_text;
+}
+
+button.kalam-reader-filter-chip.active {
+    background: @kalam_accent_dim;
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+button.kalam-reader-filter-chip.kalam-reader-filter-yellow.active {
+    background: alpha(#e5c07b, 0.18);
+    border-color: #e5c07b;
+    color: #e5c07b;
+}
+
+button.kalam-reader-filter-chip.kalam-reader-filter-green.active {
+    background: alpha(#98c379, 0.18);
+    border-color: #98c379;
+    color: #98c379;
+}
+
+button.kalam-reader-filter-chip.kalam-reader-filter-blue.active {
+    background: alpha(#61afef, 0.18);
+    border-color: #61afef;
+    color: #61afef;
+}
+
+button.kalam-reader-filter-chip.kalam-reader-filter-pink.active {
+    background: alpha(#e06c75, 0.18);
+    border-color: #e06c75;
+    color: #e06c75;
+}
+
+button.kalam-reader-filter-chip.kalam-reader-filter-orange.active {
+    background: alpha(#d19a66, 0.18);
+    border-color: #d19a66;
+    color: #d19a66;
+}
+
+button.kalam-reader-toc-item {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    color: @kalam_text_dim;
+    padding: 9px 16px;
+}
+
+button.kalam-reader-toc-item:hover {
+    background: alpha(@kalam_surface_2, 0.85);
+    color: @kalam_text;
+}
+
+button.kalam-reader-toc-item.active {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+}
+
+.kalam-reader-annotation-row,
+.kalam-reader-bookmark-row {
+    padding: 12px 14px;
+    border-bottom: 1px solid alpha(@kalam_border, 0.72);
+}
+
+button.kalam-reader-list-hit {
+    background: transparent;
+    border: none;
+    border-radius: 12px;
+    padding: 0;
+}
+
+button.kalam-reader-list-hit:hover {
+    background: alpha(@kalam_surface_2, 0.8);
+}
+
+.kalam-reader-annotation-bar {
+    min-width: 3px;
+    border-radius: 99px;
+}
+
+.kalam-reader-bar-yellow {
+    background: #e5c07b;
+}
+
+.kalam-reader-bar-green {
+    background: #98c379;
+}
+
+.kalam-reader-bar-blue {
+    background: #61afef;
+}
+
+.kalam-reader-bar-pink {
+    background: #e06c75;
+}
+
+.kalam-reader-bar-orange {
+    background: #d19a66;
+}
+
+.kalam-reader-annotation-text,
+.kalam-reader-bookmark-title,
+.kalam-reader-word-name {
+    color: @kalam_text;
+}
+
+.kalam-reader-annotation-text {
+    font-size: 0.84rem;
+    line-height: 1.55;
+    font-style: italic;
+}
+
+.kalam-reader-bookmark-title {
+    font-size: 0.84rem;
+    font-weight: 600;
+}
+
+.kalam-reader-annotation-meta,
+.kalam-reader-word-meta {
+    font-size: 0.72rem;
+    color: @kalam_text_dim;
+    font-family: monospace;
+}
+
+.kalam-reader-bookmark-icon {
+    color: @kalam_warning;
+    -gtk-icon-size: 15px;
+}
+
+.kalam-reader-search-row {
+    padding: 10px 12px;
+    border-bottom: 1px solid alpha(@kalam_border, 0.9);
+}
+
+entry.kalam-reader-search {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: @kalam_text;
+}
+
+entry.kalam-reader-search > text {
+    color: @kalam_text;
+}
+
+.kalam-reader-word-row {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 12px 14px;
+}
+
+.kalam-reader-word-row:hover {
+    background: alpha(@kalam_surface_2, 0.8);
+}
+
+.kalam-reader-word-name {
+    font-size: 0.92rem;
+    font-weight: 700;
+}
+
+.kalam-reader-word-def {
+    font-size: 0.8rem;
+    line-height: 1.55;
+    color: @kalam_text;
+}
+
+.kalam-reader-empty {
+    color: @kalam_text_dim;
+    font-size: 0.92rem;
+    padding: 18px;
+}
+
+/* Theme swatches — these must match ReadingTheme::swatch() in epub_book.rs. */
+.kalam-theme-light {
+    background: #faf8f5;
+    color: #1c1917;
+}
+
+.kalam-theme-light label {
+    color: #1c1917;
+}
+
+.kalam-theme-sepia {
+    background: #f4ecd8;
+    color: #3e3226;
+}
+
+.kalam-theme-sepia label {
+    color: #3e3226;
+}
+
+.kalam-theme-dark {
+    background: #1a1b1e;
+    color: #e7e5e4;
+}
+
+.kalam-theme-dark label {
+    color: #e7e5e4;
+}
+
+.kalam-theme-ink {
+    background: #0d0d0d;
+    color: #c8c8c8;
+}
+
+.kalam-theme-ink label {
+    color: #c8c8c8;
+}
+
+/* ── P3: annotations, quotes, words, dict ──────────── */
+.kalam-quote-row, .kalam-word-row {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 12px 14px;
+}
+
+.kalam-quote-text {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: @kalam_text;
+    font-style: italic;
+}
+
+.kalam-word-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+/* Phase 7: vocabulary review — known words recede; the mark-known button
+   turns accent-filled when the word is known. */
+.kalam-word-row-known .kalam-word-title {
+    color: @kalam_text_dim;
+}
+.kalam-word-row-known .kalam-muted {
+    color: alpha(@kalam_text, 0.55);
+}
+.kalam-known-btn-active {
+    background: alpha(@kalam_accent, 0.22);
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+.kalam-badge-yellow {
+    background: #fef08a;
+    color: #1a1a12;
+}
+.kalam-badge-green {
+    background: #bbf7d0;
+    color: #0e1a12;
+}
+.kalam-badge-blue {
+    background: #bfdbfe;
+    color: #0e141e;
+}
+.kalam-badge-pink {
+    background: #fbcfe8;
+    color: #1e1216;
+}
+.kalam-badge-orange {
+    background: #fed7aa;
+    color: #1e1410;
+}
+
+/* ══════════════════════════════════════════════════════
+   P4 — shelves, lists, history, tags, analytics
+   ══════════════════════════════════════════════════════ */
+
+/* ── shelf cards ────────────────────────────────────── */
+.kalam-shelf-card {
+    min-height: 120px;
+}
+
+.kalam-badge-smart {
+    background: alpha(@kalam_accent, 0.18);
+    color: @kalam_accent;
+}
+
+.kalam-badge-manual {
+    background: @kalam_surface_2;
+    color: @kalam_text_dim;
+}
+
+/* ── P5.5 button hierarchy ──────────────────────────── */
+/* Filled → Tonal → Outlined → Danger-outlined → Ghost. Exactly one filled
+   button per screen — that is what "primary action" means. Destructive
+   actions are ALWAYS danger-outlined, never filled, so Remove can never
+   read as the same weight as Read.
+
+   Shape scale used throughout this file, for reference:
+     4px   chips / tags
+     8px   inputs, small controls
+     12px  cards
+     16px  panels, hero / chart cards
+     999px pills — buttons, badges, nav, icon buttons */
+
+.kalam-btn-filled {
+    background: @kalam_accent;
+    color: @kalam_bg;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-weight: 700;
+    transition: background 150ms ease;
+}
+
+.kalam-btn-filled:hover {
+    background: alpha(@kalam_accent, 0.85);
+}
+
+.kalam-btn-filled:active {
+    background: alpha(@kalam_accent, 0.7);
+}
+
+.kalam-btn-filled:disabled {
+    background: @kalam_surface_2;
+    color: @kalam_text_dim;
+}
+
+.kalam-btn-tonal {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-weight: 600;
+    transition: background 150ms ease;
+}
+
+.kalam-btn-tonal:hover {
+    background: alpha(@kalam_accent, 0.24);
+}
+
+.kalam-btn-outlined {
+    background: transparent;
+    color: @kalam_text;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-weight: 600;
+    transition: background 150ms ease, border-color 150ms ease;
+}
+
+.kalam-btn-outlined:hover {
+    background: alpha(@kalam_text, 0.06);
+    border-color: @kalam_text_dim;
+}
+
+.kalam-btn-danger {
+    background: transparent;
+    color: @kalam_danger;
+    border: 1px solid @kalam_danger;
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-weight: 600;
+    transition: background 150ms ease;
+}
+
+.kalam-btn-danger:hover {
+    background: alpha(@kalam_danger, 0.1);
+}
+
+.kalam-btn-ghost {
+    background: transparent;
+    color: @kalam_text_dim;
+    border: none;
+    border-radius: 999px;
+    padding: 10px 22px;
+    font-weight: 500;
+    transition: background 150ms ease, color 150ms ease;
+}
+
+.kalam-btn-ghost:hover {
+    background: alpha(@kalam_text, 0.05);
+    color: @kalam_text;
+}
+
+.kalam-inline-icon {
+    color: inherit;
+    -gtk-icon-size: 16px;
+}
+
+/* Icon-only variant — a plain circle, no label. For a secondary-actions
+   row (bookmark / shelve / edit) sitting beside one kalam-btn-filled. */
+.kalam-btn-icon {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0;
+    transition: background 150ms ease, border-color 150ms ease;
+}
+
+.kalam-btn-icon:hover {
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+.kalam-btn-icon.danger {
+    color: @kalam_danger;
+    border-color: alpha(@kalam_danger, 0.4);
+}
+
+.kalam-btn-icon.danger:hover {
+    background: alpha(@kalam_danger, 0.1);
+    border-color: @kalam_danger;
+}
+
+/* Generic tag / filter chip — a labelled pill. Prefer this over a one-off
+   badge class for anything that is just "a tag surfaced on a card". */
+.kalam-chip {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    border-radius: 999px;
+    padding: 3px 11px;
+    font-size: 0.72rem;
+}
+
+.kalam-chip-info {
+    background: alpha(@kalam_info, 0.16);
+    color: @kalam_info;
+}
+
+.kalam-chip-neutral {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    color: @kalam_text_dim;
+}
+
+/* ── literary display type ──────────────────────────── */
+/* Book titles only — everywhere else stays on the system UI font. Bundle
+   Fraunces as an app resource before shipping; this degrades to the system
+   serif if it isn't installed, so nothing breaks in the meantime. */
+.kalam-title-serif {
+    font-family: "Fraunces", serif;
+    font-weight: 600;
+}
+
+.kalam-title-serif-italic {
+    font-family: "Fraunces", serif;
+    font-style: italic;
+    font-weight: 500;
+}
+
+/* ── compact row buttons (reorder, remove, read) ────── */
+.kalam-mini-btn {
+    padding: 4px 10px;
+    font-size: 0.78rem;
+    border-radius: 999px;
+    background: @kalam_surface_2;
+    color: @kalam_text;
+    border: 1px solid @kalam_border;
+    min-height: 0;
+}
+
+.kalam-mini-btn:hover {
+    border-color: @kalam_accent;
+}
+
+.kalam-mini-btn:disabled {
+    color: alpha(@kalam_text_dim, 0.5);
+    border-color: alpha(@kalam_border, 0.6);
+}
+
+.kalam-mini-btn-danger:hover {
+    border-color: @kalam_danger;
+    color: @kalam_danger;
+}
+
+/* ── generic list rows (reading list, history) ──────── */
+.kalam-list-row {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 10px 14px;
+}
+
+.kalam-list-row:hover {
+    border-color: @kalam_accent;
+    background: @kalam_surface_2;
+}
+
+.kalam-list-ordinal {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: @kalam_text_dim;
+}
+
+/* ── manual shelf management strip ──────────────────── */
+.kalam-manage-expander {
+    margin-top: 14px;
+    color: @kalam_text_dim;
+    font-size: 0.85rem;
+}
+
+.kalam-manage-row {
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: alpha(@kalam_surface, 0.6);
+}
+
+/* ── shelf editor / rule builder ────────────────────── */
+.kalam-shelf-editor entry {
+    border-radius: 8px;
+    min-height: 32px;
+}
+
+.kalam-rule-row {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+    padding: 8px 10px;
+}
+
+.kalam-rule-remove {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: transparent;
+    color: @kalam_text_dim;
+    border: none;
+    min-height: 0;
+}
+
+.kalam-rule-remove:hover {
+    color: @kalam_danger;
+}
+
+.kalam-rule-count {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: @kalam_accent;
+}
+
+.kalam-error-text {
+    color: @kalam_danger;
+    font-size: 0.85rem;
+}
+
+.kalam-picker-row {
+    padding: 6px 8px;
+    border-radius: 8px;
+}
+
+.kalam-picker-row:hover {
+    background: @kalam_surface_2;
+}
+
+/* ── history event icons ────────────────────────────── */
+.kalam-event-icon {
+    color: inherit;
+    -gtk-icon-size: 16px;
+}
+
+.kalam-event-finished {
+    color: @kalam_success;
+}
+
+.kalam-event-opened {
+    color: @kalam_accent;
+}
+
+.kalam-event-imported {
+    color: @kalam_warning;
+}
+
+/* ── tag cloud ──────────────────────────────────────── */
+.kalam-tag-chip {
+    border-radius: 999px;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    padding: 6px 14px;
+    color: @kalam_text;
+}
+
+.kalam-tag-chip:hover {
+    border-color: @kalam_accent;
+    background: @kalam_surface_2;
+}
+
+/* Weight classes scale the chip with how many books carry the tag. */
+.kalam-tag-w1 { font-size: 0.8rem; }
+.kalam-tag-w2 { font-size: 0.9rem; }
+.kalam-tag-w3 { font-size: 1.0rem; font-weight: 600; }
+.kalam-tag-w4 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    border-color: alpha(@kalam_accent, 0.5);
+}
+
+.kalam-tag-count {
+    font-size: 0.72rem;
+    color: @kalam_text_dim;
+    background: @kalam_surface_2;
+    border-radius: 999px;
+    padding: 1px 7px;
+}
+
+/* ── analytics ──────────────────────────────────────── */
+/* ── library dashboard ──────────────────────────────── */
+.kalam-section-header {
+    padding: 2px 0;
+}
+
+.kalam-section-header:hover .kalam-section-arrow,
+.kalam-section-header:hover .kalam-section-meta {
+    color: @kalam_accent;
+}
+
+.kalam-section-meta {
+    font-size: 0.78rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-section-arrow {
+    color: @kalam_text_dim;
+    -gtk-icon-size: 16px;
+}
+
+.kalam-shelf-mini {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 12px 14px;
+    min-height: 84px;
+}
+
+.kalam-quote-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-left: 3px solid @kalam_accent;
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+
+.kalam-quote-text {
+    font-size: 0.88rem;
+    color: @kalam_text;
+}
+
+.kalam-quote-source {
+    font-size: 0.76rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-progress-cell {
+    padding: 0;
+}
+
+.kalam-mini-progress {
+    min-height: 4px;
+}
+
+.kalam-mini-progress trough {
+    min-height: 4px;
+    border-radius: 999px;
+    background: @kalam_border;
+}
+
+/* `min-width` matters here. At fraction 0 the progress node is allocated zero
+   width, and because the rounded corners make GTK clip it, that becomes a
+   zero-area clip rectangle which pixman refuses:
+       *** BUG *** In pixman_region32_init_rect: Invalid rectangle passed
+   Giving it a floor means an unread book shows a small dot instead of nothing,
+   which also reads better than an invisible bar. */
+.kalam-mini-progress progress {
+    min-height: 4px;
+    min-width: 4px;
+    border-radius: 999px;
+    background: @kalam_accent;
+}
+
+/* ── toasts (docs/design/notifications.png) ─────────── */
+.kalam-toast-host {
+    margin: 0 18px 18px 0;
+}
+
+.kalam-toast {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    box-shadow: 0 12px 32px alpha(#000, 0.55);
+    min-width: 340px;
+}
+
+.kalam-toast-body {
+    padding: 14px 18px 14px 14px;
+}
+
+/* Highlighting and quoting recur constantly while reading, so those get a
+   slimmer, quieter card rather than a full-sized toast over the page. */
+.kalam-toast-compact {
+    min-width: 210px;
+}
+
+.kalam-toast-compact .kalam-toast-body {
+    padding: 7px 14px 7px 10px;
+}
+
+.kalam-toast-compact .kalam-toast-title {
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+
+.kalam-toast-compact .kalam-toast-icon {
+    font-size: 0.9rem;
+}
+
+.kalam-toast-accent-compact {
+    margin-top: 6px;
+    margin-bottom: 6px;
+    min-height: 12px;
+}
+
+.kalam-toast-title {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-toast-detail {
+    font-size: 0.8rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-toast-icon {
+    color: inherit;
+    -gtk-icon-size: 17px;
+}
+
+/* The accent stripe carries the severity. Colours sampled straight out of
+   docs/design/notifications.png: the reference uses muted, desaturated tones,
+   not the bright mint/salmon this first shipped with. A rounded pill inset
+   from the card edge, not a full-height bar. */
+.kalam-toast-accent {
+    border-radius: 999px;
+    /* Tucked in close to the card's left edge, but never touching it. */
+    margin-left: 6px;
+    /* Vertical inset: leaves the bar at ~3/5 of the card height, centred,
+       and lets it grow with the card instead of being pinned to a pixel
+       height that a taller toast would break. */
+    margin-top: 13px;
+    margin-bottom: 13px;
+    min-width: 5px;
+    /* Floor, so a short title-only toast still shows a real bar rather than
+       a speck once the insets are taken out. */
+    min-height: 18px;
+}
+
+.kalam-toast-success .kalam-toast-accent {
+    background: @kalam_success;
+}
+
+.kalam-toast-success .kalam-toast-icon {
+    color: @kalam_success;
+}
+
+.kalam-toast-error .kalam-toast-accent {
+    background: @kalam_danger;
+}
+
+.kalam-toast-error .kalam-toast-icon {
+    color: @kalam_danger;
+}
+
+.kalam-toast-info .kalam-toast-accent {
+    background: @kalam_border;
+}
+
+.kalam-toast-info .kalam-toast-icon {
+    color: @kalam_text_dim;
+}
+
+.kalam-toast-progress .kalam-toast-accent {
+    background: @kalam_info;
+}
+
+.kalam-toast-progress .kalam-toast-icon {
+    color: @kalam_info;
+}
+
+/* ── theme picker (P5.5 v2: family blocks + mini UI previews) ── */
+.kalam-theme-btn {
+    padding: 0;
+    background: transparent;
+    border: none;
+}
+
+.kalam-theme-family-card {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 14px;
+}
+
+.kalam-theme-family-name {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-theme-family-desc {
+    font-size: 0.7rem;
+    color: @kalam_text_dim;
+}
+
+/* Each small theme card keeps its own theme background all the time.
+   The selected state only adds an outline, so the sample does not repaint. */
+.kalam-theme-card {
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.kalam-theme-card.active {
+    border-color: @kalam_accent;
+    box-shadow: inset 0 0 0 1px alpha(@kalam_accent, 0.18);
+}
+
+.kalam-theme-name {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-theme-variant {
+    font-size: 0.62rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-theme-variant.kalam-theme-variant-off {
+    color: transparent;
+}
+
+/* The ✓ seal always keeps its slot.
+   We fade it in and out from Rust so the card size never changes. */
+.kalam-theme-check {
+    background: @kalam_accent;
+    color: @kalam_bg;
+    border-radius: 999px;
+    min-width: 16px;
+    min-height: 16px;
+    padding: 2px;
+    -gtk-icon-size: 10px;
+}
+
+/* Mini preview. The dark outline is deliberately theme-independent: it
+   letterboxes whatever palette is being previewed. */
+.kalam-theme-preview {
+    border: 1px solid alpha(#000, 0.35);
+    border-radius: 6px;
+}
+
+.kalam-theme-preview-main {
+    padding: 5px 6px;
+}
+
+.kalam-theme-swatch {
+    min-width: 5px;
+    min-height: 5px;
+    border-radius: 999px;
+}
+
+/* ── metadata editor ────────────────────────────────── */
+/* Pinned below the scroller, so Save never scrolls out of reach. */
+.kalam-dialog-actions {
+    padding: 12px 18px;
+    background: @kalam_surface;
+    border-top: 1px solid @kalam_border;
+}
+
+.kalam-desc-scroll {
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
+    background: @kalam_surface;
+}
+
+/* Inline field-search icons (Nerd Font glyph). */
+.kalam-icon-btn {
+    font-family: "Symbols Nerd Font", "Symbols Nerd Font Mono",
+                 "JetBrainsMono Nerd Font Propo", "FiraCode Nerd Font Propo",
+                 "JetBrainsMono Nerd Font", "FiraCode Nerd Font", monospace;
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
+    color: @kalam_text_dim;
+    padding: 0 10px;
+    min-width: 0;
+    min-height: 32px;
+}
+
+.kalam-icon-btn:hover {
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+/* Metadata source badges. */
+.kalam-badge-ol {
+    background: alpha(@kalam_success, 0.18);
+    color: @kalam_success;
+}
+
+.kalam-badge-gb {
+    background: alpha(@kalam_accent, 0.18);
+    color: @kalam_accent;
+}
+
+.kalam-cover-choice {
+    padding: 4px;
+    border-radius: 8px;
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    /* Letterboxed art sits on the surface colour rather than bare window. */
+    min-width: 0;
+    min-height: 0;
+}
+
+.kalam-cover-choice:hover {
+    border-color: @kalam_accent;
+}
+
+/* Slide-out Open Library panel; separated from the form by its own edge. */
+.kalam-search-panel {
+    background: @kalam_surface;
+    border-left: 1px solid @kalam_border;
+    padding: 16px;
+}
+
+.kalam-metadata-side {
+    border-left: 1px solid @kalam_border;
+    padding-left: 16px;
+}
+
+.kalam-desc-view {
+    background: transparent;
+    padding: 8px;
+    font-size: 0.86rem;
+}
+
+.kalam-desc-view text {
+    background: transparent;
+    color: @kalam_text;
+}
+
+/* ── ratings ────────────────────────────────────────── */
+.kalam-stars {
+    color: @kalam_warning;
+    font-size: 0.95rem;
+}
+
+.kalam-stars-value {
+    font-size: 0.76rem;
+    color: @kalam_text_dim;
+}
+
+/* Glyphs are always drawn, so the control reads at a glance rather than
+   only revealing itself on hover. Stars are Labels, not Buttons — see the
+   comment in star_picker() for why. */
+.kalam-star-glyph {
+    font-size: 1.35rem;
+    padding: 0 1px;
+    color: @kalam_text_dim;
+}
+
+.kalam-star-on {
+    color: @kalam_warning;
+}
+
+/* Applied by an EventControllerMotion, since Labels do not prelight. */
+.kalam-star-hover {
+    color: @kalam_warning;
+}
+
+.kalam-star-clear {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: @kalam_text_dim;
+    font-size: 0.8rem;
+    min-width: 0;
+    min-height: 0;
+    padding: 0 4px;
+    margin-left: 4px;
+}
+
+.kalam-star-clear:hover {
+    color: @kalam_danger;
+}
+
+/* ── streak strip ───────────────────────────────────── */
+.kalam-streak-day {
+    padding: 6px 2px;
+    border-radius: 10px;
+}
+
+.kalam-streak-today {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_accent;
+}
+
+.kalam-streak-label {
+    font-size: 0.72rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-streak-flame {
+    font-size: 1rem;
+}
+
+/* Inactive days keep their slot but recede. */
+.kalam-streak-off {
+    background: transparent;
+    color: alpha(@kalam_text_dim, 0.35);
+}
+
+.kalam-mini-btn-active {
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+.kalam-note-entry {
+    font-size: 0.82rem;
+    min-height: 28px;
+    border-radius: 8px;
+}
+
+.kalam-hero-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 16px;
+    padding: 14px 16px;
+    min-height: 104px;
+}
+
+.kalam-hero-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: @kalam_text_dim;
+}
+
+.kalam-hero-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-hero-unit {
+    font-size: 0.8rem;
+    color: @kalam_text_dim;
+    margin-left: 2px;
+}
+
+.kalam-hero-blurb {
+    font-size: 0.74rem;
+    color: @kalam_text_dim;
+}
+
+/* Sparkline / line-chart colours come from `color` so the draw handler can
+   read them back via widget.color() — keeps palette decisions in CSS. */
+.kalam-sparkline {
+    color: @kalam_accent;
+}
+
+.kalam-spark-green {
+    color: @kalam_success;
+}
+
+.kalam-spark-red {
+    color: @kalam_danger;
+}
+
+.kalam-spark-blue {
+    color: @kalam_accent;
+}
+
+.kalam-chart-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 16px;
+    padding: 16px 18px;
+}
+
+.kalam-chart-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-chart-sub {
+    font-size: 0.8rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-linechart {
+    color: @kalam_accent;
+}
+
+.kalam-stat-tile {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 14px 16px;
+}
+
+.kalam-stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-stat-label {
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    color: @kalam_text_dim;
+}
+
+.kalam-bar-chart {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 12px;
+    padding: 14px 12px 10px 12px;
+    min-height: 150px;
+}
+
+.kalam-bar {
+    background: linear-gradient(180deg, @kalam_accent 0%, alpha(@kalam_accent, 0.55) 100%);
+    border-radius: 5px 5px 2px 2px;
+    min-width: 14px;
+}
+
+.kalam-bar-empty {
+    background: @kalam_border;
+}
+
+.kalam-bar-value {
+    font-size: 0.68rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-bar-label {
+    font-size: 0.7rem;
+    color: @kalam_text_dim;
+    margin-top: 4px;
+}
+
+.kalam-rank-row {
+    padding: 7px 12px;
+    border-radius: 8px;
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+}
+
+/* ── dictionary rows (P5.5 settings) ────────────────── */
+.kalam-dict-icon {
+    background: alpha(@kalam_info, 0.14);
+    border-radius: 8px;
+}
+
+.kalam-dict-icon-glyph {
+    color: @kalam_info;
+    -gtk-icon-size: 16px;
+}
+
+.kalam-dict-meta {
+    font-family: monospace;
+    font-size: 0.7rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-card-footer {
+    margin-top: 14px;
+}
+
+/* ── P5.5 settings page v2 ──────────────────────────── */
+.kalam-settings-nav {
+    background: @kalam_surface;
+    border-right: 1px solid @kalam_border;
+    min-width: 220px;
+    padding: 14px 14px 16px 14px;
+}
+
+.kalam-settings-group {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: @kalam_text_dim;
+    margin: 12px 10px 4px 10px;
+}
+
+.kalam-settings-group:first-child {
+    margin-top: 0;
+}
+
+.kalam-settings-tab {
+    padding: 9px 12px;
+    border-radius: 12px;
+    background: transparent;
+    border: none;
+    color: @kalam_text_dim;
+    font-size: 0.85rem;
+}
+
+.kalam-settings-tab:hover {
+    background: @kalam_surface_2;
+    color: @kalam_text;
+}
+
+.kalam-settings-tab.active {
+    background: @kalam_accent_dim;
+    color: @kalam_accent;
+    font-weight: 600;
+}
+
+.kalam-settings-tab-icon {
+    color: inherit;
+    -gtk-icon-size: 16px;
+}
+
+.kalam-settings-content {
+    padding: 24px 32px 32px 32px;
+    background: @kalam_bg;
+}
+
+/* ── section cards ── */
+.kalam-section-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 16px;
+}
+
+.kalam-section-head {
+    padding: 16px 20px 14px 20px;
+}
+
+.kalam-section-icon {
+    color: @kalam_accent;
+    -gtk-icon-size: 16px;
+}
+
+.kalam-section-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-section-desc {
+    font-size: 0.76rem;
+    color: @kalam_text_dim;
+    padding-left: 24px;
+    margin-top: 2px;
+}
+
+separator.kalam-section-divider {
+    background: @kalam_border;
+    min-height: 1px;
+    margin: 0 20px;
+}
+
+.kalam-section-body {
+    padding: 14px 20px 16px 20px;
+}
+
+/* ── setting rows: hairline between rows, none above the first ── */
+.kalam-setting-row {
+    padding: 12px 0;
+    border-top: 1px solid @kalam_border;
+}
+
+.kalam-setting-row:first-child {
+    border-top: none;
+    padding-top: 0;
+}
+
+.kalam-setting-label {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: @kalam_text;
+}
+
+.kalam-setting-desc {
+    font-size: 0.74rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-setting-entry {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 0.8rem;
+}
+
+.kalam-settings-path-box {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-family: monospace;
+    font-size: 0.72rem;
+    color: @kalam_text_dim;
+}
+
+/* The app's switch, Material-You style: 40x22 pill, accent when on.
+   Margins and borders zeroed per the house rules before sizing. */
+switch.kalam-switch {
+    margin: 0;
+    border: none;
+    min-width: 40px;
+    min-height: 22px;
+    border-radius: 999px;
+    background: @kalam_border;
+}
+
+switch.kalam-switch:checked {
+    background: @kalam_accent;
+}
+
+/* The knob is white in every theme on purpose: all 13 palettes are dark, so
+   white is the one knob colour that reads on every accent. */
+switch.kalam-switch slider {
+    margin: 0;
+    border: none;
+    min-width: 16px;
+    min-height: 16px;
+    border-radius: 999px;
+    background: #ffffff;
+}
+
+/* Small modifier for the P5.5 button hierarchy (row-level actions). */
+.kalam-btn-sm {
+    padding: 6px 14px;
+    font-size: 0.8rem;
+}
+
+.kalam-chip-success {
+    background: alpha(@kalam_success, 0.16);
+    color: @kalam_success;
+}
+
+.kalam-chip-danger {
+    background: alpha(@kalam_danger, 0.16);
+    color: @kalam_danger;
+}
+
+/* ── P5.5 book detail page ───────────────────────────────── */
+
+/* Fixed chrome row: back pill on the left, metadata pencil on the right. */
+.kalam-actions .kalam-icon-btn {
+    border-radius: 999px;
+    min-height: 38px;
+    padding: 0 11px;
+    background: transparent;
+}
+
+.kalam-actions .kalam-icon-btn image {
+    color: inherit;
+    -gtk-icon-size: 16px;
+}
+
+/* Remove action — danger tint. */
+.kalam-icon-btn-danger {
+    color: @kalam_danger;
+}
+
+.kalam-icon-btn-danger:hover {
+    background: alpha(@kalam_danger, 0.12);
+}
+
+/* Hero. */
+.kalam-bookpage-hero {
+    margin-bottom: 18px;
+}
+
+.kalam-bookpage-title {
+    font-family: "Fraunces", serif;
+    font-size: 1.7rem;
+    font-weight: 600;
+    line-height: 1.15;
+    color: @kalam_text;
+}
+
+.kalam-desc-serif {
+    font-family: "Fraunces", serif;
+    font-style: italic;
+    font-size: 0.95rem;
+    line-height: 1.55;
+    color: @kalam_text_dim;
+}
+
+/* Cover face with the page-edge behind it. */
+.kalam-cover-face {
+    border-radius: 4px;
+    box-shadow: 0 12px 26px alpha(#000, 0.30);
+}
+
+/* Progress. */
+.kalam-prog-pct {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-prog-loc {
+    font-size: 0.75rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+}
+
+.kalam-prog-track {
+    background: @kalam_border;
+    border-radius: 999px;
+    min-height: 3px;
+}
+
+.kalam-prog-fill {
+    background: @kalam_accent;
+    border-radius: 999px;
+}
+
+/* Meta rows: FORMAT / SERIES / PUBLISHER. */
+.kalam-meta-key {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: @kalam_text_dim;
+}
+
+.kalam-meta-val {
+    font-size: 0.82rem;
+    font-family: monospace;
+    color: @kalam_text;
+}
+
+/* The Series value is the door to the float. */
+button.kalam-series-link {
+    background: none;
+    border: none;
+    padding: 0;
+    min-height: 0;
+    font-size: 0.82rem;
+    font-family: monospace;
+    color: @kalam_accent;
+}
+
+button.kalam-series-link:hover {
+    color: @kalam_accent;
+    text-decoration-line: underline;
+}
+
+/* Action row. */
+.kalam-actions {
+    margin-top: 2px;
+}
+
+.kalam-btn-read {
+    background: @kalam_accent;
+    color: @kalam_bg;
+    border: none;
+    border-radius: 999px;
+    padding: 8px 18px;
+    font-weight: 600;
+}
+
+.kalam-btn-read image {
+    color: inherit;
+    -gtk-icon-size: 14px;
+}
+
+.kalam-btn-read:hover {
+    background: @kalam_accent;
+    filter: brightness(1.1);
+}
+
+
+/* Inline tag chips. */
+.kalam-tags flowboxchild {
+    padding: 0;
+}
+
+button.kalam-tag-chip {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    padding: 4px 10px;
+    min-height: 0;
+    font-size: 0.78rem;
+}
+
+button.kalam-tag-chip:hover {
+    border-color: @kalam_accent;
+}
+
+button.kalam-tag-chip label {
+    color: @kalam_text;
+}
+
+.kalam-tag-x {
+    color: @kalam_text_dim;
+    font-size: 0.7rem;
+}
+
+button.kalam-tag-add {
+    background: none;
+    border: 1px dashed @kalam_border;
+    border-radius: 999px;
+    padding: 4px 10px;
+    min-height: 0;
+    font-size: 0.78rem;
+    color: @kalam_text_dim;
+}
+
+button.kalam-tag-add:hover {
+    border-color: @kalam_accent;
+    color: @kalam_accent;
+}
+
+button.kalam-tag-add label {
+    color: inherit;
+}
+
+.kalam-tag-plus {
+    font-size: 0.95rem;
+    font-weight: 700;
+    min-height: 0;
+}
+
+/* Author links on the page (vs float/reader variants). */
+button.kalam-author-link-page {
+    font-size: 0.9rem;
+}
+
+/* Card grid. */
+.kalam-card-row {
+    margin-bottom: 14px;
+}
+
+.kalam-detail-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 16px;
+    min-height: 96px;
+}
+
+.kalam-detail-card-icon {
+    color: @kalam_text_dim;
+}
+
+.kalam-detail-card-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+button.kalam-detail-card-link {
+    background: none;
+    border: none;
+    padding: 0 4px;
+    min-height: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: @kalam_accent;
+}
+
+button.kalam-detail-card-link:hover {
+    color: @kalam_accent;
+    text-decoration-line: underline;
+}
+
+/* Stat tiles. */
+.kalam-stat-tile {
+    background: @kalam_surface_2;
+    border-radius: 10px;
+    padding: 9px 12px;
+    min-width: 64px;
+}
+
+.kalam-stat-val {
+    font-size: 1.0rem;
+    font-weight: 700;
+    font-family: monospace;
+    color: @kalam_text;
+}
+
+.kalam-stat-label {
+    font-size: 0.68rem;
+    color: @kalam_text_dim;
+    margin-top: 1px;
+}
+
+/* 7-day bars. */
+.kalam-bars {
+    min-height: 44px;
+}
+
+.kalam-bar {
+    background: @kalam_accent;
+    border-radius: 3px 3px 0 0;
+    min-width: 6px;
+}
+
+.kalam-bar-zero {
+    background: @kalam_border;
+}
+
+.kalam-bar-today {
+    background: @kalam_accent;
+    filter: brightness(1.15);
+}
+
+.kalam-bar-label {
+    font-size: 0.65rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+}
+
+/* Timeline. */
+.kalam-divider {
+    background: @kalam_border;
+    min-height: 1px;
+}
+
+.kalam-tl-item {
+    margin-bottom: 2px;
+}
+
+.kalam-tl-dot {
+    background: @kalam_accent;
+    border-radius: 999px;
+    min-width: 9px;
+    min-height: 9px;
+    margin-top: 5px;
+}
+
+.kalam-tl-dot-success {
+    background: @kalam_success;
+}
+
+.kalam-tl-dot-dim {
+    background: @kalam_text_dim;
+}
+
+.kalam-tl-line {
+    background: @kalam_border;
+    min-width: 1px;
+    min-height: 10px;
+}
+
+.kalam-tl-event {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+.kalam-tl-when {
+    font-size: 0.72rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+}
+
+.kalam-tl-dur {
+    font-size: 0.78rem;
+    font-family: monospace;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+/* Highlights. */
+.kalam-hl-item {
+    margin-bottom: 10px;
+}
+
+.kalam-hl-bar {
+    min-width: 3px;
+    border-radius: 2px;
+    /* One Dark marker palette — deliberately theme-independent. */
+    background: #e5c07b;
+}
+
+.kalam-hl-bar-green {
+    background: #98c379;
+}
+
+.kalam-hl-bar-blue {
+    background: #61afef;
+}
+
+.kalam-hl-bar-pink {
+    background: #c678dd;
+}
+
+.kalam-hl-bar-orange {
+    background: #d19a66;
+}
+
+.kalam-hl-text {
+    font-family: "Fraunces", serif;
+    font-style: italic;
+    font-size: 0.88rem;
+    line-height: 1.45;
+    color: @kalam_text;
+}
+
+.kalam-hl-meta {
+    font-size: 0.7rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+}
+
+/* Author card. */
+.kalam-author-avatar {
+    min-width: 40px;
+    min-height: 40px;
+    border-radius: 999px;
+}
+
+.kalam-author-avatar image {
+    border-radius: 999px;
+}
+
+.kalam-author-initials {
+    background: @kalam_surface_2;
+    color: @kalam_text_dim;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.kalam-author-name {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-author-sub {
+    font-size: 0.75rem;
+    color: @kalam_text_dim;
+}
+
+.kalam-author-bio {
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: @kalam_text_dim;
+}
+
+.kalam-author-book-title {
+    font-size: 0.68rem;
+    color: @kalam_text_dim;
+    line-height: 1.2;
+}
+
+/* Journey. */
+.kalam-journey-row {
+    margin-bottom: 5px;
+}
+
+.kalam-journey-icon {
+    min-width: 16px;
+    font-size: 0.8rem;
+}
+
+.kalam-journey-done {
+    color: @kalam_success;
+}
+
+.kalam-journey-current {
+    color: @kalam_accent;
+}
+
+.kalam-journey-todo {
+    color: @kalam_text_dim;
+}
+
+.kalam-journey-label {
+    font-size: 0.82rem;
+}
+
+.kalam-journey-label-done {
+    color: @kalam_text_dim;
+}
+
+.kalam-journey-label-current {
+    color: @kalam_text;
+    font-weight: 600;
+}
+
+.kalam-journey-label-todo {
+    color: @kalam_text_dim;
+}
+
+.kalam-journey-pct {
+    font-size: 0.75rem;
+    font-family: monospace;
+    font-weight: 600;
+    color: @kalam_accent;
+}
+
+button.kalam-journey-more {
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    min-height: 0;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: @kalam_accent;
+    margin-top: 4px;
+}
+
+button.kalam-journey-more:hover {
+    color: @kalam_accent;
+    text-decoration-line: underline;
+}
+
+/* Book file card. */
+.kalam-file-name {
+    font-family: monospace;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: @kalam_text;
+    background: @kalam_surface_2;
+    border-radius: 8px;
+    padding: 7px 10px;
+}
+
+/* ── P5.5 series float ─────────────────────────────────── */
+
+.kalam-series-float {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    box-shadow: 0 18px 44px alpha(#000, 0.40);
+}
+
+/* ── in-app highlights & quotes panel ─────────────────── */
+/* The three book-page panels: highlights, shelves checklist, tags. One rule
+ * for all three — they were three byte-identical copies, and they now match
+ * the A1 dialog shell (.kalam-float) so the app has one panel look, not two.
+ * Kept as separate selectors because each is addressed elsewhere by name. */
+.kalam-annotations-float,
+.kalam-shelves-float,
+.kalam-tags-float {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 20px;
+    box-shadow: 0 30px 80px alpha(#000, 0.46), 0 8px 24px alpha(#000, 0.26);
+}
+
+.kalam-series-float-title {
+    font-size: 1.0rem;
+    font-weight: 700;
+    color: @kalam_text;
+}
+
+.kalam-series-float .kalam-icon-btn {
+    border-radius: 999px;
+    min-height: 32px;
+    background: transparent;
+}
+
+.kalam-series-float .kalam-icon-btn image {
+    color: inherit;
+    -gtk-icon-size: 16px;
+}
+
+.kalam-series-float .kalam-icon-btn:disabled {
+    color: alpha(@kalam_text_dim, 0.5);
+    border-color: alpha(@kalam_border, 0.6);
+    background: transparent;
+}
+
+.kalam-series-spinner {
+    min-width: 28px;
+    min-height: 28px;
+}
+
+.kalam-series-error {
+    font-size: 0.88rem;
+    line-height: 1.5;
+    color: @kalam_text_dim;
+}
+
+.kalam-series-footer {
+    font-size: 0.7rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+}
+
+.kalam-series-row {
+    padding: 7px 8px;
+    border-radius: 10px;
+    background: transparent;
+}
+
+.kalam-series-row:hover {
+    background: @kalam_surface_2;
+}
+
+.kalam-series-num {
+    font-size: 0.68rem;
+    font-family: monospace;
+    color: @kalam_text_dim;
+}
+
+.kalam-series-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: @kalam_text;
+}
+
+/* Ownership badges. */
+.kalam-badge-series-read {
+    background: alpha(@kalam_success, 0.16);
+    color: @kalam_success;
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.kalam-badge-series-reading {
+    background: alpha(@kalam_accent, 0.16);
+    color: @kalam_accent;
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.kalam-badge-series-unread {
+    background: @kalam_surface_2;
+    border: 1px solid @kalam_border;
+    color: @kalam_text_dim;
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+.kalam-badge-series-unowned {
+    background: transparent;
+    color: alpha(@kalam_text_dim, 0.6);
+    font-size: 0.7rem;
+}
+
+
+/* ── page shell + small gaps left over from the first pass ── */
+.kalam-bookpage {
+    background: transparent;
+}
+
+.kalam-bookpage-inner {
+    padding: 0 32px 32px;
+}
+
+.kalam-meta-block {
+    min-width: 0;
+}
+
+.kalam-meta-row {
+    min-width: 0;
+}
+
+.kalam-author-thumb-cover {
+    border-radius: 4px;
+}
+
+.kalam-hl-bar-yellow {
+    background: #e5c07b;
+}
+
+.kalam-series-host {
+    padding: 4px 0;
+}
+
+.kalam-series-list {
+    min-width: 0;
+    padding-bottom: 8px;
+}
+
+.kalam-series-mini {
+    border-radius: 3px;
+}
+
+/* ── end P5.5 ──────────────────────────────────────────── */
+/* ── My Library v5 (docs/files/kalam_my_library_v5.html) ─────── */
+
+/* Top row: now reading card. */
+.kalam-now-reading {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 16px;
+}
+
+.kalam-nr-eyebrow {
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: @kalam_text_dim;
+    margin-bottom: 14px;
+}
+
+.kalam-nr-cover {
+    box-shadow: 4px 4px 0 alpha(#000, 0.45);
+}
+
+.kalam-nr-title {
+    font-family: "Fraunces", serif;
+    font-size: 0.82rem;
+    color: @kalam_text;
+    line-height: 1.3;
+}
+
+.kalam-nr-author {
+    font-size: 0.66rem;
+    color: @kalam_accent;
+}
+
+button.kalam-nr-read {
+    background: @kalam_accent;
+    color: @kalam_bg;
+    border: none;
+    border-radius: 999px;
+    padding: 7px 0;
+    font-weight: 600;
+    font-size: 0.72rem;
+}
+
+progressbar.kalam-nr-prog {
+    min-height: 6px;
+    margin-top: 14px;
+}
+progressbar.kalam-nr-prog trough {
+    background: @kalam_border;
+    border-radius: 999px;
+    min-height: 6px;
+}
+progressbar.kalam-nr-prog progress {
+    background: @kalam_accent;
+    border-radius: 999px;
+    min-height: 6px;
+}
+
+.kalam-nr-prog-label {
+    font-family: monospace;
+    font-size: 0.62rem;
+    color: @kalam_text_dim;
+    margin-top: 5px;
+}
+
+.kalam-nr-timeline {
+    margin-top: 14px;
+}
+.kalam-nr-dot-done {
+    background: @kalam_success;
+    border-radius: 999px;
+    min-width: 13px;
+    min-height: 13px;
+}
+.kalam-nr-dot-check {
+    color: @kalam_bg;
+}
+.kalam-nr-dot-cur {
+    border: 2px solid @kalam_accent;
+    background: alpha(@kalam_accent, 0.18);
+    border-radius: 999px;
+    min-width: 9px;
+    min-height: 9px;
+}
+.kalam-nr-dot-fut {
+    border: 1.5px solid @kalam_border;
+    background: @kalam_bg;
+    border-radius: 999px;
+    min-width: 10px;
+    min-height: 10px;
+}
+.kalam-nr-line {
+    background: @kalam_border;
+    min-width: 1px;
+}
+.kalam-nr-line-done {
+    background: alpha(@kalam_success, 0.35);
+}
+.kalam-nr-ch-done {
+    font-size: 0.68rem;
+    color: @kalam_text_dim;
+}
+.kalam-nr-ch-cur {
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: @kalam_text;
+}
+.kalam-nr-ch-fut {
+    font-size: 0.68rem;
+    color: @kalam_text_dim;
+    opacity: 0.55;
+}
+
+/* Stats grid. */
+.kalam-lib-stat-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 12px 14px 10px;
+}
+.kalam-lib-stat-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: @kalam_text_dim;
+}
+.kalam-lib-stat-val {
+    font-family: monospace;
+    font-size: 1.35rem;
+    color: @kalam_text;
+}
+.kalam-lib-stat-unit {
+    font-size: 0.7rem;
+    color: @kalam_text_dim;
+}
+progressbar.kalam-goal-bar {
+    min-height: 4px;
+}
+progressbar.kalam-goal-bar trough {
+    background: @kalam_border;
+    border-radius: 999px;
+    min-height: 4px;
+}
+progressbar.kalam-goal-bar progress {
+    background: @kalam_warning;
+    border-radius: 999px;
+    min-height: 4px;
+}
+
+/* Continue reading. */
+.kalam-lib-scroll scrollbar {
+    min-width: 0;
+    min-height: 0;
+}
+button.kalam-lib-play {
+    background: @kalam_accent;
+    color: @kalam_bg;
+    border: none;
+    border-radius: 999px;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    opacity: 0;
+    transform: scale(0.8);
+    transition: opacity 180ms ease, transform 180ms ease;
+    box-shadow: 0 2px 8px alpha(#000, 0.4);
+}
+.kalam-lib-card:hover button.kalam-lib-play {
+    opacity: 1;
+    transform: scale(1);
+}
+.kalam-lib-title {
+    font-size: 0.72rem;
+    color: @kalam_text;
+}
+.kalam-lib-author {
+    font-size: 0.66rem;
+    color: @kalam_text_dim;
+}
+.kalam-lib-pct {
+    font-family: monospace;
+    font-size: 0.62rem;
+    color: @kalam_text_dim;
+}
+
+/* Saved quotes. */
+.kalam-q-card {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 14px;
+    padding: 14px;
+}
+.kalam-q-book {
+    font-size: 0.66rem;
+    color: @kalam_accent;
+}
+.kalam-q-text {
+    font-family: "Fraunces", serif;
+    font-style: italic;
+    font-size: 0.78rem;
+    color: @kalam_text_dim;
+    line-height: 1.55;
+}
+.kalam-q-meta {
+    font-size: 0.62rem;
+    color: @kalam_text_dim;
+}
+
+/* History feed. */
+.kalam-hist-row {
+    padding: 8px 0;
+}
+.kalam-hist-badge {
+    border-radius: 999px;
+    min-width: 34px;
+    min-height: 34px;
+}
+.kalam-hist-tint-accent {
+    background: alpha(@kalam_accent, 0.1);
+}
+.kalam-hist-tint-success {
+    background: alpha(@kalam_success, 0.1);
+}
+.kalam-hist-tint-warning {
+    background: alpha(@kalam_warning, 0.1);
+}
+.kalam-hist-title {
+    font-size: 0.78rem;
+    color: @kalam_text;
+}
+.kalam-hist-sub {
+    font-size: 0.68rem;
+    color: @kalam_text_dim;
+}
+.kalam-hist-time {
+    font-size: 0.64rem;
+    color: @kalam_text_dim;
+}
+
+/* Vocabulary strip. */
+.kalam-vocab-pill {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 10px;
+    padding: 10px 14px;
+}
+.kalam-vocab-pill:hover {
+    border-color: @kalam_accent;
+}
+.kalam-vocab-word {
+    font-family: "Fraunces", serif;
+    font-size: 0.88rem;
+    color: @kalam_text;
+}
+.kalam-vocab-def {
+    font-size: 0.64rem;
+    color: @kalam_text_dim;
+    line-height: 1.4;
+}
+
+/* Section header affordance. */
+.kalam-show-all {
+    font-size: 0.7rem;
+    color: @kalam_accent;
+}
+"#;

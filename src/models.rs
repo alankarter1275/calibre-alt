@@ -184,7 +184,6 @@ pub struct Book {
     pub description: String,
     pub format: BookFormat,
     pub file_name: String,
-    #[allow(dead_code)]
     pub file_hash: String,
     pub cover_name: Option<String>,
     pub added_at: String,

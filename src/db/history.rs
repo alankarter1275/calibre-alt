@@ -9,9 +9,12 @@ use std::collections::HashSet;
 /// A closed session row, for the book page's timeline.
 #[derive(Debug, Clone)]
 pub struct SessionRow {
+    #[allow(dead_code)]
     pub id: i64,
+    #[allow(dead_code)]
     pub book_id: i64,
     pub started_at: String,
+    #[allow(dead_code)]
     pub ended_at: Option<String>,
     pub seconds: i64,
 }
@@ -20,12 +23,15 @@ pub struct SessionRow {
 /// sessions into its history feed.
 #[derive(Debug, Clone)]
 pub struct LibrarySession {
+    #[allow(dead_code)]
     pub id: i64,
+    #[allow(dead_code)]
     pub book_id: i64,
     pub started_at: String,
     pub seconds: i64,
     pub end_pct: i64,
     pub book_title: String,
+    #[allow(dead_code)]
     pub book_authors: String,
 }
 

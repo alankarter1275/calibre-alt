@@ -347,4 +347,37 @@ mod tests {
         let out = parse(r#"{"items":[{"volumeInfo":{"title":"A","publishedDate":"2012"}}]}"#);
         assert_eq!(out[0].first_year, Some(2012));
     }
+
+    #[test]
+    fn multiple_authors_joined_with_comma() {
+        let out = parse(
+            r#"{"items":[{"volumeInfo":{"title":"Test","authors":["Author One","Author Two"]}}]}"#,
+        );
+        assert_eq!(out[0].authors, "Author One, Author Two");
+    }
+
+    #[test]
+    fn small_thumbnail_fallback_works() {
+        let out = parse(
+            r#"{"items":[{"volumeInfo":{"title":"Test","imageLinks":{"smallThumbnail":"http://example.com/small.jpg"}}}]}"#,
+        );
+        match &out[0].cover {
+            Some(CoverRef::Url(url)) => assert_eq!(url, "https://example.com/small.jpg"),
+            other => panic!("expected CoverRef::Url, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn category_parsing_and_tag_filtering() {
+        let out = parse(
+            r#"{"items":[{"volumeInfo":{"title":"Test","categories":["Fiction / Sci-Fi", "This is an extremely long category name that should be filtered out because it exceeds forty characters in total length"]}}]}"#,
+        );
+        assert_eq!(out[0].tags, vec!["Fiction", "Sci-Fi"]);
+    }
+
+    #[test]
+    fn invalid_published_date_returns_none_year() {
+        let out = parse(r#"{"items":[{"volumeInfo":{"title":"Test","publishedDate":"invalid"}}]}"#);
+        assert_eq!(out[0].first_year, None);
+    }
 }

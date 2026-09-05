@@ -10,6 +10,7 @@
 
 use crate::db::{series_key, Catalog, SeriesWork};
 use crate::models::Book;
+use crate::service::LibraryService;
 use crate::widgets::book_row::cover_widget;
 use gtk::prelude::*;
 use relm4::prelude::*;
@@ -56,6 +57,8 @@ enum SeriesState {
 
 pub struct SeriesFloatModel {
     catalog: Arc<Catalog>,
+    #[allow(dead_code)]
+    service: LibraryService,
     series_name: String,
     series_key: String,
     state: SeriesState,
@@ -141,8 +144,10 @@ impl Component for SeriesFloatModel {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let key = series_key(&series_name, &first_author);
+        let service = LibraryService::new(catalog.clone());
         let mut model = SeriesFloatModel {
             catalog,
+            service,
             series_name: series_name.clone(),
             series_key: key,
             state: SeriesState::Loading,

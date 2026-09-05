@@ -36,6 +36,7 @@ Rule engine is **not** implemented in P0 (sample data only).
 ## EPUB reader (P2 + P3 enhancements)
 
 - WebKitGTK  
+- Reader component split into sub-modules under `src/pages/reader/` (`mod.rs`, `types.rs`, `mod_model.rs`, `chapter.rs`, `session.rs`, `js_bridge.rs`, `ui_prefs.rs`, `settings_panel.rs`, `panels.rs`, `lists.rs`, `chrome.rs`)
 - **Chapter-wise** continuous scroll  
 - Prefetch next chapter near ~85–90% scroll (P2: manual N/›; auto-next disabled for stability)  
 - Keep at most ~3 chapters mounted  

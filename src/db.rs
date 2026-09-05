@@ -1,12 +1,5 @@
 //! SQLite catalog access — P1 books + P2 progress + P3 annotations & dictionary.
 
-// Module-wide because `Catalog` is a complete data layer whose accessors are
-// each used by some pages and not others, and CI runs `-D warnings`. This is
-// the blunt instrument: it also hides items that become dead *later*, so
-// prefer a per-item `#[allow(dead_code)]` for anything added from here on,
-// and chip away at this one when a page is next converted.
-#![allow(dead_code)]
-
 use crate::models::{Book, BookFormat};
 use crate::paths::{book_dir, catalog_db, ensure_data_dirs};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -93,13 +86,14 @@ pub struct Annotation {
     pub color: String,
     pub text_excerpt: String,
     pub note: String,
+    #[allow(dead_code)]
     pub cfi: Option<String>,
     pub created_at: String,
+    #[allow(dead_code)]
     pub updated_at: String,
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct SavedWord {
     pub id: i64,
     pub word: String,
@@ -116,7 +110,6 @@ pub struct SavedWord {
 /// Book identity attached to a saved quote — the library dashboard renders
 /// cover, book and author per quote card.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct QuoteRef {
     pub title: String,
     pub author: String,
@@ -124,13 +117,14 @@ pub struct QuoteRef {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct ReadingBookmark {
     pub id: i64,
+    #[allow(dead_code)]
     pub book_id: i64,
     pub chapter_index: i64,
     pub fraction: f64,
     pub label: String,
+    #[allow(dead_code)]
     pub created_at: String,
 }
 
@@ -157,6 +151,7 @@ pub struct AuthorWork {
 
 #[derive(Debug, Clone, Default)]
 pub struct AuthorProfile {
+    #[allow(dead_code)]
     pub id: i64,
     pub canonical_name: String,
     pub sort_name: String,
@@ -177,21 +172,24 @@ pub struct AuthorProfile {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Dictionary {
+    #[allow(dead_code)]
     pub id: i64,
     pub name: String,
     pub lang: Option<String>,
     pub entry_count: i64,
+    #[allow(dead_code)]
     pub added_at: String,
     /// Merged-store priority (schema v12): lower numbers speak first.
+    #[allow(dead_code)]
     pub priority: i64,
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct DictEntry {
+    #[allow(dead_code)]
     pub id: i64,
+    #[allow(dead_code)]
     pub dict_id: i64,
     pub word: String,
     pub definition: String,
@@ -238,8 +236,11 @@ pub struct Shelf {
     pub description: String,
     /// JSON rule document; empty for manual shelves.
     pub rules: String,
+    #[allow(dead_code)]
     pub position: i64,
+    #[allow(dead_code)]
     pub created_at: String,
+    #[allow(dead_code)]
     pub updated_at: String,
     /// Live count, filled in by `list_shelves`.
     pub book_count: usize,
@@ -269,8 +270,11 @@ impl Shelf {
 #[derive(Debug, Clone)]
 pub struct ReadingListEntry {
     pub book: Book,
+    #[allow(dead_code)]
     pub position: i64,
+    #[allow(dead_code)]
     pub note: String,
+    #[allow(dead_code)]
     pub added_at: String,
 }
 
@@ -323,6 +327,7 @@ impl EventKind {
 /// A history row joined with its book title for display.
 #[derive(Debug, Clone)]
 pub struct ReadingEvent {
+    #[allow(dead_code)]
     pub id: i64,
     pub book_id: i64,
     pub kind: EventKind,
@@ -870,6 +875,7 @@ impl Catalog {
         Ok(rows.flatten().collect())
     }
 
+    #[allow(dead_code)]
     pub fn count_books(&self) -> Result<usize> {
         let conn = self.conn();
         let n: i64 = conn.query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0))?;
@@ -2484,5 +2490,47 @@ mod tests {
         let (current, longest) = streaks(&days);
         assert_eq!(current, 3, "three consecutive days read is a 3-day streak");
         assert_eq!(longest, 3);
+    }
+
+    #[test]
+    fn hinnant_date_math_roundtrips_accurately() {
+        let test_cases = [
+            (1970, 1, 1, 0i64),
+            (1969, 12, 31, -1i64),
+            (2000, 1, 1, 10957i64),
+            (2024, 2, 29, 19782i64), // Leap day
+            (1900, 2, 28, -25509i64), // Non-leap year century
+            (2000, 2, 29, 11016i64), // Leap year century
+        ];
+
+        for &(y, m, d, expected_days) in &test_cases {
+            let calculated_days = days_from_civil(y as i64, m as i64, d as i64);
+            assert_eq!(
+                calculated_days, expected_days,
+                "days_from_civil failed for {y:04}-{m:02}-{d:02}"
+            );
+
+            let (cy, cm, cd) = civil_from_days(calculated_days);
+            assert_eq!(
+                (cy, cm, cd),
+                (y, m, d),
+                "civil_from_days failed for days={calculated_days}"
+            );
+        }
+    }
+
+    #[test]
+    fn format_unix_utc_formats_timestamps() {
+        assert_eq!(format_unix_utc(0), "1970-01-01T00:00:00Z");
+        assert_eq!(format_unix_utc(1704067200), "2024-01-01T00:00:00Z");
+        assert_eq!(format_unix_utc(1709210999), "2024-02-29T12:49:59Z");
+    }
+
+    #[test]
+    fn days_from_iso_handles_valid_and_invalid_inputs() {
+        assert_eq!(days_from_iso("1970-01-01"), Some(0));
+        assert_eq!(days_from_iso("2024-02-29"), Some(19782));
+        assert_eq!(days_from_iso("invalid"), None);
+        assert_eq!(days_from_iso("2024-01"), None);
     }
 }

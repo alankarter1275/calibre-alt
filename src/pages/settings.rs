@@ -1,6 +1,7 @@
 use crate::db::Catalog;
 use crate::dict;
 use crate::paths::{catalog_db, data_dir, dictionaries_dir, library_dir};
+use crate::service::LibraryService;
 use gtk::prelude::*;
 use relm4::prelude::*;
 use std::sync::Arc;
@@ -139,6 +140,8 @@ pub enum SettingsMsg {
 
 pub struct SettingsPageModel {
     catalog: Arc<Catalog>,
+    #[allow(dead_code)]
+    service: LibraryService,
     dicts: Vec<crate::db::Dictionary>,
     active_tab: SettingsTab,
 }
@@ -326,8 +329,10 @@ impl Component for SettingsPageModel {
             }
         };
         let active_tab = SettingsTab::Appearance;
+        let service = LibraryService::new(catalog.clone());
         let model = SettingsPageModel {
             catalog,
+            service,
             dicts,
             active_tab,
         };

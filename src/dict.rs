@@ -34,17 +34,32 @@ pub struct DictSearchResult {
 }
 
 const BUNDLED_WORDNET_PREF: &str = "bundled_dictionary_english_wordnet_2025";
+#[cfg(feature = "bundled-dictionaries")]
 const BUNDLED_WORDNET_TSV_GZ: &[u8] =
     include_bytes!("../resources/dictionaries/english-wordnet-2025.tsv.gz");
+#[cfg(not(feature = "bundled-dictionaries"))]
+const BUNDLED_WORDNET_TSV_GZ: &[u8] = &[];
+
 const BUNDLED_IDIOMS_PREF: &str = "bundled_dictionary_english_idioms_2024";
+#[cfg(feature = "bundled-dictionaries")]
 const BUNDLED_IDIOMS_TSV_GZ: &[u8] =
     include_bytes!("../resources/dictionaries/english-idioms-2024.tsv.gz");
+#[cfg(not(feature = "bundled-dictionaries"))]
+const BUNDLED_IDIOMS_TSV_GZ: &[u8] = &[];
+
 const BUNDLED_SYNONYMS_PREF: &str = "bundled_dictionary_english_synonyms_3_0";
+#[cfg(feature = "bundled-dictionaries")]
 const BUNDLED_SYNONYMS_TSV_GZ: &[u8] =
     include_bytes!("../resources/dictionaries/english-synonyms-3.0.tsv.gz");
+#[cfg(not(feature = "bundled-dictionaries"))]
+const BUNDLED_SYNONYMS_TSV_GZ: &[u8] = &[];
+
 const BUNDLED_ANTONYMS_PREF: &str = "bundled_dictionary_english_antonyms_3_0";
+#[cfg(feature = "bundled-dictionaries")]
 const BUNDLED_ANTONYMS_TSV_GZ: &[u8] =
     include_bytes!("../resources/dictionaries/english-antonyms-3.0.tsv.gz");
+#[cfg(not(feature = "bundled-dictionaries"))]
+const BUNDLED_ANTONYMS_TSV_GZ: &[u8] = &[];
 
 // Merged-store priorities (lower = consulted first). WordNet speaks for
 // shared words by default; imported packs keep the schema default 100.
@@ -113,6 +128,10 @@ fn install_bundled_tsv(
     compressed_tsv: &[u8],
     priority: i64,
 ) -> Result<bool> {
+    if compressed_tsv.is_empty() {
+        return Ok(false);
+    }
+
     if catalog.get_pref(installed_pref).as_deref() == Some("installed") {
         return Ok(false);
     }

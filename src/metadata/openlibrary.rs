@@ -224,4 +224,28 @@ mod tests {
         let c = doc_to_candidate(parsed.docs.into_iter().next().unwrap());
         assert_eq!(c.tags, vec!["short"]);
     }
+
+    #[test]
+    fn published_date_falls_back_to_first_publish_year() {
+        let json = r#"{"docs":[{"title":"Test","first_publish_year":1999}]}"#;
+        let parsed: SearchResponse = serde_json::from_str(json).unwrap();
+        let c = doc_to_candidate(parsed.docs.into_iter().next().unwrap());
+        assert_eq!(c.published, "1999");
+    }
+
+    #[test]
+    fn multiple_publishers_picks_first() {
+        let json = r#"{"docs":[{"title":"Test","publisher":["First Pub","Second Pub"]}]}"#;
+        let parsed: SearchResponse = serde_json::from_str(json).unwrap();
+        let c = doc_to_candidate(parsed.docs.into_iter().next().unwrap());
+        assert_eq!(c.publisher, "First Pub");
+    }
+
+    #[test]
+    fn series_extracted_from_doc() {
+        let json = r#"{"docs":[{"title":"Test","series":["Foundational Series"]}]}"#;
+        let parsed: SearchResponse = serde_json::from_str(json).unwrap();
+        let c = doc_to_candidate(parsed.docs.into_iter().next().unwrap());
+        assert_eq!(c.series, Some("Foundational Series".to_string()));
+    }
 }

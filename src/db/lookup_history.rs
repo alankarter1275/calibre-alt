@@ -12,9 +12,12 @@ use super::*;
 /// One logged dictionary lookup.
 #[derive(Debug, Clone)]
 pub struct DictLookup {
+    #[allow(dead_code)]
     pub id: i64,
     pub word: String,
+    #[allow(dead_code)]
     pub book_id: Option<i64>,
+    #[allow(dead_code)]
     pub chapter_index: Option<i64>,
     pub context_text: String,
     pub found: bool,

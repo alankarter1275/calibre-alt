@@ -3,6 +3,7 @@ use crate::author::{
 };
 use crate::db::{AuthorProfile, AuthorWork, Catalog};
 use crate::models::Book;
+use crate::service::LibraryService;
 use crate::widgets::{
     book_row::{build_book_card, cover_widget},
     charts::stars_label,
@@ -29,6 +30,8 @@ pub enum AuthorPageMsg {
 
 pub struct AuthorPageModel {
     catalog: Arc<Catalog>,
+    #[allow(dead_code)]
+    service: LibraryService,
     requested_name: String,
     profile: Option<AuthorProfile>,
     owned_books: Vec<Book>,
@@ -157,8 +160,10 @@ impl Component for AuthorPageModel {
         let series = author::series_progress(&owned_books);
         let loading = profile.is_none();
 
+        let service = LibraryService::new(catalog.clone());
         let model = AuthorPageModel {
             catalog,
+            service,
             requested_name: author_name,
             profile,
             owned_books,

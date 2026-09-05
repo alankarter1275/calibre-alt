@@ -830,4 +830,73 @@ mod tests {
         // bytes[8..12] slice.
         assert_eq!(guess_image_ext(b"RIFF"), "jpg");
     }
+
+    #[test]
+    fn parse_opf_handles_multiple_creators_and_subjects() {
+        let opf = r#"<?xml version="1.0" encoding="utf-8"?>
+        <package xmlns="http://www.idpf.org/2007/opf" version="2.0">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>Test Book</dc:title>
+            <dc:creator>Author One</dc:creator>
+            <dc:creator>Author Two</dc:creator>
+            <dc:subject>Sci-Fi</dc:subject>
+            <dc:subject>Space</dc:subject>
+          </metadata>
+          <manifest>
+            <item id="item1" href="ch1.html" media-type="application/xhtml+xml"/>
+          </manifest>
+          <spine>
+            <itemref idref="item1"/>
+          </spine>
+        </package>"#;
+        let meta = parse_opf(opf).unwrap();
+        assert_eq!(meta.title.as_deref(), Some("Test Book"));
+        assert_eq!(meta.authors, vec!["Author One", "Author Two"]);
+        assert_eq!(meta.subjects, vec!["Sci-Fi", "Space"]);
+    }
+
+    #[test]
+    fn parse_opf_handles_epub3_belongs_to_collection() {
+        let opf = r#"<?xml version="1.0" encoding="utf-8"?>
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:title>Dune Messiah</dc:title>
+            <meta property="belongs-to-collection">Dune Chronicles</meta>
+            <meta property="group-position">2</meta>
+          </metadata>
+          <manifest/>
+          <spine/>
+        </package>"#;
+        let meta = parse_opf(opf).unwrap();
+        assert_eq!(meta.series.as_deref(), Some("Dune Chronicles"));
+    }
+
+    #[test]
+    fn join_zip_path_resolves_underflow_and_slashes() {
+        assert_eq!(join_zip_path("OEBPS", "../../cover.jpg"), "cover.jpg");
+        assert_eq!(join_zip_path("OEBPS/text", "../images/cover.jpg"), "OEBPS/images/cover.jpg");
+        assert_eq!(join_zip_path("OEBPS", "/images/cover.jpg"), "images/cover.jpg");
+    }
+
+    #[test]
+    fn percent_decode_handles_malformed_and_edge_cases() {
+        assert_eq!(percent_decode("hello%20world"), "hello world");
+        assert_eq!(percent_decode("invalid%G1percent"), "invalid%G1percent");
+        assert_eq!(percent_decode("truncated%1"), "truncated%1");
+        assert_eq!(percent_decode("trailing%"), "trailing%");
+    }
+
+    #[test]
+    fn strip_html_handles_unclosed_tags_and_attributes() {
+        assert_eq!(strip_html("Hello <b>world"), "Hello world");
+        assert_eq!(strip_html("<img src=\"x.jpg\" alt=\"cover\"/>Text"), "Text");
+        assert_eq!(strip_html("<h1>Heading</h1><p>Body</p>"), "Heading Body");
+        assert_eq!(strip_html("Line 1<br/>Line 2"), "Line 1 Line 2");
+    }
+
+    #[test]
+    fn normalize_zip_name_strips_leading_dot_slash_and_backslashes() {
+        assert_eq!(normalize_zip_name("./OEBPS\\content.opf"), "oebps/content.opf");
+        assert_eq!(normalize_zip_name("OEBPS/content.opf"), "oebps/content.opf");
+    }
 }

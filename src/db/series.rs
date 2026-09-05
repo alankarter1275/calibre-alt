@@ -32,7 +32,9 @@ pub struct SeriesWork {
 /// A decoded cache row.
 #[derive(Debug, Clone)]
 pub struct SeriesCacheEntry {
+    #[allow(dead_code)]
     pub series_key: String,
+    #[allow(dead_code)]
     pub source: String,
     pub fetched_at: String,
     pub works: Vec<SeriesWork>,

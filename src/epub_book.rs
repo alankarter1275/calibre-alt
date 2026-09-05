@@ -3627,4 +3627,66 @@ mod tests {
         // rejecting it -- a curly but legal path must still land.
         assert!(dest.join("OEBPS/Text/chapter2.xhtml").exists());
     }
+
+    #[test]
+    fn find_opf_path_extracts_rootfile_full_path() {
+        let container = r#"<?xml version="1.0"?>
+        <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+            <rootfiles>
+                <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+            </rootfiles>
+        </container>"#;
+        assert_eq!(find_opf_path(container).unwrap(), "OEBPS/content.opf");
+
+        let missing = r#"<container><rootfiles></rootfiles></container>"#;
+        assert!(find_opf_path(missing).is_err());
+    }
+
+    #[test]
+    fn parse_opf_spine_extracts_items_in_order() {
+        let opf = r#"<package>
+            <metadata><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Book Title</dc:title></metadata>
+            <manifest>
+                <item id="c1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+                <item id="c2" href="ch2.xhtml" media-type="application/xhtml+xml"/>
+                <item id="nav" href="nav.xhtml" properties="nav" media-type="application/xhtml+xml"/>
+            </manifest>
+            <spine>
+                <itemref idref="c1"/>
+                <itemref idref="c2"/>
+            </spine>
+        </package>"#;
+        let (title, manifest, spine) = parse_opf_spine(opf).unwrap();
+        assert_eq!(title, "Book Title");
+        assert_eq!(manifest.len(), 3);
+        assert_eq!(spine, vec!["c1", "c2"]);
+        assert_eq!(find_nav_href(opf).unwrap(), "nav.xhtml");
+    }
+
+    #[test]
+    fn spine_index_for_handles_fragments_and_paths() {
+        let spine = [
+            SpineItem { id: "c1".into(), href: "OEBPS/text/ch1.xhtml".into(), title: "Ch 1".into(), path: std::path::PathBuf::new() },
+            SpineItem { id: "c2".into(), href: "OEBPS/text/ch2.xhtml".into(), title: "Ch 2".into(), path: std::path::PathBuf::new() },
+        ];
+        assert_eq!(spine_index_for(&spine, "OEBPS/text/ch1.xhtml#section1"), Some(0));
+        assert_eq!(spine_index_for(&spine, "./ch2.xhtml"), Some(1));
+        assert_eq!(spine_index_for(&spine, "nonexistent.xhtml"), None);
+    }
+
+    #[test]
+    fn strip_tags_removes_markup_cleanly() {
+        assert_eq!(strip_tags("<p>Hello <b>World</b>!</p>"), "Hello World!");
+        assert_eq!(strip_tags("No tags"), "No tags");
+        assert_eq!(strip_tags("Unclosed <tag"), "Unclosed ");
+    }
+
+    #[test]
+    fn reading_theme_from_str_lossy_parses_variants() {
+        assert_eq!(ReadingTheme::from_str_lossy("light"), ReadingTheme::Light);
+        assert_eq!(ReadingTheme::from_str_lossy("DARK"), ReadingTheme::Dark);
+        assert_eq!(ReadingTheme::from_str_lossy("ink"), ReadingTheme::Ink);
+        assert_eq!(ReadingTheme::from_str_lossy("sepia"), ReadingTheme::Sepia);
+        assert_eq!(ReadingTheme::from_str_lossy("unknown"), ReadingTheme::Sepia);
+    }
 }

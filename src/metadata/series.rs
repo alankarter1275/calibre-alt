@@ -147,3 +147,57 @@ fn normalise(s: &str) -> String {
         .filter(|c| c.is_alphanumeric())
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalise_removes_punctuation_and_case() {
+        assert_eq!(normalise("The Fellowship of the Ring!"), "thefellowshipofthering");
+        assert_eq!(normalise("Harry Potter (Book 1)"), "harrypotterbook1");
+    }
+
+    #[test]
+    fn doc_to_work_maps_fields_properly() {
+        let doc = SearchDoc {
+            key: Some("/works/OL123W".into()),
+            title: Some("Dune".into()),
+            author_name: Some(vec!["Frank Herbert".into(), "Other Author".into()]),
+            first_publish_year: Some(1965),
+            cover_i: Some(42),
+        };
+        let work = doc_to_work(doc).expect("should yield work");
+        assert_eq!(work.title, "Dune");
+        assert_eq!(work.key, "/works/OL123W");
+        assert_eq!(work.author, "Frank Herbert");
+        assert_eq!(work.year, 1965);
+        assert_eq!(work.cover_i, Some(42));
+    }
+
+    #[test]
+    fn doc_to_work_returns_none_for_missing_or_empty_title() {
+        let doc_none = SearchDoc {
+            key: None,
+            title: None,
+            author_name: None,
+            first_publish_year: None,
+            cover_i: None,
+        };
+        assert!(doc_to_work(doc_none).is_none());
+
+        let doc_empty = SearchDoc {
+            key: None,
+            title: Some("   ".into()),
+            author_name: None,
+            first_publish_year: None,
+            cover_i: None,
+        };
+        assert!(doc_to_work(doc_empty).is_none());
+    }
+
+    #[test]
+    fn empty_search_query_returns_empty() {
+        assert!(search_series("   ").unwrap().is_empty());
+    }
+}

@@ -1506,4 +1506,53 @@ suite asserts IST and EST behaviour explicitly and is identical everywhere.
 
 ---
 
-*Last updated: 2026-09-04.*
+## 16. Reader modularization, EPUB test expansion, and blanket dead-code removal (2026-09-05)
+
+Came out of the high-priority refactoring pass in the comprehensive code review.
+
+1. **Splitting `reader.rs` into sub-modules (`src/pages/reader/`):**
+   The 4,452-line Relm4 component was split into 10 cohesive sub-modules (`mod.rs`, `types.rs`, `mod_model.rs`, `chapter.rs`, `session.rs`, `js_bridge.rs`, `ui_prefs.rs`, `settings_panel.rs`, `panels.rs`, `lists.rs`, `chrome.rs`). All 58 fields on `ReaderModel` were made `pub(crate)`, keeping the split 100% internal — external callers continue to import `ReaderModel` and `ReaderOut` from `src/pages/reader.rs` / `src/pages/reader/mod.rs` without API breaking changes.
+
+2. **EPUB Parser Test Coverage Expansion:**
+   Added comprehensive unit tests in `src/epub.rs` and `src/epub_book.rs` covering edge cases in OPF metadata parsing (multiple creators/subjects, EPUB3 `belongs-to-collection`), path join underflow (`../../path`), percent decoding, HTML tag stripping, container.xml parsing, and reading theme lossy parsing.
+
+3. **Elimination of Blanket `#![allow(dead_code)]`:**
+   Removed module-level `#![allow(dead_code)]` from `src/db.rs`. Based on a thorough audit, obsolete annotations were removed from active types (`SavedWord`, `QuoteRef`, `Book.file_hash`), and explicit per-item `#[allow(dead_code)]` annotations were added only to genuinely unused accessor methods and unread schema fields.
+
+---
+
+## 17. Medium-priority fixes: gitignore, Makefile, metadata & date math tests (2026-09-05)
+
+Came out of the medium-priority pass in the code review (Batch 2).
+
+1. **`.gitignore` update:**
+   Updated `ci-shots/` pattern to `ci-shots*/` to properly ignore all screenshot directories produced during automated UI testing (e.g. `ci-shots-gui`, `ci-shots-1`).
+
+2. **`Makefile` build & install target:**
+   Added a root `Makefile` supporting `all`, `build` (`cargo build --release`), `dev`, `test`, `check`, `clean`, `install`, and `uninstall` targets. The `install` target copies the binary (`kalam`) to `$(DESTDIR)$(PREFIX)/bin`, the desktop file (`app.kalam.Kalam.desktop`) to `$(DESTDIR)$(PREFIX)/share/applications`, and the application icon (`assets/logo.png`) to `$(DESTDIR)$(PREFIX)/share/icons/hicolor/512x512/apps/app.kalam.Kalam.png`.
+
+3. **Metadata Fetcher Unit Tests (`src/metadata/`):**
+   Added comprehensive unit tests across `google_books.rs`, `openlibrary.rs`, and `series.rs` for JSON parsing edge cases, author list joining, small thumbnail fallback, category filtering, published date fallback, series doc extraction, and series title normalization and sorting.
+
+4. **Date Math Unit Tests (`src/db.rs`):**
+   Added unit tests for Howard Hinnant date algorithm functions (`civil_from_days`, `days_from_civil`, `days_from_iso`, `format_unix_utc`), verifying exact round-tripping for leap days (2024-02-29), non-leap centuries (1900-02-28), epoch boundaries (1970-01-01, 1969-12-31), and ISO date string parsing.
+
+---
+
+## 18. Low-priority fixes: external CSS stylesheet, bundled-dictionaries feature flag, LibraryService migration (2026-09-05)
+
+Came out of the low-priority pass in the code review (Batch 3).
+
+1. **External CSS Stylesheet (`resources/style.css`):**
+   Extracted the monolithic 3,574-line string literal in `src/style.rs` out into a dedicated external file `resources/style.css`, referenced via `include_str!("../resources/style.css")`. This provides syntax highlighting, linting, and proper file separation for all application styling.
+
+2. **`bundled-dictionaries` Feature Flag (`Cargo.toml`):**
+   Added `bundled-dictionaries` as a default feature flag in `Cargo.toml`. When enabled, dictionary byte blobs are embedded via `include_bytes!`. When built with `--no-default-features`, bundled dictionary arrays resolve to empty slices (`&[]`), reducing binary size for custom/minimal builds.
+
+3. **`LibraryService` Migration:**
+   Extended `LibraryService` integration to remaining page components (`src/pages/author.rs`, `src/pages/series_float.rs`, `src/pages/settings.rs`), ensuring uniform high-level service usage across all UI views.
+
+---
+
+*Last updated: 2026-09-05.*
+
