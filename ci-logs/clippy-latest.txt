@@ -8,7 +8,15 @@ src/pages/comics_reader/provider.rs:4:10: [1m[91merror[0m: enum `ImageState` 
 src/pages/comics_reader/provider.rs:15:8: [1m[91merror[0m: method `has_page` is never used
 src/pages/browse.rs:21:5: [1m[91merror[0m: field `manager` is never read
 src/sources/mangadex.rs:48:5: [1m[91merror[0m: field `id` is never read
-src/sources/scraper.rs:101:5: [1m[91merror[0m: field `name` is never read
+src/sources/scraper.rs:7:12: [1m[91merror[0m: struct `ScraperConfig` is never constructed
+src/sources/scraper.rs:18:12: [1m[91merror[0m: struct `SearchSelectorsConfig` is never constructed
+src/sources/scraper.rs:27:12: [1m[91merror[0m: struct `DetailsSelectorsConfig` is never constructed
+src/sources/scraper.rs:35:12: [1m[91merror[0m: struct `ChaptersSelectorsConfig` is never constructed
+src/sources/scraper.rs:42:12: [1m[91merror[0m: struct `PagesSelectorsConfig` is never constructed
+src/sources/scraper.rs:48:8: [1m[91merror[0m: struct `CompiledSelectors` is never constructed
+src/sources/scraper.rs:67:8: [1m[91merror[0m: associated function `new` is never used
+src/sources/scraper.rs:96:12: [1m[91merror[0m: struct `GenericScraperSource` is never constructed
+src/sources/scraper.rs:106:12: [1m[91merror[0m: associated items `new`, `text`, `attr`, and `resolve_url` are never used
 src/sources/traits.rs:9:5: [1m[91merror[0m: variant `Html` is never constructed
 src/sources/traits.rs:17:9: [1m[91merror[0m: fields `author` and `cover_url` are never read
 src/sources/traits.rs:29:9: [1m[91merror[0m: field `tags` is never read
@@ -16,6 +24,6 @@ src/sources/traits.rs:46:5: [1m[91merror[0m: variants `TagsInclude`, `TagsExc
 src/sources/traits.rs:55:9: [1m[91merror[0m: field `has_more` is never read
 src/sources/traits.rs:65:8: [1m[91merror[0m: method `name` is never used
 src/comics.rs:65:5: [1m[91merror[0m: consider using `sort_by_key`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 18 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 18 previous errors
---- run 33972456845 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 26 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 26 previous errors
+--- run 33973993382 ---
