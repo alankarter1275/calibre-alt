@@ -345,6 +345,56 @@ mod tests {
     }
 
     #[test]
+    fn a_tag_added_after_import_reaches_the_backup() {
+        // The gap this closed: the sidecar was written on import, on the
+        // metadata editor and on adding a highlight -- but not when a tag chip
+        // was added or removed on the book page, nor when a highlight was
+        // deleted. So an edit could leave the backup silently stale while the
+        // recovery card still reported "all books covered", because it counts
+        // files rather than freshness.
+        let cat = Catalog::open_in_memory().unwrap();
+        let id = cat
+            .insert_book(
+                "uuid-tagtest",
+                "Dune",
+                "Frank Herbert",
+                None,
+                "",
+                crate::models::BookFormat::Epub,
+                "book.epub",
+                "hash-tagtest",
+                None,
+                &[],
+            )
+            .expect("insert");
+
+        cat.add_book_tag(id, "scifi").expect("add tag");
+        let tags = cat.get_book(id).unwrap().unwrap().tags;
+        assert_eq!(tags, vec!["scifi"], "the tag must be on the book");
+
+        // What the sidecar would contain now, built the same way the writer
+        // builds it. The write itself needs a real library folder, which a
+        // unit test has no business creating; the content is the part that
+        // was wrong.
+        let book = cat.get_book(id).unwrap().unwrap();
+        let marks = cat.get_annotations_for_book(id).unwrap_or_default();
+        let side = Sidecar::from_parts(&book, None, &marks);
+        assert_eq!(
+            side.tags,
+            vec!["scifi"],
+            "a tag added after import must reach the backup"
+        );
+
+        cat.remove_book_tag(id, "scifi").expect("remove tag");
+        let book = cat.get_book(id).unwrap().unwrap();
+        let side = Sidecar::from_parts(&book, None, &[]);
+        assert!(
+            side.tags.is_empty(),
+            "removing a tag must reach the backup too"
+        );
+    }
+
+    #[test]
     fn the_sidecar_sits_beside_the_book_it_describes() {
         let path = sidecar_path("abc-123");
         assert_eq!(path.file_name().unwrap(), "kalam.json");

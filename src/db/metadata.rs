@@ -106,6 +106,7 @@ impl Catalog {
 
         self.prune_orphan_tags()?;
         self.remember_overrides(book_id)?;
+        crate::sidecar::refresh_for_book(self, book_id);
         Ok(())
     }
 
@@ -126,6 +127,7 @@ impl Catalog {
 
         self.prune_orphan_tags()?;
         self.remember_overrides(book_id)?;
+        crate::sidecar::refresh_for_book(self, book_id);
         Ok(())
     }
 

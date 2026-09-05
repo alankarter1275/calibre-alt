@@ -1169,6 +1169,20 @@ impl Catalog {
             "UPDATE books SET progress = ?1 WHERE id = ?2",
             params![pct, book_id],
         )?;
+        drop(conn);
+
+        // Deliberately NOT refreshing the sidecar here.
+        //
+        // This runs on every page turn. Rewriting a JSON file that often would
+        // be pointless disk traffic, and the thing it would protect — your
+        // exact place in a book — is the least valuable field in the backup
+        // and the one most quickly re-found. `checkpoint_session` in the
+        // reader already persists progress to the database on leaving a book,
+        // and the sidecar picks the position up on the next real edit.
+        //
+        // Worth stating rather than leaving as an omission: everything else
+        // that changes a book does refresh it, so a reader glancing at those
+        // call sites would otherwise read this one as a bug.
         Ok(())
     }
 }
