@@ -288,8 +288,9 @@ impl Component for RemoteDetailModel {
                         |_| {},
                         move |bytes| {
                             if let Some(b) = bytes {
-                                if let Ok(tex) = gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from(&b)) {
-                                    pic.set_paintable(Some(&tex));
+                                let stream = gtk::gio::MemoryInputStream::from_bytes(&gtk::glib::Bytes::from(&b));
+                                if let Ok(pixbuf) = gtk::gdk_pixbuf::Pixbuf::from_stream_at_scale(&stream, 160, 230, true, None::<&gtk::gio::Cancellable>) {
+                                    pic.set_paintable(Some(&gtk::gdk::Texture::for_pixbuf(&pixbuf)));
                                 }
                             }
                         },

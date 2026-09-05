@@ -144,7 +144,7 @@ impl Source for WeebCentralSource {
                     title,
                     number,
                     volume: None,
-                    url: Some(href.to_string()),
+                    url: None, // WeebCentral chapters are native, not external links
                 });
             }
         }
