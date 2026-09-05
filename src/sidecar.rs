@@ -156,10 +156,83 @@ pub fn refresh_for_book(catalog: &Catalog, book_id: i64) {
     write_sidecar(&book, position, &marks);
 }
 
-/// Read a sidecar back. Used by a rebuild, never during normal operation.
+/// Read a sidecar back. Used by the survey below, never during normal reading.
 pub fn read_sidecar(path: &Path) -> Option<Sidecar> {
     let text = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&text).ok()
+}
+
+/// What a rebuild would find if `catalog.db` disappeared right now.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SidecarSurvey {
+    /// Book folders in the library.
+    pub books: usize,
+    /// Folders with a readable `kalam.json`.
+    pub recoverable: usize,
+    /// Folders with a `kalam.json` that could not be parsed.
+    pub damaged: usize,
+}
+
+impl SidecarSurvey {
+    /// Folders with no sidecar at all — imported before this existed, or a
+    /// write that failed.
+    pub fn missing(&self) -> usize {
+        self.books
+            .saturating_sub(self.recoverable)
+            .saturating_sub(self.damaged)
+    }
+}
+
+/// Count how much of the library could be rebuilt from its folders.
+///
+/// This exists so the promise is checkable. "Your library describes itself" is
+/// worth nothing if nobody ever verifies it — the backups are written on paths
+/// that could silently stop running, and the failure would be invisible until
+/// the day someone actually needed them (pitfalls §19). Settings shows the
+/// number.
+pub fn survey() -> SidecarSurvey {
+    let mut out = SidecarSurvey::default();
+    let Ok(entries) = std::fs::read_dir(crate::paths::library_dir()) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        out.books += 1;
+        let side = entry.path().join("kalam.json");
+        if !side.is_file() {
+            continue;
+        }
+        if read_sidecar(&side).is_some() {
+            out.recoverable += 1;
+        } else {
+            out.damaged += 1;
+        }
+    }
+    out
+}
+
+/// Write a sidecar for every book that has none.
+///
+/// For libraries that predate this file, and for any book whose write failed.
+/// Returns how many were written. Cheap to re-run: books that already have one
+/// are skipped, so this is safe to offer as a button.
+pub fn backfill_missing(catalog: &Catalog) -> usize {
+    let Ok(books) = catalog.list_books(crate::db::SortKey::Title, "") else {
+        return 0;
+    };
+    let mut written = 0;
+    for book in books {
+        if sidecar_path(&book.uuid).is_file() {
+            continue;
+        }
+        refresh_for_book(catalog, book.id);
+        if sidecar_path(&book.uuid).is_file() {
+            written += 1;
+        }
+    }
+    written
 }
 
 #[cfg(test)]

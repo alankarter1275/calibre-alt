@@ -354,7 +354,7 @@ impl Component for SettingsPageModel {
         rebuild_dicts(&widgets.dict_list, &model.dicts, &sender);
         build_sources(&widgets.source_list, &model.catalog);
         build_file_write(&widgets.file_write_row, &model.catalog);
-        build_paths(&widgets.paths_host);
+        build_paths(&widgets.paths_host, &model.catalog);
         build_backup(&widgets.backup_row, &model.catalog);
         build_export(&widgets.export_row, &model.catalog);
         build_notifications(&widgets.notify_list, &sender);
@@ -986,11 +986,12 @@ fn theme_variant_button(
 }
 
 /// Data locations: four label/desc rows with mono path boxes.
-fn build_paths(host: &gtk::Box) {
+fn build_paths(host: &gtk::Box, catalog: &Arc<Catalog>) {
     while let Some(child) = host.first_child() {
         host.remove(&child);
     }
     build_libraries(host);
+    build_recovery(host, catalog);
 
     let body = section_card(
         host,
@@ -1228,6 +1229,60 @@ fn build_libraries(host: &gtk::Box) {
         ),
         &add,
     );
+}
+
+/// How much of this library could be rebuilt from its folders alone.
+///
+/// The point of `kalam.json` is that losing `catalog.db` should not lose your
+/// tags, highlights and reading positions. That promise is only worth
+/// something if it is checkable — the backups are written on code paths that
+/// could quietly stop running, and nobody would notice until the day they
+/// mattered. So the number is on screen.
+fn build_recovery(host: &gtk::Box, catalog: &Arc<Catalog>) {
+    let survey = crate::sidecar::survey();
+    let body = section_card(
+        host,
+        "document-save-symbolic",
+        "Recovery",
+        Some(concat!(
+            "Each book folder keeps a kalam.json copy of its details, tags, ",
+            "highlights and reading position. If the catalog database is ever ",
+            "lost, this is what a rebuild would use."
+        )),
+    );
+
+    let missing = survey.missing();
+    let summary = if survey.books == 0 {
+        "No books yet.".to_string()
+    } else if missing == 0 && survey.damaged == 0 {
+        format!("All {} books have a backup copy.", survey.books)
+    } else {
+        let mut parts = vec![format!("{} of {} covered", survey.recoverable, survey.books)];
+        if missing > 0 {
+            parts.push(format!("{missing} missing"));
+        }
+        if survey.damaged > 0 {
+            parts.push(format!("{} unreadable", survey.damaged));
+        }
+        parts.join(" · ")
+    };
+
+    let backfill = gtk::Button::with_label("Write missing copies");
+    backfill.add_css_class("kalam-btn-outlined");
+    backfill.set_valign(gtk::Align::Center);
+    backfill.set_sensitive(missing > 0);
+    {
+        let catalog = catalog.clone();
+        backfill.connect_clicked(move |btn| {
+            let written = crate::sidecar::backfill_missing(&catalog);
+            btn.set_sensitive(false);
+            crate::notify::info(
+                "Backup copies written",
+                &format!("{written} book folders updated."),
+            );
+        });
+    }
+    setting_row(&body, "Books with a backup copy", &summary, &backfill);
 }
 
 /// A mono path box; long paths ellipsize but stay selectable and have the
