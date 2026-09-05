@@ -85,9 +85,47 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 | **P5** | **Metadata edit, cover replace, Open Library fetch** ✅ |
 | Reader track | Annotation workflow + hybrid anchoring; dictionary overhaul (merged store, popup redesign, likely-sense hint, IPA pronunciation, tap-to-look-up, find in chapter) + vocabulary review (known flag, CSV/Anki export) ✅ · Phases 8–10 shipped: POS grouping dividers, dictionary priority reorder UI, lookup history |
 | Backend review | Full sweep of `db.rs` + `db/*`: importers hardened, reading-list column bug fixed, 9 new tests ✅ |
-| A0 (architecture) | Measured (`perf.rs` / `timing.rs`) ✅ · cover thumbnails ✅ · one reused WebView ✅ · `LibraryService` seam — **in progress** (Home/Analytics/Tags converted) · task manager + preloaders next |
-| P6–P11 | Downloads, AO3/FF, comics, PDF, tools — see ROADMAP |
+| A0 (architecture) | ✅ **done** except the plugin seam. Measured (`perf.rs` / `timing.rs`) · `LibraryService` seam · cover thumbnails · task manager · preloaders · one reused WebView · **windowed book grid** (2,000 books: 502 MB → 247 MB, 434 ms → 12 ms) · perf budgets in CI that assert **query counts**, not milliseconds. The plugin-host seam is designed in `docs/source-seam.md` and lands with its first implementation |
+| **P6.5** | **Libraries** ✅ — choose the folder, keep several, switch between them (restarts), copy one to another machine and it opens. App settings stay shared; dictionaries are not duplicated per library. Every book folder keeps a `kalam.json` backup of its details, tags, highlights and reading position |
+| P6–P11 | Downloads, comics, PDF, tools — see ROADMAP. **P7 (fiction: AO3 / Royal Road / Literotica / FFN) moved behind the comics phases** on 2026-09-04 while its design settles; it is a browsing *client*, not a downloader |
 | UI overhaul (P5.5) | Colour system, 13 themes, Settings v2, book page, series float — **in progress** (Home/Library/Reader chrome next) |
+
+## Switches
+
+Every risky change ships behind one of these, so a problem can be turned off
+without waiting for a fix. All are off-by-default in the sense that the app
+does the right thing with none of them set.
+
+| Variable | Effect |
+|---|---|
+| `KALAM_TIMING=1` | print cold-start / book-open / chapter-turn timings |
+| `KALAM_NO_WINDOWED_GRID=1` | build every book card again, not just the visible ones |
+| `KALAM_NO_PRELOAD=1` | decode covers synchronously, as before A0 step 5 |
+| `KALAM_NO_WEBVIEW_POOL=1` | spawn a fresh WebKit view per book instead of reusing one |
+| `KALAM_NO_CSS=1` | run with stock GTK styling — tells you whether a visual bug is ours |
+| `KALAM_ROUTE=<page>` | open straight to a page (`all-books`, `settings`, …); used by the CI screenshots |
+
+## Where your files live
+
+```
+~/.config/kalam/
+  libraries.json     which libraries exist and which is open
+  prefs.json         app settings shared by every library
+
+<library folder>/    default ~/.local/share/kalam
+  catalog.db         books, shelves, highlights, reading progress
+  library/<uuid>/
+    book.epub
+    cover.jpg
+    kalam.json       backup copy of this book's details, tags and highlights
+  cache/             thumbnails and unpacked EPUBs — safe to delete
+
+~/.local/share/kalam/dictionaries/   shared by every library, never duplicated
+```
+
+A library folder is self-contained: copy it to another machine, point Kalam at
+it in **Settings → Storage → Libraries**, and it opens. The `cache/` folder is
+rebuilt as needed and does not need to travel.
 
 ## Requirements (Arch Linux)
 
@@ -183,11 +221,13 @@ src/
   models.rs        routes + books/shelves
   icons.rs         symbolic icon helpers
   notify.rs        toast notifications + history
-  paths.rs         XDG data/cache paths
+  paths.rs         XDG paths — per-library vs shared (P6.5)
+  libraries.rs     which library is open, the registry, global prefs (P6.5)
+  sidecar.rs       kalam.json backup beside every book (P6.5)
   service.rs       LibraryService — pages ask, it answers (A0 step 2)
   webview_pool.rs  one reused WebKit view across book opens (A0)
   thumbs.rs        persistent cover thumbnails (A0 step 3)
-  perf.rs          headless perf probes (#[ignore]d; run manually)
+  perf.rs          query-count budgets (gate CI) + timing probes (manual)
   timing.rs        in-app timing harness (KALAM_TIMING=1)
   theme.rs         every colour — 13 dark themes
   style.rs         global CSS — shape only (spacing, radii, type scale)
@@ -220,17 +260,28 @@ on the same `Catalog`:
 
 ## Data
 
+The layout is in **[Where your files live](#where-your-files-live)** above.
+Full detail:
+
 ```text
-~/.local/share/kalam/
-  catalog.db
+<library folder>/              default ~/.local/share/kalam, one per library
+  catalog.db                   books, shelves, highlights, progress
   library/<uuid>/
-  dictionaries/        (imported packs meta only; entries in catalog.db)
-  cache/reader/<uuid>/  (extracted EPUB for the reader)
-  cache/thumbs/<uuid>.png  (persistent cover thumbnails)
-  covers/              (stashed covers for metadata restore, keyed by file hash)
-  authors/             (cached author photos)
-  series-covers/       (cached series float covers)
-~/.config/kalam/       (future)
+    book.epub · cover.jpg
+    kalam.json                 backup of this book's details and highlights
+  cache/reader/<uuid>/         extracted EPUB for the reader (throwaway)
+  cache/thumbs/<uuid>.png      persistent cover thumbnails
+  covers/                      stashed covers for metadata restore, by file hash
+  authors/                     cached author photos
+  series-covers/               cached series float covers
+
+~/.local/share/kalam/
+  dictionaries/                shared by every library, never duplicated
+
+~/.config/kalam/               about this machine, not about books
+  libraries.json               which libraries exist, and which is open
+  prefs.json                   app settings shared by every library
+
 ~/Quotes.md            (export target — saved quotes, Markdown)
 ~/SavedWords.csv       (export target — vocabulary, RFC-4180)
 ~/SavedWords-Anki.txt  (export target — vocabulary, Anki TSV)
