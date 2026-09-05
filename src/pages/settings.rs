@@ -1067,27 +1067,66 @@ fn build_libraries(host: &gtk::Box) {
                 open.add_css_class("kalam-btn-outlined");
                 open.set_valign(gtk::Align::Center);
                 let name = lib.name.clone();
-                open.connect_clicked(move |_| {
-                    let mut reg = crate::libraries::load_registry();
-                    if !reg.select(i) {
-                        // The registry changed under us -- another window, or
-                        // a hand edit. Saying so beats silently doing nothing.
-                        crate::notify::error(
-                            "Could not switch library",
-                            "The library list changed. Reopen Settings and try again.",
-                        );
-                        return;
-                    }
-                    match crate::libraries::save_registry(&reg) {
-                        Ok(()) => crate::notify::info(
-                            "Library selected",
-                            &format!("“{name}” opens next time Kalam starts."),
-                        ),
-                        Err(err) => crate::notify::error(
-                            "Could not save the library list",
-                            &err.to_string(),
-                        ),
-                    }
+                open.connect_clicked(move |btn| {
+                    // Ask first. Switching restarts the app, which closes
+                    // whatever the user is reading -- doing that from a single
+                    // unlabelled click would be rude.
+                    let window = btn.root().and_then(|r| r.downcast::<gtk::Window>().ok());
+                    let dialog = gtk::AlertDialog::builder()
+                        .modal(true)
+                        .message(format!("Open “{name}”?"))
+                        .detail(concat!(
+                            "Kalam will restart to open the other library. ",
+                            "Anything you are reading will be closed; your ",
+                            "place is saved."
+                        ))
+                        .buttons(vec![
+                            "Cancel".to_string(),
+                            "Restart and open".to_string(),
+                        ])
+                        .cancel_button(0)
+                        .default_button(1)
+                        .build();
+
+                    let name = name.clone();
+                    dialog.choose(
+                        window.as_ref(),
+                        gtk::gio::Cancellable::NONE,
+                        move |answer| {
+                            // Escape and the Cancel button both land here as
+                            // an error or index 0. `glib::Error` is not
+                            // comparable, so match rather than `!= Ok(1)`.
+                            if !matches!(answer, Ok(1)) {
+                                return;
+                            }
+                            let mut reg = crate::libraries::load_registry();
+                            if !reg.select(i) {
+                                // The registry changed under us -- another
+                                // window, or a hand edit. Saying so beats
+                                // silently doing nothing.
+                                crate::notify::error(
+                                    "Could not switch library",
+                                    "The library list changed. Reopen Settings and try again.",
+                                );
+                                return;
+                            }
+                            if let Err(err) = crate::libraries::save_registry(&reg) {
+                                crate::notify::error(
+                                    "Could not save the library list",
+                                    &err.to_string(),
+                                );
+                                return;
+                            }
+                            // Only restart once the choice is safely on disk;
+                            // restarting first would reopen the old library
+                            // and look like the click did nothing.
+                            let err = crate::libraries::restart_now();
+                            crate::notify::error(
+                                "Could not restart",
+                                &format!("“{name}” will open next time you start Kalam. ({err})"),
+                            );
+                        },
+                    );
                 });
                 controls.append(&open);
             }

@@ -353,6 +353,45 @@ pub fn adopt_legacy_library_if_needed() {
     }
 }
 
+/// Restart Kalam so a newly selected library takes effect.
+///
+/// **Why restart rather than switch in place.** `paths::data_dir()` caches the
+/// active library for the life of the process, and deliberately so: pages hold
+/// open database handles, in-flight cover decodes and half-built widget trees
+/// that all assume one library. Repointing mid-session would leave some of
+/// them reading the old library and writing to the new one, which is the kind
+/// of bug that corrupts data rather than merely looking wrong. A restart is a
+/// second of waiting and cannot be subtly wrong.
+///
+/// Returns only on failure — on success this process has been replaced.
+///
+/// `exec` rather than spawn-then-quit: spawning leaves two Kalams alive at
+/// once, both with the catalog open, for as long as the old one takes to shut
+/// down. `exec` replaces the image, so there is never a second instance and
+/// the window manager keeps the same process.
+#[cfg(unix)]
+pub fn restart_now() -> std::io::Error {
+    use std::os::unix::process::CommandExt;
+
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    // Skip argv[0]; `Command` supplies it.
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    std::process::Command::new(exe).args(args).exec()
+}
+
+/// Non-Unix has no `exec`; Kalam is Linux-only, so this is only here to keep
+/// the call site honest rather than hidden behind a `cfg` at every use.
+#[cfg(not(unix))]
+pub fn restart_now() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "restarting is only implemented on Unix",
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Global preferences — the settings that must NOT change when you switch
 // ---------------------------------------------------------------------------
