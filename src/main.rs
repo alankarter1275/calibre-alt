@@ -55,6 +55,27 @@ fn main() {
     // adding a second would make the first seem to disappear.
     libraries::adopt_legacy_library_if_needed();
 
+    // If the selected library's folder is gone -- unplugged drive, unmounted
+    // share, folder renamed -- say so before `ensure_data_dirs()` recreates it
+    // and `Catalog::open` fills it with an empty database. Without this the
+    // user sees an empty library and concludes their books are lost, when the
+    // drive is merely not plugged in.
+    //
+    // Refusing to start is the right call here, not a fallback to some other
+    // library: writing into a *different* library than the one the user chose
+    // is how you scatter books across two places.
+    if let Some(missing) = libraries::missing_active_library() {
+        eprintln!("kalam: the selected library folder is not there.");
+        eprintln!("  {}", missing.display());
+        eprintln!();
+        eprintln!("If it lives on a removable drive or a network share, connect");
+        eprintln!("it and start Kalam again. Nothing has been changed or deleted.");
+        eprintln!();
+        eprintln!("To use a different library instead, edit or remove:");
+        eprintln!("  {}", libraries::registry_path().display());
+        std::process::exit(1);
+    }
+
     // Ensure data dirs exist before the catalog is opened to read the theme.
     if let Err(err) = paths::ensure_data_dirs() {
         // Nothing will work if this failed, so say so on screen rather than

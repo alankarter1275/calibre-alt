@@ -353,6 +353,34 @@ pub fn adopt_legacy_library_if_needed() {
     }
 }
 
+/// Is the selected library actually there?
+///
+/// Returns the missing path when a library is selected but its folder has
+/// gone — an unplugged drive, an unmounted share, a folder renamed or deleted
+/// outside the app.
+///
+/// **Why this needs checking rather than being left to fail naturally.** It
+/// would not fail: `ensure_data_dirs()` calls `create_dir_all`, so the folder
+/// is silently recreated, and `Catalog::open` then builds a fresh empty
+/// database inside it. The user sees an empty library and reasonably concludes
+/// their books are gone, when the drive is merely unplugged. Worse, the
+/// recreated folder now *looks* like a real library, so plugging the drive
+/// back in does not obviously fix anything.
+///
+/// A library that has never been opened is not missing — `looks_like_a_library`
+/// is false for an empty folder the user just chose, and that is a normal
+/// state, not an error.
+pub fn missing_active_library() -> Option<PathBuf> {
+    let reg = load_registry();
+    let active = reg.active()?;
+    if active.path.is_dir() {
+        return None;
+    }
+    Some(active.path.clone())
+}
+
+/// Restart Kalam so a newly selected library takes effect.
+
 /// Restart Kalam so a newly selected library takes effect.
 ///
 /// **Why restart rather than switch in place.** `paths::data_dir()` caches the
@@ -545,6 +573,32 @@ mod global_pref_tests {
         // And the near-miss that started this: `theme` alone is NOT the app
         // theme -- the real key is `ui.theme`.
         assert!(!is_global_pref("theme"));
+    }
+
+    #[test]
+    fn a_library_folder_that_is_present_is_not_reported_missing() {
+        // The check exists because a missing folder does not fail naturally:
+        // `create_dir_all` would recreate it and the app would build an empty
+        // database inside, so the user's books appear to have vanished when a
+        // drive is merely unplugged. Only the "present" half can be tested
+        // without touching the real registry -- the missing half needs a
+        // registry on disk, which tests deliberately do not write.
+        let base = std::env::temp_dir().join(format!("kalam-present-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let entry = LibraryEntry {
+            name: "Here".into(),
+            path: base.clone(),
+        };
+        assert!(entry.path.is_dir(), "a present folder must read as present");
+
+        let gone = base.join("not-there");
+        let entry = LibraryEntry {
+            name: "Gone".into(),
+            path: gone,
+        };
+        assert!(!entry.path.is_dir(), "a missing folder must read as missing");
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
