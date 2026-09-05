@@ -1,5 +1,6 @@
 pub mod mangadex;
 pub mod manganato;
+pub mod weebcentral;
 pub mod scraper;
 pub mod traits;
 
@@ -20,9 +21,9 @@ impl SourceManager {
             sources: Vec::new(),
         };
 
-        // Register Manganato first so it is the default source.
-        // It provides raw images for official chapters.
-        manager.register(Arc::new(manganato::ManganatoSource::new()));
+        // Register WeebCentral first so it is the default source.
+        // It provides raw images for official chapters without Cloudflare.
+        manager.register(Arc::new(weebcentral::WeebCentralSource::new()));
 
         // Register MangaDex second.
         manager.register(Arc::new(mangadex::MangaDexSource::new()));
