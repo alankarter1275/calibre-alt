@@ -87,8 +87,10 @@ Built with **Rust**, **GTK4**, and **Relm4**. Designed to stay fast on modest ha
 | Backend review | Full sweep of `db.rs` + `db/*`: importers hardened, reading-list column bug fixed, 9 new tests ✅ |
 | A0 (architecture) | ✅ **done** except the plugin seam. Measured (`perf.rs` / `timing.rs`) · `LibraryService` seam · cover thumbnails · task manager · preloaders · one reused WebView · **windowed book grid** (2,000 books: 502 MB → 247 MB, 434 ms → 12 ms) · perf budgets in CI that assert **query counts**, not milliseconds. The plugin-host seam is designed in `docs/source-seam.md` and lands with its first implementation |
 | **P6.5** | **Libraries** ✅ — choose the folder, keep several, switch between them (restarts), copy one to another machine and it opens. App settings stay shared; dictionaries are not duplicated per library. Every book folder keeps a `kalam.json` backup of its details, tags, highlights and reading position |
-| P6–P11 | Downloads, comics, PDF, tools — see ROADMAP. **P7 (fiction: AO3 / Royal Road / Literotica / FFN) moved behind the comics phases** on 2026-09-04 while its design settles; it is a browsing *client*, not a downloader |
-| UI overhaul (P5.5) | Colour system, 13 themes, Settings v2, book page, series float — **in progress** (Home/Library/Reader chrome next) |
+| P8 / P9 | Comics and manga — **next**. Image pager, then the same `Source` trait with MangaDex |
+| P6 + P7 | Downloads hub **and** the fiction client, **built together** (combined 2026-09-04): a queue with nothing to download is a shell. Browsing client for AO3 / Royal Road / Literotica / FFN — browse, filter, author pages, read online, download, auto-update |
+| P10–P12 | PDF, tools, Lua plugins — see ROADMAP |
+| UI overhaul (P5.5) | Colour system, 13 themes, Settings v2, book page, series float ✅ · the remaining screens are **deliberately last** (moved 2026-09-04): every phase above adds screens, so restyling now means restyling again later |
 
 ## Switches
 

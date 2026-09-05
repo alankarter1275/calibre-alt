@@ -172,30 +172,34 @@ architecture.
    with its first implementation, not before.
 2. **P6.5 — Libraries** — ✅ **done 2026-09-04.** Pick the folder, keep several
    libraries, switch between them, copy one to another machine and it opens.
-3. **P6 — Downloads hub** ◀ **NEXT** (queue + folder watch).
-4. **P8 — Comics local** (image pager — decode + paint, no engine) and
-   **P9 — Manga platform** (same `Source` trait, `ContentKind::Images`;
+3. **P8 — Comics local** ◀ **NEXT** (image pager — decode + paint, no engine)
+   and **P9 — Manga platform** (same `Source` trait, `ContentKind::Images`;
    MangaDex official API built in — moved here from P7 on 2026-09-04 — then
    Komga/Kavita/OPDS clients, scraped sites as Lua plugins later).
-5. **P7 — Fiction platform** — **moved behind P8/P9 on 2026-09-04** at the
-   user's request while the design settles. A browsing *client*, not a
-   downloader: category browsing, author pages, the site's own sort orders,
-   search with full filters — with downloading as one thing you can do while
+4. **P6 + P7 — Downloads hub and the fiction client**, **combined 2026-09-04**
+   and done together: a queue with nothing to download is a shell, and a client
+   that fetches things needs somewhere for those jobs to live. Building them
+   apart would design the queue against imagined callers. A browsing *client*,
+   not a downloader: category browsing, author pages, the site's own sort
+   orders, search with full filters — downloading is one thing you can do while
    in there. Sources AO3 → Royal Road → Literotica → FFN (Webnovel dropped:
    paywalled). Split into stages P7a–P7f; see that section.
-6. **Renderer vertical slice** — custom renderer on **cosmic-text** for fiction
+5. **Renderer vertical slice** — custom renderer on **cosmic-text** for fiction
    content. The **calibration milestone**: 2–4 weeks of sessions; if it takes
    longer, stop and reassess before sinking months in.
-7. **EPUB path** → custom renderer takes EPUBs: either a normalization pipeline
+6. **EPUB path** → custom renderer takes EPUBs: either a normalization pipeline
    (lol_html + rules) or **stylo** (Firefox's CSS engine, via chapbook);
    WebKit demoted to fallback for exotic EPUBs (may be cut later). **Adopt
    quote-anchored locators (LayeredLocator, chapbook's model) for annotations
    regardless** — note that P7's re-anchoring decision (match on the saved
    highlight text) is the same idea arrived at independently, and the two
    should converge rather than both being built.
-8. **P10 — PDF** (MuPDF) · **P11 — Tools** · **P12 — Lua plugin system** for
+7. **P10 — PDF** (MuPDF) · **P11 — Tools** · **P12 — Lua plugin system** for
    the surfaces that rot (scrapers), with stable-API providers staying
    built-in; **not** a marketplace (`docs/source-seam.md` §0, §9a).
+8. **P5.5 — UI overhaul, LAST** (moved 2026-09-04). Every phase above adds
+   screens, so restyling now means restyling again later; a design settled
+   before its content is a guess.
 
 **Locked decisions (full reasoning in `docs/conversation.md`):**
 
@@ -278,18 +282,21 @@ P2  Text reader ─────── WebKit EPUB, themes, TOC, progress, UI    
 P3  Annotations ─────── highlights, quotes, offline dictionary    ✅ done
 P4  Library depth ───── shelves engine, lists, tags, analytics    ✅ done
 P5  Metadata ────────── edit metadata, cover pick, Open Library      ✅ done
-P6  Downloads hub ───── unified queue + folder watch
-P7  Fiction platform ── AO3 first → FFN/RoyalRoad/etc.; Lua source
-                        plugins; tag search; downloads; auto-updater
+P6.5 Libraries ──────── pick the folder, several of them, portable  ✅ done
 P8  Comics local ────── CBZ/CBR + Moku-style comics reader (image pager)
 P9  Manga platform ──── Suwayomi-class sources, same Source trait
                         (MangaDex API built in; scrapers via Lua)
-P6.5 Libraries ──────── pick the folder, several of them, portable  ✅ done
+P6+P7 Downloads +────── combined 2026-09-04, built together: unified queue
+      fiction client    + folder watch, and a browsing client for AO3 /
+                        Royal Road / Literotica / FFN — browse, search with
+                        full filters, author pages, read online, download,
+                        auto-update
 P10 PDF ─────────────── MuPDF in text-reader family + basic marks
 P11 Tools ───────────── convert (external), polish, Calibre import
 A0  Architecture track ─ service layer + task manager + preloaders +
                         thumbnails + source seam + windowed grid (done);
                         only the plugin-host seam is left, with P7
+P5.5 UI overhaul ────── LAST: restyle every screen once they all exist
 P12 Lua plugins ─────── for surfaces that rot (scrapers, add-on metadata);
                         stable-API providers stay built-in Rust
 ```
@@ -1240,348 +1247,6 @@ Bulk metadata edit and cover refresh across many books — those live in P11.
 
 ---
 
-## P5.5 — UI overhaul  ◀ in progress
-
-**Goal:** Redesign the interface, one window at a time. The app grew screen by
-screen and looks it; this is the pass that makes it feel like one product.
-
-**Working method (agreed):** one window per round. The agent mocks the screen
-up as an image first, the user looks at it, and only then does it become Rust.
-The agent cannot see the GUI, and shipping layout blind has repeatedly wasted
-rounds.
-
-### Done
-- **Colour system** — `src/theme.rs` owns every colour; `style.rs` holds only
-  shape (padding, radii, type scale). Adding a theme is one struct.
-- **13 dark themes**, grouped standard + darker per family: One Dark (default
-  is One Dark Darker), Tokyo Night, Everforest, Catppuccin, Gruvbox, Ayu, and
-  Nord (no darker variant). Light themes are out of scope.
-- **Scrollbars** — invisible until hovered, thin pill, hugging the edge.
-- **Sidebar** — 48px icon-only rail, logo pinned top, nav centred, Settings
-  bottom, circular active state.
-- **Logo** — `assets/logo.png`, embedded with `include_bytes!`.
-- **Settings (`src/pages/settings.rs`)** — redesigned into a two-column layout: a 220px navigation rail with 6 categories (Appearance, Storage & Backup, Dictionaries, Book Files, Metadata Sources, Notifications) and rounded cards (`kalam-card`) grouping individual setting rows.
-- **Settings v2** — rebuilt again in the P5.5 design language from the user's
-  `settings.html` reference, reconciled against shipped features: grouped nav
-  rail (Appearance / Library / Sources / App overlines), section cards
-  (accent glyph + title + description + divider + rows), hairline-separated
-  setting rows, Material-You-style pill switches for every real pref
-  (EPUB writeback, Open Library, Google Books), theme picker grouped by family
-  with per-variant cards (mini UI preview + swatch strip + ✓ seal on the
-  active theme), dictionary rows with icon blocks, notification history with
-  colour-correct badges, and an Export quotes card sharing the saved-quotes
-  Markdown exporter. Nothing faked: every control backs a real mechanism.
-- **Book detail page (`src/pages/book.rs`)** — full-page rewrite to the
-  `docs/files/book_detail.html` mockup. Fixed chrome row (back pill left,
-  metadata pencil right), hero with 3D cover + progress + Format/Series/
-  Publisher meta, title/author/half-stars/inline tag chips (add + remove),
-  action row (Read / reading list / shelves / finished / Remove), serif
-  description. Card grid: reading stats (4 tiles: time, estimate, minutes per
-  chapter, sessions) + 7-day bars + timeline (recent sessions, finished,
-  first opened); highlights (≤4, View-all dialog with delete); author
-  (avatar, birth year only when known, bio, other owned books clickable);
-  reading journey (✓/●/○ chapters from the EPUB spine, +N more expand);
-  book file (name/size/imported/hash, show in file manager). The app's back
-  chip hides on this page — the page owns its own. Series is **not** a card.
-- **Series float (`src/pages/series_float.rs`, schema v10)** — the series name
-  in the hero opens a floating window with the full listing. Fetched once from
-  Open Library (series field, quoted-query fallback), cached in
-  `series_cache` keyed by normalised `series|first_author`; covers cached in
-  `series-covers/`. Works you own are title-matched and get live badges
-  (Read / N% read / Not started) and open their book page; the rest read
-  "Not in library". Footer says where and when it was fetched; ⟳ is the only
-  re-fetch. An empty OL result is shown but not cached.
-
-
-### Next
-1. Home / dashboard — the two-column layout the design references imply.
-2. Library, Reader chrome, dialogs.
-3. "Similar from your shelf" on the book page — deferred from the mockup to
-   its own round.
-
-### Hard-won GTK/CSS rules
-
-These are written up properly in the module header of `src/style.rs`. Read that
-before touching the scrollbar block — the summary:
-
-1. **This stylesheet already outranks Adwaita.** `relm4::set_global_css` loads
-   at `APPLICATION` (600), the theme at `THEME` (200), and priority beats
-   specificity. Long `:not()` chains are unnecessary, and GTK drops an entire
-   comma-separated rule when one selector in the group fails to parse.
-2. **Never use `opacity` below 1 on a widget that can collapse.** It forces an
-   offscreen surface; a collapsed overlay scrollbar's is zero-sized and pixman
-   rejects it. Hide with a transparent `background-color` instead.
-3. **`margin`/`border`/`padding` are subtracted from the allocation.** Adwaita's
-   slider carries 16px of them, so resetting only the border still leaves 8px
-   and every `min-width` comes out negative. Zero all three, then set the size.
-4. **`scrolledwindow:hover` matches the whole content area**, not the scrollbar.
-   Use `scrollbar:hover` / `scrollbar.hovering`.
-5. **`KALAM_NO_CSS=1` runs with no custom stylesheet** — use it to confirm a
-   warning is even ours before theorising. `GTK_DEBUG=interactive` shows which
-   rule actually wins on a node.
-
-Cost of learning this the wrong way: about a dozen rounds on one scrollbar.
-Each fix was plausible, none was verified against the toolkit's actual
-behaviour first. When a warning carries a number, do the arithmetic across
-runs — the constant that keeps appearing is the answer.
-
-### Notes
-- Reader *page* theming (Light/Sepia/Dark paper) stays separate from app
-  chrome: a sepia page inside a dark app is a legitimate combination.
-- The images in `docs/design/` are **inspiration the user collected**, not
-  their own designs. Treat them as direction, not specification.
-
----
-
-## A0 — Architecture & performance track  ✅ done (except the plugin seam)
-
-**Status:** decided 2026-09-02 (design in `docs/conversation.md` §§1–3).
-**A0 is done apart from step 8, which is designed and lands with AO3 in P7.**
-Steps 1–5 shipped and are CI-green. Step 7 (perf-budget CI test) shipped
-2026-09-04 as query-count budgets rather than time thresholds. Step 6 (grid
-virtualization) shipped 2026-09-04 after being wrongly closed and then
-reopened: at 2,000 books the All-books page went from 502 MB to 247 MB and from
-434 ms to 12 ms.
-A track, not a phase — interleaves with P6–P11.
-- **Step 1 (measure) — done.** Data layer (headless `src/perf.rs`) confirmed all
-  list-page queries < ~20 ms for 2,000 books; GUI (`src/timing.rs`,
-  `KALAM_TIMING=1`) confirmed cold start ~0.9 s warm, book open 3.5 ms revisit,
-  chapter turn ~50 ms warm, ~400 ms after a WebView re-spawn. The DB and warm
-  reader are not the bottleneck; the cost is first-open + WebKit re-spawn +
-  per-card decode of full covers.
-- **Measured on the user's Arch machine, 2026-09-02 (post-WebView-pool).** The
-  steady state is good: chapter turns settle at **37–48 ms**, repeat book opens
-  at **2.8–215 ms**, and **no ~400 ms WebKit re-spawn appears after the first
-  book** — the pool works. First book of a session still pays WebKit process
-  startup (`chapter_load` 2772.9 then 697.2 ms); unavoidable without pre-warming.
-- **Cold start, resolved 2026-09-02 — there was no regression.** The alarming
-  8018.7 ms was a *first-run-after-build* artefact. Six consecutive runs:
-  6290 → 1596 → 965 → 852 → 945 → 831 ms, i.e. **~900 ms steady, exactly the
-  documented baseline**. The decay is the OS page cache warming on a
-  freshly-linked binary (and its GTK/WebKit/ICU shared libraries), not app work.
-  **My stated suspect — the bundled-dictionary import — was wrong**:
-  `startup_dicts` measured **0.1–0.2 ms on every run including the first**, so
-  the pref early-out was already doing its job. Splitting the span is what
-  disproved it; the guess would have sent a fix at the wrong code.
-- **What the breakdown does show.** Of a steady ~898 ms cold start, our
-  instrumented work is **~138 ms (16%)**: `startup_db_open` ~6 ms (nothing to
-  win), `startup_dicts` ~0.1 ms (nothing to win), `startup_first_page`
-  ~137 ms — the only app-side target, and the one A0 can actually move.
-  The remaining **~754 ms (84%) is un-instrumented**: GTK/libadwaita init,
-  WebKit process setup, CSS parsing and GTK's first layout/realize, most of it
-  before `AppModel::init` runs. So cold start is **not** a data-layer or
-  page-construction problem, and further service-layer work will not touch it.
-  A0 step 5 should treat ~750 ms of toolkit startup as the floor unless the
-  first paint is decoupled from full initialisation.
-- **Step 3 (thumbnails) — done.** `src/thumbs.rs` generates a persistent
-  256×408 thumbnail (`cache/thumbs/<uuid>.png`) at import and on cover
-  replacement; the grid decodes that instead of the full cover when the slot is
-  small enough (never upscales it). New dep: `image` (default features off; only
-  png/jpeg/gif/webp). **Existing books** are backfilled on a background thread at
-  startup so nothing needs re-importing. **Next on this front:** the async
-  *swap-in* (placeholder → texture on a worker) belongs to the task manager
-  (step 4), where it architecturally lives.
-- **Step 2 (LibraryService) — started; the seam exists, 3 pages converted.**
-  `src/service.rs` answers a page's whole data question in **one call
-  returning one owned snapshot** (`service.home()`), instead of a page making
-  four direct `Catalog` reads and swallowing each error. Snapshots are plain
-  owned `Send` structs *on purpose*: that is what lets the same call move to a
-  worker thread later without touching the page, and a compile-time
-  `snapshots_are_send()` test stops a future edit from breaking the property.
-  The error policy now lives in one place — a failed read degrades to empty
-  **and records the reason**, which pages surface as a toast (the service does
-  not call `notify` itself: it must stay worker-callable, and `notify` is
-  UI-thread-only). Converted: **Home** (4 reads → 1), **Analytics** (4 → 1),
-  **Tags** cloud + tag-books, **Reading list**, **Shelves**, **All books**,
-  **History**, **Lookup History**, **My Library** (8 reads → 1, the worst
-  offender: it swallowed all eight), **Saved quotes** (N+1 removed),
-  **Vocabulary**, **Book float**, **Series float** (N+1 removed),
-  **Shelf detail**, **Book page**, **Reader**, plus the error-reporting pass
-  over **Settings**, **Metadata editor** and **Shelf editor**. **Step 2 is
-  complete: no page swallows a database read any more.** Home's
-  "continue reading"
-  fallback chain moved
-  into the service and is unit-tested. **Remaining pages still hold an
-  `Arc<Catalog>` and that is fine** — `LibraryService` borrows the same `Arc`,
-  so both styles coexist; converting the next page is: add a snapshot method,
-  swap the field, delete its `unwrap_or_default()`s. Writes (import) still go
-  straight to the catalog — they belong to step 4.
-- **Step 4 (task manager) — done.** `src/tasks.rs`; every slow job listed in
-  the scope entry below is on the seam, including `install_bundled_dictionaries`
-  at startup, which was the last leftover.
-- **Step 5 (preloaders) — done.** `src/preload.rs` + `tasks::spawn_stream`;
-  covers decode off the UI thread and swap in per card, chapters are warmed on
-  open and on every turn.
-- **Step 6 (grid virtualization) — ~~CLOSED~~ reopened, then ✅ DONE
-  2026-09-04. Shipped and on by default: 502 MB → 247 MB, 434 ms → 12 ms at
-  2,000 books.** The history below is kept because *how* it was wrongly closed
-  is the more useful lesson. The evidence that closed it was measured on a run
-  that never reached the grid.**
-  The original finding read: build cost ~0.17 ms/card, and peak memory **flat**
-  at 233 MB (139 books) vs 252 MB (2,000) because the cover cache is a bounded
-  300-entry LRU — so virtualization fixes nothing. Both halves of that came
-  from reports where `grid_build` never appears, because the screenshot harness
-  was sending Tab/Tab/Return and silently staying on Home (see pitfall §21).
-  **The memory figure was Home's, not the grid's.**
-  Now that `KALAM_ROUTE=all-books` makes CI actually open the page, the same
-  2,000-book job reports **502 MB** against 226 MB for the identical build
-  before the page was reached, and 255 MB at 139 books:
-
-  | Books | Grid reached? | Peak RSS |
-  |---|---|---|
-  | 139 | no (Home only) | 231 MB |
-  | 2,000 | no (Home only) | 226 MB |
-  | 139 | **yes** | 255 MB |
-  | 2,000 | **yes** | **502 MB** |
-
-  So memory is *not* flat in library size — it roughly doubles, +276 MB for
-  1,861 extra cards, ~0.15 MB per card. **The 300-cover LRU is not the leak
-  and was never the question**: it is working exactly as designed, and that is
-  the point — the cost is the 2,000 GTK widget trees themselves.
-  `build_book_grid` constructs one card per book unconditionally and attaches
-  them all before returning, so every book in the library holds live widgets
-  whether or not it is on screen. That is the precise thing virtualization
-  exists to fix, and the reason it was ruled out has evaporated.
-  Not yet fixed — recorded, with the correction, so the next decision is made
-  against real numbers. `grid_build 421 ms` at 2,000 books is also now a real
-  measurement rather than an extrapolation.
-- **Step 8 (plugin-host seam) — designed 2026-09-03**, written up in
-  [`docs/source-seam.md`](./docs/source-seam.md). Code lands with AO3 in P7,
-  deliberately (see the scope entry below).
-- **Step 7 (perf-budget CI test) — ✅ DONE 2026-09-04.** The reasoning that
-  reshaped it is kept below because it is the argument for *why* the budgets
-  count queries instead of milliseconds: the runner's timings swing ~60% between
-  identical runs (`startup_first_page` 7.1 / 13.7 / 16.4 ms at 2,000 books;
-  `startup_dicts`, byte-identical work, 2774 → 3740 ms), so a time threshold
-  loose enough not to flake cannot catch anything short of a 3× regression.
-  Recommended replacement: assert **query counts** ("the book float issues 2
-  queries"), which are machine-independent and catch the N+1 class that has
-  actually bitten three times; plus un-`#[ignore]` the existing
-  `src/perf.rs` probes, which already seed 2,000 books and assert ceilings but
-  never run in CI.
-  **Updated 2026-09-04:** the second half of this entry used to read "CI has
-  never reached the grid — `grid_build` appears in zero of the seven committed
-  reports", which was true and is now fixed. `KALAM_ROUTE` makes the
-  screenshot job open a real page, and the run of 2026-09-04 records
-  `grid_build 28.9 ms` / `grid_cards 139` with the rendered page proven
-  different from Home. So a grid *timing* is now available to CI — but the
-  variance argument above still stands, and query counts are still the better
-  assertion. What actually changed is that step 7 is no longer blocked on
-  "CI cannot get to the page".
-- **WebView reuse — done.** The cheap win the timing surfaced: the reader used
-  to call `webkit6::WebView::new()` in `init()`, so every book open spawned a
-  WebKit process (~400 ms). `src/webview_pool.rs` now parks exactly one view
-  between readers; the reader acquires it in `init()` and releases it in
-  `shutdown()`. The reader's own lifecycle is unchanged (session start/end and
-  progress save still run on every entry/exit) — only the expensive object is
-  pooled, deliberately *not* the whole page, which would keep a reading session
-  counting while the user browsed the library. Handlers that capture the
-  component's `Sender` are recorded as `SignalHandlerId`s and disconnected
-  before parking; sizing, context-menu suppression and the `"kalam"`
-  script-message *registration* are permanent and live in the pool (WebKit
-  rejects a second registration of that name). Escape hatch:
-  `KALAM_NO_WEBVIEW_POOL=1` restores the old spawn-per-open behaviour for A/B
-  measurement with `KALAM_TIMING=1`. Cost: the WebKit process (~100–200 MB)
-  stays resident after the first book instead of being released on leave; the
-  page is blanked on release so the book's DOM is still freed.
-  **Needs an Arch smoke-test:** open book A → leave → open book B → return to
-  A, checking highlights, dictionary popup, tap-to-look-up and progress restore
-  all still work on the second and third opens (that is what a stale handler or
-  a missed re-registration would break).
-
-**Goal:** make Kalam feel instant (Yazi philosophy: *"don't make the UI
-fast — make it never wait"*) and lay the seams the source platform needs.
-
-### Scope (in order)
-
-1. **Measure first.** `perf` + sysprof + GTK inspector on: cold start, book
-   open, chapter turn, dictionary lookup, library scroll. Record the numbers
-   — they decide what gets fixed (asserted bottlenecks get measured before
-   being trusted).
-2. **`LibraryService` behind `Catalog`.** ✅ seam built (`src/service.rs`),
-   Home / Analytics / Tags converted; other pages migrate incrementally.
-   Pages stop calling the DB directly and *ask* the service, which answers in
-   one call with one owned `Send` snapshot. Moving queries off the UI thread
-   then becomes a change in one place. (`Catalog.conn` is already
-   `Mutex`-wrapped — feasible without a rewrite.)
-3. **Thumbnails at import + async cover decode.** ~200px thumbnails into
-   `cache/thumbs/<uuid>.png` at import time; the grid decodes tiny files that
-   survive restarts; cards show a placeholder and swap in the texture when a
-   worker finishes decoding. (The in-memory `COVER_CACHE` dies every launch.)
-4. **Task manager (`src/tasks.rs`).** ✅ **seam built.** `tasks::spawn(work,
-   on_progress, on_done)` — `work` is `Send` and gets a `Reporter` (progress +
-   cooperative cancellation) but no UI access; `on_progress`/`on_done` are
-   *not* `Send` and run on the main thread, so they may touch widgets and
-   raise toasts. The type system enforces the split. `thread::spawn` +
-   `async-channel` + the GLib main loop, no tokio. `cancel_all()` runs on
-   window close. **Migration done:** dictionary import (was freezing the UI),
-   the thumbnail backfill (now cancellable), all six metadata-editor fetches,
-   the series and author fetches, and the Home / All-books imports (now one
-   shared `spawn_import`, cancellable, no `notify` from a worker). Left as-is
-   on purpose: `metadata::search_all`'s per-source fan-out, which `join()`s
-   immediately and runs *inside* a task already. Remaining: downloads, when P6
-   lands, and `install_bundled_dictionaries` at startup (~6.8 MB gunzip on
-   first run, still on the UI thread — needs its own progress story).
-5. **Preloaders.** ✅ **done.** `src/preload.rs`, plus `tasks::spawn_stream`
-   for work that yields many results over time rather than one at the end.
-   *Covers:* grid cards now use `cover_widget_deferred` — a placeholder goes
-   up immediately and a worker decodes to raw RGBA, which the main thread
-   wraps in a `MemoryTexture` and swaps in as each one lands. This is also the
-   third clause of step 3, deliberately deferred to here. *Chapters:* the
-   reader warms the next chapter's file on open and on every turn, so
-   `chapter_html`'s read is served from the page cache. Only the read is
-   preloadable — the render needs a main-thread `WebView`, and the HTML
-   depends on live theme/font settings, so a cached string would go stale.
-6. **Grid virtualization** — ✅ **done 2026-09-04, on by default.** Only the
-   book cards on screen are built (plus 3 rows of margin). Measured on one
-   machine in one CI run, 2,000 books: **502 MB → 247 MB**, `grid_build`
-   **434 ms → 12 ms**, 2,000 cards → 48. Layout is unchanged — `GtkFixed`
-   geometry matches the old `GtkGrid` exactly, same 6 columns, one scrollbar,
-   header still scrolls with the page — and the user confirmed it on a real
-   screen. `KALAM_NO_WINDOWED_GRID=1` restores the old behaviour.
-7. **Perf-budget CI test** — ✅ **done 2026-09-04, reshaped: query counts, not
-   milliseconds.** Six budgets in `src/perf.rs`, not `#[ignore]`d, gating every
-   CI run. Each asserts that a call's SQL *statement count* does not grow with
-   the number of rows it touches (20 books vs 60), which is the N+1 class that
-   has actually bitten three times. Counting uses rusqlite's `trace` hook
-   (`Catalog::count_queries`). Time thresholds were rejected on evidence: the
-   runner's wall-clock swings ~60% between identical runs, so a ceiling loose
-   enough not to flake is too loose to catch anything. **Verified by
-   sabotage** — `hydrate_books` was temporarily reverted to a per-book query
-   and CI went red on 4 of the 6 with 270 other tests passing.
-8. **Plugin-host seam design** (the dependency for P7/P9): ✅ **designed
-   2026-09-03 — [`docs/source-seam.md`](./docs/source-seam.md).** Defines the
-   `Source` adapter API (search / detail / chapters / content, with a
-   two-variant `Content` for the text and image flavours). Scraped sources are
-   **Lua plugins**; API-backed ones stay built-in Rust (§9a of that doc).
-   **The trait deliberately does not land as code yet**: this is a
-   binary crate with no `lib.rs`, so an unimplemented trait fails `-D warnings`
-   or adds more `#[allow(dead_code)]`. It ships in the same commit as AO3,
-   its first implementation and first caller (P7's opening move).
-
-**Acceptance:** library grid stays smooth with 2,000+ books; book open and
-page turns feel instant; all slow work is off the UI thread; pages are thin
-(no DB calls, no decoding); a fresh chat can add a source plugin from the
-documented API alone.
-
-**DoD:** CI green; README / ROADMAP / `docs/conversation.md` updated; user
-runs it on Arch.
-
----
-
-## P6 — Downloads hub
-
-**Goal:** One place for inbound files/jobs.
-
-### Scope
-
-- Queue: queued / active / done / failed  
-- Sidebar Downloads UI  
-- Folder-watch import  
-- Hooks for AO3/comics jobs  
-
----
-
 ## P6.5 — Libraries: choose where books live, and have more than one  ✅ done
 
 **Goal:** Calibre-style libraries. You pick the folder. You can have several,
@@ -1802,7 +1467,35 @@ Only sources you’re allowed to use. No unauthorized scraper assistance.
 
 ---
 
-## P7 — Fiction platform (AO3 first, then more)  ◀ moved: now after P8/P9
+## P6 + P7 — Downloads hub and the fiction client  ◀ done together
+
+**Combined 2026-09-04, at the user's request.** They were always going to
+collide: a downloads queue with nothing to download is a shell, and a fiction
+client that fetches things needs somewhere for those jobs to live. Building
+them apart would have meant designing the queue against imagined callers and
+then reworking it once real ones arrived.
+
+The two sections below stay separate because they are still separate bodies of
+work — the queue is infrastructure, the client is the feature — but they ship
+as one phase and the queue's design answers to P7's real needs rather than to a
+guess.
+
+---
+
+### P6 — Downloads hub
+
+**Goal:** One place for inbound files/jobs.
+
+### Scope
+
+- Queue: queued / active / done / failed  
+- Sidebar Downloads UI  
+- Folder-watch import  
+- Hooks for AO3/comics jobs  
+
+---
+
+### P7 — Fiction platform (AO3 first, then more)
 
 > **Reordered 2026-09-04, at the user's request:** *"push this step back at the
 > very last. this is a complex step and I am still working things out."* P7 now
@@ -2135,6 +1828,346 @@ One host, one sandbox, one loader, serving both `Source` and `MetadataSource`.
 
 Running Tachiyomi/Suwayomi Kotlin extensions. A plugin marketplace (later,
 if ever).
+
+## P5.5 — UI overhaul  ◀ LAST, after everything else
+
+> **Moved to the end 2026-09-04, at the user's request:** *"push UI overhaul to
+> absolute last, we will makeover the UI at last when everything is ready."*
+> The work already done (colour system, 13 themes, Settings v2, book page,
+> series float) stays shipped — this is about the *remaining* screens.
+>
+> It is the right call. Every phase left adds screens: a downloads queue, a
+> browsing client, author pages, a comics pager. Restyling Home and Library
+> now would mean restyling them again once those exist, and a design settled
+> before its content is a guess. Doing it last means one pass over a known set
+> of screens instead of several passes over a moving one.
+
+**Goal:** Redesign the interface, one window at a time. The app grew screen by
+screen and looks it; this is the pass that makes it feel like one product.
+
+**Working method (agreed):** one window per round. The agent mocks the screen
+up as an image first, the user looks at it, and only then does it become Rust.
+The agent cannot see the GUI, and shipping layout blind has repeatedly wasted
+rounds.
+
+### Done
+- **Colour system** — `src/theme.rs` owns every colour; `style.rs` holds only
+  shape (padding, radii, type scale). Adding a theme is one struct.
+- **13 dark themes**, grouped standard + darker per family: One Dark (default
+  is One Dark Darker), Tokyo Night, Everforest, Catppuccin, Gruvbox, Ayu, and
+  Nord (no darker variant). Light themes are out of scope.
+- **Scrollbars** — invisible until hovered, thin pill, hugging the edge.
+- **Sidebar** — 48px icon-only rail, logo pinned top, nav centred, Settings
+  bottom, circular active state.
+- **Logo** — `assets/logo.png`, embedded with `include_bytes!`.
+- **Settings (`src/pages/settings.rs`)** — redesigned into a two-column layout: a 220px navigation rail with 6 categories (Appearance, Storage & Backup, Dictionaries, Book Files, Metadata Sources, Notifications) and rounded cards (`kalam-card`) grouping individual setting rows.
+- **Settings v2** — rebuilt again in the P5.5 design language from the user's
+  `settings.html` reference, reconciled against shipped features: grouped nav
+  rail (Appearance / Library / Sources / App overlines), section cards
+  (accent glyph + title + description + divider + rows), hairline-separated
+  setting rows, Material-You-style pill switches for every real pref
+  (EPUB writeback, Open Library, Google Books), theme picker grouped by family
+  with per-variant cards (mini UI preview + swatch strip + ✓ seal on the
+  active theme), dictionary rows with icon blocks, notification history with
+  colour-correct badges, and an Export quotes card sharing the saved-quotes
+  Markdown exporter. Nothing faked: every control backs a real mechanism.
+- **Book detail page (`src/pages/book.rs`)** — full-page rewrite to the
+  `docs/files/book_detail.html` mockup. Fixed chrome row (back pill left,
+  metadata pencil right), hero with 3D cover + progress + Format/Series/
+  Publisher meta, title/author/half-stars/inline tag chips (add + remove),
+  action row (Read / reading list / shelves / finished / Remove), serif
+  description. Card grid: reading stats (4 tiles: time, estimate, minutes per
+  chapter, sessions) + 7-day bars + timeline (recent sessions, finished,
+  first opened); highlights (≤4, View-all dialog with delete); author
+  (avatar, birth year only when known, bio, other owned books clickable);
+  reading journey (✓/●/○ chapters from the EPUB spine, +N more expand);
+  book file (name/size/imported/hash, show in file manager). The app's back
+  chip hides on this page — the page owns its own. Series is **not** a card.
+- **Series float (`src/pages/series_float.rs`, schema v10)** — the series name
+  in the hero opens a floating window with the full listing. Fetched once from
+  Open Library (series field, quoted-query fallback), cached in
+  `series_cache` keyed by normalised `series|first_author`; covers cached in
+  `series-covers/`. Works you own are title-matched and get live badges
+  (Read / N% read / Not started) and open their book page; the rest read
+  "Not in library". Footer says where and when it was fetched; ⟳ is the only
+  re-fetch. An empty OL result is shown but not cached.
+
+
+### Next
+1. Home / dashboard — the two-column layout the design references imply.
+2. Library, Reader chrome, dialogs.
+3. "Similar from your shelf" on the book page — deferred from the mockup to
+   its own round.
+
+### Hard-won GTK/CSS rules
+
+These are written up properly in the module header of `src/style.rs`. Read that
+before touching the scrollbar block — the summary:
+
+1. **This stylesheet already outranks Adwaita.** `relm4::set_global_css` loads
+   at `APPLICATION` (600), the theme at `THEME` (200), and priority beats
+   specificity. Long `:not()` chains are unnecessary, and GTK drops an entire
+   comma-separated rule when one selector in the group fails to parse.
+2. **Never use `opacity` below 1 on a widget that can collapse.** It forces an
+   offscreen surface; a collapsed overlay scrollbar's is zero-sized and pixman
+   rejects it. Hide with a transparent `background-color` instead.
+3. **`margin`/`border`/`padding` are subtracted from the allocation.** Adwaita's
+   slider carries 16px of them, so resetting only the border still leaves 8px
+   and every `min-width` comes out negative. Zero all three, then set the size.
+4. **`scrolledwindow:hover` matches the whole content area**, not the scrollbar.
+   Use `scrollbar:hover` / `scrollbar.hovering`.
+5. **`KALAM_NO_CSS=1` runs with no custom stylesheet** — use it to confirm a
+   warning is even ours before theorising. `GTK_DEBUG=interactive` shows which
+   rule actually wins on a node.
+
+Cost of learning this the wrong way: about a dozen rounds on one scrollbar.
+Each fix was plausible, none was verified against the toolkit's actual
+behaviour first. When a warning carries a number, do the arithmetic across
+runs — the constant that keeps appearing is the answer.
+
+### Notes
+- Reader *page* theming (Light/Sepia/Dark paper) stays separate from app
+  chrome: a sepia page inside a dark app is a legitimate combination.
+- The images in `docs/design/` are **inspiration the user collected**, not
+  their own designs. Treat them as direction, not specification.
+
+---
+
+## A0 — Architecture & performance track  ✅ done (except the plugin seam)
+
+**Status:** decided 2026-09-02 (design in `docs/conversation.md` §§1–3).
+**A0 is done apart from step 8, which is designed and lands with AO3 in P7.**
+Steps 1–5 shipped and are CI-green. Step 7 (perf-budget CI test) shipped
+2026-09-04 as query-count budgets rather than time thresholds. Step 6 (grid
+virtualization) shipped 2026-09-04 after being wrongly closed and then
+reopened: at 2,000 books the All-books page went from 502 MB to 247 MB and from
+434 ms to 12 ms.
+A track, not a phase — interleaves with P6–P11.
+- **Step 1 (measure) — done.** Data layer (headless `src/perf.rs`) confirmed all
+  list-page queries < ~20 ms for 2,000 books; GUI (`src/timing.rs`,
+  `KALAM_TIMING=1`) confirmed cold start ~0.9 s warm, book open 3.5 ms revisit,
+  chapter turn ~50 ms warm, ~400 ms after a WebView re-spawn. The DB and warm
+  reader are not the bottleneck; the cost is first-open + WebKit re-spawn +
+  per-card decode of full covers.
+- **Measured on the user's Arch machine, 2026-09-02 (post-WebView-pool).** The
+  steady state is good: chapter turns settle at **37–48 ms**, repeat book opens
+  at **2.8–215 ms**, and **no ~400 ms WebKit re-spawn appears after the first
+  book** — the pool works. First book of a session still pays WebKit process
+  startup (`chapter_load` 2772.9 then 697.2 ms); unavoidable without pre-warming.
+- **Cold start, resolved 2026-09-02 — there was no regression.** The alarming
+  8018.7 ms was a *first-run-after-build* artefact. Six consecutive runs:
+  6290 → 1596 → 965 → 852 → 945 → 831 ms, i.e. **~900 ms steady, exactly the
+  documented baseline**. The decay is the OS page cache warming on a
+  freshly-linked binary (and its GTK/WebKit/ICU shared libraries), not app work.
+  **My stated suspect — the bundled-dictionary import — was wrong**:
+  `startup_dicts` measured **0.1–0.2 ms on every run including the first**, so
+  the pref early-out was already doing its job. Splitting the span is what
+  disproved it; the guess would have sent a fix at the wrong code.
+- **What the breakdown does show.** Of a steady ~898 ms cold start, our
+  instrumented work is **~138 ms (16%)**: `startup_db_open` ~6 ms (nothing to
+  win), `startup_dicts` ~0.1 ms (nothing to win), `startup_first_page`
+  ~137 ms — the only app-side target, and the one A0 can actually move.
+  The remaining **~754 ms (84%) is un-instrumented**: GTK/libadwaita init,
+  WebKit process setup, CSS parsing and GTK's first layout/realize, most of it
+  before `AppModel::init` runs. So cold start is **not** a data-layer or
+  page-construction problem, and further service-layer work will not touch it.
+  A0 step 5 should treat ~750 ms of toolkit startup as the floor unless the
+  first paint is decoupled from full initialisation.
+- **Step 3 (thumbnails) — done.** `src/thumbs.rs` generates a persistent
+  256×408 thumbnail (`cache/thumbs/<uuid>.png`) at import and on cover
+  replacement; the grid decodes that instead of the full cover when the slot is
+  small enough (never upscales it). New dep: `image` (default features off; only
+  png/jpeg/gif/webp). **Existing books** are backfilled on a background thread at
+  startup so nothing needs re-importing. **Next on this front:** the async
+  *swap-in* (placeholder → texture on a worker) belongs to the task manager
+  (step 4), where it architecturally lives.
+- **Step 2 (LibraryService) — started; the seam exists, 3 pages converted.**
+  `src/service.rs` answers a page's whole data question in **one call
+  returning one owned snapshot** (`service.home()`), instead of a page making
+  four direct `Catalog` reads and swallowing each error. Snapshots are plain
+  owned `Send` structs *on purpose*: that is what lets the same call move to a
+  worker thread later without touching the page, and a compile-time
+  `snapshots_are_send()` test stops a future edit from breaking the property.
+  The error policy now lives in one place — a failed read degrades to empty
+  **and records the reason**, which pages surface as a toast (the service does
+  not call `notify` itself: it must stay worker-callable, and `notify` is
+  UI-thread-only). Converted: **Home** (4 reads → 1), **Analytics** (4 → 1),
+  **Tags** cloud + tag-books, **Reading list**, **Shelves**, **All books**,
+  **History**, **Lookup History**, **My Library** (8 reads → 1, the worst
+  offender: it swallowed all eight), **Saved quotes** (N+1 removed),
+  **Vocabulary**, **Book float**, **Series float** (N+1 removed),
+  **Shelf detail**, **Book page**, **Reader**, plus the error-reporting pass
+  over **Settings**, **Metadata editor** and **Shelf editor**. **Step 2 is
+  complete: no page swallows a database read any more.** Home's
+  "continue reading"
+  fallback chain moved
+  into the service and is unit-tested. **Remaining pages still hold an
+  `Arc<Catalog>` and that is fine** — `LibraryService` borrows the same `Arc`,
+  so both styles coexist; converting the next page is: add a snapshot method,
+  swap the field, delete its `unwrap_or_default()`s. Writes (import) still go
+  straight to the catalog — they belong to step 4.
+- **Step 4 (task manager) — done.** `src/tasks.rs`; every slow job listed in
+  the scope entry below is on the seam, including `install_bundled_dictionaries`
+  at startup, which was the last leftover.
+- **Step 5 (preloaders) — done.** `src/preload.rs` + `tasks::spawn_stream`;
+  covers decode off the UI thread and swap in per card, chapters are warmed on
+  open and on every turn.
+- **Step 6 (grid virtualization) — ~~CLOSED~~ reopened, then ✅ DONE
+  2026-09-04. Shipped and on by default: 502 MB → 247 MB, 434 ms → 12 ms at
+  2,000 books.** The history below is kept because *how* it was wrongly closed
+  is the more useful lesson. The evidence that closed it was measured on a run
+  that never reached the grid.**
+  The original finding read: build cost ~0.17 ms/card, and peak memory **flat**
+  at 233 MB (139 books) vs 252 MB (2,000) because the cover cache is a bounded
+  300-entry LRU — so virtualization fixes nothing. Both halves of that came
+  from reports where `grid_build` never appears, because the screenshot harness
+  was sending Tab/Tab/Return and silently staying on Home (see pitfall §21).
+  **The memory figure was Home's, not the grid's.**
+  Now that `KALAM_ROUTE=all-books` makes CI actually open the page, the same
+  2,000-book job reports **502 MB** against 226 MB for the identical build
+  before the page was reached, and 255 MB at 139 books:
+
+  | Books | Grid reached? | Peak RSS |
+  |---|---|---|
+  | 139 | no (Home only) | 231 MB |
+  | 2,000 | no (Home only) | 226 MB |
+  | 139 | **yes** | 255 MB |
+  | 2,000 | **yes** | **502 MB** |
+
+  So memory is *not* flat in library size — it roughly doubles, +276 MB for
+  1,861 extra cards, ~0.15 MB per card. **The 300-cover LRU is not the leak
+  and was never the question**: it is working exactly as designed, and that is
+  the point — the cost is the 2,000 GTK widget trees themselves.
+  `build_book_grid` constructs one card per book unconditionally and attaches
+  them all before returning, so every book in the library holds live widgets
+  whether or not it is on screen. That is the precise thing virtualization
+  exists to fix, and the reason it was ruled out has evaporated.
+  Not yet fixed — recorded, with the correction, so the next decision is made
+  against real numbers. `grid_build 421 ms` at 2,000 books is also now a real
+  measurement rather than an extrapolation.
+- **Step 8 (plugin-host seam) — designed 2026-09-03**, written up in
+  [`docs/source-seam.md`](./docs/source-seam.md). Code lands with AO3 in P7,
+  deliberately (see the scope entry below).
+- **Step 7 (perf-budget CI test) — ✅ DONE 2026-09-04.** The reasoning that
+  reshaped it is kept below because it is the argument for *why* the budgets
+  count queries instead of milliseconds: the runner's timings swing ~60% between
+  identical runs (`startup_first_page` 7.1 / 13.7 / 16.4 ms at 2,000 books;
+  `startup_dicts`, byte-identical work, 2774 → 3740 ms), so a time threshold
+  loose enough not to flake cannot catch anything short of a 3× regression.
+  Recommended replacement: assert **query counts** ("the book float issues 2
+  queries"), which are machine-independent and catch the N+1 class that has
+  actually bitten three times; plus un-`#[ignore]` the existing
+  `src/perf.rs` probes, which already seed 2,000 books and assert ceilings but
+  never run in CI.
+  **Updated 2026-09-04:** the second half of this entry used to read "CI has
+  never reached the grid — `grid_build` appears in zero of the seven committed
+  reports", which was true and is now fixed. `KALAM_ROUTE` makes the
+  screenshot job open a real page, and the run of 2026-09-04 records
+  `grid_build 28.9 ms` / `grid_cards 139` with the rendered page proven
+  different from Home. So a grid *timing* is now available to CI — but the
+  variance argument above still stands, and query counts are still the better
+  assertion. What actually changed is that step 7 is no longer blocked on
+  "CI cannot get to the page".
+- **WebView reuse — done.** The cheap win the timing surfaced: the reader used
+  to call `webkit6::WebView::new()` in `init()`, so every book open spawned a
+  WebKit process (~400 ms). `src/webview_pool.rs` now parks exactly one view
+  between readers; the reader acquires it in `init()` and releases it in
+  `shutdown()`. The reader's own lifecycle is unchanged (session start/end and
+  progress save still run on every entry/exit) — only the expensive object is
+  pooled, deliberately *not* the whole page, which would keep a reading session
+  counting while the user browsed the library. Handlers that capture the
+  component's `Sender` are recorded as `SignalHandlerId`s and disconnected
+  before parking; sizing, context-menu suppression and the `"kalam"`
+  script-message *registration* are permanent and live in the pool (WebKit
+  rejects a second registration of that name). Escape hatch:
+  `KALAM_NO_WEBVIEW_POOL=1` restores the old spawn-per-open behaviour for A/B
+  measurement with `KALAM_TIMING=1`. Cost: the WebKit process (~100–200 MB)
+  stays resident after the first book instead of being released on leave; the
+  page is blanked on release so the book's DOM is still freed.
+  **Needs an Arch smoke-test:** open book A → leave → open book B → return to
+  A, checking highlights, dictionary popup, tap-to-look-up and progress restore
+  all still work on the second and third opens (that is what a stale handler or
+  a missed re-registration would break).
+
+**Goal:** make Kalam feel instant (Yazi philosophy: *"don't make the UI
+fast — make it never wait"*) and lay the seams the source platform needs.
+
+### Scope (in order)
+
+1. **Measure first.** `perf` + sysprof + GTK inspector on: cold start, book
+   open, chapter turn, dictionary lookup, library scroll. Record the numbers
+   — they decide what gets fixed (asserted bottlenecks get measured before
+   being trusted).
+2. **`LibraryService` behind `Catalog`.** ✅ seam built (`src/service.rs`),
+   Home / Analytics / Tags converted; other pages migrate incrementally.
+   Pages stop calling the DB directly and *ask* the service, which answers in
+   one call with one owned `Send` snapshot. Moving queries off the UI thread
+   then becomes a change in one place. (`Catalog.conn` is already
+   `Mutex`-wrapped — feasible without a rewrite.)
+3. **Thumbnails at import + async cover decode.** ~200px thumbnails into
+   `cache/thumbs/<uuid>.png` at import time; the grid decodes tiny files that
+   survive restarts; cards show a placeholder and swap in the texture when a
+   worker finishes decoding. (The in-memory `COVER_CACHE` dies every launch.)
+4. **Task manager (`src/tasks.rs`).** ✅ **seam built.** `tasks::spawn(work,
+   on_progress, on_done)` — `work` is `Send` and gets a `Reporter` (progress +
+   cooperative cancellation) but no UI access; `on_progress`/`on_done` are
+   *not* `Send` and run on the main thread, so they may touch widgets and
+   raise toasts. The type system enforces the split. `thread::spawn` +
+   `async-channel` + the GLib main loop, no tokio. `cancel_all()` runs on
+   window close. **Migration done:** dictionary import (was freezing the UI),
+   the thumbnail backfill (now cancellable), all six metadata-editor fetches,
+   the series and author fetches, and the Home / All-books imports (now one
+   shared `spawn_import`, cancellable, no `notify` from a worker). Left as-is
+   on purpose: `metadata::search_all`'s per-source fan-out, which `join()`s
+   immediately and runs *inside* a task already. Remaining: downloads, when P6
+   lands, and `install_bundled_dictionaries` at startup (~6.8 MB gunzip on
+   first run, still on the UI thread — needs its own progress story).
+5. **Preloaders.** ✅ **done.** `src/preload.rs`, plus `tasks::spawn_stream`
+   for work that yields many results over time rather than one at the end.
+   *Covers:* grid cards now use `cover_widget_deferred` — a placeholder goes
+   up immediately and a worker decodes to raw RGBA, which the main thread
+   wraps in a `MemoryTexture` and swaps in as each one lands. This is also the
+   third clause of step 3, deliberately deferred to here. *Chapters:* the
+   reader warms the next chapter's file on open and on every turn, so
+   `chapter_html`'s read is served from the page cache. Only the read is
+   preloadable — the render needs a main-thread `WebView`, and the HTML
+   depends on live theme/font settings, so a cached string would go stale.
+6. **Grid virtualization** — ✅ **done 2026-09-04, on by default.** Only the
+   book cards on screen are built (plus 3 rows of margin). Measured on one
+   machine in one CI run, 2,000 books: **502 MB → 247 MB**, `grid_build`
+   **434 ms → 12 ms**, 2,000 cards → 48. Layout is unchanged — `GtkFixed`
+   geometry matches the old `GtkGrid` exactly, same 6 columns, one scrollbar,
+   header still scrolls with the page — and the user confirmed it on a real
+   screen. `KALAM_NO_WINDOWED_GRID=1` restores the old behaviour.
+7. **Perf-budget CI test** — ✅ **done 2026-09-04, reshaped: query counts, not
+   milliseconds.** Six budgets in `src/perf.rs`, not `#[ignore]`d, gating every
+   CI run. Each asserts that a call's SQL *statement count* does not grow with
+   the number of rows it touches (20 books vs 60), which is the N+1 class that
+   has actually bitten three times. Counting uses rusqlite's `trace` hook
+   (`Catalog::count_queries`). Time thresholds were rejected on evidence: the
+   runner's wall-clock swings ~60% between identical runs, so a ceiling loose
+   enough not to flake is too loose to catch anything. **Verified by
+   sabotage** — `hydrate_books` was temporarily reverted to a per-book query
+   and CI went red on 4 of the 6 with 270 other tests passing.
+8. **Plugin-host seam design** (the dependency for P7/P9): ✅ **designed
+   2026-09-03 — [`docs/source-seam.md`](./docs/source-seam.md).** Defines the
+   `Source` adapter API (search / detail / chapters / content, with a
+   two-variant `Content` for the text and image flavours). Scraped sources are
+   **Lua plugins**; API-backed ones stay built-in Rust (§9a of that doc).
+   **The trait deliberately does not land as code yet**: this is a
+   binary crate with no `lib.rs`, so an unimplemented trait fails `-D warnings`
+   or adds more `#[allow(dead_code)]`. It ships in the same commit as AO3,
+   its first implementation and first caller (P7's opening move).
+
+**Acceptance:** library grid stays smooth with 2,000+ books; book open and
+page turns feel instant; all slow work is off the UI thread; pages are thin
+(no DB calls, no decoding); a fresh chat can add a source plugin from the
+documented API alone.
+
+**DoD:** CI green; README / ROADMAP / `docs/conversation.md` updated; user
+runs it on Arch.
+
+---
 
 ## Schema (current + planned)
 
@@ -2602,3 +2635,4 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-04 | **P6.5: dictionaries no longer live inside a library, and the existing library now appears in the list.** Two fixes, the first caught by reading the paths module rather than by a failing test — which is the only way it *would* have been caught, since nothing breaks until someone actually switches library. `dictionaries_dir()` hung off `data_dir()`, and `data_dir()` is now the **active library**. Left alone, switching would have looked for dictionaries in the new folder, found none, and reinstalled the bundled packs — roughly 4 MB compressed and several seconds of import — **once per library, permanently**. Exactly the "you would reinstall dictionaries every time you switched" failure the phase description warned about, quietly reintroduced by the change that made libraries switchable. They now hang off a shared root, and the path is unchanged for anyone who never switches. The neighbouring judgement call is recorded in the code: **author photos and series covers stay per-library**, even though they are internet-fetched and would be byte-identical everywhere, because they are caches of *this library's* authors — deleting a library should take its cached photos with it, and a shared folder would accumulate photos for authors nobody owns any more with nothing to prune it. Both are caches, so the decision costs only a refetch to reverse. Second: **the pre-existing library is now adopted into the registry at startup.** The fallback already made it work, but it left the user's own books as the single library absent from Settings, so Open and Forget applied to every library except theirs and adding a second would make the first appear to vanish. Nothing is moved or copied — only the list learns the folder exists. A folder is judged a library by containing `catalog.db`, deliberately not by being non-empty: picking `~/Documents` by mistake must not be treated as an existing library, while picking an empty folder is the normal way to start a new one. The Add button now reports which of the two happened, since "library added" is ambiguous between "created an empty one" and "found my books" — alarming in one direction, confusing in the other. CI green first try |
 | 2026-09-04 | **P6.5 complete — libraries are switchable, portable and self-describing. Next is P6 (Downloads hub).** Two final pieces. **Switching now restarts the app** instead of taking effect "next launch", which was an odd thing to ask of someone who had just clicked Open. It confirms first (a restart closes whatever you are reading), saves the choice, *then* re-execs — that order matters, because restarting first would reopen the old library and look like the click did nothing. `exec` rather than spawn-then-quit, so two Kalams never hold the same catalog open at once; and a restart rather than repointing in place, because `data_dir()` is cached for the process and pages hold live database handles, so switching underneath them would leave some reading the old library while writing the new one — corruption rather than a visual glitch. **And `kalam.json` beside every book** (`src/sidecar.rs`): title, authors, series, tags, rating, reading position and highlights, each highlight carrying its own text — the field that makes it findable again after a file changes, the same insight as the P7 re-anchoring plan. Explicitly a **backup, never the truth**: the database stays authoritative and these are never read during normal operation, so cross-book screens remain one query and no conflict rule is needed. Names not paths, or a copied folder would be full of wrong locations. **A clippy dead-code error turned out to be the useful part of this commit.** `read_sidecar` had no caller outside tests — and that was not a lint technicality, it was the observation that I had built a backup with no way to check or complete it. The fix was a Settings card showing how many books have a backup copy, plus a button to write the missing ones. That matters on its own terms: "your library describes itself" is worth nothing unless it is verifiable, since sidecars are written on code paths that could quietly stop running and the failure would stay invisible until the day someone actually needed them (§19). Left deliberately unbuilt: the rebuild-from-folders command itself. The survey proves the data is there; nothing consumes it yet, and inventing that flow before anyone has lost a database would be guessing at the recovery experience |
 | 2026-09-04 | **Two P6.5 defects found by re-reading after "done", plus the README brought up to date.** Neither would have failed a test, which is why the check was worth doing. **(1) The `kalam.json` backup was going stale.** It was refreshed on import, on metadata edits and on adding a highlight — but *not* when a tag chip was added or removed, a highlight deleted, or a note or colour changed. So an ordinary edit left the backup out of date while the recovery card still reported "all books covered", because it counts files rather than freshness — a promise that quietly degrades until the day it matters. Every edit now refreshes it. Reading progress deliberately still does not: it fires on every page turn, and your exact place is the least valuable field and the quickest to re-find; that is now a comment rather than an omission the next reader would take for a bug. **(2) A library on a removable drive would have looked like data loss.** If the selected folder is gone — unplugged drive, unmounted share, folder renamed — nothing failed: `create_dir_all` recreated it and `Catalog::open` built a fresh empty database inside. The user sees an empty library and concludes their books are gone, when the drive is merely not plugged in; worse, the recreated folder then *looks* like a real library, so reconnecting the drive does not obviously fix anything. Kalam now refuses to start, names the missing folder, states plainly that nothing was changed, and says where to look. Refusing rather than falling back to another library is deliberate: writing into a library the user did not choose is how books end up scattered across two places. **README** was several phases stale — it still described A0 as in progress, never mentioned libraries, and its Data section called `~/.config/kalam` "future" when it now holds the library registry. It also gains a **Switches** table: `KALAM_NO_WINDOWED_GRID`, `KALAM_NO_PRELOAD`, `KALAM_NO_WEBVIEW_POOL`, `KALAM_NO_CSS`, `KALAM_TIMING`, `KALAM_ROUTE` all existed but were discoverable only by grepping the source, which makes an escape hatch useless to the person who needs it. Also fixed: `ci-logs/test-latest.txt` and `clippy-latest.txt` were published **only on failure**, so a fixed problem left its old failing log committed and every later green run still showed red — it misled me three times in one session, the last reading "1 failed" from a run two hours dead (pitfall §25) |
+| 2026-09-04 | **P6 and P7 combined into one phase; P5.5 (UI overhaul) moved to the very end.** Both at the user's request, and both are the right call for the same underlying reason: **do not design against imagined content.** *Combining P6+P7* — a downloads queue with nothing to download is a shell, and a fiction client that fetches things needs somewhere for those jobs to live. Built apart, the queue would be designed against guessed callers and then reworked when the real ones arrived; built together, its shape answers to what P7 actually needs. They stay separate sections in this file because they remain distinct bodies of work — the queue is infrastructure, the client is the feature — but they ship as one phase. *Moving P5.5 last* — the user: *"we will makeover the UI at last when everything is ready."* Everything still ahead adds screens: a downloads queue, a browsing client, author pages, a comics pager, a PDF view. Restyling Home and Library now would mean restyling them again once those exist, and a design settled before its content is a guess. Doing it last is one pass over a known set of screens instead of several passes over a moving one. What is already shipped stays shipped (colour system, 13 themes, Settings v2, book page, series float); only the remaining screens move. **New running order:** P8/P9 comics and manga → P6+P7 downloads and fiction → renderer slice → EPUB path → P10 PDF, P11 tools, P12 Lua → P5.5 UI last. Phase map, the "agreed order" list and the README status table all updated to match, since a stale order at the top of this file is exactly what sent an earlier chat off to build something that already existed |
