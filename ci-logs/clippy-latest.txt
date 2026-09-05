@@ -22,9 +22,9 @@ src/sources/traits.rs:46:5: [1m[91merror[0m: variants `TagsInclude`, `TagsExc
 src/sources/traits.rs:55:9: [1m[91merror[0m: field `has_more` is never read
 src/sources/traits.rs:65:8: [1m[91merror[0m: method `name` is never used
 src/comics.rs:65:5: [1m[91merror[0m: consider using `sort_by_key`
-src/pages/remote_detail.rs:400:61: [1m[91merror[0m: the borrowed expression implements the required traits: help: change this to: `format!("xdg-open '{}'", url)`
+src/pages/remote_detail.rs:401:61: [1m[91merror[0m: the borrowed expression implements the required traits: help: change this to: `format!("xdg-open '{}'", url)`
 src/sources/manganato.rs:56:29: [1m[91merror[0m: called `Iterator::last` on a `DoubleEndedIterator`; this will needlessly iterate the entire iterator
 src/sources/weebcentral.rs:127:30: [1m[91merror[0m: called `Iterator::last` on a `DoubleEndedIterator`; this will needlessly iterate the entire iterator
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 27 previous errors
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 27 previous errors
---- run 33982279177 ---
+--- run 33983110600 ---
