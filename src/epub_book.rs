@@ -135,7 +135,18 @@ impl OpenBook {
             &base,
             reading_css,
             restore_fraction,
+            index,
         ))
+    }
+
+    pub fn chapter_body(&self, index: usize) -> Result<String> {
+        let item = self
+            .spine
+            .get(index)
+            .ok_or_else(|| anyhow!("chapter index {index} out of range"))?;
+        let raw = fs::read_to_string(&item.path)
+            .with_context(|| format!("read chapter {}", item.path.display()))?;
+        Ok(extract_body_content(&raw))
     }
 }
 
@@ -470,11 +481,26 @@ fn strip_tags(s: &str) -> String {
     out
 }
 
-fn inject_reading_shell(
+pub fn extract_body_content(raw_html: &str) -> String {
+    let lower = raw_html.to_ascii_lowercase();
+    if let Some(start_pos) = lower.find("<body") {
+        if let Some(gt) = raw_html[start_pos..].find('>') {
+            let content_start = start_pos + gt + 1;
+            let content_end = lower.rfind("</body>").unwrap_or(raw_html.len());
+            if content_start <= content_end {
+                return raw_html[content_start..content_end].to_string();
+            }
+        }
+    }
+    raw_html.to_string()
+}
+
+pub(crate) fn inject_reading_shell(
     raw_html: &str,
     base_url: &str,
     reading_css: &str,
     restore_fraction: f64,
+    chapter_index: usize,
 ) -> String {
     let restore = restore_fraction.clamp(0.0, 1.0);
     let core_js = r#"
@@ -485,14 +511,10 @@ if (!window.kalamReaderShellLoaded) {
   (function() {
   window.kalam = window.kalam || {};
   window.kalam._lastProgress = -1;
-  window.kalam._advanced = false;
   window.kalam._restoreFrac = %RESTORE%;
+  window.kalam._currentChapter = %CHAPTER_INDEX%;
+  window.kalam._loadingNext = false;
 
-  function fraction() {
-    var se = document.scrollingElement || document.documentElement;
-    var max = Math.max(1, se.scrollHeight - se.clientHeight);
-    return se.scrollTop / max;
-  }
   function setScroll(frac) {
     var se = document.scrollingElement || document.documentElement;
     var max = Math.max(0, se.scrollHeight - se.clientHeight);
@@ -515,28 +537,103 @@ if (!window.kalamReaderShellLoaded) {
   }
   window.kalamBridge = kalamBridge;
 
-  // ---- Progress reporting (P2) ----
-  function pingProgress() {
-    var f = fraction();
-    if (Math.abs(f - window.kalam._lastProgress) < 0.01) return;
-    window.kalam._lastProgress = f;
-    kalamBridge({type:'progress', fraction:f});
-  }
-  function maybeNext() {
-    if (window.kalam._advanced) return;
-    if (fraction() > 0.90) {
-      window.kalam._advanced = true;
-      kalamBridge({type:'next'});
+  // Append a newly fetched chapter to the continuous stream
+  window.kalamAppendChapter = function(index, title, bodyHtml) {
+    var stream = document.getElementById('kalam-reader-stream');
+    if (!stream) return;
+    if (document.getElementById('kalam-chapter-' + index)) {
+      window.kalam._loadingNext = false;
+      return;
+    }
+    var div = document.createElement('div');
+    div.className = 'kalam-chapter-section';
+    div.id = 'kalam-chapter-' + index;
+    div.dataset.chapter = String(index);
+    div.innerHTML = '<div class="kalam-chapter-divider"><span class="kalam-chapter-divider-title">' + (title || ('Chapter ' + (index + 1))) + '</span></div>' + bodyHtml;
+    stream.appendChild(div);
+    window.kalam._loadingNext = false;
+  };
+
+  // Drop an older chapter from the stream to keep memory light (adjusting scroll height seamlessly)
+  window.kalamDropChapter = function(index) {
+    var ch = document.getElementById('kalam-chapter-' + index);
+    if (ch) {
+      var h = ch.offsetHeight;
+      ch.remove();
+      window.scrollBy(0, -h);
+    }
+  };
+
+  // Continuous multi-chapter scroll tracking
+  function updateContinuousScroll() {
+    var sections = document.querySelectorAll('.kalam-chapter-section');
+    if (!sections || sections.length === 0) return;
+
+    var vCenter = window.innerHeight * 0.4;
+    var activeSec = null;
+    var activeIdx = -1;
+
+    for (var i = 0; i < sections.length; i++) {
+      var rect = sections[i].getBoundingClientRect();
+      if (rect.top <= vCenter && rect.bottom >= vCenter) {
+        activeSec = sections[i];
+        activeIdx = parseInt(activeSec.dataset.chapter, 10);
+        break;
+      }
+    }
+    if (!activeSec && sections.length > 0) {
+      var firstRect = sections[0].getBoundingClientRect();
+      if (firstRect.top > vCenter) {
+        activeSec = sections[0];
+      } else {
+        activeSec = sections[sections.length - 1];
+      }
+      activeIdx = parseInt(activeSec.dataset.chapter, 10);
+    }
+
+    if (activeIdx !== -1 && activeIdx !== window.kalam._currentChapter) {
+      window.kalam._currentChapter = activeIdx;
+      kalamBridge({type:'chapter-changed', chapter:activeIdx});
+
+      // Maintain at most 2 chapters in memory: drop any chapter earlier than activeIdx - 1
+      for (var j = 0; j < sections.length; j++) {
+        var chNum = parseInt(sections[j].dataset.chapter, 10);
+        if (chNum < activeIdx - 1) {
+          var h = sections[j].offsetHeight;
+          sections[j].remove();
+          window.scrollBy(0, -h);
+        }
+      }
+    }
+
+    if (activeSec) {
+      var aRect = activeSec.getBoundingClientRect();
+      var aHeight = Math.max(1, activeSec.offsetHeight);
+      var scrolled = Math.max(0, -aRect.top);
+      var frac = Math.max(0, Math.min(1, scrolled / Math.max(1, aHeight - window.innerHeight)));
+      if (Math.abs(frac - window.kalam._lastProgress) > 0.01) {
+        window.kalam._lastProgress = frac;
+        kalamBridge({type:'progress', fraction:frac, chapter:activeIdx});
+      }
+
+      // Preload next chapter when nearing the end of current chapter (within 1.8 viewports of bottom)
+      if (aRect.bottom < window.innerHeight * 1.8 && !window.kalam._loadingNext) {
+        var nextIdx = activeIdx + 1;
+        if (!document.getElementById('kalam-chapter-' + nextIdx)) {
+          window.kalam._loadingNext = true;
+          kalamBridge({type:'request-next-chapter', current:activeIdx, next:nextIdx});
+        }
+      }
     }
   }
+
   var scrollT = null;
   var lastScrollTop = 0;
   var lastUiZone = 'both';
   window.addEventListener('scroll', function() {
     if (scrollT) cancelAnimationFrame(scrollT);
     scrollT = requestAnimationFrame(function(){
-      pingProgress();
-      maybeNext();
+      updateContinuousScroll();
       var se = document.scrollingElement || document.documentElement;
       var cur = se.scrollTop || 0;
       if (cur > lastScrollTop + 8 && cur > 24) {
@@ -560,9 +657,8 @@ if (!window.kalamReaderShellLoaded) {
   function tryRestore() {
     if (window.kalam._restoreFrac > 0) setScroll(window.kalam._restoreFrac);
     window.kalam._restoreFrac = 0;
-    window.kalam._advanced = false;
     window.kalam._lastProgress = -1;
-    pingProgress();
+    updateContinuousScroll();
   }
   if (document.readyState === 'complete') setTimeout(tryRestore, 80);
   else window.addEventListener('load', function(){ setTimeout(tryRestore, 80); });
@@ -1914,52 +2010,11 @@ if (!window.kalamReaderShellLoaded) {
   }
   window.kalamHideDict = hideDict;
   // No close button — the popup closes when clicking anywhere outside it
-  // (clicks inside keep it open; Escape also closes it).
-  //
-  // Phase 6 tap-to-look-up: a plain click on book content (no drag-select,
-  // no link/image/UI) resolves the word under the caret and fires
-  // `dict-lookup` with the surrounding sentence, after a short delay so a
-  // double-click still wins for selection. Tapping a word while the popup
-  // is open swaps the entry instead of closing it; tapping empty space
-  // closes it.
   document.addEventListener('click', function(e){
-    if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; tapPending = null; }
     var pop = document.getElementById('kalam-dict-popup');
     var popupOpen = pop && pop.style.display === 'block';
     if (e.target && e.target.closest && e.target.closest('#kalam-dict-popup')) return;
-    if (!e.target || !e.target.closest) {
-      if (popupOpen) hideDict();
-      return;
-    }
-    if (e.target.closest('#kalam-chip, #kalam-selection-bands, .kalam-selection-handle, a, button, input, select, textarea, img, iframe, svg, [contenteditable]')) {
-      if (popupOpen) hideDict();
-      return;
-    }
-    var selText = '';
-    try { selText = window.getSelection ? window.getSelection().toString() : ''; } catch(e){}
-    var x = e.clientX || 0, y = e.clientY || 0;
-    var w = null;
-    if (!selText.trim()) {
-      // No selection means the pointer gesture was a plain click, not a
-      // drag-select (the drag code clears the selection on release).
-      var caret = window.kalamCaretFromPoint(x, y);
-      w = caret ? wordFromCaret(caret) : null;
-    }
-    if (!w) {
-      if (popupOpen) hideDict();
-      return;
-    }
-    lastTapPoint = {x: x, y: y};
-    tapPending = {x: x, y: y, word: w.word, node: w.node, rect: w.rect};
-    tapTimer = setTimeout(function(){
-      tapTimer = null;
-      var p = tapPending;
-      tapPending = null;
-      if (!p) return;
-      var ctx = sentenceAroundText(p.word, p.node && p.node.parentElement ? p.node.parentElement : p.node) || p.word;
-      clearSearchHits();
-      kalamBridge({type:'dict-lookup', word: p.word, context: ctx, rect: p.rect});
-    }, tapDelay);
+    if (popupOpen) hideDict();
   });
   window.kalamShowDict = function(payload, rectJson) {
     var rect = null;
@@ -2463,18 +2518,12 @@ if (!window.kalamReaderShellLoaded) {
     // saves the focused sense.
     if (handleDictPopupKey(e)) return;
     if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      // only if selection exists or chip visible
       var data = getSelectionData();
-      if (data || document.getElementById('kalam-chip')?.style.display==='flex') {
+      var sel = '';
+      try { sel = window.getSelection ? window.getSelection().toString() : ''; } catch(e){}
+      if (data || sel.trim() || document.getElementById('kalam-chip')?.style.display==='flex') {
         e.preventDefault();
         window.kalamHandleDict();
-      } else if (lastTapPoint) {
-        // Phase 6: no selection — re-look-up the word under the last tap.
-        e.preventDefault();
-        fireTapLookup(lastTapPoint.x, lastTapPoint.y);
-      } else {
-        // fallback to dictionary shortcut via bridge
-        kalamBridge({type:'dict-shortcut'});
       }
     }
     if (e.key === 'Escape') {
@@ -2494,7 +2543,9 @@ if (!window.kalamReaderShellLoaded) {
   })();
 }
 "#;
-    let js = core_js.replace("%RESTORE%", &restore.to_string());
+    let js = core_js
+        .replace("%RESTORE%", &restore.to_string())
+        .replace("%CHAPTER_INDEX%", &chapter_index.to_string());
 
     let inject = format!(
         r#"<base href="{base}">
@@ -2531,12 +2582,20 @@ if (!window.kalamReaderShellLoaded) {
         format!("<!DOCTYPE html><html><head>{head_inject}</head><body>{raw_html}</body></html>")
     };
 
-    // Append a second copy before </body> for cascade victory.
+    // Wrap body content inside continuous chapter stream and append second inject copy before </body>
+    let stream_open = format!(r#"<div id="kalam-reader-stream"><div class="kalam-chapter-section" id="kalam-chapter-{chapter_index}" data-chapter="{chapter_index}">"#);
+    let stream_close = "</div></div>";
     let lower2 = out.to_ascii_lowercase();
     if let Some(pos) = lower2.rfind("</body>") {
-        out.insert_str(pos, &inject);
+        out.insert_str(pos, &format!("{stream_close}{inject}"));
+        let lower3 = out.to_ascii_lowercase();
+        if let Some(bpos) = lower3.find("<body") {
+            if let Some(gt) = out[bpos..].find('>') {
+                out.insert_str(bpos + gt + 1, &stream_open);
+            }
+        }
     } else {
-        out.push_str(&inject);
+        out = format!("{stream_open}{out}{stream_close}{inject}");
     }
     out
 }
@@ -3350,6 +3409,45 @@ html.kalam-selection-active body * ::selection {{
 #kalam-dict-popup {{
   background: var(--kalam-pop-bg) !important;
   background-color: var(--kalam-pop-bg) !important;
+}}
+
+/* ── continuous chapter stream & dividers ── */
+#kalam-reader-stream {{
+  width: 100% !important;
+  margin: 0 auto !important;
+}}
+.kalam-chapter-section {{
+  position: relative !important;
+  padding-bottom: 2.5rem !important;
+}}
+.kalam-chapter-divider {{
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 4.5rem 0 3.5rem 0 !important;
+  position: relative !important;
+  user-select: none !important;
+}}
+.kalam-chapter-divider::before {{
+  content: '' !important;
+  position: absolute !important;
+  left: 6% !important;
+  right: 6% !important;
+  top: 50% !important;
+  height: 1px !important;
+  background: color-mix(in srgb, currentColor 22%, transparent) !important;
+}}
+.kalam-chapter-divider-title {{
+  position: relative !important;
+  background: {bg} !important;
+  padding: 0.4rem 1.6rem !important;
+  font-size: 0.85rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: color-mix(in srgb, currentColor 65%, transparent) !important;
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent) !important;
+  border-radius: 999px !important;
 }}
 
 /* ── theme-specific image handling (appended last so it wins) ── */

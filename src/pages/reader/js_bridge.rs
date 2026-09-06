@@ -159,10 +159,99 @@ impl ReaderModel {
     pub(crate) fn handle_js_payload(&mut self, payload: JsPayload, sender: ComponentSender<Self>) {
         match payload.kind.as_str() {
             "progress" => {
+                if let Some(ch) = payload.chapter {
+                    if ch < self.open.chapter_count() {
+                        self.chapter = ch;
+                    }
+                }
                 if let Some(f) = payload.fraction {
                     self.fraction = f.clamp(0.0, 1.0);
                 }
+                self.save_progress();
                 self.checkpoint_session();
+            }
+            "chapter-changed" => {
+                if let Some(ch) = payload.chapter {
+                    if ch < self.open.chapter_count() && ch != self.chapter {
+                        self.chapter = ch;
+                        self.fraction = 0.0;
+                        self.save_progress();
+                        self.reload_annotations();
+                        self.reload_bookmarks();
+                        self.reload_saved_words();
+                        sender.input(ReaderMsg::AnnotationsReload);
+                        self.preload_next_chapter();
+                    }
+                }
+            }
+            "request-next-chapter" => {
+                if let Some(next_idx) = payload.next {
+                    if next_idx < self.open.chapter_count() {
+                        if let Some(item) = self.open.spine.get(next_idx) {
+                            let title = item.title.clone();
+                            let path = item.path.clone();
+                            if let Ok(body) = self.open.chapter_body(next_idx) {
+                                if body.contains("kalam-remote-placeholder") {
+                                    let source_id = super::chapter::extract_attr(&body, "data-source-id").unwrap_or_default();
+                                    let chapter_id = super::chapter::extract_attr(&body, "data-chapter-id").unwrap_or_default();
+                                    if !source_id.is_empty() && !chapter_id.is_empty() {
+                                        let webview = self.webview.clone();
+                                        let chap_title = title.clone();
+                                        crate::tasks::spawn(
+                                            move |_| {
+                                                let source_mgr = crate::sources::global_source_manager();
+                                                let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
+                                                let chap_content = source.get_chapter_content(&chapter_id)?;
+                                                let c_html = match chap_content {
+                                                    crate::sources::ChapterContent::Html(h) => h,
+                                                    _ => return Err(anyhow::anyhow!("Expected HTML content")),
+                                                };
+                                                let xhtml = format!(
+                                                    r#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>{}</title></head>
+<body>
+<h1>{}</h1>
+{}
+</body>
+</html>"#,
+                                                    quick_xml::escape::escape(&chap_title),
+                                                    quick_xml::escape::escape(&chap_title),
+                                                    c_html
+                                                );
+                                                let _ = std::fs::write(&path, &xhtml);
+                                                Ok::<_, anyhow::Error>(c_html)
+                                            },
+                                            |_| {},
+                                            move |res| {
+                                                match res {
+                                                    Ok(c_html) => {
+                                                        let title_json = serde_json::to_string(&title).unwrap_or_else(|_| "\"\"".into());
+                                                        let body_json = serde_json::to_string(&c_html).unwrap_or_else(|_| "\"\"".into());
+                                                        let script = format!("if (window.kalamAppendChapter) window.kalamAppendChapter({next_idx}, {title_json}, {body_json});");
+                                                        eval_js(&webview, &script);
+                                                    }
+                                                    Err(e) => {
+                                                        eprintln!("Failed to fetch next remote chapter {next_idx}: {e}");
+                                                        eval_js(&webview, "if (window.kalam) window.kalam._loadingNext = false;");
+                                                    }
+                                                }
+                                            }
+                                        );
+                                        return;
+                                    }
+                                }
+
+                                let title_json = serde_json::to_string(&title).unwrap_or_else(|_| "\"\"".into());
+                                let body_json = serde_json::to_string(&body).unwrap_or_else(|_| "\"\"".into());
+                                let script = format!("if (window.kalamAppendChapter) window.kalamAppendChapter({next_idx}, {title_json}, {body_json});");
+                                eval_js(&self.webview, &script);
+                            }
+                        }
+                    } else {
+                        eval_js(&self.webview, "if (window.kalam) window.kalam._loadingNext = false;");
+                    }
+                }
             }
             "next" => {
                 sender.input(ReaderMsg::NextChapter);

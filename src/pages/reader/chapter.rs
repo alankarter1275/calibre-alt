@@ -52,6 +52,13 @@ pub(crate) fn chapter_label(model: &ReaderModel, chapter_index: usize) -> String
     }
 }
 
+pub(crate) fn extract_attr(html: &str, attr: &str) -> Option<String> {
+    let needle = format!("{attr}=\"");
+    let start = html.find(&needle)? + needle.len();
+    let end = html[start..].find('"')? + start;
+    Some(html[start..end].to_string())
+}
+
 pub(crate) fn load_chapter(model: &ReaderModel) {
     if model.open.chapter_count() == 0 {
         return;
@@ -68,6 +75,54 @@ pub(crate) fn load_chapter(model: &ReaderModel) {
             } else {
                 format!("file:///{}/", base.replace('\\', "/"))
             };
+            if html.contains("kalam-remote-placeholder") {
+                if let Some(item) = model.open.spine.get(model.chapter) {
+                    let path = item.path.clone();
+                    let title = item.title.clone();
+                    let source_id = extract_attr(&html, "data-source-id").unwrap_or_default();
+                    let chapter_id = extract_attr(&html, "data-chapter-id").unwrap_or_default();
+                    if !source_id.is_empty() && !chapter_id.is_empty() {
+                        let webview = model.webview.clone();
+                        let css = model.css();
+                        let fraction = model.fraction;
+                        let ch_idx = model.chapter;
+                        let base_uri_clone = base_uri.clone();
+                        crate::tasks::spawn(
+                            move |_| {
+                                let source_mgr = crate::sources::global_source_manager();
+                                let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
+                                let chap_content = source.get_chapter_content(&chapter_id)?;
+                                let c_html = match chap_content {
+                                    crate::sources::ChapterContent::Html(h) => h,
+                                    _ => return Err(anyhow::anyhow!("Expected HTML content")),
+                                };
+                                let xhtml = format!(
+                                    r#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>{}</title></head>
+<body>
+<h1>{}</h1>
+{}
+</body>
+</html>"#,
+                                    quick_xml::escape::escape(&title),
+                                    quick_xml::escape::escape(&title),
+                                    c_html
+                                );
+                                let _ = std::fs::write(&path, &xhtml);
+                                Ok::<_, anyhow::Error>(xhtml)
+                            },
+                            |_| {},
+                            move |res| {
+                                if let Ok(xhtml) = res {
+                                    let full = crate::epub_book::inject_reading_shell(&xhtml, &base_uri_clone, &css, fraction, ch_idx);
+                                    webview.load_html(&full, Some(&base_uri_clone));
+                                }
+                            }
+                        );
+                    }
+                }
+            }
             model.webview.load_html(&html, Some(&base_uri));
         }
         Err(err) => {

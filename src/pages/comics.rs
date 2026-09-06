@@ -33,7 +33,6 @@ pub enum ComicsMsg {
     OpenComic(i64),
     OpenBookDialog(i64),
     OpenRemoteManga(String),
-    CoverLoaded { remote_id: String, bytes: Vec<u8> },
 }
 
 pub struct ComicsModel {
@@ -441,7 +440,6 @@ impl Component for ComicsModel {
                     remote_id,
                 });
             }
-            ComicsMsg::CoverLoaded { .. } => {}
         }
 
         let child = rebuild_comics_view(self, &sender);

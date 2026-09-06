@@ -2,7 +2,6 @@ use super::traits::*;
 use scraper::{Html, Selector};
 use std::time::Duration;
 use anyhow::{anyhow, Result};
-use std::sync::Arc;
 
 pub struct WeebCentralSource {
     client: ureq::Agent,

@@ -411,31 +411,96 @@ impl Component for RemoteDetailModel {
                     if let Some(details) = &self.details {
                         if let Ok(books) = self.catalog.list_books(crate::db::SortKey::Added, "") {
                             if let Some(b) = books.into_iter().find(|b| b.title.eq_ignore_ascii_case(&details.title)) {
-                                let idx = self.chapters.iter().position(|c| c.chapter_id == chapter_id).unwrap_or(0);
-                                let _ = self.catalog.set_reading_progress(b.id, idx, 0.0, self.chapters.len());
-                                let _ = sender.output(RemoteDetailOut::OpenBook { book_id: b.id });
-                                return;
+                                let cache_dir = crate::paths::reader_cache_dir(&b.uuid);
+                                let is_stale = match crate::epub_book::OpenBook::open(&b.file_path, &cache_dir) {
+                                    Ok(open) => open.chapter_count() < self.chapters.len(),
+                                    Err(_) => true,
+                                };
+
+                                if is_stale {
+                                    let _ = self.catalog.delete_book(b.id);
+                                    let _ = std::fs::remove_dir_all(&cache_dir);
+                                } else {
+                                    let idx = self.chapters.iter().position(|c| c.chapter_id == chapter_id).unwrap_or(0);
+                                    let _ = self.catalog.set_reading_progress(b.id, idx, 0.0, self.chapters.len());
+
+                                    // If this chapter in cache is a placeholder, fetch it before opening
+                                    if let Ok(open) = crate::epub_book::OpenBook::open(&b.file_path, &cache_dir) {
+                                        if let Some(item) = open.spine.get(idx) {
+                                            let is_placeholder = open.chapter_body(idx)
+                                                .map(|body| body.contains("kalam-remote-placeholder"))
+                                                .unwrap_or(false);
+                                            if is_placeholder {
+                                                self.is_loading = true;
+                                                self.status = format!("Loading {}…", title);
+                                                let s = sender.input_sender().clone();
+                                                let source_mgr = self.manager.clone();
+                                                let source_id = self.source_id.clone();
+                                                let chap_id = chapter_id.clone();
+                                                let chap_title = title.clone();
+                                                let path = item.path.clone();
+                                                let book_id = b.id;
+
+                                                crate::tasks::spawn(
+                                                    move |_| -> anyhow::Result<i64> {
+                                                        let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
+                                                        let content = source.get_chapter_content(&chap_id)?;
+                                                        let html = match content {
+                                                            crate::sources::ChapterContent::Html(h) => h,
+                                                            _ => return Err(anyhow::anyhow!("Expected HTML chapter")),
+                                                        };
+                                                        let xhtml = format!(
+                                                            r#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>{}</title></head>
+<body>
+<h1>{}</h1>
+{}
+</body>
+</html>"#,
+                                                            quick_xml::escape::escape(&chap_title),
+                                                            quick_xml::escape::escape(&chap_title),
+                                                            html
+                                                        );
+                                                        let _ = std::fs::write(&path, &xhtml);
+                                                        Ok(book_id)
+                                                    },
+                                                    |_| {},
+                                                    move |res| match res {
+                                                        Ok(book_id) => { let _ = s.send(RemoteDetailMsg::ChapterReady(book_id)); }
+                                                        Err(e) => { let _ = s.send(RemoteDetailMsg::ChapterFailed(e.to_string())); }
+                                                    },
+                                                );
+                                                return;
+                                            }
+                                        }
+                                    }
+
+                                    let _ = sender.output(RemoteDetailOut::OpenBook { book_id: b.id });
+                                    return;
+                                }
                             }
                         }
 
-                        // Not in library yet: fetch chapter HTML and generate single-chapter EPUB
+                        // Not in library yet (or was stale and cleaned up): fetch target chapter HTML and generate full-skeleton EPUB
                         self.is_loading = true;
                         self.status = format!("Loading {}…", title);
                         let s = sender.input_sender().clone();
                         let source_mgr = self.manager.clone();
                         let source_id = self.source_id.clone();
                         let chap_id = chapter_id.clone();
-                        let chap_title = title.clone();
                         let b_title = details.title.clone();
                         let b_author = details.author.clone();
                         let cover_url = details.cover_url.clone();
                         let catalog = self.catalog.clone();
+                        let chapters = self.chapters.clone();
+                        let target_idx = chapters.iter().position(|c| c.chapter_id == chap_id).unwrap_or(0);
 
                         crate::tasks::spawn(
                             move |_| -> anyhow::Result<i64> {
                                 let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
                                 let content = source.get_chapter_content(&chap_id)?;
-                                let html = match content {
+                                let target_html = match content {
                                     crate::sources::ChapterContent::Html(h) => h,
                                     _ => return Err(anyhow::anyhow!("Expected HTML chapter")),
                                 };
@@ -447,13 +512,28 @@ impl Component for RemoteDetailModel {
                                 let out_dir = std::env::temp_dir().join("kalam_downloads");
                                 std::fs::create_dir_all(&out_dir)?;
                                 let temp_file = out_dir.join(format!("{}.epub", uuid::Uuid::new_v4()));
-                                let web_chapters = vec![crate::epub_writer::WebChapter {
-                                    title: chap_title,
-                                    html_content: html,
-                                }];
+
+                                let mut web_chapters = Vec::with_capacity(chapters.len());
+                                for (i, c) in chapters.iter().enumerate() {
+                                    let html = if i == target_idx {
+                                        target_html.clone()
+                                    } else {
+                                        format!(
+                                            r#"<div class="kalam-remote-placeholder" data-source-id="{}" data-chapter-id="{}"><p>Loading chapter…</p></div>"#,
+                                            quick_xml::escape::escape(&source_id),
+                                            quick_xml::escape::escape(&c.chapter_id)
+                                        )
+                                    };
+                                    web_chapters.push(crate::epub_writer::WebChapter {
+                                        title: c.title.clone(),
+                                        html_content: html,
+                                    });
+                                }
+
                                 crate::epub_writer::generate_epub(&temp_file, &b_title, &b_author, cover_bytes.as_deref(), web_chapters)?;
                                 let res = crate::epub::import_epub(&catalog, &temp_file)?;
                                 let _ = std::fs::remove_file(&temp_file);
+                                let _ = catalog.set_reading_progress(res.book_id, target_idx, 0.0, chapters.len());
                                 Ok(res.book_id)
                             },
                             |_| {},

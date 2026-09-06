@@ -1044,6 +1044,9 @@ impl Component for ReaderModel {
                 refresh_highlights = true;
                 refresh_bookmarks = true;
                 refresh_words = true;
+                refresh_sidebar_header = true;
+                refresh_chrome = true;
+                refresh_toc = true;
             }
             ReaderMsg::RecolorAnnotation(id, color) => {
                 self.flush_annotation_note_draft();

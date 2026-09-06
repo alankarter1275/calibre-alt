@@ -693,10 +693,6 @@ impl AppModel {
                     });
                 PageSlot::RemoteDetail(ctrl)
             }
-            Route::Module(item) => {
-                let ctrl = PlaceholderPageModel::builder().launch(*item).detach();
-                PageSlot::Placeholder(ctrl)
-            }
         }
     }
 
@@ -1091,7 +1087,7 @@ impl Component for AppModel {
             },
         );
 
-        let source_manager = std::sync::Arc::new(crate::sources::SourceManager::new());
+        let source_manager = crate::sources::global_source_manager();
         let dl_mgr = std::sync::Arc::new(crate::downloads::DownloadManager::new(source_manager.clone(), catalog.clone()));
         let _ = crate::downloads::DOWNLOAD_MANAGER.set(dl_mgr);
         let initial_route = Route::Module(NavItem::Home);

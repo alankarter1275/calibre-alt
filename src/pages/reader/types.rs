@@ -44,6 +44,10 @@ pub(crate) struct JsPayload {
     pub(crate) definition: Option<String>,
     #[serde(default)]
     pub(crate) count: Option<i64>,
+    #[serde(default)]
+    pub(crate) chapter: Option<usize>,
+    #[serde(default)]
+    pub(crate) next: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

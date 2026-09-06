@@ -91,6 +91,7 @@ pub enum ComicsReaderOut {
 }
 
 
+#[allow(dead_code)]
 pub enum ReaderContext {
     Local(i64), // book_id
     Remote { source_id: String, chapter_id: String },

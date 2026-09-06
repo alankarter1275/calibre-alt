@@ -27,6 +27,7 @@ pub struct BrowseInit {
 }
 
 pub struct BrowseModel {
+    #[allow(dead_code)]
     manager: Arc<SourceManager>,
     source_id: String,
     active_source: Option<Arc<dyn Source>>,

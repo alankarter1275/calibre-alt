@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use super::traits::*;
 use scraper::{Html, Selector};
 use serde::Deserialize;

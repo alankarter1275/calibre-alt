@@ -3,7 +3,6 @@ use crate::sources::traits::{
 };
 use anyhow::Result;
 use scraper::{Html, Selector};
-use std::sync::Arc;
 
 pub struct RoyalRoadSource;
 

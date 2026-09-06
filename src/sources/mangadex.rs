@@ -45,6 +45,7 @@ struct MdMangaAttributes {
 
 #[derive(Deserialize)]
 struct MdRelationship {
+    #[allow(dead_code)]
     id: String,
     #[serde(rename = "type")]
     rel_type: String,

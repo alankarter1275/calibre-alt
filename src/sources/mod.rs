@@ -7,7 +7,15 @@ pub mod traits;
 
 pub use traits::*;
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+
+pub static GLOBAL_SOURCE_MANAGER: OnceLock<Arc<SourceManager>> = OnceLock::new();
+
+pub fn global_source_manager() -> Arc<SourceManager> {
+    GLOBAL_SOURCE_MANAGER
+        .get_or_init(|| Arc::new(SourceManager::new()))
+        .clone()
+}
 
 /// Global registry of all available sources.
 /// Uses a Vec to maintain registration order — the first source is the default.
@@ -45,6 +53,7 @@ impl SourceManager {
     }
 
     /// Get all registered sources, in registration order.
+    #[allow(dead_code)]
     pub fn all(&self) -> Vec<Arc<dyn Source>> {
         self.sources.clone()
     }

@@ -17,9 +17,12 @@ pub enum JobStatus {
 
 #[derive(Debug, Clone)]
 pub struct DownloadJob {
+    #[allow(dead_code)]
     pub id: String,
     pub title: String,
+    #[allow(dead_code)]
     pub source_id: String,
+    #[allow(dead_code)]
     pub remote_id: String,
     pub status: JobStatus,
     pub created_at: std::time::Instant,

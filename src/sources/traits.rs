@@ -26,6 +26,7 @@ pub struct RemoteBookDetails {
     pub author: String,
     pub description: String,
     pub cover_url: Option<String>,
+    #[allow(dead_code)]
     pub tags: Vec<String>,
     pub status: String,
 }
@@ -44,7 +45,9 @@ pub struct RemoteChapter {
 #[derive(Debug, Clone)]
 pub enum SearchFilter {
     TagsInclude(Vec<String>),
+    #[allow(dead_code)]
     TagsExclude(Vec<String>),
+    #[allow(dead_code)]
     OngoingOnly(bool),
     OrderBy(String),
 }
@@ -63,6 +66,7 @@ pub trait Source: Send + Sync {
     fn id(&self) -> &'static str;
     
     /// Human-readable name of this source.
+    #[allow(dead_code)]
     fn name(&self) -> &'static str;
     
     /// Base URL for this source, if applicable.

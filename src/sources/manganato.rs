@@ -1,8 +1,9 @@
+#![allow(dead_code)]
+
 use super::traits::*;
 use scraper::{Html, Selector};
 use std::time::Duration;
 use anyhow::{anyhow, Result};
-use std::sync::Arc;
 
 pub struct ManganatoSource {
     client: ureq::Agent,
