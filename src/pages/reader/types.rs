@@ -54,6 +54,9 @@ pub(crate) struct JsPayload {
     pub(crate) and_scroll_to: Option<bool>,
     #[serde(default)]
     pub(crate) href: Option<String>,
+    /// Target chapter index for jump-to-chapter bridge message.
+    #[serde(default)]
+    pub(crate) target: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

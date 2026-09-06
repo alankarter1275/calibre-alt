@@ -624,23 +624,54 @@ if (!window.kalamReaderShellLoaded) {
     updateContinuousScroll();
   };
 
-  // Smooth scroll to chapter within continuous document
+  // Smooth scroll to chapter within continuous document, or request a flash-free DOM jump
   window.kalamNavigateChapter = function(targetIdx) {
     var el = document.getElementById('kalam-chapter-' + targetIdx);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
-    if (targetIdx < window.kalam._currentChapter) {
-      if (!window.kalam._loadingPrev) {
-        window.kalam._loadingPrev = true;
-        kalamBridge({type:'request-prev-chapter', current:window.kalam._currentChapter, prev:targetIdx, andScrollTo:true});
-      }
-    } else if (targetIdx > window.kalam._currentChapter) {
-      if (!window.kalam._loadingNext) {
-        window.kalam._loadingNext = true;
-        kalamBridge({type:'request-next-chapter', current:window.kalam._currentChapter, next:targetIdx, andScrollTo:true});
-      }
+    // Chapter not in DOM — request Rust to stream it directly into the stream (no page reload)
+    window.kalam._loadingNext = true;
+    window.kalam._loadingPrev = true;
+    kalamBridge({type:'jump-to-chapter', target:targetIdx});
+  };
+
+  // Load a completely new chapter as the stream anchor (used by TOC / bottom bar jumps)
+  // Replaces stream contents without ever calling webview.load_html — no flash.
+  window.kalamJumpToChapter = function(idx, title, bodyHtml, frac) {
+    var stream = document.getElementById('kalam-reader-stream');
+    if (!stream) return;
+    // Remove all existing chapter sections cleanly
+    var sections = stream.querySelectorAll('.kalam-chapter-section');
+    for (var i = 0; i < sections.length; i++) {
+      sections[i].remove();
+    }
+    // Build and insert new anchor chapter
+    var div = document.createElement('div');
+    div.className = 'kalam-chapter-section';
+    div.id = 'kalam-chapter-' + idx;
+    div.dataset.chapter = String(idx);
+    div.innerHTML = (idx > 0 ? '<div class="kalam-chapter-divider"><span class="kalam-chapter-divider-title">' + (title || ('Chapter ' + (idx + 1))) + '</span></div>' : '') + bodyHtml;
+    stream.appendChild(div);
+    // Reset state
+    window.kalam._currentChapter = idx;
+    window.kalam._loadingNext = false;
+    window.kalam._loadingPrev = false;
+    window.kalam._lastProgress = -1;
+    // Restore scroll fraction
+    var se = document.scrollingElement || document.documentElement;
+    var max = Math.max(0, se.scrollHeight - se.clientHeight);
+    se.scrollTop = max * Math.min(1, Math.max(0, frac || 0));
+    updateContinuousScroll();
+    // Trigger adjacent chapter preloads
+    if (idx > 0) {
+      window.kalam._loadingPrev = true;
+      kalamBridge({type:'request-prev-chapter', current:idx, prev:idx - 1, andScrollTo:false});
+    }
+    if (idx + 1 < (window.kalam._totalChapters || 999999)) {
+      window.kalam._loadingNext = true;
+      kalamBridge({type:'request-next-chapter', current:idx, next:idx + 1, andScrollTo:false});
     }
   };
 
@@ -742,8 +773,8 @@ if (!window.kalamReaderShellLoaded) {
         }
       }
 
-      // Preload previous chapter when nearing the top of current chapter (within 0.8 viewports of top)
-      if (aRect.top > -window.innerHeight * 0.8 && !window.kalam._loadingPrev) {
+      // Preload previous chapter when nearing the top of current chapter (within 1.5 viewports of top)
+      if (aRect.top > -window.innerHeight * 1.5 && !window.kalam._loadingPrev) {
         var prevIdx = activeIdx - 1;
         if (prevIdx >= 0 && !document.getElementById('kalam-chapter-' + prevIdx)) {
           window.kalam._loadingPrev = true;

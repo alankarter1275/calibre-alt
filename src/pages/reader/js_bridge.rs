@@ -335,6 +335,76 @@ impl ReaderModel {
                     }
                 }
             }
+            "jump-to-chapter" => {
+                // JS couldn't find the chapter in DOM — feed it directly without any page reload.
+                if let Some(target_idx) = payload.target {
+                    if target_idx < self.open.chapter_count() {
+                        self.chapter = target_idx;
+                        self.fraction = 0.0;
+                        self.save_progress();
+                        self.reload_annotations();
+                        self.reload_bookmarks();
+                        self.reload_saved_words();
+                        sender.input(ReaderMsg::AnnotationsReload);
+                        self.preload_next_chapter();
+
+                        if let Some(item) = self.open.spine.get(target_idx) {
+                            let title = item.title.clone();
+                            let path = item.path.clone();
+                            if let Ok(body) = self.open.chapter_body(target_idx) {
+                                if body.contains("kalam-remote-placeholder") {
+                                    let source_id = super::chapter::extract_attr(&body, "data-source-id").unwrap_or_default();
+                                    let chapter_id = super::chapter::extract_attr(&body, "data-chapter-id").unwrap_or_default();
+                                    if !source_id.is_empty() && !chapter_id.is_empty() {
+                                        let webview = self.webview.clone();
+                                        let chap_title = title.clone();
+                                        crate::tasks::spawn(
+                                            move |_| {
+                                                let source_mgr = crate::sources::global_source_manager();
+                                                let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
+                                                let chap_content = source.get_chapter_content(&chapter_id)?;
+                                                let c_html = match chap_content {
+                                                    crate::sources::ChapterContent::Html(h) => h,
+                                                    _ => return Err(anyhow::anyhow!("Expected HTML content")),
+                                                };
+                                                let xhtml = format!(
+                                                    r#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>{}</title></head>
+<body>
+<h1>{}</h1>
+{}
+</body>
+</html>"#,
+                                                    quick_xml::escape::escape(&chap_title),
+                                                    quick_xml::escape::escape(&chap_title),
+                                                    c_html
+                                                );
+                                                let _ = std::fs::write(&path, &xhtml);
+                                                Ok::<_, anyhow::Error>((chap_title, c_html))
+                                            },
+                                            |_| {},
+                                            move |res| {
+                                                if let Ok((chap_title, c_html)) = res {
+                                                    let title_json = serde_json::to_string(&chap_title).unwrap_or_else(|_| "\"\"".into());
+                                                    let body_json = serde_json::to_string(&c_html).unwrap_or_else(|_| "\"\"".into());
+                                                    let script = format!("if (window.kalamJumpToChapter) window.kalamJumpToChapter({target_idx}, {title_json}, {body_json}, 0.0);");
+                                                    eval_js(&webview, &script);
+                                                }
+                                            }
+                                        );
+                                    }
+                                } else {
+                                    let title_json = serde_json::to_string(&title).unwrap_or_else(|_| "\"\"".into());
+                                    let body_json = serde_json::to_string(&body).unwrap_or_else(|_| "\"\"".into());
+                                    let script = format!("if (window.kalamJumpToChapter) window.kalamJumpToChapter({target_idx}, {title_json}, {body_json}, 0.0);");
+                                    eval_js(&self.webview, &script);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             "next" => {
                 sender.input(ReaderMsg::NextChapter);
             }
