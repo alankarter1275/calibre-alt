@@ -529,6 +529,38 @@ if (!window.kalamReaderShellLoaded) {
     var max = Math.max(0, se.scrollHeight - se.clientHeight);
     se.scrollTop = max * Math.min(1, Math.max(0, frac || 0));
   }
+  
+  // Manual smooth scroll because WebKitGTK ignores {behavior: 'smooth'} and instant-jumps,
+  // which causes white unrasterized flashes.
+  window.kalamSmoothScroll = function(targetElement, duration, onComplete) {
+    if (!targetElement) {
+        if (onComplete) onComplete();
+        return;
+    }
+    var se = document.scrollingElement || document.documentElement;
+    var startY = se.scrollTop;
+    var targetY = startY + targetElement.getBoundingClientRect().top;
+    var change = targetY - startY;
+    var startTime = performance.now();
+
+    function animateScroll(currentTime) {
+      var elapsed = currentTime - startTime;
+      var progress = Math.min(elapsed / Math.max(1, duration), 1);
+      
+      // easeInOutCubic
+      var ease = progress < 0.5 ? 4 * progress * progress * progress : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+      
+      se.scrollTop = startY + change * ease;
+      
+      if (progress < 1) {
+        requestAnimationFrame(animateScroll);
+      } else {
+        if (onComplete) onComplete();
+      }
+    }
+    requestAnimationFrame(animateScroll);
+  };
+
   function kalamBridge(payload) {
     try {
       var json = typeof payload === 'string' ? payload : JSON.stringify(payload);
@@ -554,7 +586,7 @@ if (!window.kalamReaderShellLoaded) {
       window.kalam._loadingNext = false;
       if (andScrollTo) {
         var existing = document.getElementById('kalam-chapter-' + index);
-        if (existing) existing.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (existing) window.kalamSmoothScroll(existing, 400);
       }
       return;
     }
@@ -566,7 +598,7 @@ if (!window.kalamReaderShellLoaded) {
     stream.appendChild(div);
     window.kalam._loadingNext = false;
     if (andScrollTo) {
-      div.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.kalamSmoothScroll(div, 400);
     }
   };
 
@@ -578,7 +610,7 @@ if (!window.kalamReaderShellLoaded) {
       window.kalam._loadingPrev = false;
       if (andScrollTo) {
         var existing = document.getElementById('kalam-chapter-' + index);
-        if (existing) existing.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (existing) window.kalamSmoothScroll(existing, 400);
       }
       return;
     }
@@ -605,7 +637,7 @@ if (!window.kalamReaderShellLoaded) {
     window.kalam._loadingPrev = false;
 
     if (andScrollTo) {
-      div.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.kalamSmoothScroll(div, 400);
     }
     updateContinuousScroll();
   };
@@ -629,7 +661,7 @@ if (!window.kalamReaderShellLoaded) {
   window.kalamNavigateChapter = function(targetIdx) {
     var el = document.getElementById('kalam-chapter-' + targetIdx);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.kalamSmoothScroll(el, 500);
       return;
     }
     // Chapter not in DOM — request Rust to stream it directly into the stream (no page reload)
@@ -675,11 +707,10 @@ if (!window.kalamReaderShellLoaded) {
     window.kalam._lastProgress = -1;
     window.kalam._isJumping = true;
     
-    // Smooth scroll to the target chapter
-    existing.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    
-    // Cleanup old chapters after the scroll animation finishes (~600ms)
-    setTimeout(function() {
+    // Smooth scroll to the target chapter using manual interpolation,
+    // since native scrollIntoView({behavior:'smooth'}) fails in WebKitGTK.
+    window.kalamSmoothScroll(existing, 500, function() {
+      // Cleanup old chapters after the scroll animation finishes
       var sections = stream.querySelectorAll('.kalam-chapter-section');
       for (var i = 0; i < sections.length; i++) {
         var chIdx = parseInt(sections[i].dataset.chapter, 10);
@@ -714,7 +745,7 @@ if (!window.kalamReaderShellLoaded) {
         window.kalam._loadingNext = true;
         kalamBridge({type:'request-next-chapter', current:idx, next:idx + 1, andScrollTo:false});
       }
-    }, 600);
+    });
   };
 
   // Drop an older chapter from the stream to keep memory light (adjusting scroll height seamlessly)
@@ -880,7 +911,7 @@ if (!window.kalamReaderShellLoaded) {
     e.stopPropagation();
     if (href.startsWith('#')) {
       var target = document.getElementById(href.slice(1));
-      if (target) target.scrollIntoView({ behavior: 'smooth' });
+      if (target) window.kalamSmoothScroll(target, 400);
       return;
     }
     kalamBridge({type:'link-click', href:href});
@@ -2453,7 +2484,7 @@ if (!window.kalamReaderShellLoaded) {
       }
     }
     if (first) {
-      try { first.scrollIntoView({block: 'center'}); } catch(e) {}
+      try { window.kalamSmoothScroll(first, 400); } catch(e) {}
     }
     kalamBridge({type:'search-in-book-done', count: count});
   };
