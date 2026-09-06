@@ -3487,30 +3487,30 @@ html, body {{
   overflow-anchor: none !important;
 }}
 
-/* ── whole-document percentage badge in bottom-right corner ── */
+/* ── whole-document percentage in bottom-right corner (printed-on-page look) ── */
 #kalam-reader-percent {{
   position: fixed !important;
   bottom: 18px !important;
-  right: 22px !important;
+  right: 24px !important;
   z-index: 99998 !important;
   font-family: -apple-system, BlinkMacSystemFont, "Inter", system-ui, monospace !important;
-  font-size: 11.5px !important;
+  font-size: 11px !important;
   font-weight: 500 !important;
   letter-spacing: 0.04em !important;
   font-variant-numeric: tabular-nums !important;
   color: {fg} !important;
   -webkit-text-fill-color: {fg} !important;
-  background: color-mix(in srgb, {bg} 82%, {fg} 18%) !important;
-  background-color: color-mix(in srgb, {bg} 82%, {fg} 18%) !important;
-  border: 1px solid color-mix(in srgb, {fg} 18%, transparent) !important;
-  border-radius: 6px !important;
-  padding: 3px 7px !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
   pointer-events: none !important;
   user-select: none !important;
-  opacity: 0.82 !important;
-  box-shadow: 0 1px 4px color-mix(in srgb, #000 12%, transparent) !important;
-  backdrop-filter: blur(4px) !important;
-  -webkit-backdrop-filter: blur(4px) !important;
+  opacity: 0.65 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }}
 
 /* ── continuous chapter stream & dividers ── */
