@@ -50,6 +50,10 @@ pub(crate) struct JsPayload {
     pub(crate) next: Option<usize>,
     #[serde(default)]
     pub(crate) prev: Option<usize>,
+    #[serde(rename = "andScrollTo", default)]
+    pub(crate) and_scroll_to: Option<bool>,
+    #[serde(default)]
+    pub(crate) href: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

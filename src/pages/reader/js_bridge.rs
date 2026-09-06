@@ -185,6 +185,7 @@ impl ReaderModel {
                 }
             }
             "request-next-chapter" => {
+                let and_scroll = payload.and_scroll_to.unwrap_or(false);
                 if let Some(next_idx) = payload.next {
                     if next_idx < self.open.chapter_count() {
                         if let Some(item) = self.open.spine.get(next_idx) {
@@ -228,7 +229,7 @@ impl ReaderModel {
                                                     Ok(c_html) => {
                                                         let title_json = serde_json::to_string(&title).unwrap_or_else(|_| "\"\"".into());
                                                         let body_json = serde_json::to_string(&c_html).unwrap_or_else(|_| "\"\"".into());
-                                                        let script = format!("if (window.kalamAppendChapter) window.kalamAppendChapter({next_idx}, {title_json}, {body_json});");
+                                                        let script = format!("if (window.kalamAppendChapter) window.kalamAppendChapter({next_idx}, {title_json}, {body_json}, {and_scroll});");
                                                         eval_js(&webview, &script);
                                                     }
                                                     Err(e) => {
@@ -244,7 +245,7 @@ impl ReaderModel {
 
                                 let title_json = serde_json::to_string(&title).unwrap_or_else(|_| "\"\"".into());
                                 let body_json = serde_json::to_string(&body).unwrap_or_else(|_| "\"\"".into());
-                                let script = format!("if (window.kalamAppendChapter) window.kalamAppendChapter({next_idx}, {title_json}, {body_json});");
+                                let script = format!("if (window.kalamAppendChapter) window.kalamAppendChapter({next_idx}, {title_json}, {body_json}, {and_scroll});");
                                 eval_js(&self.webview, &script);
                             }
                         }
@@ -254,6 +255,7 @@ impl ReaderModel {
                 }
             }
             "request-prev-chapter" => {
+                let and_scroll = payload.and_scroll_to.unwrap_or(false);
                 if let Some(prev_idx) = payload.prev {
                     if prev_idx < self.open.chapter_count() {
                         if let Some(item) = self.open.spine.get(prev_idx) {
@@ -297,7 +299,7 @@ impl ReaderModel {
                                                     Ok(c_html) => {
                                                         let title_json = serde_json::to_string(&title).unwrap_or_else(|_| "\"\"".into());
                                                         let body_json = serde_json::to_string(&c_html).unwrap_or_else(|_| "\"\"".into());
-                                                        let script = format!("if (window.kalamPrependChapter) window.kalamPrependChapter({prev_idx}, {title_json}, {body_json});");
+                                                        let script = format!("if (window.kalamPrependChapter) window.kalamPrependChapter({prev_idx}, {title_json}, {body_json}, {and_scroll});");
                                                         eval_js(&webview, &script);
                                                     }
                                                     Err(e) => {
@@ -313,12 +315,23 @@ impl ReaderModel {
 
                                 let title_json = serde_json::to_string(&title).unwrap_or_else(|_| "\"\"".into());
                                 let body_json = serde_json::to_string(&body).unwrap_or_else(|_| "\"\"".into());
-                                let script = format!("if (window.kalamPrependChapter) window.kalamPrependChapter({prev_idx}, {title_json}, {body_json});");
+                                let script = format!("if (window.kalamPrependChapter) window.kalamPrependChapter({prev_idx}, {title_json}, {body_json}, {and_scroll});");
                                 eval_js(&self.webview, &script);
                             }
                         }
                     } else {
                         eval_js(&self.webview, "if (window.kalam) window.kalam._loadingPrev = false;");
+                    }
+                }
+            }
+            "link-click" => {
+                if let Some(href) = payload.href {
+                    if href.starts_with("http://") || href.starts_with("https://") {
+                        let launcher = gtk::UriLauncher::new(&href);
+                        launcher.launch(None::<&gtk::Window>, gtk::gio::Cancellable::NONE, |_| {});
+                    } else if let Some(spine_idx) = self.open.spine_index_for(&href) {
+                        let script = format!("if (window.kalamNavigateChapter) window.kalamNavigateChapter({spine_idx});");
+                        eval_js(&self.webview, &script);
                     }
                 }
             }

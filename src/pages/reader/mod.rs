@@ -686,6 +686,12 @@ impl Component for ReaderModel {
                                     decision.ignore();
                                     return true;
                                 }
+                                if uri_str.starts_with("http://") || uri_str.starts_with("https://") {
+                                    let launcher = gtk::UriLauncher::new(&uri_str);
+                                    launcher.launch(None::<&gtk::Window>, gtk::gio::Cancellable::NONE, |_| {});
+                                    decision.ignore();
+                                    return true;
+                                }
                             }
                         }
                     }
@@ -868,13 +874,9 @@ impl Component for ReaderModel {
                     self.flush_annotation_note_draft();
                     self.editing_annotation = None;
                     self.pending_annotation_jump = None;
-                    self.go_chapter(self.chapter - 1, 0.0);
-                    refresh_sidebar_header = true;
-                    refresh_toc = true;
-                    refresh_highlights = true;
-                    refresh_bookmarks = true;
-                    refresh_words = true;
-                    refresh_chrome = true;
+                    let prev = self.chapter - 1;
+                    let script = format!("if (window.kalamNavigateChapter) window.kalamNavigateChapter({prev});");
+                    js_bridge::eval_js(&self.webview, &script);
                 }
             }
             ReaderMsg::NextChapter => {
@@ -882,14 +884,9 @@ impl Component for ReaderModel {
                     self.flush_annotation_note_draft();
                     self.editing_annotation = None;
                     self.pending_annotation_jump = None;
-                    self.fraction = 1.0;
-                    self.go_chapter(self.chapter + 1, 0.0);
-                    refresh_sidebar_header = true;
-                    refresh_toc = true;
-                    refresh_highlights = true;
-                    refresh_bookmarks = true;
-                    refresh_words = true;
-                    refresh_chrome = true;
+                    let next = self.chapter + 1;
+                    let script = format!("if (window.kalamNavigateChapter) window.kalamNavigateChapter({next});");
+                    js_bridge::eval_js(&self.webview, &script);
                 }
             }
             ReaderMsg::Theme(theme) => {
