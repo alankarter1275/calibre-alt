@@ -77,15 +77,15 @@ impl BrowseModel {
                 filters.push(crate::sources::SearchFilter::OrderBy(self.selected_order.clone()));
             }
 
-            let s = sender.clone();
+            let s = sender.input_sender().clone();
             let page_num = self.page;
             let q = self.query.clone();
             crate::tasks::spawn(
                 move |_| source.search(&q, page_num, &filters),
                 |_| {},
                 move |res| match res {
-                    Ok(page) => s.input(BrowseMsg::SearchSuccess(page)),
-                    Err(e)   => s.input(BrowseMsg::SearchFailed(e.to_string())),
+                    Ok(page) => { let _ = s.send(BrowseMsg::SearchSuccess(page)); }
+                    Err(e)   => { let _ = s.send(BrowseMsg::SearchFailed(e.to_string())); }
                 },
             );
         } else {
@@ -303,13 +303,13 @@ impl Component for BrowseModel {
                     {
                         let url = url.clone();
                         let remote_id = res.remote_id.clone();
-                        let s = sender.clone();
+                        let s = sender.input_sender().clone();
                         crate::tasks::spawn(
                             move |_| source.fetch_image(&url),
                             |_| {},
                             move |res| {
                                 if let Ok(bytes) = res {
-                                    s.input(BrowseMsg::CoverLoaded { remote_id, bytes });
+                                    let _ = s.send(BrowseMsg::CoverLoaded { remote_id, bytes });
                                 }
                             },
                         );

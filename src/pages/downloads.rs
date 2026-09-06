@@ -105,10 +105,13 @@ impl Component for DownloadsModel {
         let widgets = view_output!();
 
         // 800ms polling loop to refresh download statuses
-        let s = sender.clone();
+        let s = sender.input_sender().clone();
         gtk::glib::timeout_add_local(std::time::Duration::from_millis(800), move || {
-            s.input(DownloadsMsg::Tick);
-            gtk::glib::ControlFlow::Continue
+            if s.send(DownloadsMsg::Tick).is_err() {
+                gtk::glib::ControlFlow::Break
+            } else {
+                gtk::glib::ControlFlow::Continue
+            }
         });
 
         ComponentParts { model, widgets }

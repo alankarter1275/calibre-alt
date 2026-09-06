@@ -265,7 +265,7 @@ impl Component for RemoteDetailModel {
                 self.status = "Loading manga details and chapters…".to_string();
 
                 if let Some(source) = self.manager.get(&self.source_id) {
-                    let s = sender.clone();
+                    let s = sender.input_sender().clone();
                     let r_id = self.remote_id.clone();
 
                     crate::tasks::spawn(
@@ -276,8 +276,8 @@ impl Component for RemoteDetailModel {
                         },
                         |_| {},
                         move |res| match res {
-                            Ok((d, c)) => s.input(RemoteDetailMsg::InfoSuccess(d, c)),
-                            Err(e)     => s.input(RemoteDetailMsg::InfoFailed(e.to_string())),
+                            Ok((d, c)) => { let _ = s.send(RemoteDetailMsg::InfoSuccess(d, c)); }
+                            Err(e)     => { let _ = s.send(RemoteDetailMsg::InfoFailed(e.to_string())); }
                         },
                     );
                 } else {
@@ -421,7 +421,7 @@ impl Component for RemoteDetailModel {
                         // Not in library yet: fetch chapter HTML and generate single-chapter EPUB
                         self.is_loading = true;
                         self.status = format!("Loading {}…", title);
-                        let s = sender.clone();
+                        let s = sender.input_sender().clone();
                         let source_mgr = self.manager.clone();
                         let source_id = self.source_id.clone();
                         let chap_id = chapter_id.clone();
@@ -458,8 +458,8 @@ impl Component for RemoteDetailModel {
                             },
                             |_| {},
                             move |res| match res {
-                                Ok(book_id) => s.input(RemoteDetailMsg::ChapterReady(book_id)),
-                                Err(e) => s.input(RemoteDetailMsg::ChapterFailed(e.to_string())),
+                                Ok(book_id) => { let _ = s.send(RemoteDetailMsg::ChapterReady(book_id)); }
+                                Err(e) => { let _ = s.send(RemoteDetailMsg::ChapterFailed(e.to_string())); }
                             },
                         );
                         return;
