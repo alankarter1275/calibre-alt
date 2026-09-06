@@ -214,6 +214,9 @@ impl Component for ReaderModel {
                                 add_css_class: "kalam-title-serif",
                                 set_halign: gtk::Align::Start,
                                 set_wrap: true,
+                                set_wrap_mode: gtk::pango::WrapMode::WordChar,
+                                set_ellipsize: gtk::pango::EllipsizeMode::End,
+                                set_lines: 2,
                                 set_xalign: 0.0,
                             },
 

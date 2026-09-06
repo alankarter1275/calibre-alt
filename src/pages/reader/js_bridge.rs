@@ -253,6 +253,75 @@ impl ReaderModel {
                     }
                 }
             }
+            "request-prev-chapter" => {
+                if let Some(prev_idx) = payload.prev {
+                    if prev_idx < self.open.chapter_count() {
+                        if let Some(item) = self.open.spine.get(prev_idx) {
+                            let title = item.title.clone();
+                            let path = item.path.clone();
+                            if let Ok(body) = self.open.chapter_body(prev_idx) {
+                                if body.contains("kalam-remote-placeholder") {
+                                    let source_id = super::chapter::extract_attr(&body, "data-source-id").unwrap_or_default();
+                                    let chapter_id = super::chapter::extract_attr(&body, "data-chapter-id").unwrap_or_default();
+                                    if !source_id.is_empty() && !chapter_id.is_empty() {
+                                        let webview = self.webview.clone();
+                                        let chap_title = title.clone();
+                                        crate::tasks::spawn(
+                                            move |_| {
+                                                let source_mgr = crate::sources::global_source_manager();
+                                                let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
+                                                let chap_content = source.get_chapter_content(&chapter_id)?;
+                                                let c_html = match chap_content {
+                                                    crate::sources::ChapterContent::Html(h) => h,
+                                                    _ => return Err(anyhow::anyhow!("Expected HTML content")),
+                                                };
+                                                let xhtml = format!(
+                                                    r#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>{}</title></head>
+<body>
+<h1>{}</h1>
+{}
+</body>
+</html>"#,
+                                                    quick_xml::escape::escape(&chap_title),
+                                                    quick_xml::escape::escape(&chap_title),
+                                                    c_html
+                                                );
+                                                let _ = std::fs::write(&path, &xhtml);
+                                                Ok::<_, anyhow::Error>(c_html)
+                                            },
+                                            |_| {},
+                                            move |res| {
+                                                match res {
+                                                    Ok(c_html) => {
+                                                        let title_json = serde_json::to_string(&title).unwrap_or_else(|_| "\"\"".into());
+                                                        let body_json = serde_json::to_string(&c_html).unwrap_or_else(|_| "\"\"".into());
+                                                        let script = format!("if (window.kalamPrependChapter) window.kalamPrependChapter({prev_idx}, {title_json}, {body_json});");
+                                                        eval_js(&webview, &script);
+                                                    }
+                                                    Err(e) => {
+                                                        eprintln!("Failed to fetch prev remote chapter {prev_idx}: {e}");
+                                                        eval_js(&webview, "if (window.kalam) window.kalam._loadingPrev = false;");
+                                                    }
+                                                }
+                                            }
+                                        );
+                                        return;
+                                    }
+                                }
+
+                                let title_json = serde_json::to_string(&title).unwrap_or_else(|_| "\"\"".into());
+                                let body_json = serde_json::to_string(&body).unwrap_or_else(|_| "\"\"".into());
+                                let script = format!("if (window.kalamPrependChapter) window.kalamPrependChapter({prev_idx}, {title_json}, {body_json});");
+                                eval_js(&self.webview, &script);
+                            }
+                        }
+                    } else {
+                        eval_js(&self.webview, "if (window.kalam) window.kalam._loadingPrev = false;");
+                    }
+                }
+            }
             "next" => {
                 sender.input(ReaderMsg::NextChapter);
             }

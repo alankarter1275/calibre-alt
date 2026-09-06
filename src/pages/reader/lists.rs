@@ -239,6 +239,9 @@ fn append_toc_btn(
     title.set_halign(gtk::Align::Start);
     title.set_hexpand(true);
     title.set_wrap(true);
+    title.set_wrap_mode(gtk::pango::WrapMode::WordChar);
+    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    title.set_lines(2);
     title.set_xalign(0.0);
     btn.set_child(Some(&title));
     let s = sender.clone();

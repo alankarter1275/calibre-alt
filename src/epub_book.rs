@@ -136,6 +136,7 @@ impl OpenBook {
             reading_css,
             restore_fraction,
             index,
+            self.chapter_count(),
         ))
     }
 
@@ -501,6 +502,7 @@ pub(crate) fn inject_reading_shell(
     reading_css: &str,
     restore_fraction: f64,
     chapter_index: usize,
+    total_chapters: usize,
 ) -> String {
     let restore = restore_fraction.clamp(0.0, 1.0);
     let core_js = r#"
@@ -513,7 +515,9 @@ if (!window.kalamReaderShellLoaded) {
   window.kalam._lastProgress = -1;
   window.kalam._restoreFrac = %RESTORE%;
   window.kalam._currentChapter = %CHAPTER_INDEX%;
+  window.kalam._totalChapters = %TOTAL_CHAPTERS%;
   window.kalam._loadingNext = false;
+  window.kalam._loadingPrev = false;
 
   function setScroll(frac) {
     var se = document.scrollingElement || document.documentElement;
@@ -554,6 +558,26 @@ if (!window.kalamReaderShellLoaded) {
     window.kalam._loadingNext = false;
   };
 
+  // Prepend a previously fetched chapter to the continuous stream
+  window.kalamPrependChapter = function(index, title, bodyHtml) {
+    var stream = document.getElementById('kalam-reader-stream');
+    if (!stream) return;
+    if (document.getElementById('kalam-chapter-' + index)) {
+      window.kalam._loadingPrev = false;
+      return;
+    }
+    var div = document.createElement('div');
+    div.className = 'kalam-chapter-section';
+    div.id = 'kalam-chapter-' + index;
+    div.dataset.chapter = String(index);
+    div.innerHTML = '<div class="kalam-chapter-divider"><span class="kalam-chapter-divider-title">' + (title || ('Chapter ' + (index + 1))) + '</span></div>' + bodyHtml;
+    stream.insertBefore(div, stream.firstChild);
+    var h = div.offsetHeight;
+    window.scrollBy(0, h);
+    window.kalam._loadingPrev = false;
+    updateContinuousScroll();
+  };
+
   // Drop an older chapter from the stream to keep memory light (adjusting scroll height seamlessly)
   window.kalamDropChapter = function(index) {
     var ch = document.getElementById('kalam-chapter-' + index);
@@ -563,6 +587,16 @@ if (!window.kalamReaderShellLoaded) {
       window.scrollBy(0, -h);
     }
   };
+
+  // Update whole-document percentage badge in bottom-right corner
+  function updatePercentageBadge(activeIdx, frac) {
+    var badge = document.getElementById('kalam-reader-percent');
+    if (!badge) return;
+    var total = Math.max(1, window.kalam._totalChapters || 1);
+    var totalFrac = Math.max(0, Math.min(1, (activeIdx + frac) / total));
+    var pct = (totalFrac * 100).toFixed(2) + '%';
+    badge.textContent = pct;
+  }
 
   // Continuous multi-chapter scroll tracking
   function updateContinuousScroll() {
@@ -595,13 +629,17 @@ if (!window.kalamReaderShellLoaded) {
       window.kalam._currentChapter = activeIdx;
       kalamBridge({type:'chapter-changed', chapter:activeIdx});
 
-      // Maintain at most 2 chapters in memory: drop any chapter earlier than activeIdx - 1
+      // Maintain at most 2 chapters in memory:
+      // Drop any chapter earlier than activeIdx - 1 (scroll compensated)
+      // Drop any chapter later than activeIdx + 1 (below viewport)
       for (var j = 0; j < sections.length; j++) {
         var chNum = parseInt(sections[j].dataset.chapter, 10);
         if (chNum < activeIdx - 1) {
           var h = sections[j].offsetHeight;
           sections[j].remove();
           window.scrollBy(0, -h);
+        } else if (chNum > activeIdx + 1) {
+          sections[j].remove();
         }
       }
     }
@@ -611,6 +649,8 @@ if (!window.kalamReaderShellLoaded) {
       var aHeight = Math.max(1, activeSec.offsetHeight);
       var scrolled = Math.max(0, -aRect.top);
       var frac = Math.max(0, Math.min(1, scrolled / Math.max(1, aHeight - window.innerHeight)));
+      updatePercentageBadge(activeIdx, frac);
+
       if (Math.abs(frac - window.kalam._lastProgress) > 0.01) {
         window.kalam._lastProgress = frac;
         kalamBridge({type:'progress', fraction:frac, chapter:activeIdx});
@@ -619,9 +659,18 @@ if (!window.kalamReaderShellLoaded) {
       // Preload next chapter when nearing the end of current chapter (within 1.8 viewports of bottom)
       if (aRect.bottom < window.innerHeight * 1.8 && !window.kalam._loadingNext) {
         var nextIdx = activeIdx + 1;
-        if (!document.getElementById('kalam-chapter-' + nextIdx)) {
+        if (nextIdx < (window.kalam._totalChapters || 999999) && !document.getElementById('kalam-chapter-' + nextIdx)) {
           window.kalam._loadingNext = true;
           kalamBridge({type:'request-next-chapter', current:activeIdx, next:nextIdx});
+        }
+      }
+
+      // Preload previous chapter when nearing the top of current chapter (within 0.8 viewports of top)
+      if (aRect.top > -window.innerHeight * 0.8 && !window.kalam._loadingPrev) {
+        var prevIdx = activeIdx - 1;
+        if (prevIdx >= 0 && !document.getElementById('kalam-chapter-' + prevIdx)) {
+          window.kalam._loadingPrev = true;
+          kalamBridge({type:'request-prev-chapter', current:activeIdx, prev:prevIdx});
         }
       }
     }
@@ -659,6 +708,13 @@ if (!window.kalamReaderShellLoaded) {
     window.kalam._restoreFrac = 0;
     window.kalam._lastProgress = -1;
     updateContinuousScroll();
+    if (window.kalam._currentChapter > 0 && !window.kalam._loadingPrev) {
+      var prevIdx = window.kalam._currentChapter - 1;
+      if (!document.getElementById('kalam-chapter-' + prevIdx)) {
+        window.kalam._loadingPrev = true;
+        kalamBridge({type:'request-prev-chapter', current:window.kalam._currentChapter, prev:prevIdx});
+      }
+    }
   }
   if (document.readyState === 'complete') setTimeout(tryRestore, 80);
   else window.addEventListener('load', function(){ setTimeout(tryRestore, 80); });
@@ -2545,7 +2601,8 @@ if (!window.kalamReaderShellLoaded) {
 "#;
     let js = core_js
         .replace("%RESTORE%", &restore.to_string())
-        .replace("%CHAPTER_INDEX%", &chapter_index.to_string());
+        .replace("%CHAPTER_INDEX%", &chapter_index.to_string())
+        .replace("%TOTAL_CHAPTERS%", &total_chapters.to_string());
 
     let inject = format!(
         r#"<base href="{base}">
@@ -2582,12 +2639,19 @@ if (!window.kalamReaderShellLoaded) {
         format!("<!DOCTYPE html><html><head>{head_inject}</head><body>{raw_html}</body></html>")
     };
 
+    let initial_pct = if total_chapters > 0 {
+        ((chapter_index as f64 + restore) / total_chapters as f64 * 100.0).clamp(0.0, 100.0)
+    } else {
+        0.0
+    };
+    let percent_badge = format!(r#"<div id="kalam-reader-percent" aria-hidden="true">{initial_pct:.2}%</div>"#);
+
     // Wrap body content inside continuous chapter stream and append second inject copy before </body>
     let stream_open = format!(r#"<div id="kalam-reader-stream"><div class="kalam-chapter-section" id="kalam-chapter-{chapter_index}" data-chapter="{chapter_index}">"#);
     let stream_close = "</div></div>";
     let lower2 = out.to_ascii_lowercase();
     if let Some(pos) = lower2.rfind("</body>") {
-        out.insert_str(pos, &format!("{stream_close}{inject}"));
+        out.insert_str(pos, &format!("{stream_close}{percent_badge}{inject}"));
         let lower3 = out.to_ascii_lowercase();
         if let Some(bpos) = lower3.find("<body") {
             if let Some(gt) = out[bpos..].find('>') {
@@ -2595,7 +2659,7 @@ if (!window.kalamReaderShellLoaded) {
             }
         }
     } else {
-        out = format!("{stream_open}{out}{stream_close}{inject}");
+        out = format!("{stream_open}{out}{stream_close}{percent_badge}{inject}");
     }
     out
 }
@@ -3409,6 +3473,44 @@ html.kalam-selection-active body * ::selection {{
 #kalam-dict-popup {{
   background: var(--kalam-pop-bg) !important;
   background-color: var(--kalam-pop-bg) !important;
+}}
+
+/* ── hide native scrollbars on the reader WebView ── */
+::-webkit-scrollbar {{
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}}
+html, body {{
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+  overflow-anchor: none !important;
+}}
+
+/* ── whole-document percentage badge in bottom-right corner ── */
+#kalam-reader-percent {{
+  position: fixed !important;
+  bottom: 18px !important;
+  right: 22px !important;
+  z-index: 99998 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", system-ui, monospace !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.04em !important;
+  font-variant-numeric: tabular-nums !important;
+  color: {fg} !important;
+  -webkit-text-fill-color: {fg} !important;
+  background: color-mix(in srgb, {bg} 82%, {fg} 18%) !important;
+  background-color: color-mix(in srgb, {bg} 82%, {fg} 18%) !important;
+  border: 1px solid color-mix(in srgb, {fg} 18%, transparent) !important;
+  border-radius: 6px !important;
+  padding: 3px 7px !important;
+  pointer-events: none !important;
+  user-select: none !important;
+  opacity: 0.82 !important;
+  box-shadow: 0 1px 4px color-mix(in srgb, #000 12%, transparent) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
 }}
 
 /* ── continuous chapter stream & dividers ── */

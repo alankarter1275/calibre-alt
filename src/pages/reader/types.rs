@@ -48,6 +48,8 @@ pub(crate) struct JsPayload {
     pub(crate) chapter: Option<usize>,
     #[serde(default)]
     pub(crate) next: Option<usize>,
+    #[serde(default)]
+    pub(crate) prev: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

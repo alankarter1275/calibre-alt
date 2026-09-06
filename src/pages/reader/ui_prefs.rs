@@ -253,11 +253,15 @@ pub(crate) fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
 
 .kalam-reader-ui-live .kalam-reader-sidebar-left {{
     min-width: {left_width}px;
+    max-width: {left_width}px;
+    width: {left_width}px;
     border-radius: {radius}px;
 }}
 
 .kalam-reader-ui-live .kalam-reader-sidebar-right {{
     min-width: {right_width}px;
+    max-width: {right_width}px;
+    width: {right_width}px;
     border-radius: {radius}px;
 }}
 
@@ -564,14 +568,22 @@ pub(crate) fn reader_ui_css(prefs: ReaderUiPrefs) -> String {
 pub(crate) fn apply_reader_ui_prefs(model: &ReaderModel) {
     let gap = model.ui_prefs.sidebar_gap;
     if let Some(shell) = &model.left_sidebar_shell {
+        shell.set_size_request(model.ui_prefs.left_sidebar_width, -1);
         shell.set_margin_start(gap);
         shell.set_margin_top(gap);
         shell.set_margin_bottom(gap);
     }
+    if let Some(box_) = &model.left_sidebar_box {
+        box_.set_size_request(model.ui_prefs.left_sidebar_width, -1);
+    }
     if let Some(shell) = &model.right_sidebar_shell {
+        shell.set_size_request(model.ui_prefs.right_sidebar_width, -1);
         shell.set_margin_end(gap);
         shell.set_margin_top(gap);
         shell.set_margin_bottom(gap);
+    }
+    if let Some(box_) = &model.right_sidebar_box {
+        box_.set_size_request(model.ui_prefs.right_sidebar_width, -1);
     }
     if let Some(back_dock) = &model.back_dock {
         back_dock.set_margin_top(model.ui_prefs.back_top_gap);

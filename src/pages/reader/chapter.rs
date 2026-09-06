@@ -34,12 +34,78 @@ impl ReaderModel {
         load_chapter(self);
         self.loading = false;
         self.preload_next_chapter();
+        self.preload_and_prepend_prev_chapter();
     }
 
     /// A0 step 5: warm the *next* chapter's file while this one is being read.
     pub(crate) fn preload_next_chapter(&self) {
         if let Some(path) = crate::preload::next_chapter_file(&self.open.spine, self.chapter) {
             crate::preload::warm_chapter_file(path);
+        }
+    }
+
+    pub(crate) fn preload_and_prepend_prev_chapter(&self) {
+        if self.chapter == 0 {
+            return;
+        }
+        let prev_idx = self.chapter - 1;
+        if prev_idx >= self.open.chapter_count() {
+            return;
+        }
+        if let Some(item) = self.open.spine.get(prev_idx) {
+            let title = item.title.clone();
+            let path = item.path.clone();
+            if let Ok(body) = self.open.chapter_body(prev_idx) {
+                if body.contains("kalam-remote-placeholder") {
+                    let source_id = extract_attr(&body, "data-source-id").unwrap_or_default();
+                    let chapter_id = extract_attr(&body, "data-chapter-id").unwrap_or_default();
+                    if !source_id.is_empty() && !chapter_id.is_empty() {
+                        let webview = self.webview.clone();
+                        let chap_title = title.clone();
+                        crate::tasks::spawn(
+                            move |_| {
+                                let source_mgr = crate::sources::global_source_manager();
+                                let source = source_mgr.get(&source_id).ok_or_else(|| anyhow::anyhow!("Source not found"))?;
+                                let chap_content = source.get_chapter_content(&chapter_id)?;
+                                let c_html = match chap_content {
+                                    crate::sources::ChapterContent::Html(h) => h,
+                                    _ => return Err(anyhow::anyhow!("Expected HTML content")),
+                                };
+                                let xhtml = format!(
+                                    r#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>{}</title></head>
+<body>
+<h1>{}</h1>
+{}
+</body>
+</html>"#,
+                                    quick_xml::escape::escape(&chap_title),
+                                    quick_xml::escape::escape(&chap_title),
+                                    c_html
+                                );
+                                let _ = std::fs::write(&path, &xhtml);
+                                Ok::<_, anyhow::Error>(c_html)
+                            },
+                            |_| {},
+                            move |res| {
+                                if let Ok(c_html) = res {
+                                    let title_json = serde_json::to_string(&title).unwrap_or_else(|_| "\"\"".into());
+                                    let body_json = serde_json::to_string(&c_html).unwrap_or_else(|_| "\"\"".into());
+                                    let script = format!("if (window.kalamPrependChapter) window.kalamPrependChapter({prev_idx}, {title_json}, {body_json});");
+                                    super::js_bridge::eval_js(&webview, &script);
+                                }
+                            }
+                        );
+                        return;
+                    }
+                }
+
+                let title_json = serde_json::to_string(&title).unwrap_or_else(|_| "\"\"".into());
+                let body_json = serde_json::to_string(&body).unwrap_or_else(|_| "\"\"".into());
+                let script = format!("if (window.kalamPrependChapter) window.kalamPrependChapter({prev_idx}, {title_json}, {body_json});");
+                super::js_bridge::eval_js(&self.webview, &script);
+            }
         }
     }
 }
@@ -86,6 +152,7 @@ pub(crate) fn load_chapter(model: &ReaderModel) {
                         let css = model.css();
                         let fraction = model.fraction;
                         let ch_idx = model.chapter;
+                        let total_chapters = model.open.chapter_count();
                         let base_uri_clone = base_uri.clone();
                         crate::tasks::spawn(
                             move |_| {
@@ -115,7 +182,7 @@ pub(crate) fn load_chapter(model: &ReaderModel) {
                             |_| {},
                             move |res| {
                                 if let Ok(xhtml) = res {
-                                    let full = crate::epub_book::inject_reading_shell(&xhtml, &base_uri_clone, &css, fraction, ch_idx);
+                                    let full = crate::epub_book::inject_reading_shell(&xhtml, &base_uri_clone, &css, fraction, ch_idx, total_chapters);
                                     webview.load_html(&full, Some(&base_uri_clone));
                                 }
                             }
@@ -124,6 +191,7 @@ pub(crate) fn load_chapter(model: &ReaderModel) {
                 }
             }
             model.webview.load_html(&html, Some(&base_uri));
+            model.preload_and_prepend_prev_chapter();
         }
         Err(err) => {
             let err_html = format!(
