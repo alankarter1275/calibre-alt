@@ -268,17 +268,17 @@ impl Component for ComicsReaderModel {
                 },
             },
 
-            // ── 4. Overlay: Floating Scrubber Dock at Bottom ────────────
+            // ── 4. Overlay: Edge-to-Edge Bottom Scrubber Bar (Moku-style) ──
             add_overlay = &gtk::Revealer {
                 #[watch]
                 set_reveal_child: model.show_chrome,
                 set_transition_type: gtk::RevealerTransitionType::SlideUp,
-                set_halign: gtk::Align::Center,
+                set_halign: gtk::Align::Fill,
                 set_valign: gtk::Align::End,
 
                 #[wrap(Some)]
                 set_child = &gtk::Box {
-                    add_css_class: "kalam-comics-bottom-dock",
+                    add_css_class: "kalam-comics-bottombar",
                     set_orientation: gtk::Orientation::Horizontal,
                     set_spacing: 12,
                     set_valign: gtk::Align::Center,
@@ -286,16 +286,15 @@ impl Component for ComicsReaderModel {
                     // Prev page button
                     gtk::Button {
                         set_child: Some(&crate::icons::symbolic_with_classes("go-previous-symbolic", 15, &["kalam-inline-icon"])),
-                        add_css_class: "kalam-comics-pill-nav",
+                        add_css_class: "kalam-comics-icon-btn",
                         set_tooltip_text: Some("Previous page (Left arrow)"),
                         connect_clicked => ComicsReaderMsg::PrevPage,
                     },
 
-                    // Thin Scrubber Slider
+                    // Full-width Scrubber Slider
                     gtk::Scale {
                         set_orientation: gtk::Orientation::Horizontal,
-                        set_width_request: 320,
-                        set_hexpand: false,
+                        set_hexpand: true,
                         set_draw_value: false,
                         add_css_class: "kalam-comics-slider",
                         #[watch]
@@ -319,7 +318,7 @@ impl Component for ComicsReaderModel {
                     // Next page button
                     gtk::Button {
                         set_child: Some(&crate::icons::symbolic_with_classes("go-next-symbolic", 15, &["kalam-inline-icon"])),
-                        add_css_class: "kalam-comics-pill-nav",
+                        add_css_class: "kalam-comics-icon-btn",
                         set_tooltip_text: Some("Next page (Right arrow / Space)"),
                         connect_clicked => ComicsReaderMsg::NextPage,
                     },

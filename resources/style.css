@@ -3636,14 +3636,12 @@ button.kalam-lib-play {
     color: #ffffff;
 }
 
-/* Floating bottom dock */
-.kalam-comics-bottom-dock {
-    margin-bottom: 24px;
+/* Minimal bottom bar (Moku style) */
+.kalam-comics-bottombar {
     background: alpha(#0d0f14, 0.94);
-    border: 1px solid alpha(#252a36, 0.85);
-    border-radius: 999px;
+    border-top: 1px solid alpha(#252a36, 0.7);
     padding: 6px 16px;
-    box-shadow: 0 8px 30px alpha(#000000, 0.7);
+    min-height: 44px;
 }
 
 .kalam-comics-pill-nav {
