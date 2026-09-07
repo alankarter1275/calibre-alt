@@ -99,7 +99,7 @@ impl Source for MangaDexSource {
         &self,
         query: &str,
         page: u32,
-        _filters: &[SearchFilter],
+        _filters: &std::collections::HashMap<String, String>,
     ) -> anyhow::Result<SearchPage> {
         let limit = 20;
         let offset = page.saturating_sub(1) * limit;

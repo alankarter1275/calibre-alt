@@ -34,7 +34,7 @@ impl Source for ManganatoSource {
         "https://manganato.com"
     }
 
-    fn search(&self, query: &str, _page: u32, _filters: &[SearchFilter]) -> Result<SearchPage> {
+    fn search(&self, query: &str, _page: u32, _filters: &std::collections::HashMap<String, String>) -> Result<SearchPage> {
         let query_formatted = query.replace(" ", "_");
         let url = format!("{}/search/story/{}", self.base_url(), query_formatted);
         

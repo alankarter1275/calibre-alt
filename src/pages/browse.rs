@@ -11,8 +11,7 @@ pub enum BrowseOut {
 #[derive(Debug)]
 pub enum BrowseMsg {
     Search(String),
-    TagSelected(String),
-    OrderSelected(String),
+    FilterChanged(String, String),
     LoadMore,
     SearchSuccess(SearchPage),
     SearchFailed(String),
@@ -29,11 +28,11 @@ pub struct BrowseInit {
 pub struct BrowseModel {
     #[allow(dead_code)]
     manager: Arc<SourceManager>,
+    #[allow(dead_code)]
     source_id: String,
     active_source: Option<Arc<dyn Source>>,
     query: String,
-    selected_tag: Option<String>,
-    selected_order: String,
+    filter_values: std::collections::HashMap<String, String>,
     page: u32,
     has_more: bool,
     results: Vec<RemoteBookCard>,
@@ -45,13 +44,19 @@ impl BrowseModel {
     pub fn new(init: BrowseInit) -> Self {
         let active = init.manager.get(&init.source_id);
         let q = init.initial_query.unwrap_or_default();
+        let mut filter_values = std::collections::HashMap::new();
+        if let Some(ref source) = active {
+            for def in source.get_filter_definitions() {
+                filter_values.insert(def.id, def.default_value);
+            }
+        }
+
         Self {
             manager: init.manager,
             source_id: init.source_id.clone(),
             active_source: active,
             query: q,
-            selected_tag: None,
-            selected_order: "popularity".to_string(),
+            filter_values,
             page: 1,
             has_more: false,
             results: Vec::new(),
@@ -68,15 +73,7 @@ impl BrowseModel {
                 self.results.clear();
             }
 
-            let mut filters = Vec::new();
-            if let Some(tag) = &self.selected_tag {
-                if !tag.is_empty() && tag != "All" {
-                    filters.push(crate::sources::SearchFilter::TagsInclude(vec![tag.clone()]));
-                }
-            }
-            if !self.selected_order.is_empty() {
-                filters.push(crate::sources::SearchFilter::OrderBy(self.selected_order.clone()));
-            }
+            let filters = self.filter_values.clone();
 
             let s = sender.input_sender().clone();
             let page_num = self.page;
@@ -134,26 +131,10 @@ impl Component for BrowseModel {
             },
 
             // ── Filters & Sort bar ────────────────────────────────────────────────
+            #[name = "filter_box"]
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
-                set_spacing: 10,
-                #[watch]
-                set_visible: model.source_id == "royalroad",
-
-                gtk::Label {
-                    set_label: "Tag:",
-                    add_css_class: "kalam-subtitle-muted",
-                },
-                #[name = "tag_combo"]
-                gtk::DropDown::from_strings(&["All", "Fantasy", "Action", "Adventure", "Sci-Fi", "Magic", "Comedy", "Romance"]),
-
-                gtk::Label {
-                    set_label: "Sort By:",
-                    add_css_class: "kalam-subtitle-muted",
-                    set_margin_start: 12,
-                },
-                #[name = "sort_combo"]
-                gtk::DropDown::from_strings(&["Popularity", "Best Rated", "Latest Updates"]),
+                set_spacing: 12,
             },
 
             // ── Status line (shows while loading / empty / error) ────────────────
@@ -208,23 +189,9 @@ impl Component for BrowseModel {
         let model = BrowseModel::new(init_data);
         let widgets = view_output!();
 
-        let s_tag = sender.clone();
-        widgets.tag_combo.connect_selected_notify(move |combo| {
-            let tags = ["All", "Fantasy", "Action", "Adventure", "Sci-Fi", "Magic", "Comedy", "Romance"];
-            let idx = combo.selected() as usize;
-            if let Some(t) = tags.get(idx) {
-                s_tag.input(BrowseMsg::TagSelected(t.to_string()));
-            }
-        });
-
-        let s_sort = sender.clone();
-        widgets.sort_combo.connect_selected_notify(move |combo| {
-            let orders = ["popularity", "rating", "last_update"];
-            let idx = combo.selected() as usize;
-            if let Some(o) = orders.get(idx) {
-                s_sort.input(BrowseMsg::OrderSelected(o.to_string()));
-            }
-        });
+        if let Some(ref source) = model.active_source {
+            render_dynamic_filters(&widgets.filter_box, source, sender.clone());
+        }
 
         // Trigger initial search to display trending content immediately
         sender.input(BrowseMsg::Search(model.query.clone()));
@@ -247,14 +214,8 @@ impl Component for BrowseModel {
                 self.trigger_search(&sender);
             }
 
-            BrowseMsg::TagSelected(t) => {
-                self.selected_tag = if t == "All" { None } else { Some(t) };
-                self.page = 1;
-                self.trigger_search(&sender);
-            }
-
-            BrowseMsg::OrderSelected(o) => {
-                self.selected_order = o;
+            BrowseMsg::FilterChanged(key, val) => {
+                self.filter_values.insert(key, val);
                 self.page = 1;
                 self.trigger_search(&sender);
             }
@@ -384,5 +345,71 @@ impl Component for BrowseModel {
         }
 
         self.update_view(widgets, sender);
+    }
+}
+
+
+fn render_dynamic_filters(
+    container: &gtk::Box,
+    source: &Arc<dyn Source>,
+    sender: ComponentSender<BrowseModel>,
+) {
+    use crate::sources::FilterType;
+
+    let defs = source.get_filter_definitions();
+    if defs.is_empty() {
+        container.set_visible(false);
+        return;
+    }
+    container.set_visible(true);
+
+    while let Some(child) = container.first_child() {
+        container.remove(&child);
+    }
+
+    for def in defs {
+        let box_item = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let label = gtk::Label::new(Some(&format!("{}:", def.name)));
+        label.add_css_class("kalam-subtitle-muted");
+        box_item.append(&label);
+
+        let filter_id = def.id.clone();
+        match def.filter_type {
+            FilterType::Text { placeholder } => {
+                let entry = gtk::Entry::new();
+                entry.set_placeholder_text(Some(&placeholder));
+                let s = sender.clone();
+                let fid = filter_id.clone();
+                entry.connect_activate(move |e| {
+                    s.input(BrowseMsg::FilterChanged(fid.clone(), e.text().to_string()));
+                });
+                box_item.append(&entry);
+            }
+            FilterType::Select { options } | FilterType::Sort { options } => {
+                let labels: Vec<String> = options.iter().map(|(l, _)| l.clone()).collect();
+                let str_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+                let drop = gtk::DropDown::from_strings(&str_refs);
+                let s = sender.clone();
+                let fid = filter_id.clone();
+                drop.connect_selected_notify(move |d| {
+                    let idx = d.selected() as usize;
+                    if let Some((_, val)) = options.get(idx) {
+                        s.input(BrowseMsg::FilterChanged(fid.clone(), val.clone()));
+                    }
+                });
+                box_item.append(&drop);
+            }
+            FilterType::Checkbox => {
+                let chk = gtk::CheckButton::new();
+                let s = sender.clone();
+                let fid = filter_id.clone();
+                chk.connect_toggled(move |c| {
+                    let val = if c.is_active() { "T".to_string() } else { "".to_string() };
+                    s.input(BrowseMsg::FilterChanged(fid.clone(), val));
+                });
+                box_item.append(&chk);
+            }
+        }
+        container.append(&box_item);
     }
 }

@@ -32,7 +32,7 @@ impl Source for WeebCentralSource {
         "https://weebcentral.com"
     }
 
-    fn search(&self, query: &str, _page: u32, _filters: &[SearchFilter]) -> Result<SearchPage> {
+    fn search(&self, query: &str, _page: u32, _filters: &std::collections::HashMap<String, String>) -> Result<SearchPage> {
         let query_formatted = query.replace(" ", "+");
         let url = format!("{}/search/data?text={}", self.base_url(), query_formatted);
         

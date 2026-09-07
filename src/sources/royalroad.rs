@@ -1,5 +1,5 @@
 use crate::sources::traits::{
-    ChapterContent, RemoteBookCard, RemoteBookDetails, RemoteChapter, SearchFilter, SearchPage, Source,
+    ChapterContent, RemoteBookCard, RemoteBookDetails, RemoteChapter, SearchPage, Source,
 };
 use anyhow::Result;
 use scraper::{Html, Selector};
@@ -25,24 +25,12 @@ impl Source for RoyalRoadSource {
         "https://www.royalroad.com"
     }
 
-    fn search(&self, query: &str, page: u32, filters: &[SearchFilter]) -> Result<SearchPage> {
+    fn search(&self, query: &str, page: u32, _filters: &std::collections::HashMap<String, String>) -> Result<SearchPage> {
         let mut url = format!("https://www.royalroad.com/fictions/search?page={}", page);
         if !query.trim().is_empty() {
             url.push_str(&format!("&title={}", urlencoding::encode(query.trim())));
         }
-        for f in filters {
-            match f {
-                SearchFilter::TagsInclude(tags) => {
-                    for t in tags {
-                        url.push_str(&format!("&tagsAdd={}", urlencoding::encode(&t.to_lowercase())));
-                    }
-                }
-                SearchFilter::OrderBy(order) => {
-                    url.push_str(&format!("&orderBy={}", urlencoding::encode(order)));
-                }
-                _ => {}
-            }
-        }
+        // Filters can be mapped from _filters HashMap if present
         let resp = ureq::get(&url).set("User-Agent", "Kalam/1.0").call()?.into_string()?;
         let doc = Html::parse_document(&resp);
 

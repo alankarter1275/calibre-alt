@@ -1,3 +1,4 @@
+pub mod ao3;
 pub mod mangadex;
 pub mod manganato;
 pub mod weebcentral;
@@ -30,10 +31,13 @@ impl SourceManager {
             sources: Vec::new(),
         };
 
-        // Register WeebCentral first so it is the default source for Manga.
+        // Register AO3 first as the primary Fiction source.
+        manager.register(Arc::new(ao3::ArchiveOfOurOwnSource::new()));
+
+        // Register WeebCentral as the default source for Manga.
         manager.register(Arc::new(weebcentral::WeebCentralSource::new()));
 
-        // Register RoyalRoad as the default source for Fiction.
+        // Register RoyalRoad.
         manager.register(Arc::new(royalroad::RoyalRoadSource::new()));
 
         // Register MangaDex.

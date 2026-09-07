@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 
 /// What a chapter contains.
 /// This enum is the crucial seam that unifies Manga (P9) and Fiction (P7).
@@ -41,15 +42,23 @@ pub struct RemoteChapter {
     pub url: Option<String>,
 }
 
-/// A filter for searching.
+/// Dynamic filter type definition for Tachiyomi-style UI generation.
 #[derive(Debug, Clone)]
-pub enum SearchFilter {
-    TagsInclude(Vec<String>),
+pub enum FilterType {
+    Text { placeholder: String },
     #[allow(dead_code)]
-    TagsExclude(Vec<String>),
-    #[allow(dead_code)]
-    OngoingOnly(bool),
-    OrderBy(String),
+    Checkbox,
+    Select { options: Vec<(String, String)> },
+    Sort { options: Vec<(String, String)> },
+}
+
+/// A dynamic filter metadata struct supplied by a Source.
+#[derive(Debug, Clone)]
+pub struct FilterDefinition {
+    pub id: String,
+    pub name: String,
+    pub filter_type: FilterType,
+    pub default_value: String,
 }
 
 /// A paginated page of search results.
@@ -72,12 +81,17 @@ pub trait Source: Send + Sync {
     /// Base URL for this source, if applicable.
     fn base_url(&self) -> &'static str;
 
+    /// Declare available dynamic search filters.
+    fn get_filter_definitions(&self) -> Vec<FilterDefinition> {
+        Vec::new()
+    }
+
     /// Search for books.
     fn search(
         &self,
         query: &str,
         page: u32,
-        filters: &[SearchFilter],
+        filters: &HashMap<String, String>,
     ) -> anyhow::Result<SearchPage>;
 
     /// Fetch detailed metadata for a book.

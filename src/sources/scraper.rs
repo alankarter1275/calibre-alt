@@ -168,7 +168,7 @@ impl Source for GenericScraperSource {
         Box::leak(self.base_url.clone().into_boxed_str())
     }
 
-    fn search(&self, query: &str, page: u32, _filters: &[SearchFilter]) -> anyhow::Result<SearchPage> {
+    fn search(&self, query: &str, page: u32, _filters: &std::collections::HashMap<String, String>) -> anyhow::Result<SearchPage> {
         let url = self.config.search.url
             .replace("{query}", &urlencoding::encode(query))
             .replace("{page}", &page.to_string());
