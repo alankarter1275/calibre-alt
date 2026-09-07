@@ -21,6 +21,7 @@ pub struct ComicsReaderModel {
     pub provider: Arc<dyn provider::ImageProvider>,
     pub current_page: usize,
     pub direction: ReadingDirection,
+    pub page_style: PageStyle,
     pub fit_mode: FitMode,
     pub show_chrome: bool,
     pub show_settings: bool,
@@ -34,6 +35,7 @@ impl ComicsReaderModel {
             provider: init.provider,
             current_page: 0,
             direction: ReadingDirection::Ltr,
+            page_style: PageStyle::LongStrip,
             fit_mode: FitMode::Width,
             show_chrome: true,
             show_settings: false,
@@ -369,6 +371,72 @@ impl Component for ComicsReaderModel {
                             set_spacing: 20,
                             add_css_class: "kalam-comics-drawer-body",
 
+                            // Section: PAGE STYLE
+                            gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_spacing: 8,
+
+                                gtk::Label {
+                                    set_label: "PAGE STYLE",
+                                    add_css_class: "kalam-comics-section-label",
+                                    set_halign: gtk::Align::Start,
+                                },
+
+                                gtk::Box {
+                                    set_orientation: gtk::Orientation::Horizontal,
+                                    set_spacing: 4,
+                                    set_homogeneous: true,
+
+                                    gtk::Button {
+                                        set_label: "Single",
+                                        add_css_class: "kalam-comics-seg-btn",
+                                        #[watch]
+                                        set_css_classes: if model.page_style == PageStyle::Single {
+                                            &["kalam-comics-seg-btn", "active"]
+                                        } else {
+                                            &["kalam-comics-seg-btn"]
+                                        },
+                                        connect_clicked => ComicsReaderMsg::SetPageStyle(PageStyle::Single),
+                                    },
+
+                                    gtk::Button {
+                                        set_label: "Double",
+                                        add_css_class: "kalam-comics-seg-btn",
+                                        #[watch]
+                                        set_css_classes: if model.page_style == PageStyle::Double {
+                                            &["kalam-comics-seg-btn", "active"]
+                                        } else {
+                                            &["kalam-comics-seg-btn"]
+                                        },
+                                        connect_clicked => ComicsReaderMsg::SetPageStyle(PageStyle::Double),
+                                    },
+
+                                    gtk::Button {
+                                        set_label: "Fade",
+                                        add_css_class: "kalam-comics-seg-btn",
+                                        #[watch]
+                                        set_css_classes: if model.page_style == PageStyle::Fade {
+                                            &["kalam-comics-seg-btn", "active"]
+                                        } else {
+                                            &["kalam-comics-seg-btn"]
+                                        },
+                                        connect_clicked => ComicsReaderMsg::SetPageStyle(PageStyle::Fade),
+                                    },
+
+                                    gtk::Button {
+                                        set_label: "Long Strip",
+                                        add_css_class: "kalam-comics-seg-btn",
+                                        #[watch]
+                                        set_css_classes: if model.page_style == PageStyle::LongStrip {
+                                            &["kalam-comics-seg-btn", "active"]
+                                        } else {
+                                            &["kalam-comics-seg-btn"]
+                                        },
+                                        connect_clicked => ComicsReaderMsg::SetPageStyle(PageStyle::LongStrip),
+                                    },
+                                },
+                            },
+
                             // Section: READING DIRECTION
                             gtk::Box {
                                 set_orientation: gtk::Orientation::Vertical,
@@ -386,7 +454,7 @@ impl Component for ComicsReaderModel {
                                     set_homogeneous: true,
 
                                     gtk::Button {
-                                        set_label: "L → R",
+                                        set_label: "Left to Right",
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.direction == ReadingDirection::Ltr {
@@ -399,7 +467,7 @@ impl Component for ComicsReaderModel {
                                     },
 
                                     gtk::Button {
-                                        set_label: "R → L",
+                                        set_label: "Right to Left",
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.direction == ReadingDirection::Rtl {
@@ -409,19 +477,6 @@ impl Component for ComicsReaderModel {
                                         },
                                         set_tooltip_text: Some("Right to Left (Manga)"),
                                         connect_clicked => ComicsReaderMsg::SetDirection(ReadingDirection::Rtl),
-                                    },
-
-                                    gtk::Button {
-                                        set_label: "Webtoon",
-                                        add_css_class: "kalam-comics-seg-btn",
-                                        #[watch]
-                                        set_css_classes: if model.direction == ReadingDirection::Webtoon {
-                                            &["kalam-comics-seg-btn", "active"]
-                                        } else {
-                                            &["kalam-comics-seg-btn"]
-                                        },
-                                        set_tooltip_text: Some("Webtoon (Vertical strip)"),
-                                        connect_clicked => ComicsReaderMsg::SetDirection(ReadingDirection::Webtoon),
                                     },
                                 },
                             },
@@ -439,7 +494,7 @@ impl Component for ComicsReaderModel {
 
                                 gtk::Box {
                                     set_orientation: gtk::Orientation::Horizontal,
-                                    set_spacing: 6,
+                                    set_spacing: 4,
                                     set_homogeneous: true,
 
                                     gtk::Button {
@@ -464,6 +519,18 @@ impl Component for ComicsReaderModel {
                                             &["kalam-comics-seg-btn"]
                                         },
                                         connect_clicked => ComicsReaderMsg::SetFitMode(FitMode::Height),
+                                    },
+
+                                    gtk::Button {
+                                        set_label: "Fit Screen",
+                                        add_css_class: "kalam-comics-seg-btn",
+                                        #[watch]
+                                        set_css_classes: if model.fit_mode == FitMode::Screen {
+                                            &["kalam-comics-seg-btn", "active"]
+                                        } else {
+                                            &["kalam-comics-seg-btn"]
+                                        },
+                                        connect_clicked => ComicsReaderMsg::SetFitMode(FitMode::Screen),
                                     },
 
                                     gtk::Button {
@@ -593,11 +660,15 @@ impl Component for ComicsReaderModel {
             ComicsReaderMsg::SetDirection(dir) => {
                 self.direction = dir;
             }
+            ComicsReaderMsg::SetPageStyle(style) => {
+                self.page_style = style;
+            }
             ComicsReaderMsg::ToggleFitMode => {
                 self.fit_mode = self.fit_mode.next();
                 match self.fit_mode {
                     FitMode::Width => widgets.picture.set_content_fit(gtk::ContentFit::Fill),
                     FitMode::Height => widgets.picture.set_content_fit(gtk::ContentFit::Contain),
+                    FitMode::Screen => widgets.picture.set_content_fit(gtk::ContentFit::Cover),
                     FitMode::Original => widgets.picture.set_content_fit(gtk::ContentFit::ScaleDown),
                 }
             }
@@ -606,6 +677,7 @@ impl Component for ComicsReaderModel {
                 match self.fit_mode {
                     FitMode::Width => widgets.picture.set_content_fit(gtk::ContentFit::Fill),
                     FitMode::Height => widgets.picture.set_content_fit(gtk::ContentFit::Contain),
+                    FitMode::Screen => widgets.picture.set_content_fit(gtk::ContentFit::Cover),
                     FitMode::Original => widgets.picture.set_content_fit(gtk::ContentFit::ScaleDown),
                 }
             }
