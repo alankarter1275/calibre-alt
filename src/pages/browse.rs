@@ -11,6 +11,7 @@ pub enum BrowseOut {
 #[derive(Debug)]
 pub enum BrowseMsg {
     Search(String),
+    SourceSelected(String),
     FilterChanged(String, String),
     LoadMore,
     SearchSuccess(SearchPage),
@@ -107,6 +108,7 @@ impl Component for BrowseModel {
             add_css_class: "kalam-page-container",
 
             // ── Header ───────────────────────────────────────────────────────────
+            // ── Header ───────────────────────────────────────────────────────────
             gtk::Box {
                 set_orientation: gtk::Orientation::Horizontal,
                 set_spacing: 12,
@@ -118,6 +120,13 @@ impl Component for BrowseModel {
                     set_halign: gtk::Align::Start,
                     set_hexpand: true,
                 },
+                gtk::Label {
+                    set_label: "Source:",
+                    add_css_class: "kalam-subtitle-muted",
+                    set_valign: gtk::Align::Center,
+                },
+                #[name = "source_combo"]
+                gtk::DropDown::from_strings(&["Archive of Our Own", "WeebCentral", "RoyalRoad", "MangaDex"]),
             },
 
             // ── Search bar ───────────────────────────────────────────────────────
@@ -189,6 +198,24 @@ impl Component for BrowseModel {
         let model = BrowseModel::new(init_data);
         let widgets = view_output!();
 
+        let sources = model.manager.all();
+        let source_ids: Vec<String> = sources.iter().map(|s| s.id().to_string()).collect();
+        let source_names: Vec<String> = sources.iter().map(|s| s.name().to_string()).collect();
+
+        let str_refs: Vec<&str> = source_names.iter().map(|s| s.as_str()).collect();
+        widgets.source_combo.set_model(Some(&gtk::StringList::new(&str_refs)));
+
+        let selected_idx = source_ids.iter().position(|id| id == &model.source_id).unwrap_or(0);
+        widgets.source_combo.set_selected(selected_idx as u32);
+
+        let s_source = sender.clone();
+        widgets.source_combo.connect_selected_notify(move |combo| {
+            let idx = combo.selected() as usize;
+            if let Some(id) = source_ids.get(idx) {
+                s_source.input(BrowseMsg::SourceSelected(id.clone()));
+            }
+        });
+
         if let Some(ref source) = model.active_source {
             render_dynamic_filters(&widgets.filter_box, source, sender.clone());
         }
@@ -216,6 +243,20 @@ impl Component for BrowseModel {
 
             BrowseMsg::FilterChanged(key, val) => {
                 self.filter_values.insert(key, val);
+                self.page = 1;
+                self.trigger_search(&sender);
+            }
+
+            BrowseMsg::SourceSelected(source_id) => {
+                self.source_id = source_id.clone();
+                self.active_source = self.manager.get(&source_id);
+                self.filter_values.clear();
+                if let Some(ref source) = self.active_source {
+                    for def in source.get_filter_definitions() {
+                        self.filter_values.insert(def.id, def.default_value);
+                    }
+                    render_dynamic_filters(&widgets.filter_box, source, sender.clone());
+                }
                 self.page = 1;
                 self.trigger_search(&sender);
             }

@@ -643,7 +643,7 @@ impl AppModel {
             Route::Module(NavItem::Fanfiction) => {
                 let init = crate::pages::browse::BrowseInit {
                     manager: source_manager.clone(),
-                    source_id: "royalroad".to_string(),
+                    source_id: "ao3".to_string(),
                     initial_query: None,
                 };
                 let ctrl = BrowseModel::builder()
