@@ -780,81 +780,102 @@ if (!window.kalamReaderShellLoaded) {
     if (!sections || sections.length === 0) return;
 
     var vCenter = window.innerHeight * 0.4;
-    var activeSec = null;
     var activeIdx = -1;
+    var activeSec = null;
+    var bestDist = Infinity;
 
+    // 1. Robust Active Chapter Detection (closest to reading line)
     for (var i = 0; i < sections.length; i++) {
       var rect = sections[i].getBoundingClientRect();
+      var center = (rect.top + rect.bottom) / 2;
+      var dist = Math.abs(center - vCenter);
+      
+      // If it clearly intersects the line, it's the winner
       if (rect.top <= vCenter && rect.bottom >= vCenter) {
+        activeIdx = parseInt(sections[i].dataset.chapter, 10);
         activeSec = sections[i];
-        activeIdx = parseInt(activeSec.dataset.chapter, 10);
         break;
       }
-    }
-    if (!activeSec && sections.length > 0) {
-      var firstRect = sections[0].getBoundingClientRect();
-      if (firstRect.top > vCenter) {
-        activeSec = sections[0];
-      } else {
-        activeSec = sections[sections.length - 1];
+      
+      // Otherwise, keep the one whose center is closest (handles tiny chapters)
+      if (dist < bestDist) {
+        bestDist = dist;
+        activeIdx = parseInt(sections[i].dataset.chapter, 10);
+        activeSec = sections[i];
       }
-      activeIdx = parseInt(activeSec.dataset.chapter, 10);
     }
 
     if (activeIdx !== -1 && activeIdx !== window.kalam._currentChapter) {
       window.kalam._currentChapter = activeIdx;
       kalamBridge({type:'chapter-changed', chapter:activeIdx});
+    }
 
-      // Maintain at most 2 chapters in memory:
-      // Drop distant chapters while keeping visual position pinned
-      if (sections.length > 2) {
-        for (var j = 0; j < sections.length; j++) {
-          var chNum = parseInt(sections[j].dataset.chapter, 10);
-          if (chNum < activeIdx - 1) {
-            var anchor = document.getElementById('kalam-chapter-' + activeIdx);
-            var topBefore = anchor ? anchor.getBoundingClientRect().top : 0;
-            sections[j].remove();
-            if (anchor) {
-              var topAfter = anchor.getBoundingClientRect().top;
-              var delta = topAfter - topBefore;
-              if (delta !== 0) window.scrollBy(0, delta);
-            }
-          } else if (chNum > activeIdx + 1) {
-            sections[j].remove();
-          }
-        }
+    if (!activeSec) activeSec = sections[0];
+    if (activeIdx === -1) activeIdx = window.kalam._currentChapter;
+
+    // 2. Physical-Boundary Preloading (completely decoupled from activeIdx)
+    var firstRect = sections[0].getBoundingClientRect();
+    var lastRect = sections[sections.length - 1].getBoundingClientRect();
+
+    if (firstRect.top > -window.innerHeight * 1.5 && !window.kalam._loadingPrev) {
+      var firstIdx = parseInt(sections[0].dataset.chapter, 10);
+      var prevIdx = firstIdx - 1;
+      if (prevIdx >= 0 && !document.getElementById('kalam-chapter-' + prevIdx)) {
+        window.kalam._loadingPrev = true;
+        kalamBridge({type:'request-prev-chapter', current:activeIdx, prev:prevIdx});
       }
     }
 
-    if (activeSec) {
-      var aRect = activeSec.getBoundingClientRect();
-      var aHeight = Math.max(1, activeSec.offsetHeight);
-      var scrolled = Math.max(0, -aRect.top);
-      var frac = Math.max(0, Math.min(1, scrolled / Math.max(1, aHeight - window.innerHeight)));
-      updatePercentageBadge(activeIdx, frac);
-
-      if (Math.abs(frac - window.kalam._lastProgress) > 0.01) {
-        window.kalam._lastProgress = frac;
-        kalamBridge({type:'progress', fraction:frac, chapter:activeIdx});
+    if (lastRect.bottom < window.innerHeight * 2.5 && !window.kalam._loadingNext) {
+      var lastIdx = parseInt(sections[sections.length - 1].dataset.chapter, 10);
+      var nextIdx = lastIdx + 1;
+      if (nextIdx < (window.kalam._totalChapters || 999999) && !document.getElementById('kalam-chapter-' + nextIdx)) {
+        window.kalam._loadingNext = true;
+        kalamBridge({type:'request-next-chapter', current:activeIdx, next:nextIdx});
       }
+    }
 
-      // Preload next chapter when nearing the end of current chapter (within 1.5 viewports of bottom)
-      if (aRect.bottom < window.innerHeight * 1.5 && !window.kalam._loadingNext) {
-        var nextIdx = activeIdx + 1;
-        if (nextIdx < (window.kalam._totalChapters || 999999) && !document.getElementById('kalam-chapter-' + nextIdx)) {
-          window.kalam._loadingNext = true;
-          kalamBridge({type:'request-next-chapter', current:activeIdx, next:nextIdx});
+    // 3. Physical-Distance Eviction (no strict chapter counts)
+    if (sections.length > 2) {
+      var anchor = document.getElementById('kalam-chapter-' + window.kalam._currentChapter);
+      var topBefore = anchor ? anchor.getBoundingClientRect().top : 0;
+      var removedAny = false;
+
+      for (var j = 0; j < sections.length; j++) {
+        var sRect = sections[j].getBoundingClientRect();
+        var chNum = parseInt(sections[j].dataset.chapter, 10);
+        
+        // Never evict the active chapter
+        if (chNum === window.kalam._currentChapter) continue;
+
+        // Evict if > 3 screens above the top of viewport
+        var isTooFarAbove = sRect.bottom < -window.innerHeight * 3.0;
+        // Evict if > 3 screens below the bottom of viewport
+        var isTooFarBelow = sRect.top > window.innerHeight * 4.0;
+
+        if (isTooFarAbove || isTooFarBelow) {
+          sections[j].remove();
+          removedAny = true;
         }
       }
 
-      // Preload previous chapter when nearing the top of current chapter (within 1.5 viewports of top)
-      if (aRect.top > -window.innerHeight * 1.5 && !window.kalam._loadingPrev) {
-        var prevIdx = activeIdx - 1;
-        if (prevIdx >= 0 && !document.getElementById('kalam-chapter-' + prevIdx)) {
-          window.kalam._loadingPrev = true;
-          kalamBridge({type:'request-prev-chapter', current:activeIdx, prev:prevIdx});
-        }
+      if (removedAny && anchor) {
+        var topAfter = anchor.getBoundingClientRect().top;
+        var delta = topAfter - topBefore;
+        if (delta !== 0) window.scrollBy(0, delta);
       }
+    }
+
+    // 4. Progress calculation
+    var aRect = activeSec.getBoundingClientRect();
+    var aHeight = Math.max(1, activeSec.offsetHeight);
+    var scrolled = Math.max(0, -aRect.top);
+    var frac = Math.max(0, Math.min(1, scrolled / Math.max(1, aHeight - window.innerHeight)));
+    updatePercentageBadge(activeIdx, frac);
+
+    if (Math.abs(frac - window.kalam._lastProgress) > 0.01) {
+      window.kalam._lastProgress = frac;
+      kalamBridge({type:'progress', fraction:frac, chapter:activeIdx});
     }
   }
 
