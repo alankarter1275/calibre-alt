@@ -387,7 +387,15 @@ impl Component for ComicsReaderModel {
                                     set_homogeneous: true,
 
                                     gtk::Button {
-                                        set_label: "Single",
+                                        #[wrap(Some)]
+                                        set_child = &gtk::Box {
+                                            set_orientation: gtk::Orientation::Vertical,
+                                            set_spacing: 4,
+                                            set_halign: gtk::Align::Center,
+                                            set_valign: gtk::Align::Center,
+                                            gtk::Image { set_icon_name: Some("view-paged-symbolic") },
+                                            gtk::Label { set_label: "Single", add_css_class: "kalam-comics-seg-label" },
+                                        },
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.page_style == PageStyle::Single {
@@ -399,7 +407,15 @@ impl Component for ComicsReaderModel {
                                     },
 
                                     gtk::Button {
-                                        set_label: "Double",
+                                        #[wrap(Some)]
+                                        set_child = &gtk::Box {
+                                            set_orientation: gtk::Orientation::Vertical,
+                                            set_spacing: 4,
+                                            set_halign: gtk::Align::Center,
+                                            set_valign: gtk::Align::Center,
+                                            gtk::Image { set_icon_name: Some("view-dual-symbolic") },
+                                            gtk::Label { set_label: "Double", add_css_class: "kalam-comics-seg-label" },
+                                        },
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.page_style == PageStyle::Double {
@@ -411,7 +427,15 @@ impl Component for ComicsReaderModel {
                                     },
 
                                     gtk::Button {
-                                        set_label: "Fade",
+                                        #[wrap(Some)]
+                                        set_child = &gtk::Box {
+                                            set_orientation: gtk::Orientation::Vertical,
+                                            set_spacing: 4,
+                                            set_halign: gtk::Align::Center,
+                                            set_valign: gtk::Align::Center,
+                                            gtk::Image { set_icon_name: Some("media-playlist-consecutive-symbolic") },
+                                            gtk::Label { set_label: "Fade", add_css_class: "kalam-comics-seg-label" },
+                                        },
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.page_style == PageStyle::Fade {
@@ -423,7 +447,15 @@ impl Component for ComicsReaderModel {
                                     },
 
                                     gtk::Button {
-                                        set_label: "Long Strip",
+                                        #[wrap(Some)]
+                                        set_child = &gtk::Box {
+                                            set_orientation: gtk::Orientation::Vertical,
+                                            set_spacing: 4,
+                                            set_halign: gtk::Align::Center,
+                                            set_valign: gtk::Align::Center,
+                                            gtk::Image { set_icon_name: Some("format-justify-fill-symbolic") },
+                                            gtk::Label { set_label: "Long Strip", add_css_class: "kalam-comics-seg-label" },
+                                        },
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.page_style == PageStyle::LongStrip {
@@ -453,7 +485,15 @@ impl Component for ComicsReaderModel {
                                     set_homogeneous: true,
 
                                     gtk::Button {
-                                        set_label: "Left to Right",
+                                        #[wrap(Some)]
+                                        set_child = &gtk::Box {
+                                            set_orientation: gtk::Orientation::Horizontal,
+                                            set_spacing: 6,
+                                            set_halign: gtk::Align::Center,
+                                            set_valign: gtk::Align::Center,
+                                            gtk::Label { set_label: "Left to Right", add_css_class: "kalam-comics-seg-label" },
+                                            gtk::Image { set_icon_name: Some("go-next-symbolic"), set_icon_size: gtk::IconSize::Inherit },
+                                        },
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.direction == ReadingDirection::Ltr {
@@ -466,7 +506,15 @@ impl Component for ComicsReaderModel {
                                     },
 
                                     gtk::Button {
-                                        set_label: "Right to Left",
+                                        #[wrap(Some)]
+                                        set_child = &gtk::Box {
+                                            set_orientation: gtk::Orientation::Horizontal,
+                                            set_spacing: 6,
+                                            set_halign: gtk::Align::Center,
+                                            set_valign: gtk::Align::Center,
+                                            gtk::Image { set_icon_name: Some("go-previous-symbolic"), set_icon_size: gtk::IconSize::Inherit },
+                                            gtk::Label { set_label: "Right to Left", add_css_class: "kalam-comics-seg-label" },
+                                        },
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.direction == ReadingDirection::Rtl {
@@ -497,7 +545,15 @@ impl Component for ComicsReaderModel {
                                     set_homogeneous: true,
 
                                     gtk::Button {
-                                        set_label: "Fit Width",
+                                        #[wrap(Some)]
+                                        set_child = &gtk::Box {
+                                            set_orientation: gtk::Orientation::Vertical,
+                                            set_spacing: 4,
+                                            set_halign: gtk::Align::Center,
+                                            set_valign: gtk::Align::Center,
+                                            gtk::Image { set_icon_name: Some("zoom-fit-width-symbolic") },
+                                            gtk::Label { set_label: "Fit Width", add_css_class: "kalam-comics-seg-label" },
+                                        },
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.fit_mode == FitMode::Width {
@@ -509,7 +565,15 @@ impl Component for ComicsReaderModel {
                                     },
 
                                     gtk::Button {
-                                        set_label: "Fit Height",
+                                        #[wrap(Some)]
+                                        set_child = &gtk::Box {
+                                            set_orientation: gtk::Orientation::Vertical,
+                                            set_spacing: 4,
+                                            set_halign: gtk::Align::Center,
+                                            set_valign: gtk::Align::Center,
+                                            gtk::Image { set_icon_name: Some("zoom-fit-height-symbolic") },
+                                            gtk::Label { set_label: "Fit Height", add_css_class: "kalam-comics-seg-label" },
+                                        },
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.fit_mode == FitMode::Height {
@@ -521,7 +585,15 @@ impl Component for ComicsReaderModel {
                                     },
 
                                     gtk::Button {
-                                        set_label: "Fit Screen",
+                                        #[wrap(Some)]
+                                        set_child = &gtk::Box {
+                                            set_orientation: gtk::Orientation::Vertical,
+                                            set_spacing: 4,
+                                            set_halign: gtk::Align::Center,
+                                            set_valign: gtk::Align::Center,
+                                            gtk::Image { set_icon_name: Some("zoom-fit-best-symbolic") },
+                                            gtk::Label { set_label: "Fit Screen", add_css_class: "kalam-comics-seg-label" },
+                                        },
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.fit_mode == FitMode::Screen {
@@ -533,7 +605,15 @@ impl Component for ComicsReaderModel {
                                     },
 
                                     gtk::Button {
-                                        set_label: "Original",
+                                        #[wrap(Some)]
+                                        set_child = &gtk::Box {
+                                            set_orientation: gtk::Orientation::Vertical,
+                                            set_spacing: 4,
+                                            set_halign: gtk::Align::Center,
+                                            set_valign: gtk::Align::Center,
+                                            gtk::Image { set_icon_name: Some("zoom-original-symbolic") },
+                                            gtk::Label { set_label: "Original", add_css_class: "kalam-comics-seg-label" },
+                                        },
                                         add_css_class: "kalam-comics-seg-btn",
                                         #[watch]
                                         set_css_classes: if model.fit_mode == FitMode::Original {
