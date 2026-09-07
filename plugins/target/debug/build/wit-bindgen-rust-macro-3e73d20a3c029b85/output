@@ -1,0 +1,2 @@
+cargo:rerun-if-changed=build.rs
+cargo:rustc-env=DEBUG_OUTPUT_DIR=/home/kunalsingh/Projects/calibre-alt/plugins/target/debug/build/wit-bindgen-rust-macro-3e73d20a3c029b85/out

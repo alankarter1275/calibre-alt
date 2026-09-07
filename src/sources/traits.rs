@@ -72,14 +72,14 @@ pub struct SearchPage {
 /// All methods are synchronous; they should be called from `crate::tasks::spawn` workers.
 pub trait Source: Send + Sync {
     /// Internal unique ID of this source (e.g., "mangadex").
-    fn id(&self) -> &'static str;
+    fn id(&self) -> &str;
     
     /// Human-readable name of this source.
     #[allow(dead_code)]
-    fn name(&self) -> &'static str;
+    fn name(&self) -> &str;
     
     /// Base URL for this source, if applicable.
-    fn base_url(&self) -> &'static str;
+    fn base_url(&self) -> &str;
 
     /// Declare available dynamic search filters.
     fn get_filter_definitions(&self) -> Vec<FilterDefinition> {
