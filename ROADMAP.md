@@ -2656,7 +2656,7 @@ We have officially halted all online scraper work (P7/P9) and removed hardcoded 
    - **Cover Stacks & Smart Shelves:** Visually collapse books in a series. Implement dynamic Smart Shelves.
    - **Dedicated Metadata Fetcher:** Elevate the Open Library `in_app_dialog` to a full route.
 2. **P10 - PDF Engine:** Zathura-style smart crop default (auto-detect ink bounds). Reflow engine toggle using heuristic text extraction via PDFium.
-3. **P11 - EPUB Inline Editor:** Build a Rust-proxy sidecar patch system (`kalam.json`). Fix typos non-destructively on-the-fly without altering original `.epub`.
+3. **P11 - The Pure-Rust Custom Renderer:** Replace WebKit with `lol_html` (CSS stripping/normalization) + `cosmic-text` (layout). Forces all EPUBs to perfectly obey our themes. WebKit demoted to fallback for exotic EPUBs.
 4. **P8.5 - Polish Comics Reader:** Add right-to-left manga mode, background image preloading.
 5. **P8.6 - The Remaster Tool:** A heavy offline tool to permanently upscale low-res CBZs using CPU Lanczos3 interpolation.
 6. **P3.5 - The Sanitizer Pipeline:** A background worker that intercepts imported EPUBs, strips hardcoded CSS, fixes broken XML, and repacks them cleanly.
