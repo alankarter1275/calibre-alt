@@ -79,6 +79,8 @@ pub trait Source: Send + Sync {
     fn name(&self) -> &str;
     
     /// Base URL for this source, if applicable.
+    #[allow(dead_code)]
+    // Will be utilized by Wasm plugins in Phase 4.
     fn base_url(&self) -> &str;
 
     /// Declare available dynamic search filters.

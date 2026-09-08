@@ -1,8 +1,11 @@
-use std::sync::Arc;
+// Scaffolding for Phase 4 (Wasm Plugins). These structs are intentionally unused right now.
+#![allow(dead_code)]
+
+
 use std::collections::HashMap;
 use wasmtime::{Config, Engine, Store, component::{Component, Linker}};
-use anyhow::{Result, Context};
-use std::path::PathBuf;
+use anyhow::Result;
+
 
 wasmtime::component::bindgen!({
     path: "wit/kalam.wit",
@@ -177,7 +180,7 @@ impl crate::sources::Source for WasmSource {
 
     fn fetch_image(&self, url: &str) -> Result<Vec<u8>> {
         // Just use standard fetch for images for now, this could be delegated to Wasm later if needed.
-        let mut req = ureq::get(url);
+        let req = ureq::get(url);
         // We could extract host logic here.
         let resp = req.call()?;
         let mut buf = Vec::new();
