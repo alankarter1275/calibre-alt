@@ -1,5 +1,5 @@
-[1m[92m  Downloaded[0m thiserror-impl v1.0.69
 [1m[92m  Downloaded[0m thiserror v1.0.69
+[1m[92m  Downloaded[0m thiserror-impl v1.0.69
 [1m[92m   Compiling[0m thiserror-impl v2.0.20
 [1m[92m    Checking[0m thiserror v2.0.20
 [1m[92m   Compiling[0m thiserror v1.0.69
@@ -20,4 +20,4 @@ src/pages/comics.rs:14:1: [1m[91merror[0m: all variants have the same prefix:
 src/pages/remote_detail.rs:581:61: [1m[91merror[0m: the borrowed expression implements the required traits: help: change this to: `format!("xdg-open '{}'", url)`
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 14 previous errors
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 14 previous errors
---- run 34171993805 ---
+--- run 34172336114 ---
