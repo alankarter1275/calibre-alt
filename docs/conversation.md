@@ -1582,3 +1582,10 @@ Implemented local comic archive reading and interactive Relm4 comics viewer comp
 
 
 | 2026-09-05 | **Lua pivot reversed: Pure Rust + Unified Source Trait.** After evaluating the complexity of embedding a Lua runtime (`mlua`, `!Send` thread safety, API boundaries) for a personal app with 1-2 developers, we agreed to build all sources in **pure Rust**. For scraped sites that break often, fragile CSS selectors will live in a **TOML configuration file**, providing the "hot-reload" benefit without the scripting engine tax. Additionally, **Phase 7 (Fiction) and Phase 9 (Manga)** will share the exact same `Source` trait and database tables, using a `ChapterContent` enum (`Images` vs `Html`) to route to the correct reader. Komga/Kavita are dropped from the plan. |
+
+## Master Roadmap Redux & Architecture (Sept 8)
+- **Two Worlds UI:** Offline Tranquil Library default vs Online Hub.
+- **Bubble Memory:** Single WebKit process SPA for multiple open books. In-app `gtk::Overlay` floating chat head outside reader.
+- **Inline EPUB Editing:** Non-destructive sidecar patches in `kalam.json`.
+- **PDF Engine:** Zathura-style smart-crop default, Reflow toggle.
+- **Scrapers & Metadata:** WebAssembly (Wasm) plugin ecosystem replacing Lua.

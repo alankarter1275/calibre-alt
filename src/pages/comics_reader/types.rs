@@ -35,10 +35,32 @@ impl ReadingDirection {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PageStyle {
+    Single,
+    Double,
+    Fade,
+    #[default]
+    LongStrip,
+}
+
+impl PageStyle {
+    #[allow(dead_code)]
+    pub fn label(self) -> &'static str {
+        match self {
+            PageStyle::Single => "Single",
+            PageStyle::Double => "Double",
+            PageStyle::Fade => "Fade",
+            PageStyle::LongStrip => "Long Strip",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FitMode {
     #[default]
     Width,
     Height,
+    Screen,
     Original,
 }
 
@@ -47,6 +69,7 @@ impl FitMode {
         match self {
             FitMode::Width => "Fit Width",
             FitMode::Height => "Fit Height",
+            FitMode::Screen => "Fit Screen",
             FitMode::Original => "Original",
         }
     }
@@ -55,6 +78,7 @@ impl FitMode {
         match self {
             FitMode::Width => "zoom-fit-best-symbolic",
             FitMode::Height => "view-fullscreen-symbolic",
+            FitMode::Screen => "zoom-fit-best-symbolic",
             FitMode::Original => "zoom-original-symbolic",
         }
     }
@@ -62,7 +86,8 @@ impl FitMode {
     pub fn next(self) -> Self {
         match self {
             FitMode::Width => FitMode::Height,
-            FitMode::Height => FitMode::Original,
+            FitMode::Height => FitMode::Screen,
+            FitMode::Screen => FitMode::Original,
             FitMode::Original => FitMode::Width,
         }
     }
@@ -76,13 +101,13 @@ pub enum ComicsReaderMsg {
     PrevPage,
     ToggleDirection,
     SetDirection(ReadingDirection),
+    SetPageStyle(PageStyle),
     ToggleFitMode,
     SetFitMode(FitMode),
     ToggleChrome,
     ToggleSettings,
     CloseSettings,
     Close,
-
 }
 
 #[derive(Debug)]

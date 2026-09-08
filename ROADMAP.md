@@ -196,7 +196,7 @@ architecture.
    regardless** — note that P7's re-anchoring decision (match on the saved
    highlight text) is the same idea arrived at independently, and the two
    should converge rather than both being built.
-7. **P10 — PDF** (MuPDF) · **P11 — Tools** · **P12 — Lua plugin system** for
+7. **P10 — PDF** (MuPDF) · **P11 — Tools** · **P12 — WebAssembly (Wasm) plugin system** for
    the surfaces that rot (scrapers), with stable-API providers staying
    built-in; **not** a marketplace (`docs/source-seam.md` §0, §9a).
 8. **P5.5 — UI overhaul, LAST** (moved 2026-09-04). Every phase above adds
@@ -1750,7 +1750,7 @@ Piracy sources.
 
 ---
 
-## P12 — Lua plugin system (+ built-in Rust seams)
+## P12 — WebAssembly (Wasm) plugin system (+ built-in Rust seams)
 
 > **Yes, there is a Lua plugin system.** It covers the surfaces that **break
 > when someone else changes their website**: content sources (AO3, FFN, scraped
@@ -2451,7 +2451,7 @@ that it "skipped a step" was wrong.
 4. **Renderer vertical slice** (alongside P7) — cosmic-text fiction renderer;
    the 2–4 week calibration milestone.
 5. **P8 — Comics local** → **P9 — Manga platform** → **P10 — PDF (MuPDF)** →
-   **P11 — Tools** → **P12 — Lua plugin system matures.**
+   **P11 — Tools** → **P12 — WebAssembly (Wasm) plugin system matures.**
 
 **Recently completed (do not redo):** dictionary track Phases 8–10 (shipped,
 CI-green: POS dividers `be11c07`, priority reorder `d12c905`, lookup history
@@ -2643,3 +2643,23 @@ dashboard — the app is currently a single vertical stack).
 | 2026-09-05 | **Phase 8 (P8) — Comics local + Moku-style reader completed cleanly.** Integrated CBZ/CBR comic archive reading (`src/comics.rs`) with natural alphanumeric sorting (`page2.jpg` < `page10.jpg`) and image extraction. Built interactive Relm4 `ComicsReaderModel` (`src/pages/comics_reader/`) with black immersive stage, top bar controls (title, page index, LTR/RTL/Webtoon reading direction toggles, Fit Width/Height/Original mode toggles), bottom bar scrub slider and prev/next page navigation. Includes bounded viewport texture caching (current page ± 2 adjacent pages) for memory safety. Automated routing in `AppMsg::OpenReader` to automatically open CBZ/CBR files in the comics reader. All 336 unit tests passing cleanly with 0 compiler warnings. |
 | 2026-09-05 | **Phase 9 (P9) — Manga Platform completed.** We survived the Great Aggregator Crisis. After attempting to build Comick (API disabled images) and Manganato (domain entirely hijacked/CF blocked), we successfully pivoted to **WeebCentral**. Built a seamless native scraper in `src/sources/weebcentral.rs` that taps directly into their HTMX API, bypasses Cloudflare entirely, and natively streams official, high-quality simulpubs straight into the immersive comic reader. Re-wired the UI in `remote_detail.rs` to strip away the "Open Web" fallback entirely and properly constrain cover image ratios using `Pixbuf::from_stream_at_scale` so they don't break GTK's layout engine. |
 - **Future Consideration**: Literotica Account Sync (Login system to sync user's personal favorites and reading history).
+
+---
+
+## Master Roadmap Redux (Updated 2026-09-07/08 via /grill-me)
+
+**The New "Reader First" Sequence:**
+1. **P8.5 - Polish Comics Reader:** Fix performance, add webtoon support, minimal UI.
+2. **P10 - PDF Engine:** Zathura-style smart crop default. Reflow engine toggle.
+3. **P11 - EPUB Reader & Inline Editor:** Non-destructive sidecar patches. "Bubble" memory architecture for instant switching.
+4. **P7b - AO3 Polish:** Dedicated phase for tags, author pages.
+5. **P7c - Literotica:** Dedicated phase (no login).
+6. **P7d - FFN:** Dedicated phase (solve Cloudflare).
+7. **P7e - RoyalRoad:** Dedicated phase.
+8. **P9b - MangaDex/WeebCentral Polish:** Dedicated phases.
+9. **P9c - Manhwa Source:** Add AsuraScans or similar.
+10. **P6 - Download Queue / Sync Hub.**
+11. **P11b - EPUB Deep Editor Studio:** Deferred. Bake inline patches.
+12. **P5.5 - UI Overhaul:** "Two Worlds" design (Offline Library vs Online Hub). Floating Android-style chat head bubbles for active readers.
+13. **Western Comics:** Add ReadComicOnline or similar.
+14. **P12 - Wasm Plugin Ecosystem:** Build the WebAssembly host architecture to power dynamic scrapers and metadata providers (replacing the old Lua concept).

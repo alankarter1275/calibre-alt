@@ -3582,47 +3582,51 @@ button.kalam-lib-play {
 }
 
 .kalam-comics-topbar {
-    background: alpha(#0d0f14, 0.94);
-    border-bottom: 1px solid alpha(#252a36, 0.7);
-    padding: 8px 16px;
-    min-height: 48px;
+    background: linear-gradient(to bottom, alpha(#000000, 0.8) 0%, alpha(#000000, 0.0) 100%);
+    border-bottom: none;
+    padding: 16px 24px;
+    min-height: 56px;
 }
 
 .kalam-comics-title {
     font-size: 0.94rem;
     font-weight: 600;
     color: #f1f5f9;
+    text-shadow: 0 1px 4px alpha(#000, 0.8);
 }
 
 .kalam-comics-separator {
     color: #64748b;
     font-size: 0.9rem;
+    text-shadow: 0 1px 4px alpha(#000, 0.8);
 }
 
 .kalam-comics-page-count {
     font-size: 0.86rem;
     color: #94a3b8;
+    text-shadow: 0 1px 4px alpha(#000, 0.8);
 }
 
 .kalam-comics-icon-btn {
     background: transparent;
     border: none;
     border-radius: 999px;
-    padding: 7px;
-    min-width: 32px;
-    min-height: 32px;
-    color: #94a3b8;
+    padding: 8px;
+    min-width: 36px;
+    min-height: 36px;
+    color: #cbd5e1;
+    text-shadow: 0 1px 4px alpha(#000, 0.8);
     transition: background 120ms ease, color 120ms ease;
 }
 
 .kalam-comics-icon-btn:hover {
-    background: alpha(#ffffff, 0.1);
+    background: alpha(#ffffff, 0.15);
     color: #ffffff;
 }
 
 .kalam-comics-badge-btn {
-    background: alpha(#ffffff, 0.08);
-    border: 1px solid alpha(#ffffff, 0.12);
+    background: alpha(#000000, 0.4);
+    border: 1px solid alpha(#ffffff, 0.15);
     border-radius: 6px;
     padding: 4px 10px;
     font-size: 0.78rem;
@@ -3636,14 +3640,12 @@ button.kalam-lib-play {
     color: #ffffff;
 }
 
-/* Floating bottom dock */
-.kalam-comics-bottom-dock {
-    margin-bottom: 24px;
-    background: alpha(#0d0f14, 0.94);
-    border: 1px solid alpha(#252a36, 0.85);
-    border-radius: 999px;
-    padding: 6px 16px;
-    box-shadow: 0 8px 30px alpha(#000000, 0.7);
+/* Minimal bottom bar (Moku style) */
+.kalam-comics-bottombar {
+    background: linear-gradient(to top, alpha(#000000, 0.8) 0%, alpha(#000000, 0.0) 100%);
+    border-top: none;
+    padding: 16px 24px 24px 24px;
+    min-height: 60px;
 }
 
 .kalam-comics-pill-nav {
@@ -3753,4 +3755,9 @@ button.kalam-lib-play {
     color: #94a3b8;
     font-family: monospace;
     line-height: 1.4;
+}
+
+.kalam-comics-seg-label {
+    font-size: 0.72rem;
+    font-weight: 500;
 }

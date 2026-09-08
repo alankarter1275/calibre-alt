@@ -21,9 +21,7 @@ impl NavItem {
         NavItem::Shelves,
         NavItem::Downloads,
         NavItem::Comics,
-        NavItem::RemoteBrowse,
-        NavItem::Fanfiction,
-        NavItem::Settings,
+                NavItem::Settings,
     ];
 
     pub fn label(self) -> &'static str {

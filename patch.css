@@ -1,0 +1,12 @@
+.kalam-comics-topbar {
+    background: transparent;
+    border: none;
+    padding: 16px 24px;
+    min-height: 48px;
+}
+.kalam-comics-bottombar {
+    background: transparent;
+    border: none;
+    padding: 16px 24px;
+    min-height: 44px;
+}
