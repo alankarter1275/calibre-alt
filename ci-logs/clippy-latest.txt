@@ -4,20 +4,10 @@
 [1m[92m    Checking[0m thiserror v2.0.20
 [1m[92m   Compiling[0m thiserror v1.0.69
 [1m[92m   Compiling[0m thiserror-impl v1.0.69
-src/plugins/mod.rs:1:5: [1m[91merror[0m: unused import: `std::sync::Arc`
-src/plugins/mod.rs:4:22: [1m[91merror[0m: unused import: `Context`
-src/plugins/mod.rs:5:5: [1m[91merror[0m: unused import: `std::path::PathBuf`
-src/plugins/mod.rs:180:13: [1m[91merror[0m: variable does not need to be mutable
-src/plugins/mod.rs:14:9: [1m[91merror[0m: field `engine` is never read
-src/plugins/mod.rs:36:12: [1m[91merror[0m: struct `PluginSystem` is never constructed
-src/plugins/mod.rs:42:12: [1m[91merror[0m: associated items `new` and `load_scraper` are never used
-src/plugins/mod.rs:83:5: [1m[91merror[0m: field `base_url` is never read
-src/sources/mod.rs:26:12: [1m[91merror[0m: method `register` is never used
-src/sources/traits.rs:82:8: [1m[91merror[0m: method `base_url` is never used
 src/comics.rs:65:5: [1m[91merror[0m: consider using `sort_by_key`
 src/downloads.rs:139:9: [1m[91merror[0m: consider using `sort_by_key`
 src/pages/comics.rs:14:1: [1m[91merror[0m: all variants have the same prefix: `Open`
 src/pages/remote_detail.rs:581:61: [1m[91merror[0m: the borrowed expression implements the required traits: help: change this to: `format!("xdg-open '{}'", url)`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 14 previous errors
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 14 previous errors
---- run 34172336114 ---
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
+--- run 34175129129 ---
