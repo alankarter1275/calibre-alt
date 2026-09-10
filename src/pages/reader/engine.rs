@@ -328,10 +328,10 @@ pub(crate) struct DictCard {
 }
 
 impl DictCard {
-    /// `Option::<String>::from` accepts both a `String` and an
-    /// `Option<String>`, so the `example` field compiles either way.
-    /// `EntryData.pos` is a `Vec<String>` in this tree, so it is joined
-    /// here (see the field below).
+    /// `Sense.example` is an `Option<String>` in this tree, so the empty
+    /// filter applies to it directly; wrapping it in `Option::<String>::from`
+    /// is a useless conversion, which `-D warnings` rejects.
+    /// `EntryData.pos` is a `Vec<String>`, joined with middots below.
     pub(crate) fn from_entry(
         data: &crate::db::EntryData,
         pronunciation: Option<String>,
@@ -345,7 +345,7 @@ impl DictCard {
             .map(|(i, s)| {
                 (
                     s.def.clone(),
-                    Option::<String>::from(s.example.clone()).filter(|e| !e.is_empty()),
+                    s.example.clone().filter(|e| !e.is_empty()),
                     hint == Some(i),
                 )
             })
