@@ -142,8 +142,15 @@ jobs:
         id: clippy
         run: |
           set -o pipefail
+          {
+            echo "--- system libraries (the agent cannot read Actions logs, and"
+            echo "--- kalam-reader's gtk4 v4_16 feature needs system GTK >= 4.16) ---"
+            for pc in gtk4 gdk4 libadwaita-1 glib-2.0; do
+              printf '%s: %s\n' "$pc" "$(pkg-config --modversion "$pc" 2>&1 || echo 'not found')"
+            done
+          } | tee /tmp/clippy.txt
           cargo clippy --all-targets --message-format=short -- -D warnings 2>&1 \
-            | tee /tmp/clippy.txt
+            | tee -a /tmp/clippy.txt
         continue-on-error: true
 
       # Runs on success too, for the same reason as the test log above.
@@ -157,8 +164,13 @@ jobs:
           grep -E "error|warning:" /tmp/clippy.txt | head -100 > ci-logs/clippy-latest.txt || true
           if [ ! -s ci-logs/clippy-latest.txt ]; then
             echo "(no lines matched; last 100 lines of output)" > ci-logs/clippy-latest.txt
-            tail -100 /tmp/clippy.txt >> ci-logs/clippy-latest.txt || true
           fi
+          # The grep keeps the compiler's own lines; a failed build script is
+          # reported by cargo as one "error:" line and the real cause is on the
+          # lines after it, which match neither pattern. Append the tail always.
+          echo "" >> ci-logs/clippy-latest.txt
+          echo "=== last 80 lines of the raw log ===" >> ci-logs/clippy-latest.txt
+          tail -80 /tmp/clippy.txt >> ci-logs/clippy-latest.txt || true
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/clippy-latest.txt
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
