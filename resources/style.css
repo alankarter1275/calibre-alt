@@ -3761,3 +3761,137 @@ button.kalam-lib-play {
     font-size: 0.72rem;
     font-weight: 500;
 }
+
+/* ---------------------------------------------------------------------------
+   Engine reader (kalam-reader): the selection chip, the dictionary popover
+   and the continuous-scroll scrollbar. The widget draws the page itself, so
+   nothing here styles the text — only the GTK the page adds around it.
+   --------------------------------------------------------------------------- */
+
+.kalam-reader-open-error {
+    color: @kalam_text;
+    font-size: 1.05rem;
+}
+
+/* The bar that lies over the widget's right edge in strip mode. */
+scrollbar.kalam-reader-strip-bar {
+    margin: 6px 4px 6px 0;
+}
+
+.kalam-reader-chip-popover {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.kalam-reader-chip {
+    background: @kalam_surface;
+    border: 1px solid @kalam_border;
+    border-radius: 999px;
+    padding: 4px 6px;
+    box-shadow: 0 8px 20px alpha(#000, 0.28);
+}
+
+button.kalam-reader-chip-dot {
+    min-width: 20px;
+    min-height: 20px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid alpha(#000, 0.25);
+}
+
+button.kalam-reader-chip-dot-yellow {
+    background: #f4d35e;
+}
+
+button.kalam-reader-chip-dot-green {
+    background: #8acb9c;
+}
+
+button.kalam-reader-chip-dot-blue {
+    background: #8bb7f2;
+}
+
+button.kalam-reader-chip-dot-pink {
+    background: #e99bbd;
+}
+
+button.kalam-reader-chip-dot-orange {
+    background: #f2ae72;
+}
+
+button.kalam-reader-chip-action {
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: transparent;
+    color: @kalam_text;
+}
+
+button.kalam-reader-chip-action:hover {
+    background: alpha(#000, 0.08);
+}
+
+.kalam-reader-dict-popover > contents {
+    border-radius: 14px;
+}
+
+.kalam-reader-dict {
+    color: @kalam_text;
+}
+
+.kalam-reader-dict-word {
+    font-weight: 700;
+    font-size: 1.08rem;
+}
+
+.kalam-reader-dict-pron {
+    opacity: 0.7;
+    font-style: italic;
+}
+
+.kalam-reader-dict-pos {
+    opacity: 0.7;
+    font-size: 0.85rem;
+}
+
+.kalam-reader-dict-sense {
+    font-size: 0.92rem;
+}
+
+.kalam-reader-dict-example {
+    opacity: 0.72;
+    font-style: italic;
+    font-size: 0.88rem;
+}
+
+.kalam-reader-dict-none {
+    opacity: 0.7;
+    font-size: 0.9rem;
+}
+
+.kalam-reader-dict-cap {
+    opacity: 0.6;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+}
+
+button.kalam-reader-dict-link {
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: transparent;
+    font-size: 0.85rem;
+}
+
+button.kalam-reader-dict-link:hover {
+    background: alpha(#000, 0.08);
+}
+
+.kalam-reader-dict-idiom {
+    font-size: 0.88rem;
+    opacity: 0.85;
+}
+
+button.kalam-reader-dict-action {
+    padding: 3px 10px;
+    border-radius: 999px;
+}

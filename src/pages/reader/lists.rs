@@ -6,7 +6,6 @@ use super::js_bridge::truncate_def;
 use super::mod_model::ReaderModel;
 use super::types::*;
 use crate::db::{Annotation, HighlightColor, SavedWord};
-use crate::epub_book::OpenBook;
 use gtk::prelude::*;
 use relm4::ComponentSender;
 
@@ -45,31 +44,30 @@ impl ReaderModel {
         }
     }
 
+    /// The book's table of contents as the engine reported it at open.
+    pub(crate) fn toc_entries(&self) -> Vec<kalam_reader::TocEntry> {
+        self.view.as_ref().map(|view| view.toc()).unwrap_or_default()
+    }
+
+    /// Which entry the TOC scroll should centre on, as (position, total)
+    /// in the list `rebuild_toc` builds from the same entries.
     pub(crate) fn toc_display_position(&self) -> Option<(usize, usize)> {
-        let active_spine = toc_active_spine_index(&self.open, self.chapter)?;
-        if self.open.toc.is_empty() {
-            let total = self.open.spine.len();
+        let entries = self.toc_entries();
+        let visible = toc_spine_indices(&entries);
+        let active_spine = toc_active_spine_index(&entries, self.chapter_count, self.chapter)?;
+        if visible.is_empty() {
+            let total = self.chapter_count;
             if total == 0 {
                 None
             } else {
                 Some((active_spine.min(total.saturating_sub(1)), total))
             }
         } else {
-            let visible: Vec<usize> = self
-                .open
-                .toc
-                .iter()
-                .filter_map(|entry| entry.spine_index)
-                .collect();
             let total = visible.len();
-            if total == 0 {
-                None
-            } else {
-                visible
-                    .iter()
-                    .position(|idx| *idx == active_spine)
-                    .map(|current| (current, total))
-            }
+            visible
+                .iter()
+                .position(|idx| *idx == active_spine)
+                .map(|current| (current, total))
         }
     }
 
@@ -108,7 +106,6 @@ impl ReaderModel {
     pub(crate) fn close_annotation_editor(&mut self) {
         self.flush_annotation_note_draft();
         self.editing_annotation = None;
-        self.pending_annotation_jump = None;
     }
 
     pub(crate) fn persist_annotation_note(&mut self, id: i64, note: &str) -> bool {
@@ -201,7 +198,8 @@ impl ReaderModel {
 
 pub(crate) fn rebuild_toc(
     list: &gtk::Box,
-    open: &OpenBook,
+    entries: &[kalam_reader::TocEntry],
+    titles: &[String],
     current: usize,
     sender: &ComponentSender<ReaderModel>,
 ) {
@@ -209,18 +207,32 @@ pub(crate) fn rebuild_toc(
         list.remove(&child);
     }
 
-    let active_spine = toc_active_spine_index(open, current);
-    if open.toc.is_empty() {
-        for (idx, item) in open.spine.iter().enumerate() {
-            append_toc_btn(list, &item.title, idx, active_spine, sender);
+    let visible = toc_spine_indices(entries);
+    let active_spine = toc_active_spine_index(entries, titles.len(), current);
+    if visible.is_empty() {
+        for (idx, title) in titles.iter().enumerate() {
+            append_toc_btn(list, title, idx, active_spine, sender);
         }
     } else {
-        for entry in &open.toc {
+        for entry in entries {
             if let Some(idx) = entry.spine_index {
                 append_toc_btn(list, &entry.label, idx, active_spine, sender);
             }
         }
     }
+}
+
+/// Every spine index the table of contents points at, in display order
+/// (nested entries included — they are listed flat, one row each).
+fn toc_spine_indices(entries: &[kalam_reader::TocEntry]) -> Vec<usize> {
+    let mut out = Vec::new();
+    for entry in entries {
+        if let Some(idx) = entry.spine_index {
+            out.push(idx);
+        }
+        out.extend(toc_spine_indices(&entry.children));
+    }
+    out
 }
 
 fn append_toc_btn(
@@ -249,30 +261,26 @@ fn append_toc_btn(
     list.append(&btn);
 }
 
-fn toc_active_spine_index(open: &OpenBook, current: usize) -> Option<usize> {
-    if open.toc.is_empty() {
-        if open.spine.is_empty() {
+fn toc_active_spine_index(
+    entries: &[kalam_reader::TocEntry],
+    chapter_count: usize,
+    current: usize,
+) -> Option<usize> {
+    let visible = toc_spine_indices(entries);
+    if visible.is_empty() {
+        if chapter_count == 0 {
             None
         } else {
-            Some(current.min(open.spine.len().saturating_sub(1)))
+            Some(current.min(chapter_count.saturating_sub(1)))
         }
     } else {
-        let visible: Vec<usize> = open
-            .toc
-            .iter()
-            .filter_map(|entry| entry.spine_index)
-            .collect();
-        if visible.is_empty() {
-            None
-        } else {
-            Some(
-                visible
-                    .iter()
-                    .copied()
-                    .rfind(|idx| *idx <= current)
-                    .unwrap_or(visible[0]),
-            )
-        }
+        Some(
+            visible
+                .iter()
+                .copied()
+                .rfind(|idx| *idx <= current)
+                .unwrap_or(visible[0]),
+        )
     }
 }
 
