@@ -64,7 +64,15 @@ epub-builder = "0.8.3"
 wasmtime = { version = "24.0.0", features = ["component-model"] }
 
 [profile.release]
-lto = true
-codegen-units = 1
+# `lto = true` is fat LTO, and `codegen-units = 1` takes the backend's ability
+# to work in parallel away; together they make rustc's peak memory roughly the
+# size of the whole crate graph. The engine's git dependency drags stylo in,
+# and on a 4 GB machine that peak is past the limit: rustc is killed by the
+# OOM killer with no diagnostic at all, which reads as a crash rather than a
+# memory problem. Thin LTO keeps most of the cross-crate inlining for a
+# fraction of the peak, and leaving codegen-units at its default lets rustc
+# use the machine's cores. CI has memory to spare and never saw this; the
+# owner's 4 GB box is the machine this profile has to fit.
+lto = "thin"
 strip = true
 opt-level = 3
