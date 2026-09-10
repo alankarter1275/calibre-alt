@@ -251,7 +251,8 @@ jobs:
   # Read docs/ci/README-screenshots.md before trusting these images. Summary of
   # the caveats: the software (Cairo) renderer is NOT the renderer on a real
   # desktop, headless sway is one virtual output rather than a tiling session,
-  # and the reader (WebKit) may not render at all here.
+  # and the reader is a GTK widget now, so `read-1` really opens a book --
+  # proof that it does not panic, not proof that it looks right on a desktop.
   # ---------------------------------------------------------------------------
   screenshots:
     name: screenshots (headless sway)
@@ -302,6 +303,16 @@ jobs:
           chmod +x docs/ci/screenshot.sh docs/ci/check-shot.py
           BOOKS=139 OUT=ci-shots docs/ci/screenshot.sh
 
+      # The reader is what this branch replaced, and the owner's machine would
+      # otherwise be the first place the engine widget ever runs. `read-<id>`
+      # opens it on a seeded book, so a panic, a wiring mistake or a blank page
+      # is caught here, in a text report the agent can read. Book 1 always
+      # exists -- the seeder inserts with AUTOINCREMENT from 1.
+      - name: reader screenshot
+        run: |
+          BOOKS=139 OUT=ci-shots-reader SETTLE=25 ROUTE=read-1 \
+            docs/ci/screenshot.sh
+
       - name: upload screenshots
         uses: actions/upload-artifact@v4
         if: always()
@@ -324,9 +335,12 @@ jobs:
           cp ci-shots/report.txt ci-logs/screenshots-latest.txt 2>/dev/null \
             || echo "(no report produced)" > ci-logs/screenshots-latest.txt
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/screenshots-latest.txt
+          cp ci-shots-reader/report.txt ci-logs/reader-latest.txt 2>/dev/null \
+            || echo "(no reader report produced)" > ci-logs/reader-latest.txt
+          echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/reader-latest.txt
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/screenshots-latest.txt
+          git add -f ci-logs/screenshots-latest.txt ci-logs/reader-latest.txt
           git commit -m "ci: publish screenshot report [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
