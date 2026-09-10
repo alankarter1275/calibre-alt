@@ -10,4 +10,4 @@ src/pages/comics.rs:14:1: [1m[91merror[0m: all variants have the same prefix:
 src/pages/remote_detail.rs:581:61: [1m[91merror[0m: the borrowed expression implements the required traits: help: change this to: `format!("xdg-open '{}'", url)`
 [1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 4 previous errors
 [1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 4 previous errors
---- run 34182227870 ---
+--- run 34529498128 ---
