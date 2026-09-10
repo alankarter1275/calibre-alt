@@ -48,7 +48,7 @@ ground rule 3), so that one line now reads:
         Some(data.pos.join(" \u{00b7} "))
     },
 
-which is what the WebKit popup did (`pos.join(' \u{00b7} ')`, epub_book.rs:2107).
+which is what the WebKit popup did (`esc(pos.join(' · '))`, epub_book.rs:2107).
 The rest of engine.rs is byte-identical to patch/engine.rs. Please fold the
 same change into the bundle so a re-copy does not reintroduce it.
 
