@@ -14,7 +14,13 @@ env:
 jobs:
   build:
     name: build (ubuntu)
-    runs-on: ubuntu-latest
+    # 26.04, not -latest: kalam-reader asks gtk4 for the v4_16 feature, Cargo
+    # unifies that with Kalam's v4_12, and the gdk4-sys build script then
+    # demands system GTK >= 4.16 through pkg-config. 24.04 (still -latest)
+    # ships 4.14.5 and fails with "Package 'gtk4' has version '4.14.5',
+    # required version is '>= 4.16'". Same reason kalam-engine's own CI is on
+    # 26.04. The owner's machine is Arch, gtk4 4.20+.
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
@@ -30,8 +36,7 @@ jobs:
             build-essential pkg-config \
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
-            libgraphene-1.0-dev \
-            libwebkitgtk-6.0-dev libsoup-3.0-dev
+            libgraphene-1.0-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -172,9 +177,12 @@ jobs:
           echo "=== last 80 lines of the raw log ===" >> ci-logs/clippy-latest.txt
           tail -80 /tmp/clippy.txt >> ci-logs/clippy-latest.txt || true
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/clippy-latest.txt
+          # Uncapped copy: the excerpt above is for humans, this is what the
+          # agent reads when the first error is not in the tail.
+          cp /tmp/clippy.txt ci-logs/clippy-full.txt || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/clippy-latest.txt
+          git add -f ci-logs/clippy-latest.txt ci-logs/clippy-full.txt
           git commit -m "ci: publish clippy failures [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
@@ -208,9 +216,10 @@ jobs:
             tail -100 /tmp/test.txt >> ci-logs/test-latest.txt || true
           fi
           echo "--- run $GITHUB_RUN_ID ---" >> ci-logs/test-latest.txt
+          cp /tmp/test.txt ci-logs/test-full.txt || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add -f ci-logs/test-latest.txt
+          git add -f ci-logs/test-latest.txt ci-logs/test-full.txt
           git commit -m "ci: publish test failures [skip ci]" || true
           git pull --rebase --autostash origin "$GITHUB_REF_NAME" || true
           git push origin "HEAD:$GITHUB_REF_NAME" || true
@@ -247,7 +256,13 @@ jobs:
   screenshots:
     name: screenshots (headless sway)
     needs: build
-    runs-on: ubuntu-latest
+    # 26.04, not -latest: kalam-reader asks gtk4 for the v4_16 feature, Cargo
+    # unifies that with Kalam's v4_12, and the gdk4-sys build script then
+    # demands system GTK >= 4.16 through pkg-config. 24.04 (still -latest)
+    # ships 4.14.5 and fails with "Package 'gtk4' has version '4.14.5',
+    # required version is '>= 4.16'". Same reason kalam-engine's own CI is on
+    # 26.04. The owner's machine is Arch, gtk4 4.20+.
+    runs-on: ubuntu-26.04
     continue-on-error: true
     # Needed by "publish the screenshot report" below, which commits the
     # text summary back to the branch for the agent to read.
@@ -267,7 +282,6 @@ jobs:
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
             libgraphene-1.0-dev \
-            libwebkitgtk-6.0-dev libsoup-3.0-dev \
             sway grim wtype \
             xwayland \
             fonts-dejavu-core
@@ -335,7 +349,13 @@ jobs:
     # Deliberately after `screenshots`, not in parallel: both jobs commit a
     # report to the same branch, and racing pushes means one of them loses.
     needs: [build, screenshots]
-    runs-on: ubuntu-latest
+    # 26.04, not -latest: kalam-reader asks gtk4 for the v4_16 feature, Cargo
+    # unifies that with Kalam's v4_12, and the gdk4-sys build script then
+    # demands system GTK >= 4.16 through pkg-config. 24.04 (still -latest)
+    # ships 4.14.5 and fails with "Package 'gtk4' has version '4.14.5',
+    # required version is '>= 4.16'". Same reason kalam-engine's own CI is on
+    # 26.04. The owner's machine is Arch, gtk4 4.20+.
+    runs-on: ubuntu-26.04
     continue-on-error: true
     permissions:
       contents: write
@@ -353,7 +373,6 @@ jobs:
             libgtk-4-dev libadwaita-1-dev libglib2.0-dev \
             libpango1.0-dev libgdk-pixbuf-2.0-dev \
             libgraphene-1.0-dev \
-            libwebkitgtk-6.0-dev libsoup-3.0-dev \
             sway grim wtype \
             xwayland \
             fonts-dejavu-core
