@@ -8,6 +8,16 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A newer push cancels the run it supersedes. Without this, two runs of this
+# workflow on one branch race to commit ci-logs/ files back to it: both publish
+# steps `git pull --rebase` and the second one rebases onto a file the first
+# just rewrote, hits a conflict, and its `git push ... || true` silently drops
+# the report. That is how the first reader screenshot report was lost.
+# kalam-engine's own ci.yml uses the same group for the same reason.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
