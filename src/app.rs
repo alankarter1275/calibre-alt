@@ -171,7 +171,7 @@ pub struct AppModel {
 
 /// Cache key for a route, or `None` for pages that must always be rebuilt.
 ///
-/// Reader is excluded deliberately: it owns a WebView and a reading session,
+/// Reader is excluded deliberately: it owns the reading widget and a session,
 /// and must be torn down on leave. Book and shelf pages are excluded because
 /// their content changes as you edit metadata, ratings and membership.
 fn cache_key(route: &Route) -> Option<String> {

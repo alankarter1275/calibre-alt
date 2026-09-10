@@ -26,8 +26,8 @@ gdk-pixbuf = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 glib = "0.22"
 gio = { version = "0.22", package = "gio" }
-# The reading engine: opens the EPUB itself and draws the page. Replaces
-# WebKitGTK entirely (no more webkit2gtk / JavaScriptCore dependencies).
+# The reading engine: opens the EPUB itself and draws the page. It replaces
+# the in-app browser page, so the browser and JS-engine crates are gone.
 kalam-reader = { git = "https://github.com/alankarter1275/kalam-engine", branch = "arena/01a07f3f-kalam-engine" }
 
 # Library / persistence
