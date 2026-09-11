@@ -401,7 +401,7 @@ fn chip_icon_button(icon: ChipIcon, tooltip: &str) -> gtk::Button {
                 cr.line_to(18.0, 11.0);
                 cr.move_to(4.0, 20.0);
                 cr.line_to(12.0, 20.0);
-                cr.stroke();
+                let _ = cr.stroke();
             }
             ChipIcon::Quote => {
                 // Filled, not stroked: the old icon was the fill variant.
@@ -416,7 +416,7 @@ fn chip_icon_button(icon: ChipIcon, tooltip: &str) -> gtk::Button {
                     cr.line_to(4.0 + dx, 12.0);
                     cr.close_path();
                 }
-                cr.fill();
+                let _ = cr.fill();
             }
             ChipIcon::Dictionary => {
                 // "A" at the old icon's 12 units, then "a" at 9.
@@ -426,12 +426,12 @@ fn chip_icon_button(icon: ChipIcon, tooltip: &str) -> gtk::Button {
                 cr.line_to(12.6, 16.2);
                 cr.move_to(5.3, 13.0);
                 cr.line_to(10.5, 13.0);
-                cr.stroke();
+                let _ = cr.stroke();
                 cr.set_line_width(1.5);
                 cr.arc(16.2, 16.4, 2.35, 0.0, std::f64::consts::TAU);
                 cr.move_to(18.55, 13.9);
                 cr.line_to(18.55, 19.0);
-                cr.stroke();
+                let _ = cr.stroke();
             }
             ChipIcon::Copy => {
                 // The back sheet. Its right edge is the stub the JS path
@@ -447,7 +447,7 @@ fn chip_icon_button(icon: ChipIcon, tooltip: &str) -> gtk::Button {
                 cr.line_to(8.0, 17.0);
                 // The front sheet: the SVG's rounded rect (8,8 11x12 r2).
                 rounded_rect(cr, 8.0, 8.0, 11.0, 12.0, 2.0);
-                cr.stroke();
+                let _ = cr.stroke();
             }
         }
     });
