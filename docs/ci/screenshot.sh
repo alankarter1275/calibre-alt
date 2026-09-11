@@ -268,6 +268,16 @@ shot "03-$ROUTE-settled"
 # geometry, not the output size: the two are equal only when the window is
 # fullscreen, and a tap outside the window is indistinguishable from a tap
 # the app ignored -- exactly the false negative this check exists to avoid.
+#
+# STATUS, 2026-09-11: this probe does NOT work in CI and is off by default.
+# Run on the reader route it reports "window: 1600x1000 at 0,0" -- a
+# fullscreen window, so the coordinates are right -- and then no change at
+# 0.75/0.25/0.50 of the width, with both a one-second hold and an 80 ms one.
+# Nothing changes at any position, including the centre, which the reader
+# does react to for other reasons; the simplest explanation is that
+# `seat ... cursor press` events do not reach the app under a headless sway
+# (no libinput devices). Do not read "no change" as a defect: it is a
+# property of the harness. The gesture is verified by hand instead.
 if [ "${TAP:-0}" = "1" ]; then
   say ""
   say "=== tap check (TAP=1) ==="
