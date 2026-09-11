@@ -263,37 +263,68 @@ shot "03-$ROUTE-settled"
 # host connects a word handler, and Kalam does not. If that regressed, the
 # page would sit there and every other check would still pass.
 #
-# sway can drive the pointer, so the check runs here rather than asking the
-# owner to tap and describe it. A tap is a press and a release in the same
-# place; the honest signal is "did the pixels change", exactly like the
-# navigation check above.
+# A tap is a press and a release in the same place, and the honest signal is
+# "did the pixels change". The pointer is placed from the window's own
+# geometry, not the output size: the two are equal only when the window is
+# fullscreen, and a tap outside the window is indistinguishable from a tap
+# the app ignored -- exactly the false negative this check exists to avoid.
 if [ "${TAP:-0}" = "1" ]; then
   say ""
   say "=== tap check (TAP=1) ==="
   SEAT="$(swaymsg -t get_seats 2>/dev/null \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["name"])' 2>/dev/null \
     || echo seat0)"
-  # The window is 1600x1000 (see the sway config above); the widget's "next
-  # page" zone is the right third, well clear of the selection chip.
-  TAP_X="${TAP_X:-1250}"
-  TAP_Y="${TAP_Y:-500}"
-  before="$(md5sum "$OUT/03-$ROUTE-settled.png" 2>/dev/null | cut -d" " -f1)"
-  swaymsg "seat $SEAT cursor set $TAP_X $TAP_Y" >/dev/null 2>&1 || true
-  sleep 1
-  swaymsg "seat $SEAT cursor press button1" >/dev/null 2>&1 || true
-  sleep 1
-  swaymsg "seat $SEAT cursor release button1" >/dev/null 2>&1 || true
-  sleep 2
-  shot "05-after-tap"
-  after="$(md5sum "$OUT/05-after-tap.png" 2>/dev/null | cut -d" " -f1)"
-  say "seat=$SEAT tap=$TAP_X,$TAP_Y"
-  say "before=$before"
-  say "after =$after"
-  if [ -n "$before" ] && [ -n "$after" ] && [ "$before" != "$after" ]; then
-    say "tap check: the page changed -- a tap turns the page"
+  GEOM="$(swaymsg -t get_tree 2>/dev/null | python3 -c '
+import json, sys
+
+
+def walk(node):
+    yield node
+    for child in node.get("nodes", []) + node.get("floating_nodes", []):
+        yield from walk(child)
+
+
+best = None
+for node in walk(json.load(sys.stdin)):
+    app_id = node.get("app_id") or ""
+    rect = node.get("rect", {})
+    if "kalam" in app_id.lower() and rect.get("width", 0) > 200:
+        best = rect
+print("{} {} {} {}".format(best["x"], best["y"], best["width"], best["height"]) if best else "")
+' 2>/dev/null || true)"
+  if [ -z "$GEOM" ]; then
+    say "tap check: SKIPPED -- no kalam window in sway's tree"
   else
-    say "tap check: NO CHANGE -- a tap may not be reaching the page-turn zones"
-    say "           (or the last page of the chapter is showing)"
+    WIN_X="$(printf '%s' "$GEOM" | cut -d' ' -f1)"
+    WIN_Y="$(printf '%s' "$GEOM" | cut -d' ' -f2)"
+    WIN_W="$(printf '%s' "$GEOM" | cut -d' ' -f3)"
+    WIN_H="$(printf '%s' "$GEOM" | cut -d' ' -f4)"
+    say "window: ${WIN_W}x${WIN_H} at ${WIN_X},${WIN_Y}  seat=$SEAT"
+    # Mid-height, three across: the next-page zone on the right, the
+    # previous-page zone on the left, and the middle.
+    TAP_FRACS="${TAP_FRACS:-0.75 0.25 0.50}"
+    n=0
+    for frac in $TAP_FRACS; do
+      n=$((n + 1))
+      TAP_X="$(python3 -c "print(int($WIN_X + $WIN_W * $frac))")"
+      TAP_Y="$(python3 -c "print(int($WIN_Y + $WIN_H * 0.5))")"
+      swaymsg "seat $SEAT cursor set $TAP_X $TAP_Y" >/dev/null 2>&1 || true
+      sleep 1
+      swaymsg "seat $SEAT cursor press button1" >/dev/null 2>&1 || true
+      sleep 1
+      swaymsg "seat $SEAT cursor release button1" >/dev/null 2>&1 || true
+      sleep 2
+      shot "05-after-tap-$n"
+      if cmp -s "$OUT/03-$ROUTE-settled.png" "$OUT/05-after-tap-$n.png"; then
+        say "tap $n at $TAP_X,$TAP_Y (frac $frac): no change"
+      else
+        say "tap $n at $TAP_X,$TAP_Y (frac $frac): CHANGED"
+      fi
+    done
+    say "tap check: each line compares its shot with 03-$ROUTE-settled.png."
+    say "           A change means the tap reached the page. No change at any"
+    say "           of the three means the widget ignored it or sway did not"
+    say "           deliver it -- the owner's own tap decides which."
   fi
 fi
 
