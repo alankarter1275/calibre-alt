@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=2000 out=ci-shots-2000-windowed settle=60
-binary: 38880920 bytes
+binary: 38876152 bytes
 
 === seeding 2000 books ===
 seed-library: 2000 books, 1882 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.5691.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.5463.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -34,11 +34,11 @@ navigation: OK -- the images below are 'all-books'
 === timing lines from the app ===
   [timing] startup_db_open         7.5 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      6.7 ms
-  [timing] window_shown          221.1 ms
+  [timing] startup_first_page      7.0 ms
+  [timing] window_shown          241.4 ms
   [timing] page_cache_miss           1
-  [timing] covers_queued            44
-  [timing] grid_build              7.6 ms
+  [timing] covers_queued            42
+  [timing] grid_build              7.5 ms
   [timing] grid_cards               48
   [timing] grid_cards_total       2000
   [timing] covers_queued             6
@@ -46,7 +46,7 @@ navigation: OK -- the images below are 'all-books'
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       150
   [timing] thumbs_backfilled       200
-  [timing] startup_dicts        1912.8 ms
+  [timing] startup_dicts        1964.0 ms
   [timing] thumbs_backfilled       250
   [timing] thumbs_backfilled       300
   [timing] thumbs_backfilled       350
@@ -98,26 +98,26 @@ navigation: OK -- the images below are 'all-books'
 
 === app stderr (non-timing lines) ===
   
-  (kalam:5732): Gtk-WARNING **: 03:05:04.879: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (kalam:5500): Gtk-WARNING **: 03:46:17.353: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=all-books — navigating
 
 === peak memory ===
-books=2000 peak_rss_kb=293336 peak_rss_mb=286
+books=2000 peak_rss_kb=274936 peak_rss_mb=268
 
 === shutting down ===
 
 === artifacts ===
   total 356
-  drwxr-xr-x  2 runner runner  4096 Sep 11 03:06 .
-  drwxr-xr-x 15 runner runner  4096 Sep 11 03:04 ..
-  -rw-r--r--  1 runner runner 82219 Sep 11 03:06 01-all-books.png
-  -rw-r--r--  1 runner runner 82219 Sep 11 03:06 02-all-books-settling.png
-  -rw-r--r--  1 runner runner 82219 Sep 11 03:06 03-all-books-settled.png
-  -rw-r--r--  1 runner runner 68745 Sep 11 03:06 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Sep 11 03:06 grim.log
-  -rw-r--r--  1 runner runner  2023 Sep 11 03:06 kalam-home.log
-  -rw-r--r--  1 runner runner  2218 Sep 11 03:05 kalam.log
-  -rw-r--r--  1 runner runner  4238 Sep 11 03:06 report.txt
-  -rw-r--r--  1 runner runner    88 Sep 11 03:05 sway.log
-  -rw-r--r--  1 runner runner  7184 Sep 11 03:06 tree.json
---- run 34556186851 ---
+  drwxr-xr-x  2 runner runner  4096 Sep 11 03:47 .
+  drwxr-xr-x 15 runner runner  4096 Sep 11 03:45 ..
+  -rw-r--r--  1 runner runner 82219 Sep 11 03:47 01-all-books.png
+  -rw-r--r--  1 runner runner 82219 Sep 11 03:47 02-all-books-settling.png
+  -rw-r--r--  1 runner runner 82219 Sep 11 03:47 03-all-books-settled.png
+  -rw-r--r--  1 runner runner 68745 Sep 11 03:47 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Sep 11 03:47 grim.log
+  -rw-r--r--  1 runner runner  2023 Sep 11 03:47 kalam-home.log
+  -rw-r--r--  1 runner runner  2218 Sep 11 03:46 kalam.log
+  -rw-r--r--  1 runner runner  4238 Sep 11 03:47 report.txt
+  -rw-r--r--  1 runner runner    88 Sep 11 03:46 sway.log
+  -rw-r--r--  1 runner runner  7184 Sep 11 03:47 tree.json
+--- run 34558747538 ---
