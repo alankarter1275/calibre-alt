@@ -308,10 +308,14 @@ print("{} {} {} {}".format(best["x"], best["y"], best["width"], best["height"]) 
       n=$((n + 1))
       TAP_X="$(python3 -c "print(int($WIN_X + $WIN_W * $frac))")"
       TAP_Y="$(python3 -c "print(int($WIN_Y + $WIN_H * 0.5))")"
+      # A *tap* is a short press: hold the button down for a second and the
+      # reader treats it as a long press (the selection anchor), which is a
+      # different gesture and does not turn the page. 80 ms is under the
+      # usual threshold and well above sway's round trip.
       swaymsg "seat $SEAT cursor set $TAP_X $TAP_Y" >/dev/null 2>&1 || true
       sleep 1
       swaymsg "seat $SEAT cursor press button1" >/dev/null 2>&1 || true
-      sleep 1
+      sleep "${TAP_HOLD:-0.08}"
       swaymsg "seat $SEAT cursor release button1" >/dev/null 2>&1 || true
       sleep 2
       shot "05-after-tap-$n"
