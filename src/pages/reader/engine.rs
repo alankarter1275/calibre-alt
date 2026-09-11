@@ -406,11 +406,15 @@ fn pos_group_keys(senses: &[DictSense]) -> Vec<String> {
             first_seen.push(key);
         }
     }
-    let mut ordered: Vec<String> = POS_GROUP_ORDER
-        .iter()
-        .filter(|known| first_seen.iter().any(|key| key.as_str() == *known))
-        .map(|known| (*known).to_string())
-        .collect();
+    // A plain loop, not `.iter().filter(...)`: the adapter hands the closure
+    // `&&str` and the extra reference layer makes the comparison read as a
+    // different type than it is (this cost two CI runs to get right).
+    let mut ordered: Vec<String> = Vec::new();
+    for known in POS_GROUP_ORDER {
+        if first_seen.iter().any(|key| key.as_str() == known) {
+            ordered.push(known.to_string());
+        }
+    }
     for key in first_seen {
         if !POS_GROUP_ORDER.contains(&key.as_str()) {
             ordered.push(key);
