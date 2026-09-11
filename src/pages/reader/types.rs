@@ -131,13 +131,6 @@ pub enum ReaderMsg {
     SetDictHistory(bool),
     /// From the engine: the chapter on screen and how far into it.
     EnginePosition(usize, f64),
-    /// From the engine: a tapped word, for the dictionary popover.
-    EngineWord {
-        word: String,
-        sentence: String,
-        rect: gtk::gdk::Rectangle,
-        highlight: Option<i64>,
-    },
     /// From the engine: a finished selection (text, where), or cleared.
     EngineSelection(Option<(String, gtk::gdk::Rectangle)>),
     /// From the selection chip.

@@ -27,7 +27,7 @@ use crate::epub_book::ReadingTheme;
 use gtk::prelude::*;
 use kalam_reader::{
     HighlightColor, KalamPrefs, KalamTheme, LayeredLocator, NewHighlight, Quote, ReaderOptions,
-    ReaderView, ReadingMode, ReadingPosition, SelectedText, TappedWord, LOCATOR_VERSION,
+    ReaderView, ReadingMode, ReadingPosition, SelectedText, LOCATOR_VERSION,
 };
 use relm4::ComponentSender;
 use std::path::Path;
@@ -103,15 +103,12 @@ pub(crate) fn wire(view: &ReaderView, sender: &ComponentSender<ReaderModel>) {
         let _ = tx.send(ReaderMsg::EnginePosition(pos.chapter, pos.fraction));
     });
 
-    let tx = sender.input_sender().clone();
-    view.connect_word(move |word: &TappedWord| {
-        let _ = tx.send(ReaderMsg::EngineWord {
-            word: word.word.clone(),
-            sentence: word.sentence.clone(),
-            rect: gdk_rect(word.rect),
-            highlight: word.highlight,
-        });
-    });
+    // No `connect_word`: tap-to-look-up was deliberately removed on main
+    // (`fireTapLookup` in the old shell has no caller), and re-enabling it
+    // through the engine's tap callback was a recipe mistake. The selection
+    // chip's "Look up" is the only way into the dictionary, as it is in the
+    // WebKit reader. Nothing else in the widget changes: a tap that no
+    // handler claims falls through to the page-turn zones.
 
     let tx = sender.input_sender().clone();
     view.connect_selection(move |sel: Option<&SelectedText>| {
@@ -585,7 +582,7 @@ fn sense_row(sense: &DictSense, number: usize) -> gtk::Box {
     num.set_valign(gtk::Align::Start);
     row.append(&num);
 
-    let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    let text = gtk::Box::new(gtk::Orientation::Vertical, 3);
     text.set_hexpand(true);
 
     let line = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -759,8 +756,12 @@ fn append_sections(body: &gtk::Box, card: &DictCard, sender: &ComponentSender<Re
     }
 }
 
-/// The dictionary card: the old WebKit popup's design, rebuilt as GTK
-/// widgets (kalam-engine docs/kalam/RESEARCH.md §R12f).
+/// The dictionary card: `docs/files/kalam_dictionary_popup_v3.html` (the
+/// mockup the owner compares against) with the shipped popup's three
+/// buttons — save, a disabled find-in-chapter, copy. Its numbers are the
+/// spec: 380 px, header 20/20/16, 26 px serif headword, 11 px mono
+/// pronunciation, 30 px round buttons, body 4/20/24, 9 px section labels,
+/// 13 px/1.6 senses, 12 px chips, radius-10 idiom cards.
 ///
 /// Same input (`DictCard`), same three messages, same anchoring as before.
 /// Two deliberate differences, both reported: "Find in chapter" is present
@@ -775,7 +776,12 @@ pub(crate) fn build_dict_popover(
 ) -> gtk::Popover {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("kalam-reader-dict");
-    root.set_size_request(320, -1);
+    // The mockup's 380 px, but never wider than the window it hangs over:
+    // GTK has no max-width, so a long unbroken word would otherwise widen
+    // the popover past the screen edge. The floor keeps the header readable
+    // when the window is tiny; GTK clamps the popover itself after that.
+    let width = 380.min((host.width() - 32).max(240));
+    root.set_size_request(width, -1);
     root.append(&dict_header(host, card, sender));
 
     let body = gtk::Box::new(gtk::Orientation::Vertical, 0);

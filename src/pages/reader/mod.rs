@@ -998,20 +998,6 @@ impl Component for ReaderModel {
                 refresh_sidebar_header = true;
                 refresh_chrome = true;
             }
-            ReaderMsg::EngineWord {
-                word,
-                sentence,
-                rect,
-                highlight,
-            } => {
-                if let Some(id) = highlight {
-                    // The tap landed on a highlighted passage — that means
-                    // "this highlight", not "this word".
-                    sender.input(ReaderMsg::ToggleAnnotation(id));
-                } else {
-                    self.dict_lookup(word, Some(sentence), rect, &sender);
-                }
-            }
             ReaderMsg::EngineSelection(sel) => {
                 engine::dismiss(self.selection_chip.take());
                 self.last_selection = sel.as_ref().map(|(text, _)| text.clone());

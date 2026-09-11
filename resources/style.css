@@ -3857,7 +3857,7 @@ button.kalam-reader-chip-action:hover {
 }
 
 .kalam-reader-dict-head {
-    padding: 14px 16px 10px 16px;
+    padding: 20px 20px 16px 20px;
     border-bottom: 1px solid @kalam_border;
     background: @kalam_surface;
     box-shadow: 0 3px 10px alpha(#000, 0.22);
@@ -3871,24 +3871,28 @@ button.kalam-reader-chip-action:hover {
 }
 
 .kalam-reader-dict-word {
-    font-family: Georgia, "DejaVu Serif", serif;
-    font-size: 22px;
+    font-family: "Fraunces", serif;
+    font-size: 26px;
     font-weight: 600;
+    margin-bottom: 5px;
 }
 
 .kalam-reader-dict-pron {
     font-family: monospace;
-    font-size: 10px;
+    font-size: 11px;
     color: @kalam_text_dim;
+    margin-bottom: 7px;
 }
 
+/* The mockup's info violet. Kalam has no token for it, so the hex is
+   hard-coded the way the old popup hard-coded the antonym red. */
 .kalam-reader-dict-pos {
     margin-top: 6px;
-    padding: 2px 8px;
+    padding: 2px 9px;
     border-radius: 999px;
-    background: alpha(@kalam_accent, 0.14);
-    color: @kalam_accent;
-    font-size: 10px;
+    background: alpha(#c678dd, 0.14);
+    color: #c678dd;
+    font-size: 10.5px;
     font-style: italic;
 }
 
@@ -3897,14 +3901,14 @@ button.kalam-reader-chip-action:hover {
 }
 
 button.kalam-reader-dict-icon {
-    min-width: 26px;
-    min-height: 26px;
+    min-width: 30px;
+    min-height: 30px;
     padding: 0;
     border-radius: 999px;
     border: 1px solid @kalam_border;
     background: @kalam_surface_2;
     color: @kalam_text_dim;
-    font-size: 13px;
+    font-size: 15px;
 }
 
 button.kalam-reader-dict-icon:hover {
@@ -3938,11 +3942,11 @@ button.kalam-reader-dict-icon:disabled {
 }
 
 .kalam-reader-dict-body {
-    padding: 4px 16px 40px 16px;
+    padding: 4px 20px 24px 20px;
 }
 
 .kalam-reader-dict-section {
-    margin: 14px 0 6px 0;
+    margin: 20px 0 10px 0;
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -3975,11 +3979,12 @@ button.kalam-reader-dict-icon:disabled {
 
 .kalam-reader-dict-def {
     font-size: 13px;
+    line-height: 1.6;
     color: @kalam_text;
 }
 
 .kalam-reader-dict-example {
-    font-family: Georgia, "DejaVu Serif", serif;
+    font-family: "Fraunces", serif;
     font-style: italic;
     font-size: 12px;
     color: @kalam_text_dim;
@@ -3997,7 +4002,7 @@ button.kalam-reader-dict-icon:disabled {
 }
 
 button.kalam-reader-dict-more {
-    margin-top: 6px;
+    margin-top: 8px;
     padding: 0;
     border: none;
     background: transparent;
@@ -4015,14 +4020,14 @@ button.kalam-reader-dict-more:hover {
 }
 
 button.kalam-reader-dict-chip {
-    padding: 3px 11px;
+    padding: 4px 12px;
     border-radius: 999px;
-    font-size: 11.5px;
+    font-size: 12px;
 }
 
 button.kalam-reader-dict-chip-syn {
     border: 1px solid alpha(@kalam_accent, 0.30);
-    background: alpha(@kalam_accent, 0.14);
+    background: alpha(@kalam_accent, 0.15);
     color: @kalam_accent;
 }
 
@@ -4032,8 +4037,8 @@ button.kalam-reader-dict-chip-syn:hover {
 }
 
 button.kalam-reader-dict-chip-ant {
-    border: 1px solid alpha(#e06c75, 0.28);
-    background: alpha(#e06c75, 0.13);
+    border: 1px solid alpha(#e06c75, 0.30);
+    background: alpha(#e06c75, 0.14);
     color: #e06c75;
 }
 
@@ -4043,22 +4048,23 @@ button.kalam-reader-dict-chip-ant:hover {
 }
 
 .kalam-reader-dict-idiom {
-    margin-bottom: 8px;
-    padding: 8px 11px;
+    margin-bottom: 10px;
+    padding: 10px 12px;
     border: 1px solid @kalam_border;
-    border-radius: 9px;
+    border-radius: 10px;
     background: @kalam_surface_2;
 }
 
 .kalam-reader-dict-idiom-phrase {
-    font-family: Georgia, "DejaVu Serif", serif;
+    font-family: "Fraunces", serif;
     font-style: italic;
-    font-size: 12.5px;
+    font-size: 13px;
     color: @kalam_text;
 }
 
 .kalam-reader-dict-idiom-def {
     font-size: 12px;
+    line-height: 1.55;
     color: @kalam_text;
 }
 
