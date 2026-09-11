@@ -253,7 +253,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chapbook-core"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#d325d2bca6ef08968447e854abad1dc46fe92b82"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#90dd0948e0b35495dca22d7d072243ad41ce8206"
 dependencies = [
  "log",
  "mezzotint",
@@ -263,7 +263,7 @@ dependencies = [
 [[package]]
 name = "chapbook-epub"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#d325d2bca6ef08968447e854abad1dc46fe92b82"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#90dd0948e0b35495dca22d7d072243ad41ce8206"
 dependencies = [
  "chapbook-core",
  "quick-xml 0.42.0",
@@ -275,7 +275,7 @@ dependencies = [
 [[package]]
 name = "chapbook-layout"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#d325d2bca6ef08968447e854abad1dc46fe92b82"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#90dd0948e0b35495dca22d7d072243ad41ce8206"
 dependencies = [
  "app_units",
  "chapbook-core",
@@ -305,7 +305,7 @@ dependencies = [
 [[package]]
 name = "chapbook-paint"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#d325d2bca6ef08968447e854abad1dc46fe92b82"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#90dd0948e0b35495dca22d7d072243ad41ce8206"
 dependencies = [
  "chapbook-core",
  "cosmic-text",
@@ -314,7 +314,7 @@ dependencies = [
 [[package]]
 name = "chapbook-reader"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#d325d2bca6ef08968447e854abad1dc46fe92b82"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#90dd0948e0b35495dca22d7d072243ad41ce8206"
 dependencies = [
  "chapbook-core",
  "chapbook-epub",
@@ -331,7 +331,7 @@ dependencies = [
 [[package]]
 name = "chapbook-render-tinyskia"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#d325d2bca6ef08968447e854abad1dc46fe92b82"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#90dd0948e0b35495dca22d7d072243ad41ce8206"
 dependencies = [
  "chapbook-core",
  "chapbook-paint",
@@ -1934,7 +1934,7 @@ dependencies = [
 [[package]]
 name = "kalam-reader"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#d325d2bca6ef08968447e854abad1dc46fe92b82"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#90dd0948e0b35495dca22d7d072243ad41ce8206"
 dependencies = [
  "chapbook-core",
  "chapbook-reader",
@@ -3132,9 +3132,9 @@ checksum = "9b0e903ee191d8f7a8fbf0d712c3a1699d19e04ceba5ad1eb673053c7d938a09"
 
 [[package]]
 name = "smallvec"
-version = "1.16.0"
+version = "1.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9be42f50aa861c555654aa3a37f52f4b1074bacf4e48fe0ef7fa584e80f1f0f"
+checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 dependencies = [
  "serde",
 ]
