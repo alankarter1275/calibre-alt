@@ -265,6 +265,12 @@ pub(crate) fn position_to_json(l: &LayeredLocator) -> String {
 /// buttons carrying the same 17 px icons. `resources/style.css` under
 /// `kalam-reader-chip*` holds the old chip's numbers.
 ///
+/// The engine now hands the selection's *band* rects (glyph box plus 2 px)
+/// rather than the line boxes, so the chip sits closer to the text than it
+/// used to — close enough to cover the start handle's grip, which stands a
+/// few px above the first band. The popover is pointed at the band with
+/// that much headroom added, so the chip clears the grip.
+///
 /// Returns a popover already pointed at the selection; the caller keeps it
 /// in the model so `None` (selection cleared) can pop it down.
 pub(crate) fn build_selection_chip(
@@ -334,10 +340,19 @@ pub(crate) fn build_selection_chip(
     popover.set_autohide(false);
     popover.set_has_arrow(false);
     popover.set_position(gtk::PositionType::Top);
-    popover.set_pointing_to(Some(rect));
+    let mut anchor = *rect;
+    anchor.set_y(anchor.y() - HANDLE_HEADROOM);
+    anchor.set_height(anchor.height() + HANDLE_HEADROOM);
+    popover.set_pointing_to(Some(&anchor));
     popover.add_css_class("kalam-reader-chip-popover");
     popover
 }
+
+/// How far above the selection's first band the chip is pointed: the
+/// engine's 5 px teardrop grip stands a shade over 6 px above the band
+/// (`kalam-reader`'s `handles.rs`: its tip is on the band's edge and the
+/// circle hangs away from the text), plus a little air.
+const HANDLE_HEADROOM: i32 = 8;
 
 /// One pixel of the chip's border colour at 18 per cent, twenty pixels
 /// tall — `.kalam-chip-sep`, which separated the chip's three groups.
