@@ -96,7 +96,7 @@ TAGS = [
 ]
 
 
-def epub_bytes(title: str, author: str, chapters: int = 6) -> bytes:
+def epub_bytes(title: str, author: str, chapters: int = 6, nested: bool = False) -> bytes:
     """A small but genuinely valid EPUB, so the reader has a real book to open.
 
     Shape, per the spec: an uncompressed `mimetype` entry first, then
@@ -108,6 +108,13 @@ def epub_bytes(title: str, author: str, chapters: int = 6) -> bytes:
     runs produce byte-identical books. It is deliberately long enough to paginate
     (six chapters, ~28 paragraphs each): a one-line chapter would render, but it
     would not exercise line breaking, hyphenation or a page turn.
+
+    `nested=True` writes a two-level table of contents instead of a flat one:
+    two parts, each holding half the chapters. Real books do this, and it is
+    the shape that broke the TOC sidebar -- the list drew top-level entries
+    only, so a Part -> Chapter book showed two part headings and no chapters
+    at all. Both the nav and the NCX nest, so it does not matter which one the
+    reader picks up.
     """
     rng = random.Random(len(title) * 31 + len(author))
     words = (
@@ -147,10 +154,29 @@ def epub_bytes(title: str, author: str, chapters: int = 6) -> bytes:
     uid = f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, title + '|' + author)}"
     labels = [f"Chapter {n}" for n in range(1, chapters + 1)]
 
-    nav_items = "".join(
-        f'<li><a href="ch{n}.xhtml">{escape(label)}</a></li>'
-        for n, label in enumerate(labels, start=1)
-    )
+    def nav_item(n: int, label: str) -> str:
+        return f'<li><a href="ch{n}.xhtml">{escape(label)}</a></li>'
+
+    if nested:
+        # Part One -> odd chapters, Part Two -> even ones. The parts link to
+        # their first chapter, which is what a real part heading usually does.
+        half = (chapters + 1) // 2
+        parts = []
+        for part, first in enumerate((1, 1 + half)):
+            if first > chapters:
+                continue
+            body_items = "".join(
+                nav_item(n, labels[n - 1]) for n in range(first, min(first + half, chapters + 1))
+            )
+            name = f"Part {'One' if part == 0 else 'Two'}"
+            parts.append(
+                f'<li><a href="ch{first}.xhtml">{name}</a><ol>{body_items}</ol></li>'
+            )
+        nav_items = "".join(parts)
+    else:
+        nav_items = "".join(
+            nav_item(n, label) for n, label in enumerate(labels, start=1)
+        )
     nav = (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         '<!DOCTYPE html>\n'
@@ -162,11 +188,37 @@ def epub_bytes(title: str, author: str, chapters: int = 6) -> bytes:
         f"{nav_items}</ol></nav></body>\n</html>\n"
     )
 
-    nav_points = "".join(
-        f'<navPoint id="np{n}" playOrder="{n}"><navLabel><text>{escape(label)}'
-        f'</text></navLabel><content src="ch{n}.xhtml"/></navPoint>'
-        for n, label in enumerate(labels, start=1)
-    )
+    if nested:
+        half = (chapters + 1) // 2
+        points = []
+        play = 0
+        for part, first in enumerate((1, 1 + half)):
+            if first > chapters:
+                continue
+            # The part's own playOrder comes before its chapters', so it
+            # has to be captured before the inner loop moves `play` on.
+            play += 1
+            part_play = play
+            inner = []
+            for n in range(first, min(first + half, chapters + 1)):
+                play += 1
+                inner.append(
+                    f'<navPoint id="np{n}" playOrder="{play}"><navLabel>'
+                    f'<text>{escape(labels[n - 1])}</text></navLabel>'
+                    f'<content src="ch{n}.xhtml"/></navPoint>'
+                )
+            points.append(
+                f'<navPoint id="part{part}" playOrder="{part_play}"><navLabel>'
+                f'<text>Part {"One" if part == 0 else "Two"}</text></navLabel>'
+                f'<content src="ch{first}.xhtml"/>{"".join(inner)}</navPoint>'
+            )
+        nav_points = "".join(points)
+    else:
+        nav_points = "".join(
+            f'<navPoint id="np{n}" playOrder="{n}"><navLabel><text>{escape(label)}'
+            f'</text></navLabel><content src="ch{n}.xhtml"/></navPoint>'
+            for n, label in enumerate(labels, start=1)
+        )
     ncx = (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n'
@@ -356,7 +408,10 @@ def main() -> int:
 
         bdir = library / book_uuid
         bdir.mkdir(parents=True, exist_ok=True)
-        (bdir / "book.epub").write_bytes(epub_bytes(title, author))
+        # Book 1 is the one the reader screenshot opens (`read-1`), so that
+        # is the one that carries the nested table of contents.
+        nested_toc = i == 0
+        (bdir / "book.epub").write_bytes(epub_bytes(title, author, nested=nested_toc))
 
         cover_name = None
         if i % args.no_cover_every != 0:

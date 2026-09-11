@@ -3831,67 +3831,240 @@ button.kalam-reader-chip-action:hover {
     background: alpha(#000, 0.08);
 }
 
+/* ── the dictionary card ────────────────────────────────────────────────
+   The old WebView popup's design as GTK widgets; the spec is kalam-engine
+   docs/kalam/RESEARCH.md §R12f and the original is inject_reading_shell's
+   showDictPopup + its #kalam-dict-popup CSS (base commit, epub_book.rs).
+   Every colour is an app token, so the card follows the app theme rather
+   than the book's reading theme. */
+
+.kalam-reader-dict-popover {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+}
+
 .kalam-reader-dict-popover > contents {
-    border-radius: 14px;
+    border-radius: 18px;
+    border: 1px solid @kalam_border;
+    background: @kalam_surface;
+    box-shadow: 0 18px 48px alpha(#000, 0.45);
 }
 
 .kalam-reader-dict {
     color: @kalam_text;
 }
 
+.kalam-reader-dict-head {
+    padding: 14px 16px 10px 16px;
+    border-bottom: 1px solid @kalam_border;
+    background: @kalam_surface;
+    box-shadow: 0 3px 10px alpha(#000, 0.22);
+}
+
+/* Both of these exist so a long word or definition wraps inside the card
+   instead of widening it: a box's minimum width is its widest child's. */
+.kalam-reader-dict-head-left,
+.kalam-reader-dict-sense {
+    min-width: 0;
+}
+
 .kalam-reader-dict-word {
-    font-weight: 700;
-    font-size: 1.08rem;
+    font-family: Georgia, "DejaVu Serif", serif;
+    font-size: 22px;
+    font-weight: 600;
 }
 
 .kalam-reader-dict-pron {
-    opacity: 0.7;
-    font-style: italic;
+    font-family: monospace;
+    font-size: 10px;
+    color: @kalam_text_dim;
 }
 
 .kalam-reader-dict-pos {
-    opacity: 0.7;
-    font-size: 0.85rem;
+    margin-top: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: alpha(@kalam_accent, 0.14);
+    color: @kalam_accent;
+    font-size: 10px;
+    font-style: italic;
 }
 
-.kalam-reader-dict-sense {
-    font-size: 0.92rem;
+.kalam-reader-dict-actions {
+    margin-top: 2px;
+}
+
+button.kalam-reader-dict-icon {
+    min-width: 26px;
+    min-height: 26px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid @kalam_border;
+    background: @kalam_surface_2;
+    color: @kalam_text_dim;
+    font-size: 13px;
+}
+
+button.kalam-reader-dict-icon:hover {
+    background: @kalam_border;
+    color: @kalam_text;
+}
+
+button.kalam-reader-dict-icon.saved {
+    color: @kalam_accent;
+    border-color: @kalam_accent;
+    background: alpha(@kalam_accent, 0.14);
+}
+
+button.kalam-reader-dict-icon:disabled {
+    opacity: 0.5;
+}
+
+.kalam-reader-dict-scroll {
+    background: transparent;
+}
+
+.kalam-reader-dict-scroll scrollbar {
+    opacity: 0;
+    min-width: 0;
+    min-height: 0;
+}
+
+.kalam-reader-dict-fade {
+    background: linear-gradient(to bottom, transparent, @kalam_surface);
+    border-radius: 0 0 18px 18px;
+}
+
+.kalam-reader-dict-body {
+    padding: 4px 16px 40px 16px;
+}
+
+.kalam-reader-dict-section {
+    margin: 14px 0 6px 0;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: @kalam_text_dim;
+}
+
+.kalam-reader-dict-divider {
+    margin: 8px 0 4px 0;
+    padding-top: 6px;
+    border-top: 1px solid @kalam_border;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: @kalam_text_dim;
+}
+
+.kalam-reader-dict-senses > .kalam-reader-dict-divider:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.kalam-reader-dict-num {
+    min-width: 16px;
+    margin-top: 3px;
+    font-family: monospace;
+    font-size: 10px;
+    color: @kalam_accent;
+}
+
+.kalam-reader-dict-def {
+    font-size: 13px;
+    color: @kalam_text;
 }
 
 .kalam-reader-dict-example {
-    opacity: 0.72;
+    font-family: Georgia, "DejaVu Serif", serif;
     font-style: italic;
-    font-size: 0.88rem;
+    font-size: 12px;
+    color: @kalam_text_dim;
 }
 
-.kalam-reader-dict-none {
-    opacity: 0.7;
-    font-size: 0.9rem;
-}
-
-.kalam-reader-dict-cap {
-    opacity: 0.6;
-    font-size: 0.78rem;
-    text-transform: uppercase;
-}
-
-button.kalam-reader-dict-link {
+.kalam-reader-dict-badge {
     padding: 1px 7px;
     border-radius: 999px;
-    background: transparent;
-    font-size: 0.85rem;
+    border: 1px solid alpha(@kalam_accent, 0.32);
+    background: alpha(@kalam_accent, 0.14);
+    color: @kalam_accent;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
 }
 
-button.kalam-reader-dict-link:hover {
-    background: alpha(#000, 0.08);
+button.kalam-reader-dict-more {
+    margin-top: 6px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+    color: @kalam_accent;
+    font-size: 11.5px;
+}
+
+button.kalam-reader-dict-more:hover {
+    color: @kalam_text;
+}
+
+.kalam-reader-dict-chips {
+    margin: 0;
+}
+
+button.kalam-reader-dict-chip {
+    padding: 3px 11px;
+    border-radius: 999px;
+    font-size: 11.5px;
+}
+
+button.kalam-reader-dict-chip-syn {
+    border: 1px solid alpha(@kalam_accent, 0.30);
+    background: alpha(@kalam_accent, 0.14);
+    color: @kalam_accent;
+}
+
+button.kalam-reader-dict-chip-syn:hover {
+    border-color: @kalam_accent;
+    background: alpha(@kalam_accent, 0.25);
+}
+
+button.kalam-reader-dict-chip-ant {
+    border: 1px solid alpha(#e06c75, 0.28);
+    background: alpha(#e06c75, 0.13);
+    color: #e06c75;
+}
+
+button.kalam-reader-dict-chip-ant:hover {
+    border-color: #e06c75;
+    background: alpha(#e06c75, 0.25);
 }
 
 .kalam-reader-dict-idiom {
-    font-size: 0.88rem;
-    opacity: 0.85;
+    margin-bottom: 8px;
+    padding: 8px 11px;
+    border: 1px solid @kalam_border;
+    border-radius: 9px;
+    background: @kalam_surface_2;
 }
 
-button.kalam-reader-dict-action {
-    padding: 3px 10px;
-    border-radius: 999px;
+.kalam-reader-dict-idiom-phrase {
+    font-family: Georgia, "DejaVu Serif", serif;
+    font-style: italic;
+    font-size: 12.5px;
+    color: @kalam_text;
 }
+
+.kalam-reader-dict-idiom-def {
+    font-size: 12px;
+    color: @kalam_text;
+}
+
+.kalam-reader-dict-empty {
+    padding: 18px 4px;
+    font-size: 13px;
+    color: @kalam_text_dim;
+}
+
