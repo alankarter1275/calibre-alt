@@ -256,17 +256,31 @@ pub(crate) fn position_to_json(l: &LayeredLocator) -> String {
 // The selection chip and the dictionary popover (GTK, no JS)
 // ---------------------------------------------------------------------
 
-/// The chip that appears over a finished selection: five colours, then
-/// quote, dictionary, copy — the same four actions the JS chip had.
-/// Returns a popover already pointed at the selection; the caller keeps
-/// it in the model so `None` (selection cleared) can pop it down.
+/// The chip that appears over a finished selection — the old WebKit
+/// reader's `#kalam-chip`, rebuilt in GTK.
+///
+/// The JS chip is the spec, button for button: a highlighter button that
+/// opens the five swatches inline (the row starts hidden), then quote,
+/// dictionary and copy, 1 px separators between the groups, 32 px round
+/// buttons carrying the same 17 px icons. `resources/style.css` under
+/// `kalam-reader-chip*` holds the old chip's numbers.
+///
+/// Returns a popover already pointed at the selection; the caller keeps it
+/// in the model so `None` (selection cleared) can pop it down.
 pub(crate) fn build_selection_chip(
     host: &gtk::Widget,
     rect: &gtk::gdk::Rectangle,
     sender: &ComponentSender<ReaderModel>,
 ) -> gtk::Popover {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 2);
     row.add_css_class("kalam-reader-chip");
+
+    // The swatches, hidden until the highlighter button asks for them —
+    // `.kalam-chip-colors`, which opened the same way and closed again
+    // every time the chip was shown.
+    let colors = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    colors.add_css_class("kalam-reader-chip-colors");
+    colors.set_visible(false);
     for color in [
         HighlightColor::Yellow,
         HighlightColor::Green,
@@ -277,26 +291,43 @@ pub(crate) fn build_selection_chip(
         let dot = gtk::Button::new();
         dot.add_css_class("kalam-reader-chip-dot");
         dot.add_css_class(&format!("kalam-reader-chip-dot-{}", color.name()));
-        dot.set_tooltip_text(Some(color.name()));
+        dot.set_tooltip_text(Some(&format!("Highlight {}", color.name())));
         let tx = sender.input_sender().clone();
         dot.connect_clicked(move |_| {
             let _ = tx.send(ReaderMsg::HighlightSelection(color.name().to_string()));
         });
-        row.append(&dot);
+        colors.append(&dot);
     }
-    for (label, msg) in [
-        ("Quote", ReaderMsg::QuoteSelection),
-        ("Dictionary", ReaderMsg::LookUpSelection),
-        ("Copy", ReaderMsg::CopySelection),
+
+    let highlight = chip_icon_button(ChipIcon::Highlight, "Highlight");
+    {
+        let colors = colors.clone();
+        highlight.connect_clicked(move |_| {
+            let showing = !colors.is_visible();
+            colors.set_visible(showing);
+        });
+    }
+    row.append(&highlight);
+    row.append(&colors);
+
+    for (icon, tooltip, msg) in [
+        (ChipIcon::Quote, "Save quote", ReaderMsg::QuoteSelection),
+        (
+            ChipIcon::Dictionary,
+            "Dictionary (D)",
+            ReaderMsg::LookUpSelection,
+        ),
+        (ChipIcon::Copy, "Copy", ReaderMsg::CopySelection),
     ] {
-        let btn = gtk::Button::with_label(label);
-        btn.add_css_class("kalam-reader-chip-action");
+        row.append(&chip_separator());
+        let button = chip_icon_button(icon, tooltip);
         let tx = sender.input_sender().clone();
-        btn.connect_clicked(move |_| {
+        button.connect_clicked(move |_| {
             let _ = tx.send(msg.clone());
         });
-        row.append(&btn);
+        row.append(&button);
     }
+
     let popover = gtk::Popover::new();
     popover.set_child(Some(&row));
     popover.set_parent(host);
@@ -306,6 +337,138 @@ pub(crate) fn build_selection_chip(
     popover.set_pointing_to(Some(rect));
     popover.add_css_class("kalam-reader-chip-popover");
     popover
+}
+
+/// One pixel of the chip's border colour at 18 per cent, twenty pixels
+/// tall — `.kalam-chip-sep`, which separated the chip's three groups.
+fn chip_separator() -> gtk::Box {
+    let sep = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    sep.add_css_class("kalam-reader-chip-sep");
+    sep.set_valign(gtk::Align::Center);
+    sep
+}
+
+/// The four icons the JS chip drew as inline SVG. Each is authored in a
+/// 24-unit square, the same coordinates the SVG used.
+#[derive(Clone, Copy)]
+enum ChipIcon {
+    /// The highlighter: `m15 4 5 5-9 9H6v-5l9-9Z`, the nib line across it,
+    /// and the rule underneath.
+    Highlight,
+    /// The filled double quote (`kalam-chip-icon-fill` in the old CSS).
+    Quote,
+    /// The letters "Aa". Drawn as strokes rather than set as text: the
+    /// other three icons are paths, and a cairo drawing has no business
+    /// depending on which font fontconfig picks.
+    Dictionary,
+    /// The two sheets of the copy icon.
+    Copy,
+}
+
+/// A round chip button with a 17 px cairo drawing inside it. The colour is
+/// read back from CSS via `widget.color()`, so the palette stays in one
+/// place, and the drawing scales with the area.
+fn chip_icon_button(icon: ChipIcon, tooltip: &str) -> gtk::Button {
+    let area = gtk::DrawingArea::new();
+    area.set_content_width(17);
+    area.set_content_height(17);
+    area.set_valign(gtk::Align::Center);
+    area.set_draw_func(move |area, cr, w, h| {
+        let colour = area.color();
+        cr.set_source_rgba(
+            colour.red() as f64,
+            colour.green() as f64,
+            colour.blue() as f64,
+            colour.alpha() as f64,
+        );
+        let scale = (w.min(h) as f64) / 24.0;
+        if scale <= 0.0 {
+            return;
+        }
+        cr.scale(scale, scale);
+        cr.set_line_width(1.8);
+        cr.set_line_cap(gtk::cairo::LineCap::Round);
+        cr.set_line_join(gtk::cairo::LineJoin::Round);
+        match icon {
+            ChipIcon::Highlight => {
+                cr.move_to(15.0, 4.0);
+                cr.line_to(20.0, 9.0);
+                cr.line_to(11.0, 18.0);
+                cr.line_to(6.0, 18.0);
+                cr.line_to(6.0, 13.0);
+                cr.close_path();
+                cr.move_to(13.0, 6.0);
+                cr.line_to(18.0, 11.0);
+                cr.move_to(4.0, 20.0);
+                cr.line_to(12.0, 20.0);
+                cr.stroke();
+            }
+            ChipIcon::Quote => {
+                // Filled, not stroked: the old icon was the fill variant.
+                for dx in [0.0, 10.0] {
+                    cr.move_to(4.0 + dx, 11.0);
+                    cr.line_to(4.0 + dx, 8.0);
+                    cr.line_to(8.0 + dx, 8.0);
+                    cr.line_to(8.0 + dx, 11.0);
+                    cr.curve_to(8.0 + dx, 14.0, 6.7 + dx, 16.0, 4.0 + dx, 17.0);
+                    cr.line_to(4.0 + dx, 14.9);
+                    cr.curve_to(5.1 + dx, 14.4, 5.8 + dx, 13.6, 6.0 + dx, 12.0);
+                    cr.line_to(4.0 + dx, 12.0);
+                    cr.close_path();
+                }
+                cr.fill();
+            }
+            ChipIcon::Dictionary => {
+                // "A" at the old icon's 12 units, then "a" at 9.
+                cr.set_line_width(1.7);
+                cr.move_to(3.2, 16.2);
+                cr.line_to(7.9, 7.2);
+                cr.line_to(12.6, 16.2);
+                cr.move_to(5.3, 13.0);
+                cr.line_to(10.5, 13.0);
+                cr.stroke();
+                cr.set_line_width(1.5);
+                cr.arc(16.2, 16.4, 2.35, 0.0, std::f64::consts::TAU);
+                cr.move_to(18.55, 13.9);
+                cr.line_to(18.55, 19.0);
+                cr.stroke();
+            }
+            ChipIcon::Copy => {
+                // The back sheet. Its right edge is the stub the JS path
+                // started with (`M16 8 V6`); the rest of it hides behind the
+                // front sheet, so it is not drawn.
+                cr.move_to(16.0, 8.0);
+                cr.line_to(16.0, 6.0);
+                cr.arc_negative(14.0, 6.0, 2.0, 0.0, -std::f64::consts::FRAC_PI_2);
+                cr.line_to(5.0, 4.0);
+                cr.arc_negative(5.0, 6.0, 2.0, -std::f64::consts::FRAC_PI_2, -std::f64::consts::PI);
+                cr.line_to(3.0, 15.0);
+                cr.arc_negative(5.0, 15.0, 2.0, std::f64::consts::PI, std::f64::consts::FRAC_PI_2);
+                cr.line_to(8.0, 17.0);
+                // The front sheet: the SVG's rounded rect (8,8 11x12 r2).
+                rounded_rect(cr, 8.0, 8.0, 11.0, 12.0, 2.0);
+                cr.stroke();
+            }
+        }
+    });
+
+    let button = gtk::Button::new();
+    button.add_css_class("kalam-reader-chip-action");
+    button.set_child(Some(&area));
+    button.set_tooltip_text(Some(tooltip));
+    button
+}
+
+/// Trace a rounded rectangle as four corner arcs — cairo's own
+/// `rectangle()` cannot round the corners the SVG rect had.
+fn rounded_rect(cr: &gtk::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
+    use std::f64::consts::{FRAC_PI_2, PI};
+    cr.new_sub_path();
+    cr.arc(x + w - r, y + r, r, -FRAC_PI_2, 0.0);
+    cr.arc(x + w - r, y + h - r, r, 0.0, FRAC_PI_2);
+    cr.arc(x + r, y + h - r, r, FRAC_PI_2, PI);
+    cr.arc(x + r, y + r, r, PI, 3.0 * FRAC_PI_2);
+    cr.close_path();
 }
 
 /// One sense as the card draws it.

@@ -722,13 +722,33 @@ impl Component for ReaderModel {
             engine::show_all_highlights(view, &model.all_book_annotations);
         }
 
+        // The keys need the view too: Escape drops a standing selection
+        // before it does anything else, the way it did in the old shell.
+        let view_for_keys = model.view.clone();
         let key = gtk::EventControllerKey::new();
         let s = sender.clone();
         key.connect_key_pressed(move |_, keyval, _, _| {
             use gtk::gdk::Key;
             match keyval {
                 Key::Escape => {
+                    // With a selection up, Escape is "never mind" — it drops
+                    // the selection and the chip; closing the book is what
+                    // is left when nothing is selected. The old shell's
+                    // Escape did the same, chip and bands and all.
+                    if let Some(view) = &view_for_keys {
+                        if view.selected_text().is_some() {
+                            view.clear_selection();
+                            return gtk::glib::Propagation::Stop;
+                        }
+                    }
                     s.input(ReaderMsg::Close);
+                    gtk::glib::Propagation::Stop
+                }
+                Key::d | Key::D => {
+                    // The chip's dictionary button was labelled "D" in the
+                    // old reader; the shortcut goes with it. Without a
+                    // selection the message does nothing.
+                    s.input(ReaderMsg::LookUpSelection);
                     gtk::glib::Propagation::Stop
                 }
                 Key::n | Key::N => {
@@ -981,6 +1001,13 @@ impl Component for ReaderModel {
             ReaderMsg::EnginePosition(chapter, fraction) => {
                 // The old "progress" + "chapter-changed" bridge messages, in
                 // one: where the engine is, on every page turn.
+                //
+                // A page turn means the tap that caused it already dropped
+                // the selection in the widget, so the chip must not outlive
+                // the page it was pointing at. A tap in the middle band
+                // clears the selection too, but the widget says nothing on
+                // that path; that one is with the engine.
+                engine::dismiss(self.selection_chip.take());
                 let changed = chapter != self.chapter;
                 self.chapter = chapter.min(self.chapter_count.saturating_sub(1));
                 self.fraction = fraction.clamp(0.0, 1.0);
