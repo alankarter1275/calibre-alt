@@ -1,6 +1,4 @@
-src/pages/reader/engine.rs:405:13: [1m[91merror[0m: using `contains()` instead of `iter().any()` is more efficient: help: try: `first_seen.contains(&key)`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
+(no lines matched; last 100 lines of output)
 
 === last 80 lines of the raw log ===
 --- system libraries (the agent cannot read Actions logs, and
@@ -19,8 +17,8 @@ glib-2.0: 2.88.0
 [1m[92m   Compiling[0m toml_edit v0.25.15+spec-1.1.0
 [1m[92m    Checking[0m chapbook-paint v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#6eff3d53)
 [1m[92m    Checking[0m chapbook-epub v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#6eff3d53)
-[1m[92m    Checking[0m chapbook-layout v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#6eff3d53)
 [1m[92m    Checking[0m chapbook-render-tinyskia v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#6eff3d53)
+[1m[92m    Checking[0m chapbook-layout v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#6eff3d53)
 [1m[92m   Compiling[0m proc-macro-crate v3.5.0
 [1m[92m    Checking[0m chapbook-reader v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#6eff3d53)
 [1m[92m   Compiling[0m gtk4-macros v0.11.4
@@ -29,8 +27,5 @@ glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam-reader v0.1.0 (https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#6eff3d53)
 [1m[92m    Checking[0m relm4 v0.11.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/calibre-alt/calibre-alt)
-src/pages/reader/engine.rs:405:13: [1m[91merror[0m: using `contains()` instead of `iter().any()` is more efficient: help: try: `first_seen.contains(&key)`
-[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 1 previous error
-[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
-[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 1 previous error
---- run 34554600077 ---
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 37.67s
+--- run 34554781006 ---
