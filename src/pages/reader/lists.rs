@@ -61,7 +61,7 @@ impl ReaderModel {
         let position = rows
             .iter()
             .enumerate()
-            .filter(|(_, row)| row.spine.is_some_and(|idx| idx <= self.chapter))
+            .filter(|(_, row)| row.spine_index.is_some_and(|idx| idx <= self.chapter))
             .map(|(i, _)| i)
             .next_back()
             .unwrap_or(0);

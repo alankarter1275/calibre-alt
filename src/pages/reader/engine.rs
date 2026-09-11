@@ -408,7 +408,7 @@ fn pos_group_keys(senses: &[DictSense]) -> Vec<String> {
     }
     let mut ordered: Vec<String> = POS_GROUP_ORDER
         .iter()
-        .filter(|known| first_seen.iter().any(|key| key == known))
+        .filter(|known| first_seen.iter().any(|key| key.as_str() == *known))
         .map(|known| (*known).to_string())
         .collect();
     for key in first_seen {
