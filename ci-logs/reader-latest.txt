@@ -7,7 +7,7 @@ seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.5944.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.6045.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -25,19 +25,6 @@ toplevel windows seen: 1
 focused: 1
   shot: 02-read-1-settling (203595 bytes)
   shot: 03-read-1-settled (203595 bytes)
-
-=== tap check (TAP=1) ===
-window: 1600x1000 at 0,0  seat=seat0
-  shot: 05-after-tap-1 (203595 bytes)
-tap 1 at 1200,500 (frac 0.75): no change
-  shot: 05-after-tap-2 (203595 bytes)
-tap 2 at 400,500 (frac 0.25): no change
-  shot: 05-after-tap-3 (203595 bytes)
-tap 3 at 800,500 (frac 0.50): no change
-tap check: each line compares its shot with 03-read-1-settled.png.
-           A change means the tap reached the page. No change at any
-           of the three means the widget ignored it or sway did not
-           deliver it -- the owner's own tap decides which.
 navigation: app accepted route 'read-1'
 navigation: 'read-1' is not a grid page; no grid_build expected
   shot: 04-home-for-comparison (62320 bytes)
@@ -45,13 +32,13 @@ navigation: 'read-1' differs from Home -- the page really did change
 navigation: OK -- the images below are 'read-1'
 
 === timing lines from the app ===
-  [timing] startup_db_open         6.0 ms
+  [timing] startup_db_open         6.3 ms
   [timing] startup_dicts           0.1 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      2.7 ms
-  [timing] window_shown          164.3 ms
+  [timing] startup_first_page      2.8 ms
+  [timing] window_shown          169.0 ms
   [timing] page_cache_miss           1
-  [timing] book_open               4.0 ms
+  [timing] book_open               4.1 ms
   [timing] thumbs_backfilled        50
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
@@ -62,9 +49,6 @@ navigation: OK -- the images below are 'read-1'
   02-read-1-settling.png: 1600x1000  coloured=0.0%  lit=100.0%  <-- almost no colour; covers likely did NOT load
   03-read-1-settled.png: 1600x1000  coloured=0.0%  lit=100.0%  <-- almost no colour; covers likely did NOT load
   04-home-for-comparison.png: 1600x1000  coloured=10.8%  lit=100.0%
-  05-after-tap-1.png: 1600x1000  coloured=0.0%  lit=100.0%  <-- almost no colour; covers likely did NOT load
-  05-after-tap-2.png: 1600x1000  coloured=0.0%  lit=100.0%  <-- almost no colour; covers likely did NOT load
-  05-after-tap-3.png: 1600x1000  coloured=0.0%  lit=100.0%  <-- almost no colour; covers likely did NOT load
   (numbers only -- no threshold is enforced yet; see the docstring)
 
 === screenshot fingerprints ===
@@ -72,35 +56,29 @@ navigation: OK -- the images below are 'read-1'
   1fb93d1c26d4f4bc2366279ae05b40d1  ci-shots-reader/02-read-1-settling.png
   1fb93d1c26d4f4bc2366279ae05b40d1  ci-shots-reader/03-read-1-settled.png
   7c2b16c89e4a7feac7135a9dc9b1285c  ci-shots-reader/04-home-for-comparison.png
-  1fb93d1c26d4f4bc2366279ae05b40d1  ci-shots-reader/05-after-tap-1.png
-  1fb93d1c26d4f4bc2366279ae05b40d1  ci-shots-reader/05-after-tap-2.png
-  1fb93d1c26d4f4bc2366279ae05b40d1  ci-shots-reader/05-after-tap-3.png
 
 === app stderr (non-timing lines) ===
   
-  (kalam:5981): Gtk-WARNING **: 08:58:42.938: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (kalam:6082): Gtk-WARNING **: 09:09:45.729: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=read-1 — navigating
 
 === peak memory ===
-books=139 peak_rss_kb=122852 peak_rss_mb=119
+books=139 peak_rss_kb=123036 peak_rss_mb=120
 
 === shutting down ===
 
 === artifacts ===
-  total 1296
-  drwxr-xr-x  2 runner runner   4096 Sep 11 08:59 .
-  drwxr-xr-x 16 runner runner   4096 Sep 11 08:58 ..
-  -rw-r--r--  1 runner runner 203595 Sep 11 08:59 01-read-1.png
-  -rw-r--r--  1 runner runner 203595 Sep 11 08:59 02-read-1-settling.png
-  -rw-r--r--  1 runner runner 203595 Sep 11 08:59 03-read-1-settled.png
-  -rw-r--r--  1 runner runner  62320 Sep 11 08:59 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner 203595 Sep 11 08:59 05-after-tap-1.png
-  -rw-r--r--  1 runner runner 203595 Sep 11 08:59 05-after-tap-2.png
-  -rw-r--r--  1 runner runner 203595 Sep 11 08:59 05-after-tap-3.png
-  -rw-r--r--  1 runner runner      0 Sep 11 08:59 grim.log
-  -rw-r--r--  1 runner runner    765 Sep 11 08:59 kalam-home.log
-  -rw-r--r--  1 runner runner    772 Sep 11 08:58 kalam.log
-  -rw-r--r--  1 runner runner   3891 Sep 11 08:59 report.txt
-  -rw-r--r--  1 runner runner     88 Sep 11 08:58 sway.log
-  -rw-r--r--  1 runner runner   7184 Sep 11 08:59 tree.json
---- run 34581108000 ---
+  total 696
+  drwxr-xr-x  2 runner runner   4096 Sep 11 09:10 .
+  drwxr-xr-x 16 runner runner   4096 Sep 11 09:09 ..
+  -rw-r--r--  1 runner runner 203595 Sep 11 09:10 01-read-1.png
+  -rw-r--r--  1 runner runner 203595 Sep 11 09:10 02-read-1-settling.png
+  -rw-r--r--  1 runner runner 203595 Sep 11 09:10 03-read-1-settled.png
+  -rw-r--r--  1 runner runner  62320 Sep 11 09:10 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner      0 Sep 11 09:10 grim.log
+  -rw-r--r--  1 runner runner    765 Sep 11 09:10 kalam-home.log
+  -rw-r--r--  1 runner runner    772 Sep 11 09:09 kalam.log
+  -rw-r--r--  1 runner runner   2788 Sep 11 09:10 report.txt
+  -rw-r--r--  1 runner runner     88 Sep 11 09:09 sway.log
+  -rw-r--r--  1 runner runner   7184 Sep 11 09:10 tree.json
+--- run 34582024530 ---
