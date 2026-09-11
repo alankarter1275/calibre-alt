@@ -9,4 +9,11 @@ not found
 libadwaita-1: 1.9.1
 glib-2.0: 2.88.0
 [1m[92m    Checking[0m kalam v0.1.0 (/home/runner/work/calibre-alt/calibre-alt)
-[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 24.50s
+src/pages/reader/engine.rs:404:17: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/pages/reader/engine.rs:419:17: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/pages/reader/engine.rs:429:17: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/pages/reader/engine.rs:434:17: [1m[91merror[0m: unused `std::result::Result` that must be used
+src/pages/reader/engine.rs:450:17: [1m[91merror[0m: unused `std::result::Result` that must be used
+[1m[91merror[0m: could not compile `kalam` (bin "kalam") due to 5 previous errors
+[1m[33mwarning[0m: build failed, waiting for other jobs to finish...
+[1m[91merror[0m: could not compile `kalam` (bin "kalam" test) due to 5 previous errors
