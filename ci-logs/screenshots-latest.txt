@@ -1,13 +1,13 @@
 === kalam screenshot run ===
 books=139 out=ci-shots settle=25
-binary: 38892824 bytes
+binary: 38899544 bytes
 
 === seeding 139 books ===
 seed-library: 139 books, 130 covers -> /tmp/kalam-ci-data/kalam
 
 === starting headless sway ===
 sway binary: /usr/bin/sway sway version 1.11
-SWAYSOCK=/run/user/1001/sway-ipc.1001.5459.sock
+SWAYSOCK=/run/user/1001/sway-ipc.1001.6758.sock
 sway up: {
   "human_readable": "1.11",
   "variant": "sway",
@@ -32,21 +32,21 @@ navigation: 'all-books' differs from Home -- the page really did change
 navigation: OK -- the images below are 'all-books'
 
 === timing lines from the app ===
-  [timing] startup_db_open         4.2 ms
+  [timing] startup_db_open         6.2 ms
   [timing] covers_queued            11
-  [timing] startup_first_page      3.5 ms
-  [timing] window_shown          165.5 ms
+  [timing] startup_first_page      4.4 ms
+  [timing] window_shown          210.4 ms
   [timing] page_cache_miss           1
-  [timing] covers_queued            45
-  [timing] grid_build              3.4 ms
+  [timing] covers_queued            38
+  [timing] grid_build              5.5 ms
   [timing] grid_cards               48
   [timing] grid_cards_total        139
-  [timing] covers_queued             6
   [timing] thumbs_backfilled        50
+  [timing] covers_queued             0
   [timing] thumbs_backfilled       100
   [timing] thumbs_backfilled       130
   [timing] thumbs_backfill_done      130
-  [timing] startup_dicts        1589.3 ms
+  [timing] startup_dicts        1865.9 ms
 
 === did the covers actually load? ===
   01-all-books.png: 1600x1000  coloured=21.6%  lit=100.0%
@@ -63,26 +63,26 @@ navigation: OK -- the images below are 'all-books'
 
 === app stderr (non-timing lines) ===
   
-  (kalam:5498): Gtk-WARNING **: 09:42:58.298: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
+  (kalam:6796): Gtk-WARNING **: 16:46:56.770: Unable to acquire the address of the accessibility bus: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files. If you are attempting to run GTK without a11y support, GTK_A11Y should be set to 'none'.
   kalam: KALAM_ROUTE=all-books — navigating
 
 === peak memory ===
-books=139 peak_rss_kb=246152 peak_rss_mb=240
+books=139 peak_rss_kb=261892 peak_rss_mb=255
 
 === shutting down ===
 
 === artifacts ===
   total 352
-  drwxr-xr-x  2 runner runner  4096 Sep 11 09:43 .
-  drwxr-xr-x 15 runner runner  4096 Sep 11 09:42 ..
-  -rw-r--r--  1 runner runner 82137 Sep 11 09:43 01-all-books.png
-  -rw-r--r--  1 runner runner 82137 Sep 11 09:43 02-all-books-settling.png
-  -rw-r--r--  1 runner runner 82137 Sep 11 09:43 03-all-books-settled.png
-  -rw-r--r--  1 runner runner 68467 Sep 11 09:43 04-home-for-comparison.png
-  -rw-r--r--  1 runner runner     0 Sep 11 09:43 grim.log
-  -rw-r--r--  1 runner runner   691 Sep 11 09:43 kalam-home.log
-  -rw-r--r--  1 runner runner   923 Sep 11 09:42 kalam.log
-  -rw-r--r--  1 runner runner  2797 Sep 11 09:44 report.txt
-  -rw-r--r--  1 runner runner    88 Sep 11 09:42 sway.log
-  -rw-r--r--  1 runner runner  7184 Sep 11 09:43 tree.json
---- run 34584816190 ---
+  drwxr-xr-x  2 runner runner  4096 Sep 11 16:47 .
+  drwxr-xr-x 15 runner runner  4096 Sep 11 16:46 ..
+  -rw-r--r--  1 runner runner 82137 Sep 11 16:47 01-all-books.png
+  -rw-r--r--  1 runner runner 82137 Sep 11 16:47 02-all-books-settling.png
+  -rw-r--r--  1 runner runner 82137 Sep 11 16:47 03-all-books-settled.png
+  -rw-r--r--  1 runner runner 68467 Sep 11 16:47 04-home-for-comparison.png
+  -rw-r--r--  1 runner runner     0 Sep 11 16:47 grim.log
+  -rw-r--r--  1 runner runner   691 Sep 11 16:47 kalam-home.log
+  -rw-r--r--  1 runner runner   923 Sep 11 16:46 kalam.log
+  -rw-r--r--  1 runner runner  2797 Sep 11 16:47 report.txt
+  -rw-r--r--  1 runner runner    88 Sep 11 16:46 sway.log
+  -rw-r--r--  1 runner runner  7184 Sep 11 16:47 tree.json
+--- run 34622565920 ---
