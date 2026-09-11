@@ -255,6 +255,48 @@ shot "02-$ROUTE-settling"
 for _ in $(seq 1 12); do sample_rss; sleep 1; done
 shot "03-$ROUTE-settled"
 
+# --- does a tap on the page turn it? (TAP=1) -------------------------------
+#
+# This is the one reader behaviour a screenshot cannot see. Kalam removed
+# tap-to-look-up before the engine swap, so a tap on text must fall through
+# to the widget's page-turn zones -- the widget only claims taps when the
+# host connects a word handler, and Kalam does not. If that regressed, the
+# page would sit there and every other check would still pass.
+#
+# sway can drive the pointer, so the check runs here rather than asking the
+# owner to tap and describe it. A tap is a press and a release in the same
+# place; the honest signal is "did the pixels change", exactly like the
+# navigation check above.
+if [ "${TAP:-0}" = "1" ]; then
+  say ""
+  say "=== tap check (TAP=1) ==="
+  SEAT="$(swaymsg -t get_seats 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["name"])' 2>/dev/null \
+    || echo seat0)"
+  # The window is 1600x1000 (see the sway config above); the widget's "next
+  # page" zone is the right third, well clear of the selection chip.
+  TAP_X="${TAP_X:-1250}"
+  TAP_Y="${TAP_Y:-500}"
+  before="$(md5sum "$OUT/03-$ROUTE-settled.png" 2>/dev/null | cut -d" " -f1)"
+  swaymsg "seat $SEAT cursor set $TAP_X $TAP_Y" >/dev/null 2>&1 || true
+  sleep 1
+  swaymsg "seat $SEAT cursor press button1" >/dev/null 2>&1 || true
+  sleep 1
+  swaymsg "seat $SEAT cursor release button1" >/dev/null 2>&1 || true
+  sleep 2
+  shot "05-after-tap"
+  after="$(md5sum "$OUT/05-after-tap.png" 2>/dev/null | cut -d" " -f1)"
+  say "seat=$SEAT tap=$TAP_X,$TAP_Y"
+  say "before=$before"
+  say "after =$after"
+  if [ -n "$before" ] && [ -n "$after" ] && [ "$before" != "$after" ]; then
+    say "tap check: the page changed -- a tap turns the page"
+  else
+    say "tap check: NO CHANGE -- a tap may not be reaching the page-turn zones"
+    say "           (or the last page of the chapter is showing)"
+  fi
+fi
+
 # --- did we actually render the requested page? ---------------------------
 #
 # Three checks, because each catches a different failure and the first two can
