@@ -402,7 +402,7 @@ fn pos_group_keys(senses: &[DictSense]) -> Vec<String> {
     let mut first_seen: Vec<String> = Vec::new();
     for sense in senses {
         let key = pos_group_key(sense.pos.as_deref());
-        if !first_seen.iter().any(|seen| *seen == key) {
+        if !first_seen.contains(&key) {
             first_seen.push(key);
         }
     }
