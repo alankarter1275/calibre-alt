@@ -178,9 +178,9 @@ dependencies = [
 
 [[package]]
 name = "bytemuck_derive"
-version = "1.12.0"
+version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc0e56a716f1e132ff6bf4bdac1c944a3fcdc1cae65f70a4a2a1ac3b401d2d1f"
+checksum = "6a1f896587b6f2c069c73d2f0913e2d590c3990285cd2f0b6aa02b786b4c679c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -253,7 +253,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 [[package]]
 name = "chapbook-core"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#59157cdbc31e6830b9f2127a3463f6874c45315d"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
 dependencies = [
  "log",
  "mezzotint",
@@ -263,7 +263,7 @@ dependencies = [
 [[package]]
 name = "chapbook-epub"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#59157cdbc31e6830b9f2127a3463f6874c45315d"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
 dependencies = [
  "chapbook-core",
  "quick-xml 0.42.0",
@@ -275,7 +275,7 @@ dependencies = [
 [[package]]
 name = "chapbook-layout"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#59157cdbc31e6830b9f2127a3463f6874c45315d"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
 dependencies = [
  "app_units",
  "chapbook-core",
@@ -300,12 +300,13 @@ dependencies = [
  "sys-locale",
  "unicode-script",
  "url",
+ "xml5ever",
 ]
 
 [[package]]
 name = "chapbook-paint"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#59157cdbc31e6830b9f2127a3463f6874c45315d"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
 dependencies = [
  "chapbook-core",
  "cosmic-text",
@@ -314,7 +315,7 @@ dependencies = [
 [[package]]
 name = "chapbook-reader"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#59157cdbc31e6830b9f2127a3463f6874c45315d"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
 dependencies = [
  "chapbook-core",
  "chapbook-epub",
@@ -331,7 +332,7 @@ dependencies = [
 [[package]]
 name = "chapbook-render-tinyskia"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#59157cdbc31e6830b9f2127a3463f6874c45315d"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
 dependencies = [
  "chapbook-core",
  "chapbook-paint",
@@ -1934,7 +1935,7 @@ dependencies = [
 [[package]]
 name = "kalam-reader"
 version = "0.1.0"
-source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#59157cdbc31e6830b9f2127a3463f6874c45315d"
+source = "git+https://github.com/alankarter1275/kalam-engine?branch=arena%2F01a07f3f-kalam-engine#63d854f9d3439b49d3520d9e8058f5fba63d9174"
 dependencies = [
  "chapbook-core",
  "chapbook-reader",
@@ -2012,9 +2013,9 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libredox"
-version = "0.1.23"
+version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d8f1ea3f21fd3405dcaf6c9b5c1630af9afc422d9073ea39c5f6d6c772e08ed"
+checksum = "6480ccc157a1389bb2e4891b24751b0f798ba640d22386f23143fbcc89da195a"
 dependencies = [
  "libc",
 ]
@@ -4671,6 +4672,16 @@ name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
+
+[[package]]
+name = "xml5ever"
+version = "0.39.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ab627f34ff61b80d756180d556f9c68801d836d271b3b8c094504ceca69d221"
+dependencies = [
+ "log",
+ "markup5ever",
+]
 
 [[package]]
 name = "xmlwriter"
